@@ -85,8 +85,7 @@ public class PetBridge : IDisposable
 
             if (root.TryGetProperty("type", out JsonElement typeProp) == false) return;
             string? type = typeProp.GetString();
-
-            Console.WriteLine(type);
+            
             switch (type)
             {
                 case "ready":

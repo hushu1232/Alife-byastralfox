@@ -78,13 +78,6 @@ public class PetActivity : IDisposable
         HandleFocusReset(cancellationTokenSource.Token);
 
         process.SendOutput(new ReadyEvent());
-
-        foreach (string expression in metadata.Expressions)
-        {
-            await Task.Delay(3000);
-            Console.WriteLine(expression);
-            bridge.PlayExpression(expression);
-        }
     }
 
     void OnMouseMove(int x, int y)
