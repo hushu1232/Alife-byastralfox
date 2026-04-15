@@ -1,5 +1,7 @@
 using System.Text.Json;
 using DuckDB.NET.Data;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.Memory;
 
@@ -62,13 +64,13 @@ public class VectorMemoryStore
         float[] vector = await vectorizer.VectorizeAsync(text);
 
         // 3. 将标引数据更新到数据库
-        using var connection = new DuckDBConnection($"Data Source={dbPath}");
+        await using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
         connection.Open();
 
         // 由于需要使用数组直接合并到 SQL 中以最稳妥执行插入：
         string vectorLiteral = "[" + string.Join(",", vector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
 
-        using var command = connection.CreateCommand();
+        await using DuckDBCommand command = connection.CreateCommand();
         // DuckDB 官方原生支持直接通过 ON CONFLICT DO UPDATE
         command.CommandText = $@"
             INSERT INTO MemoryVectors (Level, Name, StartTime, EndTime, Vector)
@@ -109,12 +111,12 @@ public class VectorMemoryStore
         float[] queryVector = await vectorizer.VectorizeAsync(query);
         string vectorLiteral = "[" + string.Join(",", queryVector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
 
-        var matches = new List<(int Level, string Name, DateTimeOffset Start, DateTimeOffset End, float Score)>();
+        List<(int Level, string Name, DateTimeOffset Start, DateTimeOffset End, float Score)> matches = new();
 
-        using (var connection = new DuckDBConnection($"Data Source={dbPath}"))
+        await using (DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}"))
         {
             connection.Open();
-            using var command = connection.CreateCommand();
+            await using DuckDBCommand command = connection.CreateCommand();
 
             // 下方是纯正的霸王级分析型 SQL。由于 DuckDB C++ 引擎对这种单机查询优化极猛
             // 把 array_cosine_similarity 在 SQL 里算，连内存都不用来回倒了，比 C# 本地迭代要快几十倍。
@@ -130,7 +132,7 @@ public class VectorMemoryStore
             command.Parameters.Add(new DuckDBParameter("Min", minTime.HasValue ? minTime.Value.ToUnixTimeMilliseconds() : DBNull.Value));
             command.Parameters.Add(new DuckDBParameter("Max", maxTime.HasValue ? maxTime.Value.ToUnixTimeMilliseconds() : DBNull.Value));
 
-            using var reader = command.ExecuteReader();
+            await using DuckDBDataReader reader = command.ExecuteReader();
             while (reader.Read())
             {
                 int level = reader.GetInt32(0);
@@ -144,10 +146,10 @@ public class VectorMemoryStore
         }
 
         // 以 DuckDB 查出的排序为主：SQL内部已使用了 ORDER BY Score DESC, Level DESC, EndTime DESC。不再做 C# 强行重排导致高分结果被抹杀。
-        var topMatches = matches;
+        List<(int Level, string Name, DateTimeOffset Start, DateTimeOffset End, float Score)> topMatches = matches;
 
-        var results = new List<SearchResult>();
-        foreach (var match in topMatches)
+        List<SearchResult> results = new List<SearchResult>();
+        foreach ((int Level, string Name, DateTimeOffset Start, DateTimeOffset End, float Score) match in topMatches)
         {
             string? text = await LoadAsync(match.Level, match.Name);
             if (text != null)
