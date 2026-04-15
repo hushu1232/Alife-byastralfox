@@ -258,7 +258,8 @@ public class XmlStreamParser
         isTagParsing = false;
         currentTagName = null;
         currentTagAttributeName = null;
-        parsedAttributes.Clear();
+        if (tagStack.Count == 0) //TODO 缺少正确的Xml参数环境，目前等于不清除，虽然确保闭标签时也能拿到参数，但可能污染其他标签。
+            parsedAttributes.Clear();
         tagMode = 0;
     }
 

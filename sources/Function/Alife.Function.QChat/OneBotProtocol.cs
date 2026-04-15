@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Alife.Function.QChat;
@@ -61,6 +60,26 @@ public record OneBotMetaEvent : OneBotBaseEvent
     public string? SubType { get; init; }
 }
 
+public record OneBotNoticeFile
+{
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("size")]
+    public long Size { get; init; }
+
+    [JsonPropertyName("busid")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public long BusId { get; init; }
+
+    [JsonPropertyName("url")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public string? Url { get; init; }
+}
+
 public record OneBotNoticeEvent : OneBotBaseEvent
 {
     [JsonPropertyName("notice_type")]
@@ -71,6 +90,9 @@ public record OneBotNoticeEvent : OneBotBaseEvent
 
     [JsonPropertyName("group_id")]
     public long GroupId { get; init; }
+
+    [JsonPropertyName("file")]
+    public OneBotNoticeFile? File { get; init; }
 }
 
 public record OneBotRequestEvent : OneBotBaseEvent
@@ -95,18 +117,34 @@ public record OneBotAction
     public string? Echo { get; init; }
 }
 
-public record SendMessageParams
+public record OneBotResponse<T>
 {
-    [JsonPropertyName("user_id")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public long UserId { get; init; }
+    [JsonPropertyName("status")]
+    public string Status { get; init; } = "";
 
-    [JsonPropertyName("group_id")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public long GroupId { get; init; }
+    [JsonPropertyName("retcode")]
+    public int RetCode { get; init; }
+
+    [JsonPropertyName("data")]
+    public T? Data { get; init; }
 
     [JsonPropertyName("message")]
     public string Message { get; init; } = "";
+}
+
+public record OneBotFile
+{
+    [JsonPropertyName("file")]
+    public string Path { get; init; } = "";
+
+    [JsonPropertyName("url")]
+    public string Url { get; init; } = "";
+
+    [JsonPropertyName("file_name")]
+    public string Name { get; init; } = "";
+
+    [JsonPropertyName("file_size")]
+    public string Size { get; init; } = "";
 }
 
 public record UploadFileParams

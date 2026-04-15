@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -10,13 +11,30 @@ namespace Alife.Function.QChat;
 /// </summary>
 public class OneBotClient : IAsyncDisposable
 {
+    /// <summary>
+    /// 事件接收回调。
+    /// </summary>
     public event Action<OneBotBaseEvent>? OnEventReceived;
 
-    public long BotId => botId;
+    /// <summary>
+    /// 连接状态改变回调。
+    /// </summary>
+    public event Action<bool>? OnConnectionStatusChanged;
+
+    /// <summary>
+    /// 当前 Bot 的 QQ 号。
+    /// </summary>
+    public long BotId { get; private set; }
 
     public OneBotClient(string url)
     {
         this.url = url;
+    }
+    public async ValueTask DisposeAsync()
+    {
+        if (ws.State == WebSocketState.Open)
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+        ws.Dispose();
     }
 
     public async Task ConnectAsync()
@@ -30,8 +48,9 @@ public class OneBotClient : IAsyncDisposable
 
         if (ev is OneBotMetaEvent { MetaEventType: OneBotMetaType.Lifecycle, SubType: "connect" })
         {
-            botId = ev.SelfId;
+            BotId = ev.SelfId;
             ReceiveLoop();
+            OnConnectionStatusChanged?.Invoke(true);
         }
         else
         {
@@ -39,24 +58,35 @@ public class OneBotClient : IAsyncDisposable
         }
     }
 
-    public async Task SendActionAsync(string action, object? @params = null)
+    public async Task SendActionAsync(string action, object? @params = null, string? echo = null)
     {
-        OneBotAction payload = new() { Action = action, Params = @params };
+        OneBotAction payload = new() { Action = action, Params = @params, Echo = echo };
         string json = JsonSerializer.Serialize(payload);
         await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(json)), WebSocketMessageType.Text, true, CancellationToken.None);
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task<T?> CallActionAsync<T>(string action, object? @params = null)
     {
-        if (ws.State == WebSocketState.Open)
-            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
-        ws.Dispose();
+        string echo = Guid.NewGuid().ToString();
+        TaskCompletionSource<JsonElement> tcs = new();
+        pendingActions[echo] = tcs;
+
+        await SendActionAsync(action, @params, echo);
+
+        using CancellationTokenSource timeout = new(10000);
+        await using CancellationTokenRegistration ctRegistration = timeout.Token.Register(() => tcs.TrySetCanceled());
+
+        JsonElement result = await tcs.Task;
+        OneBotResponse<T>? response = result.Deserialize<OneBotResponse<T>>();
+        return response != null ? response.Data : default;
     }
+
+
 
     readonly string url;
     readonly byte[] buffer = new byte[1024 * 64];
+    readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> pendingActions = new();
     ClientWebSocket ws = new();
-    long botId;
 
     async void ReceiveLoop()
     {
@@ -72,6 +102,10 @@ public class OneBotClient : IAsyncDisposable
         {
             Console.WriteLine($"[OneBotClient] 链路异常: {ex.Message}");
         }
+        finally
+        {
+            OnConnectionStatusChanged?.Invoke(false);
+        }
     }
 
     async Task<OneBotBaseEvent?> ReceiveEventAsync(CancellationToken ct = default)
@@ -80,14 +114,24 @@ public class OneBotClient : IAsyncDisposable
         if (result.MessageType == WebSocketMessageType.Close) return null;
 
         string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+        using JsonDocument doc = JsonDocument.Parse(json);
+
+        // 如果包含 echo，说明是 API 的响应
+        if (doc.RootElement.TryGetProperty("echo", out JsonElement echoElem))
+        {
+            string echo = echoElem.GetString() ?? "";
+            if (pendingActions.TryRemove(echo, out var tcs))
+            {
+                tcs.TrySetResult(doc.RootElement.Clone());
+            }
+            return null;
+        }
 
         // 手动检测 post_type 以处理 System.Text.Json 的多态限制
-        using JsonDocument doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("post_type", out JsonElement typeElem)) return null;
 
         string type = typeElem.GetString() ?? "";
-        return type switch
-        {
+        return type switch {
             "message" => doc.RootElement.Deserialize<OneBotMessageEvent>(),
             "message_sent" => doc.RootElement.Deserialize<OneBotMessageSentEvent>(),
             "meta_event" => doc.RootElement.Deserialize<OneBotMetaEvent>(),

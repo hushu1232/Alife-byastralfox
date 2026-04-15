@@ -127,7 +127,7 @@ public class XmlHandlerTable
     }
     public async Task TryHandle(string name, XmlContext tagContext)
     {
-        if (xmlFunctions.TryGetValue(name, out SortedSet<XmlFunction>? xmlFunctionGroup) == false)
+        if (xmlFunctions.TryGetValue(name.ToLower(), out SortedSet<XmlFunction>? xmlFunctionGroup) == false)
             return;
 
         try

@@ -8,16 +8,6 @@ namespace Alife.Function.QChat;
 public static class OneBotSegment
 {
     /// <summary>
-    /// 将包含 [CQ:...] 的字符串转换为纯文本（或解析出特定信息）
-    /// </summary>
-    public static string ToPlainText(string content)
-    {
-        if (string.IsNullOrEmpty(content)) return "";
-        // 简单提取所有非 CQ 码部分
-        return Regex.Replace(content, @"\[CQ:[^\]]+\]", "").Trim();
-    }
-
-    /// <summary>
     /// 构造 At 消息片段
     /// </summary>
     public static string At(long userId) => $"[CQ:at,qq={userId}]";
