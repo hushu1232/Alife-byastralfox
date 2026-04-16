@@ -21,6 +21,7 @@ public class XmlExecutorContext : XmlContext
 }
 public class XmlStreamExecutor : IAsyncDisposable
 {
+    public event Action<string, Exception>? Error;
     public bool IsIdle => commandChannel.Reader.TryPeek(out _) == false;
     public void Feed(string text)
     {
@@ -155,7 +156,7 @@ public class XmlStreamExecutor : IAsyncDisposable
             AboveSeparator = null,
             Content = "",
         };
-        return handler.TryHandle(tagName, context);
+        return HandleXml(tagName, context);
     }
 
     /// <summary>
@@ -199,7 +200,7 @@ public class XmlStreamExecutor : IAsyncDisposable
                 Content = content,
             };
 
-            await handler.TryHandle(tagName, context);
+            await HandleXml(tagName, context);
 
             //获取调用后的内容，这可能被修改
             content = context.Content;
@@ -216,5 +217,17 @@ public class XmlStreamExecutor : IAsyncDisposable
         foreach (StringBuilder stringBuilder in aboveContentBuffer)
             stringBuilder.Clear();
         contentBuffer.Clear();
+    }
+
+    async Task HandleXml(string name, XmlContext tagContext)
+    {
+        try
+        {
+            await handler.Handle(name, tagContext);
+        }
+        catch (Exception e)
+        {
+            Error?.Invoke(name, e);
+        }
     }
 }

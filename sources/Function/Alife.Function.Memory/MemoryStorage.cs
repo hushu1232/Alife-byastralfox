@@ -1,7 +1,5 @@
 using System.Text.Json;
 using DuckDB.NET.Data;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.Memory;
 
@@ -13,9 +11,9 @@ public record SearchResult(int Level, string Name, string Text, DateTimeOffset S
 /// 文本向量、检索标引等元数据则存放到 DuckDB 中。
 /// 利用 DuckDB 原生强大的单文件分析性能及 array_cosine_similarity()，无需插件即可执行数百万级的极速相似度搜索并与标量过滤联动。
 /// </summary>
-public class MemoryStore
+public class MemoryStorage
 {
-    public MemoryStore(string rootPath, ITextVectorizer vectorizer)
+    public MemoryStorage(string rootPath, TextVectorizer vectorizer)
     {
         this.rootPath = rootPath;
         this.vectorizer = vectorizer;
@@ -163,5 +161,5 @@ public class MemoryStore
 
     readonly string rootPath;
     readonly string dbPath;
-    readonly ITextVectorizer vectorizer;
+    readonly TextVectorizer vectorizer;
 }

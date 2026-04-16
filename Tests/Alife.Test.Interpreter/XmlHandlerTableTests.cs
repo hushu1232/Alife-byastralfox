@@ -46,7 +46,7 @@ MockSystemHandler
             },
             Content = "测试文本",
         };
-        await handlerTable.TryHandle("speak", speak);
+        await handlerTable.Handle("speak", speak);
 
         XmlContext petmove = new() {
             Parameters = new Dictionary<string, string> {
@@ -56,7 +56,7 @@ MockSystemHandler
             },
             Content = "测试文本",
         };
-        await handlerTable.TryHandle("petmove", petmove);
+        await handlerTable.Handle("petmove", petmove);
 
         string actual = XmlHandleLog.ToString();
         const string Expected = @"========

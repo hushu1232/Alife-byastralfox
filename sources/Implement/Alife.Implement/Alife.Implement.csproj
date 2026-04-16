@@ -32,7 +32,4 @@
     <ProjectReference Include="..\..\Function\Alife.Function.DeskPet\Alife.Function.DeskPet.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="MemoryService.cs" />
-  </ItemGroup>
 </Project>

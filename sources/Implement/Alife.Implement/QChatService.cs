@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using Alife.Basic;
 using Alife.Framework;
 using Alife.Function.Interpreter;
 using Alife.Function.QChat;
@@ -36,31 +37,82 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
     }
 
     [XmlFunction]
-    [Description("发送图片或文件。")]
-    public async Task QFile(XmlExecutorContext ctx, [Description("通过私聊还是群聊发送")] OneBotMessageType type, [Description("QQ号或群号")] long target, [Description("文件路径")] string file, bool isImage)
+    [Description("发送图片消息。支持表情库相对路径、本地绝对路径或图片 URL。如果是文件夹则从中随机抽取一张。")]
+    public async Task QImage(XmlExecutorContext ctx, [Description("通过私聊还是群聊发送")] OneBotMessageType type, [Description("QQ号或群号")] long target, [Description("图片路径、URL或表情库名称")] string file)
     {
-        if (ctx.CallMode != CallMode.OneShot)
-            return;
+        if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
         file = file.Trim();
-        if (string.IsNullOrEmpty(file))
-            return;
+        if (string.IsNullOrEmpty(file)) return;
 
-        file = file.Replace('\\', '/');
-        if (isImage)
+        string finalPath = file.Replace('\\', '/');
+
+        // 尝试从表情库匹配 (优先)
+        string emoteBase = Path.Combine(AlifePath.StorageFolderPath, "Emotes");
+        string emotePath = Path.Combine(emoteBase, finalPath).Replace('\\', '/');
+
+        if (Directory.Exists(emotePath))
         {
-            if (type == OneBotMessageType.Group)
-                await oneBotClient.SendGroupImage(target, file);
-            else
-                await oneBotClient.SendPrivateImage(target, file);
+            // 文件夹：随机选一张
+            string[] files = Directory.GetFiles(emotePath, "*.*", SearchOption.TopDirectoryOnly)
+                .Where(s => s.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                            s.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                            s.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                            s.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            if (files.Length > 0)
+            {
+                finalPath = files[Random.Shared.Next(files.Length)];
+            }
+        }
+        else if (File.Exists(emotePath))
+        {
+            // 单个文件：直接使用
+            finalPath = emotePath;
         }
         else
         {
-            string fileName = Path.GetFileName(file);
-            if (type == OneBotMessageType.Group)
-                await oneBotClient.UploadGroupFile(target, file, fileName);
-            else
-                await oneBotClient.UploadPrivateFile(target, file, fileName);
+            // 尝试追加后缀名查找
+            string[] extensions = [".png", ".jpg", ".jpeg", ".gif"];
+            string? foundFile = extensions.Select(ext => emotePath + ext).FirstOrDefault(File.Exists);
+            if (foundFile != null)
+            {
+                finalPath = foundFile;
+            }
+            // 如果都不匹配，则维持原样（可能是 URL 或绝对路径）
         }
+
+        if (type == OneBotMessageType.Group)
+            await oneBotClient.SendGroupImage(target, finalPath);
+        else
+            await oneBotClient.SendPrivateImage(target, finalPath);
+    }
+
+    [XmlFunction]
+    [Description("发送文件。")]
+    public async Task QFile(XmlExecutorContext ctx, [Description("通过私聊还是群聊发送")] OneBotMessageType type, [Description("QQ号或群号")] long target, [Description("文件本地绝对路径")] string file)
+    {
+        if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
+        file = file.Trim().Replace('\\', '/');
+        if (string.IsNullOrEmpty(file)) return;
+
+        string fileName = Path.GetFileName(file);
+        if (type == OneBotMessageType.Group)
+            await oneBotClient.UploadGroupFile(target, file, fileName);
+        else
+            await oneBotClient.UploadPrivateFile(target, file, fileName);
+    }
+
+    [XmlFunction]
+    [Description("从 URL 下载文件到服务器。收到文件通知后，若需要查看内容可调用此函数。")]
+    public async Task QDownload(XmlExecutorContext ctx, [Description("下载直链 URL")] string url, [Description("保存的文件名（需包含后缀）")] string name)
+    {
+        if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
+
+        string savePath = Path.Combine(AlifePath.TempFolderPath, name);
+        await url.DownloadFileAsync(savePath);
+
+        chatActivity.ChatBot.Poke($"[QChatService] 文件 {name} 已下载至: {savePath}");
     }
 
     [XmlFunction]
@@ -176,14 +228,9 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
 
         if (string.IsNullOrEmpty(downloadUrl)) return;
 
-        string saveDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Downloads", "QChat");
-        if (!Directory.Exists(saveDir)) Directory.CreateDirectory(saveDir);
-
-        string savePath = Path.Combine(saveDir, e.File.Name);
-        await downloadUrl.DownloadFileAsync(savePath);
-
-        string source = e.GroupId != 0 ? $"群 {e.GroupId}" : $"私聊 {e.UserId}";
-        chatActivity.ChatBot.Poke($"[QChatService] 收到来自 {source} 的文件: {e.File.Name} (已自动存至: {savePath})");
+        string source = e.GroupId != 0 ? $"群聊 {e.GroupId}" : $"私聊 {e.UserId}";
+        chatActivity.ChatBot.Poke($"[QChatService] 收到来自 {source} 的文件通知: {e.File.Name} (大小: {e.File.Size} 字节)。" +
+                                  $"你可以调用 QDownload(url, name) 来下载它以便查看内容。文件名建议用: {e.File.Name}。URL 为: {downloadUrl}");
     }
 
     async Task HandleChatMessage(OneBotMessageEvent e)

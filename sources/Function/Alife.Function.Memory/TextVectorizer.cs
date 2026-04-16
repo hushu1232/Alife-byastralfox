@@ -3,16 +3,11 @@ using Microsoft.SemanticKernel;
 
 namespace Alife.Function.Memory;
 
-public interface ITextVectorizer
-{
-    Task<float[]> VectorizeAsync(string text);
-}
-
 /// <summary>
 /// 纯粹且独立的文本向量化器。
 /// 内部自行加载并管理基于 ONNX 的 BERT 模型，通过最新的 Microsoft.Extensions.AI 提供嵌入支持。
 /// </summary>
-public class TextVectorizer : ITextVectorizer
+public class TextVectorizer
 {
     public TextVectorizer(string modelRootPath)
     {

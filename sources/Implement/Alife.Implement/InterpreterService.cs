@@ -40,11 +40,11 @@ public class InterpreterService : Plugin
 ## 注意事项
 
 1. 在一个标签中描述完整句子。
-    - 正确写法：<speak>第一句。第二句。第三句</speak>
-    - 错误写法：<speak>第一句</speak><speak>第二句</speak>
+    - 正确写法：<say>第一句。第二句。</say>
+    - 错误写法：<say>第一句</say><say>第二句</say>
 2. 如果要在内容中使用xml中的特殊符号，你必须要先进行转义，转义方式与标准xml一致。
-    - 正确写法：我可以使用&lt;python&gt;标签来运行脚本。
-    - 错误写法：我可以使用<python>标签来运行脚本。
+    - 正确写法：这个&lt;python&gt;标签，可以让我执行脚本。
+    - 错误写法：这个<python>标签，可以让我执行脚本。
 ";
 
         context.contextBuilder.ChatHistory.AddSystemMessage(prompt);
@@ -55,6 +55,7 @@ public class InterpreterService : Plugin
         chatActivity.ChatBot.ChatReceived += OnChatReceived;
         chatActivity.ChatBot.ChatSent += OnChatSent;
         chatActivity.ChatBot.ChatOver += OnChatOver;
+        executor.Error += (tag, exception) => OnError(tag, exception, chatActivity.ChatBot);
         return Task.CompletedTask;
     }
 
@@ -69,5 +70,9 @@ public class InterpreterService : Plugin
     void OnChatReceived(string obj)
     {
         executor.Feed(obj);
+    }
+    void OnError(string tag, Exception exception, ChatBot chatBot)
+    {
+        chatBot.Chat($"[{nameof(InterpreterService)}] 执行<{tag}>时出错，请检查格式用法。错误信息如下：\n{exception.Message}");
     }
 }

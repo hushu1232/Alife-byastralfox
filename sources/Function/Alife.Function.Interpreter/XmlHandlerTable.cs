@@ -1,4 +1,3 @@
-using Alife.Basic;
 using System.ComponentModel;
 using System.Reflection;
 
@@ -125,20 +124,12 @@ public class XmlHandlerTable
 
         return sb.ToString().TrimEnd();
     }
-    public async Task TryHandle(string name, XmlContext tagContext)
+    public async Task Handle(string name, XmlContext tagContext)
     {
         if (xmlFunctions.TryGetValue(name.ToLower(), out SortedSet<XmlFunction>? xmlFunctionGroup) == false)
             return;
-
-        try
-        {
-            foreach (XmlFunction xmlFunction in xmlFunctionGroup)
-                await xmlFunction.Invoker(tagContext);
-        }
-        catch (Exception e)
-        {
-            Terminal.LogError(e.ToString());
-        }
+        foreach (XmlFunction xmlFunction in xmlFunctionGroup)
+            await xmlFunction.Invoker(tagContext);
     }
 
     readonly List<XmlHandler> xmlHandlers = new();

@@ -42,10 +42,20 @@ public class PythonService : Plugin
         process.Start();
 
         string output = await process.StandardOutput.ReadToEndAsync();
-        Task timeoutTask = Task.Delay(3000);
-        Task taskResult = await Task.WhenAny(timeoutTask, process.WaitForExitAsync());
-        if (taskResult == timeoutTask)
-            process.Kill();
+
+
+        try
+        {
+            CancellationTokenSource cts = new(3000);
+            await process.WaitForExitAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            if (process.HasExited == false)
+                process.Kill();
+            throw new TimeoutException();
+        }
+
         if (process.ExitCode != 0)
             output = await process.StandardError.ReadToEndAsync();
 
