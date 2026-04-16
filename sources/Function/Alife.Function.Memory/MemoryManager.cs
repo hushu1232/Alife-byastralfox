@@ -11,8 +11,12 @@ namespace Alife.Function.Memory;
 /// </summary>
 public class MemoryManager
 {
-    public MemoryManager(TextCompressor compressor, TextVectorizer vectorizer, string storagePath)
+    public MemoryManager(TextCompressor compressor, TextVectorizer vectorizer, string storagePath,
+        int compressionThreshold = 256, int compressionCount = 256 / 4 * 3)
     {
+        this.compressionThreshold = compressionThreshold;
+        this.compressionCount = compressionCount;
+
         this.compressor = compressor;
         historyStoragePath = $"{storagePath}/History.json";
         memoryStorage = new MemoryStorage(storagePath, vectorizer);
@@ -50,8 +54,8 @@ public class MemoryManager
             }
 
             //计算当前区域的压缩参数
-            int areaCompressionThreshold = (int)(CompressionThreshold / MathF.Pow(2, currentLevel));
-            int areaCompressionCount = (int)(CompressionCount / MathF.Pow(2, currentLevel));
+            int areaCompressionThreshold = (int)(compressionThreshold / MathF.Pow(2, currentLevel));
+            int areaCompressionCount = (int)(compressionCount / MathF.Pow(2, currentLevel));
             if (areaCompressionCount == 0)
                 continue; //达到最高压缩层，无法压缩的记忆
 
@@ -125,8 +129,8 @@ public class MemoryManager
 
     record HistoryRecord(AuthorRole Role, string Content, MemoryMeta MemoryMeta);
 
-    const int CompressionThreshold = 256;
-    const int CompressionCount = CompressionThreshold / 4 * 3;
+    readonly int compressionThreshold;
+    readonly int compressionCount;
     readonly TextCompressor compressor;
     readonly MemoryStorage memoryStorage;
     readonly string historyStoragePath;
