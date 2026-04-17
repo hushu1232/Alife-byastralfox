@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using System.Text.RegularExpressions;
 using Alife.Basic;
 using Alife.Framework;
 using Alife.Function.Interpreter;
@@ -12,8 +13,6 @@ public record QChatConfig
 {
     public string Url { get; set; } = "ws://127.0.0.1:3001";
     public long OwnerId { get; set; }
-    public bool IsGroupEnabled { get; set; } = true;
-    public int AutoCloseMinutes { get; set; } = 30;
 }
 [Plugin("QQ聊天", "连接 OneBot v11 服务器，实现 QQ 消息收发及文件传输。")]
 public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
@@ -41,14 +40,12 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
     public async Task QImage(XmlExecutorContext ctx, [Description("通过私聊还是群聊发送")] OneBotMessageType type, [Description("QQ号或群号")] long target, [Description("图片路径、URL或表情库名称")] string file)
     {
         if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
-        file = file.Trim();
+        file = file.Trim().Replace('\\', '/');
         if (string.IsNullOrEmpty(file)) return;
 
-        string finalPath = file.Replace('\\', '/');
-
         // 尝试从表情库匹配 (优先)
-        string emoteBase = Path.Combine(AlifePath.StorageFolderPath, "Emotes");
-        string emotePath = Path.Combine(emoteBase, finalPath).Replace('\\', '/');
+        string emoteBase = Path.Combine(AlifePath.ResourcesPath, "Emotes");
+        string emotePath = Path.Combine(emoteBase, file).Replace('\\', '/');
 
         if (Directory.Exists(emotePath))
         {
@@ -62,13 +59,13 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
 
             if (files.Length > 0)
             {
-                finalPath = files[Random.Shared.Next(files.Length)];
+                file = files[Random.Shared.Next(files.Length)];
             }
         }
         else if (File.Exists(emotePath))
         {
             // 单个文件：直接使用
-            finalPath = emotePath;
+            file = emotePath;
         }
         else
         {
@@ -77,15 +74,15 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
             string? foundFile = extensions.Select(ext => emotePath + ext).FirstOrDefault(File.Exists);
             if (foundFile != null)
             {
-                finalPath = foundFile;
+                file = foundFile;
             }
             // 如果都不匹配，则维持原样（可能是 URL 或绝对路径）
         }
 
         if (type == OneBotMessageType.Group)
-            await oneBotClient.SendGroupImage(target, finalPath);
+            await oneBotClient.SendGroupImage(target, file);
         else
-            await oneBotClient.SendPrivateImage(target, finalPath);
+            await oneBotClient.SendPrivateImage(target, file);
     }
 
     [XmlFunction]
@@ -104,12 +101,12 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
     }
 
     [XmlFunction]
-    [Description("从 URL 下载文件到服务器。收到文件通知后，若需要查看内容可调用此函数。")]
+    [Description("从 URL 下载文件。（使用后需要等待系统响应，所以只能放句尾使用。注意不要随便下载。）")]
     public async Task QDownload(XmlExecutorContext ctx, [Description("下载直链 URL")] string url, [Description("保存的文件名（需包含后缀）")] string name)
     {
         if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
 
-        string savePath = Path.Combine(AlifePath.TempFolderPath, name);
+        string savePath = Path.Combine(AlifePath.TempFolderPath, name).Replace('\\', '/');
         await url.DownloadFileAsync(savePath);
 
         chatActivity.ChatBot.Poke($"[QChatService] 文件 {name} 已下载至: {savePath}");
@@ -120,20 +117,20 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
     public void QGroupSwitch(XmlExecutorContext ctx, bool enabled)
     {
         if (ctx.CallMode != CallMode.Closing && ctx.CallMode != CallMode.OneShot) return;
-        config.IsGroupEnabled = enabled;
-        chatActivity.ChatBot.Poke($"[QChatService] 群消息监听已{(enabled ? "开启" : "关闭")}");
+        QGroupSwitch(enabled);
     }
+
 
     OneBotClient oneBotClient = null!;
     QChatConfig config = null!;
     ChatActivity chatActivity = null!;
     readonly Dictionary<long, StringBuilder> groupBuffers = new();
+    bool isGroupEnabled = false;
 
     public QChatService(InterpreterService interpreterService)
     {
         interpreterService.RegisterHandler(this);
     }
-
     public async ValueTask DisposeAsync()
     {
         await oneBotClient.DisposeAsync();
@@ -143,7 +140,6 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
     {
         config = configuration;
     }
-
     public override async Task AwakeAsync(AwakeContext context)
     {
         oneBotClient = new OneBotClient(config.Url);
@@ -156,7 +152,6 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
                          """;
         context.contextBuilder.ChatHistory.AddSystemMessage(prompt);
     }
-
     public override Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
         this.chatActivity = chatActivity;
@@ -167,7 +162,6 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
         GlobalLoop();
         return Task.CompletedTask;
     }
-
 
     async void GlobalLoop()
     {
@@ -195,73 +189,85 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
             Console.WriteLine(e);
         }
     }
-
     async Task HandleEvent(OneBotBaseEvent e)
     {
-        try
-        {
-            if (e is OneBotMessageEvent msg) await HandleChatMessage(msg);
-            else if (e is OneBotNoticeEvent notice) await HandleFileNotice(notice);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[QChatService] 处理事件失败: {ex.Message}");
-        }
-    }
+        if (e is not OneBotMessageEvent msg)
+            return;
 
-    async Task HandleFileNotice(OneBotNoticeEvent e)
-    {
-        if (e.NoticeType != "group_upload" && e.NoticeType != "offline_file") return;
-        if (e.File == null) return;
+        string message = msg.RawMessage;
 
-        string? downloadUrl;
-        if (e.GroupId != 0)
+        // 单独处理文件消息
+        if (OneBotSegment.TryGetFileId(message, out string fileId))
         {
-            OneBotFile? info = await oneBotClient.GetGroupFileUrl(e.GroupId, e.File.Id);
-            downloadUrl = info?.Url;
+            // 提取文件名 (file=...) 和 大小 (file_size=...)，虽然主要靠 GetFile 换取，但尝试先拿基本信息
+            string fileName = "未知文件";
+            long fileSize = 0;
+
+            Match titleMatch = Regex.Match(message, @"file=(?<name>[^,\]]+)");
+            if (titleMatch.Success) fileName = titleMatch.Groups["name"].Value;
+
+            Match sizeMatch = Regex.Match(message, @"file_size=(?<size>\d+)");
+            if (sizeMatch.Success) long.TryParse(sizeMatch.Groups["size"].Value, out fileSize);
+
+            await HandleFileMessage(msg.GroupId, msg.UserId, fileName, fileSize, fileId);
         }
         else
         {
-            OneBotFile? info = await oneBotClient.GetFile(e.File.Id);
-            downloadUrl = info?.Url;
-        }
+            string tag = msg.MessageType == OneBotMessageType.Group ? $"[群聊 {msg.GroupId}, 发言人 {msg.UserId}]" : $"[私聊 {msg.UserId}]";
+            string formatted = $"{tag} {message}";
 
-        if (string.IsNullOrEmpty(downloadUrl)) return;
-
-        string source = e.GroupId != 0 ? $"群聊 {e.GroupId}" : $"私聊 {e.UserId}";
-        chatActivity.ChatBot.Poke($"[QChatService] 收到来自 {source} 的文件通知: {e.File.Name} (大小: {e.File.Size} 字节)。" +
-                                  $"你可以调用 QDownload(url, name) 来下载它以便查看内容。文件名建议用: {e.File.Name}。URL 为: {downloadUrl}");
-    }
-
-    async Task HandleChatMessage(OneBotMessageEvent e)
-    {
-        if (oneBotClient.BotId != 0 && e.UserId == oneBotClient.BotId) return;
-
-        string message = e.RawMessage;
-        string tag = e.MessageType == OneBotMessageType.Group ? $"[群聊 {e.GroupId}, 说话人 {e.UserId}]" : $"[私聊 {e.UserId}]";
-        string formatted = $"{tag} {message}";
-
-        if (e.MessageType == OneBotMessageType.Private)
-        {
-            await chatActivity.ChatBot.ChatAsync(formatted);
-        }
-        else if (e.MessageType == OneBotMessageType.Group)
-        {
-            //被@时激活群聊
-            bool isAtMe = OneBotSegment.IsAt(message, oneBotClient.BotId);
-            if (isAtMe)
-                config.IsGroupEnabled = true;
-
-            //只有群聊开始时接收消息
-            if (config.IsGroupEnabled)
+            if (msg.MessageType == OneBotMessageType.Private && msg.UserId == config.OwnerId)
             {
-                lock (groupBuffers)
+                await chatActivity.ChatBot.ChatAsync(formatted);
+            }
+            else
+            {
+                // 被 @ 时激活群聊
+                bool isAtMe = OneBotSegment.IsAt(message, oneBotClient.BotId);
+                if (isAtMe)
                 {
-                    if (groupBuffers.TryGetValue(e.GroupId, out StringBuilder? sb) == false)
-                        groupBuffers[e.GroupId] = sb = new StringBuilder();
-                    sb.AppendLine(formatted);
+                    QGroupSwitch(true);
+                    chatActivity.ChatBot.Poke("由 @ 引发的群聊消息监听已开启");
+                }
+
+                // 只有群聊开始时接收消息
+                if (isGroupEnabled)
+                {
+                    lock (groupBuffers)
+                    {
+                        if (groupBuffers.TryGetValue(msg.GroupId, out StringBuilder? sb) == false)
+                            groupBuffers[msg.GroupId] = sb = new StringBuilder();
+                        sb.AppendLine(formatted);
+                    }
                 }
             }
         }
+    }
+    async Task HandleFileMessage(long groupId, long userId, string fileName, long fileSize, string fileId)
+    {
+        string source = groupId != 0 ? $"[群聊 {groupId}, 发言人 {userId}]" : $"[私聊 {userId}]";
+
+        if (groupId != 0)
+        {
+            OneBotFile? info = await oneBotClient.GetGroupFileUrl(groupId, fileId);
+            string? downloadUrl = info?.Url;
+            chatActivity.ChatBot.Poke($"[QChatService] 收到来自 {source} 的文件通知: {fileName} (大小: {fileSize} 字节)。" +
+                                      $"URL 为: {downloadUrl}");
+        }
+        else
+        {
+            OneBotFile? info = await oneBotClient.GetFile(fileId);
+            if (info != null)
+            {
+                chatActivity.ChatBot.Poke($"[QChatService] 收到来自 {source} 的文件通知: {fileName} (大小: {fileSize} 字节)。" +
+                                          $"已保存到: {info.Path}");
+            }
+        }
+    }
+
+    void QGroupSwitch(bool enabled)
+    {
+        isGroupEnabled = enabled;
+        chatActivity.ChatBot.Poke($"[QChatService] 群消息监听已{(enabled ? "开启" : "关闭")}");
     }
 }

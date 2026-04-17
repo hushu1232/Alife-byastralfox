@@ -1,8 +1,6 @@
-using Alife.Basic;
 using System.ComponentModel;
 using Alife.Framework;
 using Alife.Function.Interpreter;
-using Alife.Implement;
 using Microsoft.SemanticKernel;
 
 namespace Alife.Implement;
@@ -15,7 +13,6 @@ public class EventServiceData
     public int UpdateInterval { get; set; } = 120;
     public int UpdateRandomOffset { get; set; } = 60;
 }
-
 [Plugin("系统事件", "让AI可以获取到各种系统事件的提醒。", LaunchOrder = 100)]
 [Description("你能够接收到系统事件（如开始、结束、周期报点），并可选的控制这些信息的收发。")]
 public class EventService : Plugin, IConfigurable<EventServiceData>
@@ -66,7 +63,7 @@ public class EventService : Plugin, IConfigurable<EventServiceData>
         this.chatActivity = chatActivity;
         updateCancelSource = new CancellationTokenSource();
 
-        await chatActivity.ChatBot.ChatAsync($"[{nameof(EventService)}]对话活动重新开始，请按要求检查记忆文件。({configuration.AppendStartPrompt})");
+        await chatActivity.ChatBot.ChatAsync($"[{nameof(EventService)}]对话活动重新开始。({configuration.AppendStartPrompt})");
 
         _ = Task.Run(Update);
         //发生对话时重新计时
@@ -77,7 +74,7 @@ public class EventService : Plugin, IConfigurable<EventServiceData>
     public override async Task DestroyAsync()
     {
         await updateCancelSource.CancelAsync();
-        await chatActivity.ChatBot.ChatAsync($"[{nameof(EventService)}]对话活动即将关闭，请按要求保存记忆文件。({configuration.AppendDestroyPrompt})");
+        await chatActivity.ChatBot.ChatAsync($"[{nameof(EventService)}]对话活动即将关闭。({configuration.AppendDestroyPrompt})");
     }
     async void Update()
     {
@@ -97,7 +94,7 @@ public class EventService : Plugin, IConfigurable<EventServiceData>
 
                 if (currentTime >= nextTime)
                 {
-                    chatActivity.ChatBot.Poke($"[{nameof(EventService)}]系统周期报点，请注意当前时间，你可以乘机整理记忆，或尝试与用户打招呼（注意选择合适的联系方式和话题）({configuration.AppendUpdatePrompt})");
+                    chatActivity.ChatBot.Poke($"[{nameof(EventService)}]系统周期报点，你可以借此自由活动。({configuration.AppendUpdatePrompt})");
 
                     currentTime = 0;
                     nextTime = NextTime();

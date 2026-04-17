@@ -171,4 +171,28 @@ public class XmlStreamParserTests
         Console.WriteLine(actual);
         Assert.That(actual, Is.EqualTo(expected));
     }
+
+    [Test]
+    public async Task TestXmlStreamParser2()
+    {
+        TaskCompletionSource tcs = new TaskCompletionSource();
+
+        XmlStreamParser parser = new XmlStreamParser();
+        parser.TagShotted = () => {
+            try
+            {
+                Assert.That(parser.TagParameters["arg1"], Is.EqualTo("a&b"));
+                Assert.That(parser.TagParameters["arg2"], Is.EqualTo("a&b"));
+                tcs.SetResult();
+            }
+            catch (Exception e)
+            {
+                tcs.SetException(e);
+            }
+
+            return Task.CompletedTask;
+        };
+        await parser.Feed(@"<send arg1=""a&amp;b"" arg2=""a&b""/>你好");
+        await tcs.Task;
+    }
 }

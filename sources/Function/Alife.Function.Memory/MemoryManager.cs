@@ -12,7 +12,7 @@ namespace Alife.Function.Memory;
 public class MemoryManager
 {
     public MemoryManager(TextCompressor compressor, TextVectorizer vectorizer, string storagePath,
-        int compressionThreshold = 256, int compressionCount = 256 / 4 * 3)
+        int compressionThreshold, int compressionCount)
     {
         this.compressionThreshold = compressionThreshold;
         this.compressionCount = compressionCount;
@@ -53,8 +53,8 @@ public class MemoryManager
                 areaLevel = currentLevel;
                 areaStart = contentIndex;
                 areaCount = 1;
-                areaCompressionThreshold = (int)MathF.Max(compressionThreshold / MathF.Pow(2, currentLevel), 3);
-                areaCompressionCount = (int)MathF.Max(compressionCount / MathF.Pow(2, currentLevel), 2);
+                areaCompressionThreshold = areaLevel == 0 ? compressionThreshold : 4;
+                areaCompressionCount = areaLevel == 0 ? compressionCount : 3;
             }
             else
             {
@@ -76,7 +76,12 @@ public class MemoryManager
                 chatHistory.RemoveRange(areaStart, areaCompressionCount);
 
                 //增加新的记录
-                compressed = $"[记忆档案(L{areaLevel})]在{startTime}到{endTime}期间\n{compressed}\n完整记录索引：{name})";
+                compressed = $"""
+                              [记忆存档(L{areaLevel})]
+                              完整内容索引：{name}
+                              发生时间：{startTime}到{endTime}
+                              事件概述：{compressed}
+                              """;
                 ChatMessageContent compressedContent = new(AuthorRole.Assistant, compressed);
                 chatHistory.Insert(areaStart, compressedContent);
                 memoryMetaDatas[compressedContent] = new MemoryMeta(areaLevel + 1, startTime, endTime);
@@ -124,9 +129,9 @@ public class MemoryManager
         int level = int.Parse(index[..index.IndexOf('-')]);
         return memoryStorage.LoadAsync(level, index);
     }
-    public async Task<List<SearchResult>> SearchMemory(string query)
+    public async Task<List<SearchResult>> SearchMemory(string query, int count, DateTime? startTime, DateTime? endTime)
     {
-        return await memoryStorage.SearchAsync(query);
+        return await memoryStorage.SearchAsync(query, count, startTime, endTime);
     }
 
     record MemoryMeta(int Level, DateTime StartTime, DateTime EndTime);

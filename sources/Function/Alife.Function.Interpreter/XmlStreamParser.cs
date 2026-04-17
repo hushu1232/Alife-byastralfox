@@ -37,6 +37,10 @@ public class XmlStreamParser
                     escapingBuffer.Append(ch);
                     await FlashEscaping();
                     break;
+                case '"' or '<':
+                    await FlashEscaping();
+                    await Feed(ch);
+                    break;
                 default:
                     escapingBuffer.Append(ch);
                     break;

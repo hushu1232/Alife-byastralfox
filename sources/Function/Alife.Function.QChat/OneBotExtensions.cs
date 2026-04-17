@@ -15,16 +15,6 @@ public static class OneBotExtensions
         await client.SendActionAsync("send_group_msg", new { group_id = groupId, message });
     }
 
-    public static async Task UploadPrivateFile(this OneBotClient client, long userId, string filePath, string name)
-    {
-        await client.SendActionAsync("upload_private_file", new UploadFileParams { UserId = userId, File = filePath, Name = name });
-    }
-
-    public static async Task UploadGroupFile(this OneBotClient client, long groupId, string filePath, string name)
-    {
-        await client.SendActionAsync("upload_group_file", new UploadFileParams { GroupId = groupId, File = filePath, Name = name });
-    }
-
     public static async Task SendPrivateImage(this OneBotClient client, long userId, string file)
     {
         await client.SendActionAsync("send_private_msg", new { user_id = userId, message = $"[CQ:image,file={file}]" });
@@ -35,25 +25,22 @@ public static class OneBotExtensions
         await client.SendActionAsync("send_group_msg", new { group_id = groupId, message = $"[CQ:image,file={file}]" });
     }
 
-    public static async Task SendGroupAt(this OneBotClient client, long groupId, long userId, string message)
+    public static async Task UploadPrivateFile(this OneBotClient client, long userId, string filePath, string name)
     {
-        await client.SendActionAsync("send_group_msg", new { group_id = groupId, message = $"[CQ:at,qq={userId}] {message}" });
+        await client.SendActionAsync("upload_private_file", new UploadFileParams { UserId = userId, File = filePath, Name = name });
+    }
+
+    public static async Task UploadGroupFile(this OneBotClient client, long groupId, string filePath, string name)
+    {
+        await client.SendActionAsync("upload_group_file", new UploadFileParams { GroupId = groupId, File = filePath, Name = name });
     }
 
     /// <summary>
-    /// 获取文件详情（包括下载 URL）。
+    /// 下载文件（用于私聊）
     /// </summary>
     public static async Task<OneBotFile?> GetFile(this OneBotClient client, string fileId)
     {
         return await client.CallActionAsync<OneBotFile>("get_file", new { file = fileId });
-    }
-
-    /// <summary>
-    /// 获取图片详情（包括下载 URL）。
-    /// </summary>
-    public static async Task<OneBotFile?> GetImage(this OneBotClient client, string fileId)
-    {
-        return await client.CallActionAsync<OneBotFile>("get_image", new { file = fileId });
     }
 
     /// <summary>

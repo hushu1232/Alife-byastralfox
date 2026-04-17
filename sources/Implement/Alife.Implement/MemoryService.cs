@@ -12,15 +12,15 @@ namespace Alife.Implement;
 
 public record MemoryConfig
 {
-    public int Threshold { get; set; } = 256;
-    public int BatchSize { get; set; } = 192;
+    public int Threshold { get; set; } = 24;
+    public int BatchSize { get; set; } = 8;
 }
 [Plugin("记忆服务", "自动管理和分层压缩对话记忆，提供长期记忆检索能力。", LaunchOrder = -100)]
 public class MemoryService : Plugin, IConfigurable<MemoryConfig>
 {
     [XmlFunction]
-    [Description("读取记忆档案的完整记录。")]
-    public async Task Recall(XmlExecutorContext ctx, [Description("记录索引（如：0-20240101120000-20240101130000）")] string index)
+    [Description("读取记忆存档的完整内容。")]
+    public async Task Recall(XmlExecutorContext ctx, [Description("内容索引（如：0-20240101120000-20240101130000）")] string index)
     {
         if (ctx.CallMode != CallMode.OneShot)
             return;
@@ -31,21 +31,36 @@ public class MemoryService : Plugin, IConfigurable<MemoryConfig>
             : $"[{nameof(MemoryService)}] 未找到记忆记录");
     }
     [XmlFunction]
-    [Description($"在归档的记忆记录中搜索内容（搜索到的结果是索引，你需要用 {nameof(Recall)} 打开）。")]
-    public async Task Search(XmlExecutorContext ctx, [XmlContent] string _)
+    [Description($"在归档的记忆记录中搜索内容（搜索到的结果是存储索引，你需要用 {nameof(Recall)} 打开）。")]
+    public async Task Search(XmlExecutorContext ctx, [XmlContent] string _,
+        [Description("可选，格式为yyyy-MM-dd")] string? startTime = null,
+        [Description("可选，格式为yyyy-MM-dd")] string? endTime = null,
+        [Description("可选，搜索条数")] int count = 5)
     {
         if (ctx.CallMode != CallMode.Closing)
             return;
 
         string query = ctx.FullContent.Trim();
-        List<SearchResult> results = await memoryManager.SearchMemory(query);
+        bool hasStartTime = DateTime.TryParse(startTime, out DateTime start);
+        bool hasEndTime = DateTime.TryParse(endTime, out DateTime end);
+        if (hasEndTime)
+            end += TimeSpan.FromDays(1); //包含当前天
+
+        List<SearchResult> results = await memoryManager.SearchMemory(query, count, hasStartTime ? start : null, hasEndTime ? end : null);
+
         StringBuilder stringBuilder = new();
         stringBuilder.AppendLine($"[{nameof(MemoryService)}] “{query}”的搜索结果如下：");
         for (int index = 0; index < results.Count; index++)
         {
             SearchResult searchResult = results[index];
             stringBuilder.AppendLine(
-                $"{index} > 匹配度：{searchResult.Score},发生时间：{searchResult.StartTime}到{searchResult.EndTime},具体内容索引：{searchResult.Name},前一百字内容：{searchResult.Text[..100]}");
+                $"""
+                 > {index + 1}
+                 匹配度：{searchResult.Score}
+                 发生时间：{searchResult.StartTime}到{searchResult.EndTime}
+                 完整内容索引：{searchResult.Name}
+                 前两百字预览：```{searchResult.Text[..200]}```
+                 """);
         }
         chatBot.Poke(stringBuilder.ToString());
     }
@@ -63,6 +78,26 @@ public class MemoryService : Plugin, IConfigurable<MemoryConfig>
     public MemoryService(InterpreterService interpreterService)
     {
         interpreterService.RegisterHandler(this);
+    }
+
+    public override Task AwakeAsync(AwakeContext context)
+    {
+        context.contextBuilder.ChatHistory.AddSystemMessage(
+            $"""
+             [{nameof(MemoryService)}] 上下文压缩功能说明
+
+             有时你会收到关于上下文压缩的提示，它会给予你一段过往时间的聊天记录或记忆存档。这些内容是即将移出上下文的内容，所以需要你用第一人称简述一下发生的事情，方便日后回忆。
+
+             注意！描述事情时，你要遵守如下规则：
+             1. 按重要程度进行信息舍取，注意简洁。
+             2. 多事件时注意按时间段区分。
+             3. 保持对一些关键数据的记录。
+             4. 不要记录系统信息，直接口语化描述。
+             5. 分清事件中的具体人物，不要用‘你’这种代词。
+             6. 不要回复无关事件描述的内容，如不要开头回复‘好的’。
+             """);
+
+        return Task.CompletedTask;
     }
 
     public override Task StartAsync(Kernel kernel, ChatActivity chatActivity)
@@ -113,22 +148,11 @@ public class MemoryService : Plugin, IConfigurable<MemoryConfig>
         {
             history.AddMessage(AuthorRole.User,
                 $"""
-                 [{nameof(MemoryService)}] 触发上下文压缩了！
-                 接下来你会收到之前的一段聊天记录或记忆档案，待会它们将会被移出上下文，所以需要你用第一人称简述一下发生的事情，方便日后回忆。
-
-                 描述注意事项：
-                 1. 多事件时注意按时间段区分。
-                 2. 按重要程度进行信息舍取。
-                 3. 保持对一些关键数据的记录。
-                 4. 不要记录系统信息，直接口语化描述。
-                 5. 分清事件中的具体人物，不要用‘你’这种代词。
-
-                 具体要总结的记录如下：
+                 [{nameof(MemoryService)}] 触发上下文压缩了，压缩内容如下：
                  ```
                  {text}
                  ```
-
-                 现在请直接开始事件描述，不要回复‘好的’之类。’。
+                 现在直接开始概述上述内容描述的事情。
                  """);
             ChatMessageContent content = await chatCompletionService.GetChatMessageContentAsync(history);
             history.RemoveAt(history.Count - 1);

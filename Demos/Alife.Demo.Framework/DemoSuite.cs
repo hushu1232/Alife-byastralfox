@@ -4,15 +4,11 @@ using Alife.Basic;
 using Alife.Framework;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 public class DemoSuite : IAsyncDisposable
 {
-    public ConfigurationSystem Configuration => chatActivity.PluginService.GetRequiredService<ConfigurationSystem>();
-    public ChatBot ChatBot => chatActivity.ChatBot;
-
-    public static async Task<DemoSuite> InitializeAsync(Character character)
+    public static async Task<DemoSuite> InitializeAsync(Character character, Action<ConfigurationSystem>? configure = null)
     {
         Console.OutputEncoding = Encoding.UTF8;
         Terminal.Log("========================================", ConsoleColor.Magenta);
@@ -22,6 +18,7 @@ public class DemoSuite : IAsyncDisposable
         Terminal.LogInfo("正在初始化系统环境 (Storage, Config)...");
         StorageSystem storage = new();
         ConfigurationSystem config = new(storage);
+        configure?.Invoke(config);
 
         Terminal.LogInfo("正在创建 ChatActivity 并注入插件...");
         ChatActivity activity = await ChatActivity.Create(character, config, null, [config, storage]);
@@ -35,6 +32,8 @@ public class DemoSuite : IAsyncDisposable
 
         return suite;
     }
+
+    public ChatBot ChatBot => chatActivity.ChatBot;
     public async Task RunAsync()
     {
         Terminal.LogInfo("文字输入已就绪，可直接在下方输入文字与 AI 交流。输入 'exit' 退出。");

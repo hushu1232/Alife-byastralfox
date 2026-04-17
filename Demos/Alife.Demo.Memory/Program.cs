@@ -28,12 +28,11 @@ public class Program
         };
 
         // 2. 初始化标准套件
-        DemoSuite suite = await DemoSuite.InitializeAsync(character);
-
-        // 3. 配置 MemoryService 演示参数
-        suite.Configuration.SetConfiguration(typeof(MemoryService), new MemoryConfig {
-            Threshold = 8,
-            BatchSize = 6
+        DemoSuite suite = await DemoSuite.InitializeAsync(character, system => {
+            system.SetConfiguration(typeof(MemoryService), new MemoryConfig {
+                Threshold = 8,
+                BatchSize = 6
+            });
         });
 
         // 4. 注入历史轴实时探测器 (探测分层记忆的变化)
