@@ -2,6 +2,7 @@ namespace Alife.Basic;
 
 public static class AlifePath
 {
+    public static string ResourcesPath { get; private set; }
     public static string ModelsFolderPath { get; private set; }
     public static string PythonFolderPath { get; private set; }
     public static string PythonExecutablePath { get; private set; }
@@ -21,8 +22,9 @@ public static class AlifePath
                 throw new Exception("无法确定项目根目录位置！");
             }
 
-            ModelsFolderPath = Path.Combine(current, "Resources", "Models").Replace(Path.DirectorySeparatorChar, '/');
-            PythonFolderPath = Path.Combine(current, "Resources", "Python").Replace(Path.DirectorySeparatorChar, '/');
+            ResourcesPath = Path.Combine(current, "Resources");
+            ModelsFolderPath = Path.Combine(ResourcesPath, "Models").Replace(Path.DirectorySeparatorChar, '/');
+            PythonFolderPath = Path.Combine(ResourcesPath, "Python").Replace(Path.DirectorySeparatorChar, '/');
             PythonExecutablePath = Path.Combine(PythonFolderPath, "Scripts", "python.exe").Replace(Path.DirectorySeparatorChar, '/');
             OutputsFolderPath = Path.Combine(current, "Outputs").Replace(Path.DirectorySeparatorChar, '/');
         }
