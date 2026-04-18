@@ -14,8 +14,10 @@ def load_model(path):
     torch.linspace = lambda *args, **kwargs: orig_linspace(*args, **{**kwargs, "device": "cpu"}) if "device" not in kwargs else orig_linspace(*args, **kwargs)
     
     try:
-        tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
-        model = AutoModel.from_pretrained(path, torch_dtype=torch.float32, trust_remote_code=True).cuda().eval()
+        tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True, fix_mistral_regex=True)
+        # 使用 bfloat16 或 float16 以节省顯存并提升性能
+        compute_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        model = AutoModel.from_pretrained(path, dtype=compute_dtype, trust_remote_code=True).cuda().eval()
         return model, tokenizer
     finally:
         torch.linspace = orig_linspace

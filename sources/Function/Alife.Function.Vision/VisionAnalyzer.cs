@@ -19,7 +19,8 @@ public class VisionAnalyzer : IDisposable
 
     public VisionAnalyzer(int timeoutSeconds = 120, Action<string>? onLog = null)
     {
-        AlifeCommand.Command("pip", "install torch torchvision Pillow transformers timm einops --index-url https://download.pytorch.org/whl/cu121 --extra-index-url https://pypi.org/simple");
+        AlifeCommand.Command("pip", "install torch torchvision --index-url https://download.pytorch.org/whl/cu121");
+        AlifeCommand.Command("pip", "install Pillow transformers timm einops");
 
         const string ModelId = "OpenGVLab/InternVL2_5-1B";
         string modelPath = ModelDownloader.EnsureModel(ModelId);

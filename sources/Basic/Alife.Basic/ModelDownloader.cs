@@ -10,8 +10,8 @@ public static class ModelDownloader
 
     public static string EnsureModel(string modelId, string? targetFile = null)
     {
-        string localPath = Path.Combine(ModelScopeCachePath, modelId.Replace('/', Path.DirectorySeparatorChar).Replace(".", "___"));
-        string checkFile = Path.Combine(localPath, targetFile ?? "config.json");
+        string localPath = Path.Combine(ModelScopeCachePath, modelId.Replace(".", "___"));
+        string checkFile = Path.Combine(localPath, targetFile ?? "README.md");
 
         if (!File.Exists(checkFile))
             AlifeCommand.Command("python", $"-c \"from modelscope import snapshot_download; snapshot_download('{modelId}')\"");

@@ -35,7 +35,7 @@ public class SpeechRecognizer : IDisposable
         config.ModelConfig.SenseVoice.Model = Path.Combine(senseVoicePath, "model_quant.onnx");
         config.ModelConfig.SenseVoice.Language = "zh";
         config.ModelConfig.SenseVoice.UseInverseTextNormalization = 1;
-        config.ModelConfig.Tokens = Path.Combine(senseVoicePath, "tokens.txt");
+        config.ModelConfig.Tokens = Path.Combine(senseVoicePath, "tokens.json");
         config.ModelConfig.NumThreads = 1;
         config.ModelConfig.Debug = 0;
         recognizer = new OfflineRecognizer(config);
