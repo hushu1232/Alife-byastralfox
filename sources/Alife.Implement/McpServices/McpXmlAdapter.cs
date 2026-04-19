@@ -40,13 +40,23 @@ public static class McpXmlAdapter
     {
         string name = tool.Name.ToLower();
         string description = tool.Description;
-        List<XmlParameter> parameters = ParseInputSchema(tool);
+        (List<XmlParameter> parameters, var typeMap) = ParseInputSchema(tool);
 
         async Task Invoker(XmlContext context)
         {
             Dictionary<string, object?> arguments = new();
             foreach ((string key, string value) in context.Parameters)
-                arguments[key] = value;
+            {
+                if (typeMap.TryGetValue(key, out (string OriginalName, string Type) typeInfo))
+                {
+                    object? convertedValue = ConvertValue(value, typeInfo.Type);
+                    arguments[typeInfo.OriginalName] = convertedValue;
+                }
+                else
+                {
+                    arguments[key] = value;
+                }
+            }
 
             CallToolResult result = await client.CallToolAsync(tool.Name, arguments);
 
@@ -69,17 +79,36 @@ public static class McpXmlAdapter
         };
     }
 
-    static List<XmlParameter> ParseInputSchema(McpClientTool tool)
+    static object? ConvertValue(string value, string jsonType)
+    {
+        switch (jsonType)
+        {
+            case "number":
+                return double.TryParse(value, out double d) ? d : value;
+            case "integer":
+                return long.TryParse(value, out long l) ? l : value;
+            case "boolean":
+                return bool.TryParse(value, out bool b) ? b : value;
+            case "object":
+            case "array":
+                try { return JsonSerializer.Deserialize<object>(value); } catch { return value; }
+            default:
+                return value;
+        }
+    }
+
+    static (List<XmlParameter> Parameters, Dictionary<string, (string OriginalName, string Type)> TypeMap) ParseInputSchema(McpClientTool tool)
     {
         List<XmlParameter> parameters = new();
+        Dictionary<string, (string, string)> typeMap = new();
 
         JsonElement schema = tool.JsonSchema;
         if (schema.TryGetProperty("properties", out JsonElement properties) == false)
-            return parameters;
+            return (parameters, typeMap);
 
         JsonElement? requiredArray = schema.TryGetProperty("required", out JsonElement req) ? req : null;
         HashSet<string> requiredSet = new();
-        if (requiredArray != null)
+        if (requiredArray is { ValueKind: JsonValueKind.Array })
         {
             foreach (JsonElement item in requiredArray.Value.EnumerateArray())
             {
@@ -92,25 +121,28 @@ public static class McpXmlAdapter
         foreach (JsonProperty prop in properties.EnumerateObject())
         {
             string paramName = prop.Name.ToLower();
-            string paramType = "String";
+            string jsonType = "string";
             string? paramDescription = null;
 
             if (prop.Value.TryGetProperty("type", out JsonElement typeElem))
-                paramType = typeElem.GetString() ?? "String";
+                jsonType = typeElem.GetString() ?? "string";
             if (prop.Value.TryGetProperty("description", out JsonElement descElem))
                 paramDescription = descElem.GetString();
 
             bool isRequired = requiredSet.Contains(prop.Name);
+            string paramTypeLabel = jsonType;
             if (isRequired == false)
-                paramType += "[可选]";
+                paramTypeLabel += "[可选]";
 
             parameters.Add(new XmlParameter {
                 Name = paramName,
                 Description = paramDescription,
-                Type = paramType,
+                Type = paramTypeLabel,
             });
+
+            typeMap[paramName] = (prop.Name, jsonType);
         }
 
-        return parameters;
+        return (parameters, typeMap);
     }
 }
