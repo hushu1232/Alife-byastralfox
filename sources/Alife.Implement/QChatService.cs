@@ -102,7 +102,7 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
         string fileName = Path.GetFileName(file);
         if (type == OneBotMessageType.Group)
         {
-             OnAIGroupActivity();
+            OnAIGroupActivity();
             await oneBotClient.UploadGroupFile(target, file, fileName);
         }
         else
@@ -258,12 +258,12 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
         else
         {
             string groupLabel = !string.IsNullOrEmpty(msg.GroupName) ? $"{msg.GroupName}({msg.GroupId})" : msg.GroupId.ToString();
-            string senderName = msg.Sender != null 
-                ? (!string.IsNullOrEmpty(msg.Sender.Card) ? msg.Sender.Card : msg.Sender.Nickname) 
+            string senderName = msg.Sender != null
+                ? (!string.IsNullOrEmpty(msg.Sender.Card) ? msg.Sender.Card : msg.Sender.Nickname)
                 : msg.UserId.ToString();
 
-            string tag = msg.MessageType == OneBotMessageType.Group 
-                ? $"[群聊 {groupLabel}, 发言人 {senderName}({msg.UserId})]" 
+            string tag = msg.MessageType == OneBotMessageType.Group
+                ? $"[群聊 {groupLabel}, 发言人 {senderName}({msg.UserId})]"
                 : $"[私聊 {senderName}({msg.UserId})]";
 
             string formatted = $"{tag} {message}";
@@ -326,6 +326,9 @@ public class QChatService : Plugin, IAsyncDisposable, IConfigurable<QChatConfig>
 
     void QGroupSwitch(bool enabled)
     {
+        if (enabled)
+            lastGroupActivityTime = DateTime.Now;
+
         isGroupEnabled = enabled;
         chatActivity.ChatBot.Poke($"[QChatService] 群消息监听已{(enabled ? "开启" : "关闭")}");
     }

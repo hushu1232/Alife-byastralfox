@@ -11,8 +11,9 @@
         Background="#01FFFFFF"
         Topmost="True"
         ShowInTaskbar="False"
-        WindowStartupLocation="CenterScreen"
-        ResizeMode="NoResize">
+        WindowStartupLocation="Manual"
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded">
     <Grid Name="RootGrid">
         <wv2:WebView2 Name="WebView" DefaultBackgroundColor="Transparent" />
     </Grid>

@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Microsoft.Web.WebView2.Core;
@@ -57,10 +56,10 @@ public partial class MainWindow
         double endX = startX + offsetX / dpi.ScaleX;
         double endY = startY + offsetY / dpi.ScaleY;
 
-        DoubleAnimation xAnim = new DoubleAnimation(startX, endX, TimeSpan.FromMilliseconds(durationMs)) { EasingFunction = new QuadraticEase() };
-        DoubleAnimation yAnim = new DoubleAnimation(startY, endY, TimeSpan.FromMilliseconds(durationMs)) { EasingFunction = new QuadraticEase() };
+        DoubleAnimation xAnim = new(startX, endX, TimeSpan.FromMilliseconds(durationMs)) { EasingFunction = new QuadraticEase() };
+        DoubleAnimation yAnim = new(startY, endY, TimeSpan.FromMilliseconds(durationMs)) { EasingFunction = new QuadraticEase() };
 
-        yAnim.Completed += (s, e) => {
+        yAnim.Completed += (_, _) => {
             BeginAnimation(LeftProperty, null);
             BeginAnimation(TopProperty, null);
             Left = endX;
@@ -69,6 +68,13 @@ public partial class MainWindow
 
         BeginAnimation(LeftProperty, xAnim);
         BeginAnimation(TopProperty, yAnim);
+    }
+
+    void Window_Loaded(object sender, RoutedEventArgs e)
+    {
+        // 同步 Create 中的特殊定位偏量
+        Left = SystemParameters.WorkArea.Width - Width + Width * -1f;
+        Top = SystemParameters.WorkArea.Height - Height + Height * 0.5f;
     }
 
     MainWindow() { }
