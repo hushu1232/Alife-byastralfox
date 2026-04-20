@@ -1,17 +1,24 @@
+@inject TutorialService TutorialService
 @inject CharacterSystem CharacterSystem
 @inject ChatActivitySystem ChatActivitySystem
 @implements IDisposable
 
-<Flex Direction="FlexDirection.Vertical" Gap="@("16")" Style="width: 100%; align-items: center;">
+<Flex Direction="FlexDirection.Vertical" Gap="@("12")" Style="width: 100%; align-items: center;">
     
-    <!-- 系统菜单入口 -->
+    <!-- 系统入口组 -->
+    <Tooltip Title="@("欢迎")" Placement="Placement.Right">
+        <NavLink href="/welcome" Class="nav-item-icon" Match="NavLinkMatch.All" ActiveClass="active">
+            <Icon Type="@IconType.Outline.Rocket" Style="font-size: 24px" />
+        </NavLink>
+    </Tooltip>
+
     <Tooltip Title="@("系统管理")" Placement="Placement.Right">
-        <NavLink href="system" Class="nav-item-icon" ActiveClass="active">
+        <NavLink href="/system" Class="nav-item-icon" Match="NavLinkMatch.All" ActiveClass="active">
             <Icon Type="@IconType.Outline.Setting" Style="font-size: 24px" />
         </NavLink>
     </Tooltip>
 
-    <Divider Style="margin: 8px 0; background: rgba(255,255,255,0.1)" />
+    <Divider Style="margin: 4px 0; background: rgba(255,255,255,0.1)" />
 
     <!-- 角色列表 -->
     @foreach (var character in CharacterSystem.GetAllCharacters())

@@ -1,12 +1,14 @@
-using Alife.Basic;
-using Alife.Framework;
 @namespace Alife.Plugins.Official.Components
-@using Newtonsoft.Json
+@inherits Alife.Framework.PluginUIBase
+@using Alife.Basic
 @using Alife.Framework
+@using Newtonsoft.Json
 @using Alife.Implement
 @inject ConfigurationSystem ConfigurationSystem
 
-<Form TModel="OpenAIChatServiceConfig" Model="@config" Layout="@FormLayout.Vertical">
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">OpenAI 对话服务配置</Title>
+    <Form TModel="OpenAIChatServiceConfig" Model="@config" Layout="@FormLayout.Vertical">
     <FormItem Label="Endpoint">
         <Input @bind-Value="@config.endpoint" placeholder="例如: https://api.deepseek.com/v1" />
     </FormItem>
@@ -22,8 +24,6 @@ using Alife.Framework;
 </Form>
 
 @code {
-    [Parameter] public Type PluginType { get; set; } = null!;
-    
     OpenAIChatServiceConfig config = new();
 
     protected override void OnInitialized()
@@ -40,3 +40,4 @@ using Alife.Framework;
         ConfigurationSystem.SetConfiguration(PluginType, config);
     }
 }
+</div>

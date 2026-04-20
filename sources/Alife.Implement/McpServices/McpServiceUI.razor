@@ -1,14 +1,21 @@
+@namespace Alife.Implement
+@inherits Alife.Framework.PluginUIBase
 @using Newtonsoft.Json
 @using Alife.Framework
 
-@namespace Alife.Implement
-
 @inject ConfigurationSystem ConfigurationSystem
 
-<Flex Justify="@(FlexJustify.SpaceBetween)" Align="@(FlexAlign.Center)" Style="margin-bottom: 24px;">
-    <Title Level="4" Style="margin: 0;">MCP 服务器管理</Title>
-    <Button Type="@ButtonType.Primary" OnClick="AddServer">添加服务器</Button>
-</Flex>
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Flex Justify="@(FlexJustify.SpaceBetween)" Align="@(FlexAlign.Center)" Style="margin-bottom: 24px;">
+        <Title Level="4" Style="margin: 0;">MCP 服务器管理</Title>
+        <Space>
+            @if (Character != null)
+            {
+                <Tag Color="@("orange")">正在为角色 [@Character.Name] 配置</Tag>
+            }
+            <Button Type="@ButtonType.Primary" OnClick="AddServer">添加服务器</Button>
+        </Space>
+    </Flex>
 
 <Table TItem="McpServerConfig" DataSource="@config.Servers" Bordered Size="@TableSize.Small">
     <PropertyColumn Property="c=>c.Name" Title="名称"></PropertyColumn>
@@ -55,7 +62,6 @@
 </Drawer>
 
 @code {
-    [Parameter] public Type PluginType { get; set; } = null!;
 
     McpPluginConfig config = new();
     McpServerConfig? editingServer;
@@ -100,3 +106,4 @@
         isEditingServer = false;
     }
 }
+</div>

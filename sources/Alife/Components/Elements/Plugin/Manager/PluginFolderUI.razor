@@ -1,17 +1,28 @@
 @inject PluginSystem PluginSystem
 
-<Tree TItem="object"
-      BlockNode Selectable="false" Draggable="true"
-      OnDrop="@OnDrop">
-    <div style="height: 4px"></div>
-    <PluginFolderNodeUI Context="Context" IsExpanded="true"></PluginFolderNodeUI>
-</Tree>
+<div style="padding: 8px 0;">
+    <Tree TItem="object"
+          BlockNode Selectable 
+          Draggable="@(!IsReadOnly)"
+          DefaultExpandedKeys="@(new[] { Context.Name })"
+          OnDrop="@OnDrop">
+        <PluginFolderNodeUI Context="Context" 
+                            IsExpanded="true" 
+                            IsReadOnly="@IsReadOnly" 
+                            PluginFilter="@PluginFilter" 
+                            OnPluginSelected="OnPluginSelected"></PluginFolderNodeUI>
+    </Tree>
+</div>
 
 @code {
     [Parameter] public StringFolder Context { get; set; } = null!;
+    [Parameter] public bool IsReadOnly { get; set; }
+    [Parameter] public Func<string, bool>? PluginFilter { get; set; }
+    [Parameter] public EventCallback<Type> OnPluginSelected { get; set; }
 
     void OnDrop(TreeEventArgs<object> obj)
     {
+        if (IsReadOnly) return;
         if (obj.TargetNode.DataItem is not StringFolder targetContainer)
             return;
 

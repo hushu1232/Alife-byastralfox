@@ -1,0 +1,115 @@
+@using System.Reflection
+@using Newtonsoft.Json
+@inject ConfigurationSystem ConfigurationSystem
+
+<div style="display: flex; flex-direction: column; gap: 24px;">
+    <!-- 顶部元数据 -->
+    <div style="background: #fafafa; padding: 24px; border-radius: 8px; border: 1px solid #f0f0f0;">
+        <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Start">
+            <div>
+                <Title Level="3" Style="margin: 0 0 4px 0;">@pluginAttr.Name</Title>
+                <Text Type="@AntDesign.TextElementType.Secondary" Copyable>@PluginType.FullName</Text>
+            </div>
+            @if (pluginAttr.LaunchOrder != 0)
+            {
+                <Tag Color="@("blue")">启动顺序: @pluginAttr.LaunchOrder</Tag>
+            }
+        </Flex>
+        
+        <Paragraph Style="margin-top: 16px; color: rgba(0,0,0,0.65);">
+            @pluginAttr.Description
+        </Paragraph>
+
+        @if (!string.IsNullOrEmpty(pluginAttr.Url))
+        {
+            <a href="@pluginAttr.Url" target="_blank"><Icon Type="link" /> 项目文档</a>
+        }
+    </div>
+
+    <!-- 详情配置 -->
+    <Tabs DefaultActiveKey="ui">
+        <TabPane Key="ui" Tab="功能配置">
+            <div style="padding-top: 16px;">
+                @if (pluginAttr.ConfigurationUIType != null && typeof(IComponent).IsAssignableFrom(pluginAttr.ConfigurationUIType))
+                {
+                    <DynamicComponent Type="pluginAttr.ConfigurationUIType" Parameters="GetParameters()" />
+                }
+                else
+                {
+                    <Alert Message="此插件使用 JSON 配置" Type="@AlertType.Info" ShowIcon="true" Style="margin-bottom: 16px;" />
+                    <TextArea AutoSize="true" MinRows="10" Style="font-family: monospace;" @bind-Value="jsonConfig" />
+                    <Button Type="@ButtonType.Primary" OnClick="SaveJsonConfig" Style="margin-top: 16px;" Block>保存配置</Button>
+                }
+            </div>
+        </TabPane>
+        @if (Character != null)
+        {
+            <TabPane Key="stats" Tab="运行状态">
+                <Empty Description="@("开发中...")" />
+            </TabPane>
+        }
+    </Tabs>
+</div>
+
+@code {
+    [Parameter] public Type PluginType { get; set; } = null!;
+    [Parameter] public Character? Character { get; set; }
+    [Parameter] public ChatActivity? ChatActivity { get; set; }
+
+    private PluginAttribute pluginAttr => PluginType.GetCustomAttribute<PluginAttribute>()!;
+    private string jsonConfig = "{}";
+
+    protected override void OnParametersSet()
+    {
+        if (pluginAttr.ConfigurationUIType == null)
+        {
+            jsonConfig = ConfigurationSystem.GetConfigurationJson(PluginType)?.ToString(Formatting.Indented) ?? "{}";
+        }
+    }
+
+    private Dictionary<string, object> GetParameters()
+    {
+        var parameters = new Dictionary<string, object>
+        {
+            { "PluginType", PluginType }
+        };
+
+        if (pluginAttr.ConfigurationUIType != null)
+        {
+            if (Character != null && HasParameter(pluginAttr.ConfigurationUIType, "Character"))
+            {
+                parameters.Add("Character", Character);
+            }
+
+            if (ChatActivity != null && HasParameter(pluginAttr.ConfigurationUIType, "ChatActivity"))
+            {
+                parameters.Add("ChatActivity", ChatActivity);
+            }
+        }
+
+        return parameters;
+    }
+
+    private bool HasParameter(Type type, string propertyName)
+    {
+        var property = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        return property != null && property.GetCustomAttribute<ParameterAttribute>() != null;
+    }
+
+    private void SaveJsonConfig()
+    {
+        try 
+        {
+            Type type = ConfigurationSystem.GetConfigurationType(PluginType)!;
+            object configuration = JsonConvert.DeserializeObject(jsonConfig, type)!;
+            ConfigurationSystem.SetConfiguration(PluginType, configuration);
+            _ = NotificationService.Success(new NotificationConfig { Message = "配置已保存喵！" });
+        }
+        catch (Exception ex)
+        {
+            _ = NotificationService.Error(new NotificationConfig { Message = "保存失败：" + ex.Message });
+        }
+    }
+
+    [Inject] private INotificationService NotificationService { get; set; } = null!;
+}

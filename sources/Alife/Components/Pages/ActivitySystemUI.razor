@@ -3,6 +3,7 @@
 @inject ChatActivitySystem ChatActivitySystem
 @inject CharacterSystem CharacterSystem
 @inject INotificationService NotificationService
+@inject ModalService ModalService
 
 <div style="height: 100%;width: 100%;overflow-y: scroll;
 display: grid;grid-template-columns: repeat(4, 1fr);gap: 10px;align-content: start">
@@ -57,9 +58,25 @@ display: grid;grid-template-columns: repeat(4, 1fr);gap: 10px;align-content: sta
         }
         catch (Exception e)
         {
-            await NotificationService.Error(new NotificationConfig() {
-                Message = e.Message,
-                Description = e.StackTrace,
+            RenderFragment content = (builder) => {
+                    builder.OpenElement(0, "div");
+                    builder.OpenElement(1, "Text");
+                    builder.AddContent(2, "错误详情：" + e.Message);
+                    builder.CloseElement();
+                    builder.OpenElement(3, "br");
+                    builder.CloseElement();
+                    builder.OpenElement(4, "pre");
+                    builder.AddAttribute(5, "style", "max-height: 300px; overflow-y: auto; margin-top: 12px; font-size: 12px; color: #ff4d4f; background: #fff1f0; padding: 12px; border: 1px solid #ffccc7; border-radius: 4px;");
+                    builder.AddContent(6, e.StackTrace);
+                    builder.CloseElement();
+                    builder.CloseElement();
+                };
+
+            _ = ModalService.Error(new ConfirmOptions {
+                Title = "角色活动创建失败喵！",
+                Content = content,
+                Width = 800,
+                Centered = true
             });
         }
 

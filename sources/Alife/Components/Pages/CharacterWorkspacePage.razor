@@ -1,12 +1,31 @@
 @page "/agent/{name}"
 @using Alife.Components.Elements.Utility
 @using Alife.Components.Elements.Plugin
+@using Alife.Components.Elements.Plugin.Manager
 @using System.Reflection
+@using Microsoft.SemanticKernel
+@using Microsoft.SemanticKernel.Connectors.OpenAI
+@using Newtonsoft.Json.Linq
+@using System.Text
+@inject TutorialService TutorialService
 @inject CharacterSystem CharacterSystem
 @inject ChatActivitySystem ChatActivitySystem
 @inject PluginSystem PluginSystem
 @inject INotificationService NotificationService
+@inject ModalService ModalService
 @implements IDisposable
+
+<Modal Visible="@isActivating" 
+       Title="@("正在激活角色环境...")" 
+       Footer="null" 
+       Closable="false" 
+       MaskClosable="false"
+       Centered="true">
+    <Flex Direction="@AntDesign.FlexDirection.Vertical" Align="@AntDesign.FlexAlign.Center" Gap="@AntDesign.FlexGap.Large">
+        <Spin Size="@AntDesign.SpinSize.Large" Tip="正在初始化环境，请稍候喵..."/>
+        <Text Type="@AntDesign.TextElementType.Secondary">涉及环境较多，请勿关闭页面或进行其他操作</Text>
+    </Flex>
+</Modal>
 
 @if (character == null)
 {
@@ -34,17 +53,21 @@ else
 
             <div style="flex: 1; padding: 12px 0;">
                 <Menu Mode="@AntDesign.MenuMode.Inline" SelectedKeys="@(new[] { activeTab })" Style="background: transparent;">
+                    <MenuItem Key="info" OnClick="@(() => activeTab = "info")">
+                        <Icon Type="@IconType.Outline.Dashboard" />
+                        <span>角色主页</span>
+                    </MenuItem>
                     <MenuItem Key="chat" OnClick="@(() => activeTab = "chat")">
                         <Icon Type="@IconType.Outline.Comment" />
-                        <span>对话</span>
+                        <span>实时聊天</span>
                     </MenuItem>
-                    <MenuItem Key="prompt" OnClick="@(() => activeTab = "prompt")">
-                        <Icon Type="@IconType.Outline.Form" />
-                        <span>设定/Prompt</span>
+                    <MenuItem Key="history" OnClick="@(() => activeTab = "history")">
+                        <Icon Type="@IconType.Outline.Book" />
+                        <span>历史存档</span>
                     </MenuItem>
                     <MenuItem Key="plugins" OnClick="@(() => activeTab = "plugins")">
-                        <Icon Type="@IconType.Outline.Block" />
-                        <span>插件配置</span>
+                        <Icon Type="@IconType.Outline.Build" />
+                        <span>插件扩展</span>
                     </MenuItem>
                 </Menu>
             </div>
@@ -65,7 +88,75 @@ else
         <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #fff">
             @if (character != null)
             {
-                @if (activeTab == "chat")
+                @if (activeTab == "info")
+                {
+                    <div style="padding: 24px; height: 100%; overflow-y: auto;">
+                        <GridRow Gutter="16">
+                            <!-- 第一列：状态与控制 -->
+                            <GridCol Span="8">
+                                <Card Title="状态控制" Style="border-radius: 12px; height: 100%;">
+                                    <Flex Direction="@AntDesign.FlexDirection.Vertical" Align="@AntDesign.FlexAlign.Center" Justify="@AntDesign.FlexJustify.Center" Style="padding: 24px 0;">
+                                        <Avatar Size="@AntDesign.AvatarSize.Large" Style="background: #1890ff; width: 80px; height: 80px; line-height: 80px; font-size: 32px; margin-bottom: 24px;">
+                                            @(character.Name.FirstOrDefault())
+                                        </Avatar>
+                                        <Title Level="2">@character.Name</Title>
+                                        
+                                        <div style="margin: 24px 0;">
+                                            @if (activity != null)
+                                            {
+                                                <Tag Color="@("green")" Style="padding: 4px 12px; font-size: 14px;">正在活跃中</Tag>
+                                                <div style="margin-top: 16px;">
+                                                    <Button Danger Type="@AntDesign.ButtonType.Primary" Block Size="@AntDesign.ButtonSize.Large" Icon="@IconType.Outline.Poweroff" OnClick="OnStop">停止运行</Button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <Tag Color="default" Style="padding: 4px 12px; font-size: 14px;">待机中</Tag>
+                                                <div style="margin-top: 16px;">
+                                                    <Button id="btn-activate-character" Type="@AntDesign.ButtonType.Primary" Block Size="@AntDesign.ButtonSize.Large" Icon="@IconType.Outline.Rocket" Loading="isStarting" OnClick="OnStart">激活角色</Button>
+                                                </div>
+                                            }
+                                        </div>
+                                    </Flex>
+                                </Card>
+                            </GridCol>
+
+                            <!-- 第二列：核心设定与插件 -->
+                            <GridCol Span="16">
+                                <Card Title="角色心脏 (设定与插件)" Style="border-radius: 12px;">
+                                    <Title Level="5">设定 (System Prompt)</Title>
+                                    <Alert Message="提示" Description="角色运行时无法修改设定喵。" Type="@AlertType.Info" ShowIcon="true" Style="@($"margin-bottom: 12px; display: {(activity != null ? "block" : "none")}")" />
+                                    <TextArea MinRows="6" MaxRows="12" @bind-Value="character.Prompt" Disabled="@(activity != null)" Style="margin-bottom: 24px; border-radius: 8px;" />
+                                    
+                                    <Title Level="5">大脑插件 (Plugins)</Title>
+                                    <Alert Message="提示" Description="角色运行时无法修改插件喵。" Type="@AlertType.Info" ShowIcon="true" Style="@($"margin-bottom: 12px; display: {(activity != null ? "block" : "none")}")" />
+                                    <div id="character-plugin-tree" style="border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px; background: @(activity != null ? "#fafafa" : "#fff")">
+                                        <StringFolderSelectorUI
+                                            Context="@(PluginSystem.GetPluginFolder())"
+                                            ItemTitleFilter="@(fullName => GetPluginName(fullName))"
+                                            IsChecking="pluginIDs"
+                                            IsCheckingChanged="OnPluginCheckingChanged">
+                                        </StringFolderSelectorUI>
+                                    </div>
+                                </Card>
+                            </GridCol>
+                        </GridRow>
+
+                        @if (activity != null)
+                        {
+                            <Divider>隐含上下文 (Implicit Context / Effective Tools)</Divider>
+                            <Card Title="角色当前具备的所有技能" Style="border-radius: 12px; margin-top: 16px;">
+                                @foreach (var sysPrompt in GetImplicitContext())
+                                {
+                                    <Paragraph Copyable style="white-space: pre-wrap; background: #fafafa; padding: 12px; border-radius: 4px; border: 1px solid #f0f0f0; margin-bottom: 12px;">
+                                        @sysPrompt
+                                    </Paragraph>
+                                }
+                            </Card>
+                        }
+                    </div>
+                }
+                else if (activeTab == "chat")
                 {
                     if (activity == null)
                     {
@@ -79,36 +170,51 @@ else
                         <ChatWindowUI ChatBot="@activity.ChatBot" />
                     }
                 }
-                else if (activeTab == "prompt")
+                else if (activeTab == "history")
                 {
                     <div style="padding: 24px; height: 100%; overflow-y: auto;">
-                        <Title Level="4">设定 (System Prompt)</Title>
-                        <TextArea MinRows="15" @bind-Value="character.Prompt" Style="margin-bottom: 24px; border-radius: 8px;" />
-                        
-                        <Title Level="4">底层插件</Title>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;">
-                            @foreach (var pluginType in PluginSystem.GetAllPlugins())
-                            {
-                                var attr = pluginType.GetCustomAttribute<PluginAttribute>();
-                                <Card Style="margin: 0" BodyStyle="padding: 12px">
-                                    <Checkbox @bind-Checked="pluginStates[pluginType]">@(attr?.Name ?? pluginType.Name)</Checkbox>
-                                </Card>
-                            }
-                        </div>
+                        <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Style="margin-bottom: 24px;">
+                            <Title Level="4" Style="margin: 0;">历史存档与记忆检查</Title>
+                            <Checkbox @bind-Checked="onlyShowKeyMemory">仅看关键记忆存档</Checkbox>
+                        </Flex>
+
+                        @if (activity != null)
+                        {
+                            <AntList DataSource="@(GetFilteredHistory())" TItem="ChatMessageContent">
+                                <ListItem>
+                                    <ChildContent>
+                                        <ListItemMeta
+                                            Description="@($"{context.Role} @{context.AuthorName}")">
+                                        </ListItemMeta>
+                                        <Paragraph Style="@($"white-space: pre-wrap; padding: 12px; border-radius: 4px; border: 1px solid #f0f0f0; {(IsKeyMemory(context) ? "background: #fffbe6; border-color: #ffe58f;" : "background: #f9f9f9;")}")">
+                                            @if (IsKeyMemory(context))
+                                            {
+                                                <Tag Color="@("gold")" Style="margin-bottom: 8px;">记忆归档</Tag>
+                                            }
+                                            @context.Content
+                                        </Paragraph>
+                                    </ChildContent>
+                                </ListItem>
+                            </AntList>
+                        }
+                        else
+                        {
+                            <Empty Description="@("启动角色后即可查看当前的对话历史记录喵！")" />
+                        }
                     </div>
                 }
                 else if (activeTab == "plugins")
                 {
-                    <div style="padding: 24px; height: 100%; overflow-y: auto;">
-                        <Title Level="4">插件扩展配置</Title>
-                        <div style="display: flex; flex-direction: column; gap: 16px;">
-                            @foreach (var pluginType in PluginSystem.GetAllPlugins().Where(p => character.Plugins.Contains(p)))
-                            {
-                                var attr = pluginType.GetCustomAttribute<PluginAttribute>();
-                                <Card Title="@(attr?.Name ?? pluginType.Name)">
-                                    <PluginConfigUI Character="character" PluginType="@pluginType" />
-                                </Card>
-                            }
+                    <div style="height: 100%; overflow: hidden; display: flex; flex-direction: column;">
+                        <div style="padding: 24px 24px 0 24px;">
+                            <Title Level="4">活跃插件配置与监控</Title>
+                        </div>
+                        <div style="flex: 1; overflow: hidden;">
+                            <PluginManagementView 
+                                Character="@character" 
+                                ChatActivity="@activity" 
+                                IsReadOnly="true" 
+                                PluginFilter="@(id => pluginIDs.Contains(id))" />
                         </div>
                     </div>
                 }
@@ -131,9 +237,11 @@ else
 
     Character? character;
     ChatActivity? activity;
-    string activeTab = "chat";
+    string activeTab = "info";
     bool isStarting = false;
-    Dictionary<Type, bool> pluginStates = new();
+    bool isActivating = false;
+    bool onlyShowKeyMemory = false;
+    HashSet<string> pluginIDs = new();
 
     protected override void OnInitialized()
     {
@@ -153,31 +261,98 @@ else
             activity = ChatActivitySystem.GetAllChatActivities().FirstOrDefault(a => a.Character.Name == Name);
             
             // 初始化插件勾选状态
-            pluginStates.Clear();
-            foreach (var plugin in PluginSystem.GetAllPlugins())
+            pluginIDs.Clear();
+            foreach (var plugin in character.Plugins)
             {
-                pluginStates[plugin] = character.Plugins.Contains(plugin);
+                pluginIDs.Add(PluginSystem.GetPluginID(plugin));
             }
         }
+    }
+
+    void OnPluginCheckingChanged(HashSet<string> ids)
+    {
+        if (activity != null) return;
+        pluginIDs = ids;
+    }
+
+    IEnumerable<ChatMessageContent> GetFilteredHistory()
+    {
+        if (activity == null) return Enumerable.Empty<ChatMessageContent>();
+        var history = activity.ChatBot.ChatHistory;
+        if (!onlyShowKeyMemory) return history;
+        
+        return history.Where(IsKeyMemory);
+    }
+
+    bool IsKeyMemory(ChatMessageContent content)
+    {
+        if (string.IsNullOrEmpty(content.Content)) return false;
+        return content.Content.Contains("MemoryService") || 
+               content.Content.Contains("触发上下文压缩") ||
+               content.Content.Contains("记忆记录");
+    }
+
+    string GetPluginName(string fullName)
+    {
+        Type? type = PluginSystem.GetPlugin(fullName);
+        if (type == null) return "[未知插件] " + fullName;
+        var attr = type.GetCustomAttribute<PluginAttribute>();
+        return attr?.Name ?? type.Name;
+    }
+
+    IEnumerable<string> GetImplicitContext()
+    {
+        if (activity == null) return Enumerable.Empty<string>();
+        return activity.KernelService.Plugins.GetFunctionsMetadata()
+            .Select(metadata => metadata.ToOpenAIFunction().ToFunctionDefinition(true))
+            .Select(chatTool => new JObject() {
+                ["kind"] = chatTool.Kind.GetHashCode(),
+                ["FunctionName"] = chatTool.FunctionName,
+                ["FunctionDescription"] = chatTool.FunctionDescription,
+                ["FunctionParameters"] = JToken.Parse(Encoding.UTF8.GetString(chatTool.FunctionParameters)),
+                ["FunctionSchemaIsStrict"] = chatTool.FunctionSchemaIsStrict
+            }).Select(jObject => jObject.ToString());
     }
 
     async Task OnStart()
     {
         if (character == null) return;
         isStarting = true;
+        isActivating = true;
         try 
         {
             await ChatActivitySystem.Play(character);
+            TutorialService.NotifyAction("ActivateCharacter");
             LoadData();
             activeTab = "chat";
         }
         catch (Exception ex)
         {
-             _ = NotificationService.Error(new NotificationConfig { Message = "启动失败喵！", Description = ex.Message });
+             RenderFragment content = (builder) => {
+                 builder.OpenElement(0, "div");
+                 builder.OpenElement(1, "Text");
+                 builder.AddContent(2, "错误详情：" + ex.Message);
+                 builder.CloseElement();
+                 builder.OpenElement(3, "br");
+                 builder.CloseElement();
+                 builder.OpenElement(4, "pre");
+                 builder.AddAttribute(5, "style", "max-height: 300px; overflow-y: auto; margin-top: 12px; font-size: 12px; color: #ff4d4f; background: #fff1f0; padding: 12px; border: 1px solid #ffccc7; border-radius: 4px;");
+                 builder.AddContent(6, ex.StackTrace);
+                 builder.CloseElement();
+                 builder.CloseElement();
+             };
+
+             _ = ModalService.Error(new ConfirmOptions {
+                 Title = "角色激活失败喵！",
+                 Content = content,
+                 Width = 800,
+                 Centered = true
+             });
         }
         finally
         {
             isStarting = false;
+            isActivating = false;
         }
     }
 
@@ -190,10 +365,13 @@ else
 
     public void Dispose()
     {
-        if (character != null)
+        if (character != null && activity == null)
         {
             // 同步插件状态
-            character.Plugins = pluginStates.Where(p => p.Value).Select(p => p.Key).ToHashSet();
+            character.Plugins = pluginIDs
+                .Select(PluginSystem.GetPlugin)
+                .Where(p => p != null)
+                .ToHashSet()!;
             CharacterSystem.SaveCharacter(character);
         }
     }

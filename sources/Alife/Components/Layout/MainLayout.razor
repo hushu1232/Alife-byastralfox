@@ -1,13 +1,12 @@
 @inherits LayoutComponentBase
 @using AntDesign
+@using Alife.Implement
+@inject TutorialService TutorialService
+@implements IDisposable
 
 <div class="app-container">
     <!-- 第一层 Sider: 全局主导航 -->
-    <div class="global-sidebar" style="width: 80px; flex-shrink: 0;">
-        <div style="margin-bottom: 32px; text-align: center;">
-            <Avatar Size="@AntDesign.AvatarSize.Large" Icon="@IconType.Outline.Rocket" Style="background: rgba(255,255,255,0.2)"/>
-        </div>
-        
+    <div class="global-sidebar" style="width: 80px; flex-shrink: 0; padding-top: 24px;">
         <NavMenu />
     </div>
 
@@ -17,4 +16,143 @@
     </div>
 </div>
 
+@if (TutorialService.IsActive && tutorialRect != null && TutorialService.CurrentStep != null)
+{
+    <!-- 聚光灯遮罩 -->
+    <div class="tutorial-overlay" style="--hole-top: @(tutorialRect.Top)px; --hole-left: @(tutorialRect.Left)px; --hole-width: @(tutorialRect.Width)px; --hole-height: @(tutorialRect.Height)px;"></div>
+
+    <!-- 引导气泡 -->
+    <div class="tutorial-popper" style="top: @(GetPopperTop())px; left: @(GetPopperLeft())px;">
+        <Card Title="@TutorialService.CurrentStep.Title" 
+              Style="width: 320px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); border: 1px solid #1890ff;">
+            <p style="font-size: 14px; line-height: 1.6; margin-bottom: 24px;">
+                @TutorialService.CurrentStep.Content
+            </p>
+            <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center">
+                <AntDesign.Text Type="@AntDesign.TextElementType.Secondary">@(TutorialService.CurrentStepIndex + 1) / @TutorialService.Steps.Count</AntDesign.Text>
+                <Space>
+                    <Button Size="@AntDesign.ButtonSize.Small" OnClick="TutorialService.Stop">跳过</Button>
+                    @if (string.IsNullOrEmpty(TutorialService.CurrentStep.RequiredActionName))
+                    {
+                        <Button Type="@AntDesign.ButtonType.Primary" Size="@AntDesign.ButtonSize.Small" OnClick="TutorialService.Next">
+                            @(TutorialService.CurrentStepIndex == TutorialService.Steps.Count - 1 ? "完成" : "下一步")
+                        </Button>
+                    }
+                    else
+                    {
+                        <AntDesign.Text Type="@AntDesign.TextElementType.Secondary" Style="font-size: 12px;">请执行操作以继续...</AntDesign.Text>
+                    }
+                </Space>
+            </Flex>
+        </Card>
+    </div>
+}
+
 <AntContainer />
+
+<style>
+    .tutorial-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 9998;
+        background: rgba(0, 0, 0, 0.5);
+        mask-image: radial-gradient(circle at calc(var(--hole-left) + var(--hole-width) / 2) calc(var(--hole-top) + var(--hole-height) / 2), transparent calc(max(var(--hole-width), var(--hole-height)) / 1.5), black calc(max(var(--hole-width), var(--hole-height)) / 1.5));
+        -webkit-mask-image: radial-gradient(circle at calc(var(--hole-left) + var(--hole-width) / 2) calc(var(--hole-top) + var(--hole-height) / 2), transparent calc(max(var(--hole-width), var(--hole-height)) / 1.5), black calc(max(var(--hole-width), var(--hole-height)) / 1.5));
+        transition: all 0.3s ease;
+        pointer-events: none;
+    }
+
+    .tutorial-popper {
+        position: fixed;
+        z-index: 9999;
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+</style>
+
+@code {
+    [Inject] IJSRuntime JS { get; set; } = null!;
+    [Inject] NavigationManager Navigation { get; set; } = null!;
+    ElementRect? tutorialRect;
+    private CancellationTokenSource? tutorialCts;
+
+    protected override void OnInitialized()
+    {
+        TutorialService.OnChanged += HandleTutorialChanged;
+    }
+
+    private void HandleTutorialChanged()
+    {
+        _ = InvokeAsync(async () => {
+            tutorialCts?.Cancel();
+            tutorialCts = new CancellationTokenSource();
+            await UpdateTutorialRect(tutorialCts.Token);
+            StateHasChanged();
+        });
+    }
+
+    async Task UpdateTutorialRect(CancellationToken ct)
+    {
+        try
+        {
+            if (TutorialService.IsActive && TutorialService.CurrentStep != null)
+            {
+                var selector = TutorialService.CurrentStep.TargetElementSelector;
+                
+                // 轮询搜索目标元素（应对页面跳转或延迟渲染）
+                int retries = 0;
+                while (retries < 25 && !ct.IsCancellationRequested) // 总计约 5 秒
+                {
+                    try {
+                        var rect = await JS.InvokeAsync<ElementRect>("getStepRect", selector);
+                        if (rect != null)
+                        {
+                            tutorialRect = rect;
+                            StateHasChanged();
+                            return;
+                        }
+                    } catch { }
+
+                    await Task.Delay(200, ct);
+                    retries++;
+                }
+                
+                tutorialRect = null;
+            }
+            else
+            {
+                tutorialRect = null;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 正常的取消操作，不视作异常
+            tutorialRect = null;
+        }
+        catch (Exception ex)
+        {
+            // 记录其他可能的异常，但不崩溃
+            Console.WriteLine($"Tutorial Rect Error: {ex.Message}");
+            tutorialRect = null;
+        }
+    }
+
+    double GetPopperTop() => (tutorialRect?.Top ?? 0) + (tutorialRect?.Height ?? 0) + 12;
+    double GetPopperLeft() => Math.Min(Math.Max(12, (tutorialRect?.Left ?? 0) + (tutorialRect?.Width ?? 0) / 2 - 160), 1200 - 332);
+
+    public class ElementRect
+    {
+        public double Top { get; set; }
+        public double Left { get; set; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+    }
+
+    public void Dispose()
+    {
+        TutorialService.OnChanged -= HandleTutorialChanged;
+        tutorialCts?.Cancel();
+    }
+}

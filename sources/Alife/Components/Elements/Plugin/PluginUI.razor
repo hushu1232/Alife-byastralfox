@@ -1,3 +1,4 @@
+@inject TutorialService TutorialService
 @inject ConfigurationSystem ConfigurationSystem;
 
 <Collapse>
@@ -7,7 +8,8 @@
                 <SpaceItem>
                     @if (ConfigurationSystem.CanConfiguration(Context))
                     {
-                        <Button Icon="setting" OnClick="@(() => isEditing = true)"
+                        <Button id="@(Name == "LLM对话能力" ? "plugin-config-llm" : null)" 
+                                Icon="setting" OnClick="@(() => { isEditing = true; TutorialService.NotifyAction("ConfigLLM"); })"
                                 OnClickStopPropagation="true"></Button>
                         <PluginEditorUI PluginType="Context" @bind-Visible="isEditing"></PluginEditorUI>
                     }

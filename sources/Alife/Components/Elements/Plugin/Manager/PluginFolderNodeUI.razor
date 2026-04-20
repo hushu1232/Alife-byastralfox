@@ -6,36 +6,41 @@
           DataItem="@((object)Context)"
           Title="@(folderName)"
           Expanded="IsExpanded"
-          Draggable="true"
+          Draggable="@(!IsReadOnly)"
           IsLeaf="@(Context.Folders.Count + Context.Strings.Count == 0)">
     <TitleTemplate>
         <Flex Justify="@(FlexJustify.SpaceBetween)" Align="@(FlexAlign.Center)">
-            <Text>@(Context.Name)</Text>
-            <Space>
-                <SpaceItem>
-                    <Button Icon="@(IconType.Outline.Plus)" OnClick="OnCreate"></Button>
-                    @if (node.GetParentNode() != null)
-                    {
-                        <Button Icon="@(IconType.Outline.Minus)" OnClick="OnDelete"></Button>
-                        <Button Icon="@(IconType.Outline.Edit)" OnClick="OnRename"></Button>
-                        <Modal Title="重命名"
-                               @bind-Visible="renameWindow"
-                               OnOk="OnConfirmRename"
-                               OnCancel="OnCancelRename">
-                            <Input @bind-Value="folderName"></Input>
-                        </Modal>
-                    }
-                </SpaceItem>
-            </Space>
+            <Text Strong>@(Context.Name)</Text>
+            @if (!IsReadOnly)
+            {
+                <Space>
+                    <SpaceItem>
+                        <Button Icon="@(IconType.Outline.Plus)" Size="@AntDesign.ButtonSize.Small" OnClick="OnCreate" Type="@AntDesign.ButtonType.Text"></Button>
+                        @if (node.GetParentNode() != null)
+                        {
+                            <Button Icon="@(IconType.Outline.Minus)" Size="@AntDesign.ButtonSize.Small" OnClick="OnDelete" Type="@AntDesign.ButtonType.Text"></Button>
+                            <Button Icon="@(IconType.Outline.Edit)" Size="@AntDesign.ButtonSize.Small" OnClick="OnRename" Type="@AntDesign.ButtonType.Text"></Button>
+                            <Modal Title="重命名"
+                                   @bind-Visible="renameWindow"
+                                   OnOk="OnConfirmRename"
+                                   OnCancel="OnCancelRename">
+                                <Input @bind-Value="folderName"></Input>
+                            </Modal>
+                        }
+                    </SpaceItem>
+                </Space>
+            }
         </Flex>
     </TitleTemplate>
     <ChildContent>
         @foreach (StringFolder folder in Context.Folders)
         {
-            <PluginFolderNodeUI Context="folder" OnDeleted="StateHasChanged"></PluginFolderNodeUI>
+            <PluginFolderNodeUI Context="folder" IsReadOnly="@IsReadOnly" PluginFilter="@PluginFilter" OnPluginSelected="OnPluginSelected" OnDeleted="StateHasChanged"></PluginFolderNodeUI>
         }
         @foreach (string pluginID in Context.Strings)
         {
+            if (PluginFilter != null && !PluginFilter(pluginID)) continue;
+
             Type? pluginType = PluginSystem.GetPlugin(pluginID);
             if (pluginType == null)
             {
@@ -43,15 +48,16 @@
                 continue;
             }
 
-            PluginAttribute attribute = pluginType.GetCustomAttribute<PluginAttribute>()!;
+            PluginAttribute pluginAttr = pluginType.GetCustomAttribute<PluginAttribute>()!;
 
-            <TreeNode Key="@(pluginID)"
-                      DataItem="@((object)pluginType)">
+            <TreeNode Key="@(pluginID)" DataItem="@((object)pluginType)">
                 <TitleTemplate>
-                    <PluginUI Name="@(attribute.Name)"
-                              Description="@(attribute.Description)"
-                              Context="@(pluginType)">
-                    </PluginUI>
+                    <div style="cursor: pointer; padding: 4px; display: flex; align-items: center; gap: 8px; width: 100%;" 
+                         @onclick="@(() => OnPluginSelected.InvokeAsync(pluginType))"
+                         @onclick:stopPropagation>
+                        <Icon Type="build" />
+                        <Text>@pluginAttr.Name</Text>
+                    </div>
                 </TitleTemplate>
             </TreeNode>
         }
@@ -62,6 +68,9 @@
 @code {
     [Parameter] public StringFolder Context { get; set; } = null!;
     [Parameter] public bool IsExpanded { get; set; }
+    [Parameter] public bool IsReadOnly { get; set; }
+    [Parameter] public Func<string, bool>? PluginFilter { get; set; }
+    [Parameter] public EventCallback<Type> OnPluginSelected { get; set; }
     [Parameter] public EventCallback OnDeleted { get; set; }
 
     TreeNode<object> node = null!;
@@ -76,11 +85,13 @@
 
     void OnCreate()
     {
+        if (IsReadOnly) return;
         Context.Folders.Add(new StringFolder("未命名分类"));
         IsExpanded = true;
     }
     void OnDelete()
     {
+        if (IsReadOnly) return;
         StringFolder parent = (StringFolder)node.GetParentNode().DataItem;
         Context.Strings.ForEach(s => parent.Strings.Add(s));
         Context.Folders.ForEach(folder => parent.Folders.Add(folder));
@@ -89,6 +100,7 @@
     }
     void OnRename()
     {
+        if (IsReadOnly) return;
         renameWindow = true;
     }
     void OnConfirmRename()

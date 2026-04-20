@@ -24,7 +24,15 @@
 </Card>
 
 <ChatHistoryUI Context="@(Context.ChatBot.ChatHistory)" @bind-Visible="isLogging"></ChatHistoryUI>
-<ChatWindowUI ChatBot="@(Context.ChatBot)" @bind-Visible="isChatting"></ChatWindowUI>
+
+<Modal Title="@($"与 {Context.Character.Name} 对话中喵")" 
+       Visible="isChatting" 
+       OnCancel="@(() => isChatting = false)"
+       Footer="null"
+       Width="800"
+       DefaultMaximized="true">
+    <ChatWindowUI ChatBot="@(Context.ChatBot)"></ChatWindowUI>
+</Modal>
 
 @code {
     [Parameter] public ChatActivity Context { get; set; } = null!;

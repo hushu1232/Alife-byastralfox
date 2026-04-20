@@ -45,18 +45,18 @@
 
     <!-- 输入区域 -->
     <div style="padding: 16px; background: #fff; border-top: 1px solid #f0f0f0;">
-        <Flex Gap="@("small")" Align="@AntDesign.FlexAlign.End">
+        <Flex Gap="@("middle")" Align="@AntDesign.FlexAlign.End">
             <TextArea @bind-Value="inputText" 
                      Placeholder="输入消息... (Enter 发送)" 
                      AutoSize="true"
                      MinRows="1"
                      MaxRows="6"
                      OnPressEnter="OnSend" 
-                     Style="flex: 1; border-radius: 8px;"></TextArea>
+                     Style="flex: 1; border-radius: 8px; border: 1px solid #d9d9d9; padding: 8px 12px;"></TextArea>
             <Button Type="@AntDesign.ButtonType.Primary" 
                     Icon="@IconType.Outline.Send"
                     OnClick="OnSend" 
-                    Style="height: 32px; border-radius: 8px;">发送</Button>
+                    Style="height: 38px; border-radius: 8px; padding: 0 20px;">发送</Button>
         </Flex>
     </div>
 </Flex>
@@ -89,6 +89,19 @@
     protected override void OnInitialized()
     {
         base.OnInitialized();
+
+        // 恢复历史记录
+        foreach (var historyMessage in ChatBot.ChatHistory)
+        {
+            if (string.IsNullOrEmpty(historyMessage.Content)) continue;
+            
+            messages.Add(new ChatMessage {
+                content = historyMessage.Content,
+                isUser = historyMessage.Role == Microsoft.SemanticKernel.ChatCompletion.AuthorRole.User,
+                isInputting = false
+            });
+        }
+
         ChatBot.ChatSent += OnChatSent;
         ChatBot.ChatReceived += OnChatReceived;
         ChatBot.ChatOver += OnChatOver;
@@ -140,11 +153,14 @@
         StateHasChanged();
     }
 
-    void OnSend()
+    async Task OnSend()
     {
         string text = inputText;
-        inputText = "";
         if (string.IsNullOrWhiteSpace(text)) return;
+        
+        inputText = "";
+        await InvokeAsync(StateHasChanged); // 强制强制清空界面上的输入框内容喵
+        
         ChatBot.Chat(text);
     }
 }

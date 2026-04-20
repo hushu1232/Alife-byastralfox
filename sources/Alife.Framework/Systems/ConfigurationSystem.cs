@@ -28,7 +28,8 @@ public class ConfigurationSystem
         if (configurationType == null)
             return null;
 
-        JObject? configuration = storageSystem.GetObject<JObject>(Path.Combine(root, "Configuration", target.FullName!));
+        JObject? configuration = storageSystem.GetObject<JObject>(Path.Combine(root, "Configuration", target.FullName!)) ??
+                                 storageSystem.GetObject<JObject>(Path.Combine("Configuration", target.FullName!));
         if (configuration != null) return configuration.ToObject(configurationType);
         return Activator.CreateInstance(configurationType, null);
     }
