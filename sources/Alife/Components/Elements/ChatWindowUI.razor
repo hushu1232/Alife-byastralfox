@@ -73,7 +73,7 @@
 </script>
 
 @code {
-    [Parameter] public ChatBot ChatBot { get; set; } = null!;
+    [Parameter] public ChatActivity Activity { get; set; } = null!;
 
     public class ChatMessage
     {
@@ -82,24 +82,29 @@
         public bool isInputting;
     }
 
-    List<ChatMessage> messages = new();
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Character, List<ChatMessage>> _botMessages = new();
+
+    List<ChatMessage> messages = default!;
     string inputText = "";
     ChatMessage? aiMessage;
 
     protected override void OnInitialized()
     {
         base.OnInitialized();
+        
+        messages = _botMessages.GetOrCreateValue(Activity.Character);
+        aiMessage = messages.LastOrDefault(m => !m.isUser && m.isInputting);
 
-        ChatBot.ChatSent += OnChatSent;
-        ChatBot.ChatReceived += OnChatReceived;
-        ChatBot.ChatOver += OnChatOver;
+        Activity.ChatBot.ChatSent += OnChatSent;
+        Activity.ChatBot.ChatReceived += OnChatReceived;
+        Activity.ChatBot.ChatOver += OnChatOver;
     }
 
     public void Dispose()
     {
-        ChatBot.ChatSent -= OnChatSent;
-        ChatBot.ChatReceived -= OnChatReceived;
-        ChatBot.ChatOver -= OnChatOver;
+        Activity.ChatBot.ChatSent -= OnChatSent;
+        Activity.ChatBot.ChatReceived -= OnChatReceived;
+        Activity.ChatBot.ChatOver -= OnChatOver;
     }
 
     void OnChatSent(string obj)
@@ -149,6 +154,6 @@
         inputText = "";
         await InvokeAsync(StateHasChanged); // 强制强制清空界面上的输入框内容喵
         
-        ChatBot.Chat(text);
+        Activity.ChatBot.Chat(text);
     }
 }

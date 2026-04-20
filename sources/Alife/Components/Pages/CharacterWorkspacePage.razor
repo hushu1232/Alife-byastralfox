@@ -161,7 +161,7 @@ else
                     </div>
                 </div>
                 <div style="display: @(activeTab == "chat" ? "block" : "none"); height: 100%;">
-                    if (activity == null)
+                    @if (activity == null)
                     {
                         <Flex Direction="@AntDesign.FlexDirection.Vertical" Align="@AntDesign.FlexAlign.Center" Justify="@AntDesign.FlexJustify.Center" Style="height: 100%">
                             <Empty Description="@("角色尚未激活，请先启动角色喵！")" />
@@ -170,7 +170,7 @@ else
                     }
                     else
                     {
-                        <ChatWindowUI ChatBot="@activity.ChatBot" />
+                        <ChatWindowUI Activity="@activity" />
                     }
                 </div>
                 <div style="display: @(activeTab == "history" ? "block" : "none"); height: 100%;">
@@ -179,16 +179,12 @@ else
                             <Title Level="4" Style="margin: 0;">完整历史与记忆检查</Title>
                             <Space>
                                 <SpaceItem>
-                                    <RadioGroup @bind-Value="historyRoleFilter" Size="@AntDesign.RadioButtonSize.Small">
+                                    <RadioGroup @bind-Value="historyRoleFilter">
                                         <Radio RadioButton Value="@("All")">全部</Radio>
-                                        <Radio RadioButton Value="@("user")">User</Radio>
-                                        <Radio RadioButton Value="@("assistant")">Assistant</Radio>
-                                        <Radio RadioButton Value="@("system")">System</Radio>
-                                        <Radio RadioButton Value="@("tool")">Tool</Radio>
+                                        <Radio RadioButton Value="@("Chat")">对话</Radio>
+                                        <Radio RadioButton Value="@("System")">提示</Radio>
+                                        <Radio RadioButton Value="@("Memory")">记忆</Radio>
                                     </RadioGroup>
-                                </SpaceItem>
-                                <SpaceItem>
-                                    <Checkbox @bind-Checked="onlyShowKeyMemory">仅看关键记忆存档</Checkbox>
                                 </SpaceItem>
                             </Space>
                         </Flex>
@@ -256,7 +252,6 @@ else
     string historyRoleFilter = "All";
     bool isStarting = false;
     bool isActivating = false;
-    bool onlyShowKeyMemory = false;
     HashSet<string> pluginIDs = new();
 
     protected override void OnInitialized()
@@ -295,13 +290,14 @@ else
     {
         if (activity == null) return Enumerable.Empty<ChatMessageContent>();
         var history = activity.ChatBot.ChatHistory.AsEnumerable();
-        if (historyRoleFilter != "All")
-        {
-            history = history.Where(c => c.Role.ToString().Equals(historyRoleFilter, StringComparison.OrdinalIgnoreCase));
-        }
-        if (!onlyShowKeyMemory) return history;
         
-        return history.Where(IsKeyMemory);
+        return historyRoleFilter switch
+        {
+            "Chat" => history.Where(c => c.Role.ToString().Equals("user", StringComparison.OrdinalIgnoreCase) || c.Role.ToString().Equals("assistant", StringComparison.OrdinalIgnoreCase)),
+            "System" => history.Where(c => c.Role.ToString().Equals("system", StringComparison.OrdinalIgnoreCase)),
+            "Memory" => history.Where(IsKeyMemory),
+            _ => history
+        };
     }
 
     string GetRoleColor(string role)
