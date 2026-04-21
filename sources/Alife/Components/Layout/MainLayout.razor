@@ -10,7 +10,7 @@
 <div class="app-container">
     <!-- 第一层 Sider: 全局主导航 -->
     <div class="global-sidebar" style="width: 80px; flex-shrink: 0; padding-top: 24px;">
-        <NavMenu />
+        <NavMenu/>
     </div>
 
     <!-- 主内容区 -->
@@ -19,19 +19,20 @@
     </div>
 </div>
 
-<Modal Visible="@isAutoStarting" 
-       Title="@("正在唤醒自动启动的角色...")" 
-       Footer="null" 
-       Closable="false" 
+<Modal Visible="@isAutoStarting"
+       Title="@("正在唤醒自动启动的角色...")"
+       Footer="null"
+       Closable="false"
        MaskClosable="false"
        Centered="true">
-    <Flex Direction="@AntDesign.FlexDirection.Vertical" Align="@AntDesign.FlexAlign.Center" Gap="@AntDesign.FlexGap.Large">
+    <Flex Direction="@AntDesign.FlexDirection.Vertical" Align="@AntDesign.FlexAlign.Center"
+          Gap="@AntDesign.FlexGap.Large">
         <Spin Size="@AntDesign.SpinSize.Large" Tip="正在初始化环境，请稍候喵..."/>
         <Text Type="@AntDesign.TextElementType.Secondary">涉及模型加载与记忆恢复，请勿关闭应用</Text>
     </Flex>
 </Modal>
 
-<AntContainer />
+<AntContainer/>
 
 @code {
     static bool hasAutoStarted = false;
@@ -42,18 +43,17 @@
         if (hasAutoStarted) return;
         hasAutoStarted = true;
 
+        //角色自启动
         var startingCharacters = CharacterSystem.GetAllCharacters().Where(c => c.AutoActivate && !ChatActivitySystem.IsActivated(c)).ToList();
         if (startingCharacters.Any())
         {
             isAutoStarting = true;
             StateHasChanged();
 
-            foreach (var character in startingCharacters)
-            {
-                await ChatActivitySystem.Play(character);
-            }
 
-            ActivityNotifyService.NotifyChanged();
+            foreach (Character character in startingCharacters)
+                await ChatActivitySystem.Play(character);
+
             isAutoStarting = false;
             StateHasChanged();
         }

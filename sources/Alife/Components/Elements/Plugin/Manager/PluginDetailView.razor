@@ -7,30 +7,30 @@
     <div style="background: #fafafa; padding: 24px; border-radius: 8px; border: 1px solid #f0f0f0;">
         <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Start">
             <div>
-                <Title Level="3" Style="margin: 0 0 4px 0;">@pluginAttr.Name</Title>
+                <Title Level="3" Style="margin: 0 0 4px 0;">@PluginAttr.Name</Title>
                 <Text Type="@AntDesign.TextElementType.Secondary" Copyable>@PluginType.FullName</Text>
             </div>
-            @if (pluginAttr.LaunchOrder != 0)
+            @if (PluginAttr.LaunchOrder != 0)
             {
-                <Tag Color="@("blue")">启动顺序: @pluginAttr.LaunchOrder</Tag>
+                <Tag Color="@("blue")">启动顺序: @PluginAttr.LaunchOrder</Tag>
             }
         </Flex>
         
         <Paragraph Style="margin-top: 16px; color: rgba(0,0,0,0.65);">
-            @pluginAttr.Description
+            @PluginAttr.Description
         </Paragraph>
 
-        @if (!string.IsNullOrEmpty(pluginAttr.Url))
+        @if (!string.IsNullOrEmpty(PluginAttr.Url))
         {
-            <a href="@pluginAttr.Url" target="_blank"><Icon Type="link" /> 项目文档</a>
+            <a href="@PluginAttr.Url" target="_blank"><Icon Type="link" /> 项目文档</a>
         }
     </div>
 
     <!-- 详情配置 -->
     <div style="padding-top: 16px;">
-        @if (pluginAttr.ConfigurationUIType != null && typeof(IComponent).IsAssignableFrom(pluginAttr.ConfigurationUIType))
+        @if (PluginAttr.ConfigurationUIType != null && typeof(IComponent).IsAssignableFrom(PluginAttr.ConfigurationUIType))
         {
-            <DynamicComponent Type="pluginAttr.ConfigurationUIType" Parameters="GetParameters()" />
+            <DynamicComponent Type="PluginAttr.ConfigurationUIType" Parameters="GetParameters()" />
         }
         else
         {
@@ -46,12 +46,12 @@
     [Parameter] public Character? Character { get; set; }
     [Parameter] public ChatActivity? ChatActivity { get; set; }
 
-    private PluginAttribute pluginAttr => PluginType.GetCustomAttribute<PluginAttribute>()!;
+    private PluginAttribute PluginAttr => PluginType.GetCustomAttribute<PluginAttribute>()!;
     private string jsonConfig = "{}";
 
     protected override void OnParametersSet()
     {
-        if (pluginAttr.ConfigurationUIType == null)
+        if (PluginAttr.ConfigurationUIType == null)
         {
             jsonConfig = ConfigurationSystem.GetConfigurationJson(PluginType)?.ToString(Formatting.Indented) ?? "{}";
         }
@@ -64,14 +64,14 @@
             { "PluginType", PluginType }
         };
 
-        if (pluginAttr.ConfigurationUIType != null)
+        if (PluginAttr.ConfigurationUIType != null)
         {
-            if (Character != null && HasParameter(pluginAttr.ConfigurationUIType, "Character"))
+            if (Character != null && HasParameter(PluginAttr.ConfigurationUIType, "Character"))
             {
                 parameters.Add("Character", Character);
             }
 
-            if (ChatActivity != null && HasParameter(pluginAttr.ConfigurationUIType, "ChatActivity"))
+            if (ChatActivity != null && HasParameter(PluginAttr.ConfigurationUIType, "ChatActivity"))
             {
                 parameters.Add("ChatActivity", ChatActivity);
             }

@@ -13,49 +13,43 @@ public class ChatMessage
 /// UI层的聊天消息状态管理。在角色激活后立即挂接事件，确保后台对话也能被记录。
 /// 采用名称索引以确保在活动重启（Character对象被Clone）时记录依然能够持久。
 /// </summary>
-public static class ChatUIState
+public class ChatMessageService
 {
-    static readonly ConcurrentDictionary<string, List<ChatMessage>> BotMessages = new();
-    static readonly HashSet<string> HookedActivityNames = new();
+    public event Action<string>? OnUIMessageChanged;
+    public event Action<string>? OnUIMessageSent;
 
-    public static event Action<string>? OnUIMessageChanged;
-    public static event Action<string>? OnUIMessageSent;
-
-    /// <summary>
-    /// 全局初始化：绑定活动系统的创建事件，确保所有活动一诞生就被UI录制器“粘”上。
-    /// </summary>
-    public static void Initialize(ChatActivitySystem system)
-    {
-        system.Created += OnActivityCreated;
-        system.Destroyed += OnActivityDestroyed;
-    }
-    public static List<ChatMessage> GetMessagesByName(string name)
+    public List<ChatMessage> GetMessagesByName(string name)
     {
         return BotMessages.GetOrAdd(name, _ => new List<ChatMessage>());
     }
 
-    public static void ClearMessages(ChatActivity activity)
+    public void ClearMessages(ChatActivity activity)
     {
-        if (BotMessages.TryGetValue(activity.Character.Name, out var list))
+        if (BotMessages.TryGetValue(activity.Character.Name, out List<ChatMessage>? list))
         {
             list.Clear();
         }
     }
 
+    public ChatMessageService(ChatActivitySystem system)
+    {
+        system.Created += OnActivityCreated;
+    }
+
+    static readonly ConcurrentDictionary<string, List<ChatMessage>> BotMessages = new();
+    static readonly HashSet<string> HookedActivityNames = new();
 
     /// <summary>
     /// 确保指定Activity的ChatBot事件已挂接到UI消息列表。
     /// 幂等操作，重复调用安全。
     /// </summary>
-    static void OnActivityCreated(ChatActivity activity)
+    void OnActivityCreated(ChatActivity activity)
     {
         string name = activity.Character.Name;
-        var list = BotMessages.GetOrAdd(name, _ => new List<ChatMessage>());
+        List<ChatMessage> list = BotMessages.GetOrAdd(name, _ => new List<ChatMessage>());
 
-        if (HookedActivityNames.Contains(name))
+        if (!HookedActivityNames.Add(name))
             return;
-
-        HookedActivityNames.Add(name);
 
         activity.ChatBot.ChatSent += (obj) => {
             list.Add(new ChatMessage { Content = obj, IsUser = true });
@@ -63,29 +57,21 @@ public static class ChatUIState
             OnUIMessageSent?.Invoke(name);
             OnUIMessageChanged?.Invoke(name);
         };
-
         activity.ChatBot.ChatReceived += (obj) => {
-            var aiMessage = list.LastOrDefault(m => !m.IsUser && m.IsInputting);
+            ChatMessage? aiMessage = list.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
                 aiMessage.Content += obj;
                 OnUIMessageChanged?.Invoke(name);
             }
         };
-
         activity.ChatBot.ChatOver += () => {
-            var aiMessage = list.LastOrDefault(m => !m.IsUser && m.IsInputting);
+            ChatMessage? aiMessage = list.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
                 aiMessage.IsInputting = false;
                 OnUIMessageChanged?.Invoke(name);
             }
         };
-        
-        Actvi
-    }
-    static void OnActivityDestroyed(ChatActivity activity)
-    {
-        
     }
 }

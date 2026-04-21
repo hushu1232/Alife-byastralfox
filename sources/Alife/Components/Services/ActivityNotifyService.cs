@@ -1,3 +1,5 @@
+using Alife.Framework;
+
 namespace Alife.Components.Services;
 
 /// <summary>
@@ -8,11 +10,9 @@ public class ActivityNotifyService
 {
     public event Action? OnChanged;
 
-    /// <summary>
-    /// 通知UI状态已改变，需要刷新（如角标更新）。
-    /// </summary>
-    public void NotifyChanged()
+    public void Initialize(ChatActivitySystem system)
     {
-        OnChanged?.Invoke();
+        system.Created += _ => OnChanged?.Invoke();
+        system.Destroyed += _ => OnChanged?.Invoke();
     }
 }

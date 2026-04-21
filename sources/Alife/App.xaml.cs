@@ -1,15 +1,11 @@
-using System.IO;
 using System.Reflection;
-using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Alife.Framework;
-using Alife.Implement;
 using Alife.Components.Services;
-using Microsoft.Extensions.Logging;
 
 namespace Alife;
 
-public partial class App : System.Windows.Application
+public partial class App
 {
     public static IServiceProvider ServiceProvider { get; private set; } = null!;
 
@@ -17,18 +13,15 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        // 官方插件加载 (模仿 Program.cs)
-        try { Assembly.Load("Alife.Implement"); } catch { }
+        // Alife官方插件
+        Assembly.Load("Alife.Implement");
 
-        var services = new ServiceCollection();
-
+        ServiceCollection services = new();
         // 基础 Blazor Desktop 支持
         services.AddWpfBlazorWebView();
         services.AddBlazorWebViewDeveloperTools(); // 允许 F12
-
         // UI 库
         services.AddAntDesign();
-
         // Alife 核心业务系统
         services.AddSingleton<StorageSystem>();
         services.AddSingleton<ConfigurationSystem>();
@@ -36,16 +29,12 @@ public partial class App : System.Windows.Application
         services.AddSingleton<CharacterSystem>();
         services.AddSingleton<ChatActivitySystem>();
         services.AddSingleton<ActivityNotifyService>();
-        
+        services.AddSingleton<ChatMessageService>();
         // 添加主窗口本身到容器，以便以后注入
         services.AddSingleton<MainWindow>();
 
         ServiceProvider = services.BuildServiceProvider();
-        
-        // 初始化聊天状态录制服务
-        ChatUIState.Initialize(ServiceProvider.GetRequiredService<ChatActivitySystem>());
-        
-        var mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
-        mainWindow.Show();
+        ServiceProvider.GetRequiredService<ChatMessageService>();
+        ServiceProvider.GetRequiredService<MainWindow>().Show();
     }
 }
