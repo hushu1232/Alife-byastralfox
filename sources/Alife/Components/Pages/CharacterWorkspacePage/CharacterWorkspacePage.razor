@@ -107,7 +107,7 @@ else
                         <PluginManagementView
                             Character="@character"
                             ChatActivity="@characterHomeUI?.Activity"
-                            IsReadOnly="@(characterHomeUI?.Activity != null)"
+                            IsReadOnly="true"
                             PluginFilter="@(id => characterHomeUI != null && characterHomeUI.PluginIDs.Contains(id))"/>
                     </div>
                 </div>
