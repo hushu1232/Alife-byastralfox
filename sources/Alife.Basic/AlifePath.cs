@@ -40,10 +40,8 @@ public static class AlifePath
 
         {
             string path = Path.Combine(Path.GetTempPath(), "Alife");
-            string? dir = Path.GetDirectoryName(path);
-            if (dir != null && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
             TempFolderPath = path.Replace(Path.DirectorySeparatorChar, '/');
+            Directory.CreateDirectory(TempFolderPath);
         }
     }
 }

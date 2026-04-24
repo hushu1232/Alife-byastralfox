@@ -12,7 +12,7 @@ public static class AlifeCommand
     {
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
-        
+
         if (HasPython() == false)
         {
             InstallPython();
@@ -36,7 +36,15 @@ public static class AlifeCommand
 
     static AlifeCommand()
     {
-        EnsureInitialized();
+        try
+        {
+            EnsureInitialized();
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
     static bool HasPython()
     {
