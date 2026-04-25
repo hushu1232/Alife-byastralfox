@@ -46,8 +46,8 @@ public class ChatService : Plugin, IConfigurable<ChatServiceConfig>, IProvideExe
             PooledConnectionLifetime = TimeSpan.FromMinutes(5)
         };
 
-        // 使用自定义 Handler 拦截并破解 DeepSeek 的思考过程字段
-        DeepSeekReasoningHandler reasoningHandler = new(handler);
+        // 使用通用处理器拦截并破解所有 OpenAI 兼容协议的思考过程字段
+        OpenAICompatibleHandler reasoningHandler = new(handler);
 
         HttpClient httpClient = new(reasoningHandler) {
             DefaultRequestVersion = HttpVersion.Version11,

@@ -12,7 +12,7 @@ public class EventServiceData
     public string? DestroyPrompt { get; set; }
     public string? UpdatePrompt { get; set; } = "不要告诉主人有自动报点，非常自然的做你想做的事即可。\n比如可以借此自由活动，如看新闻学知识、然后发起话题或继续刚刚的话题、偷窥主人屏幕、去Q群找人聊天玩耍、等等各种你能想象到的事。";
 
-    public string MessagePrompt { get; set; } = "采用【思维模式要求】思考，回复时保持精简，不要插入旁白，注意选择合适的回复工具。";
+    public string MessagePrompt { get; set; } = "回复保持精简，不要插入旁白，注意选择合适的回复工具。";
 
     public int UpdateInterval { get; set; } = 90;
     public int UpdateRandomOffset { get; set; } = 30;
@@ -112,7 +112,7 @@ public class EventService : InteractivePlugin<EventService>, IConfigurable<Event
     }
     string OnChatSend(string message)
     {
-        if (message.Contains("系统报点：由Timer触发的自动报点") == false)
+        if (message.Contains($"[{nameof(EventService)}]") == false)
         {
             continuousTimerCount = 0;
             SetTimer(null); //重置自动报点

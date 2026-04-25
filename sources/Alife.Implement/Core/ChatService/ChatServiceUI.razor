@@ -1,6 +1,9 @@
 @inherits Alife.Framework.PluginUIBase
 @using Alife.Framework
+@using Newtonsoft.Json.Linq
+@using AntDesign
 @inject ConfigurationSystem ConfigurationSystem
+@inject IMessageService MessageService
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Title Level="4" Style="margin-bottom: 24px;">对话服务配置（OpenAI标准）</Title>
@@ -8,13 +11,20 @@
         <FormItem Label="Endpoint">
             <Input @bind-Value="@config.endpoint" placeholder="例如: https://api.deepseek.com/v1"/>
         </FormItem>
-        <FormItem Label="Model ID">
-            <Input @bind-Value="@config.modelId" placeholder="例如: deepseek-chat"/>
-        </FormItem>
         <FormItem Label="API Key">
             <InputPassword @bind-Value="@config.apiKey"/>
         </FormItem>
-        <Divider>思考模式 (DeepSeek / OpenAI o1 兼容)</Divider>
+        <FormItem Label="Model ID">
+            <div style="display: flex; gap: 8px;">
+                <Input @bind-Value="@config.modelId" Placeholder="例如: deepseek-chat" Style="flex: 1;"/>
+                <Button Type="@ButtonType.Default"
+                        Icon="@IconType.Outline.Search"
+                        Loading="@isLoadingModels"
+                        OnClick="@FetchModels">探测模型
+                </Button>
+            </div>
+        </FormItem>
+        <Divider>思考模式</Divider>
         <FormItem Label="启用思考模式 (Thinking Mode)">
             <Switch @bind-Value="@config.thinkingEnabled"/>
         </FormItem>
@@ -35,8 +45,28 @@
         </FormItem>
     </Form>
 
+    <Modal Title="探测到的模型列表"
+           Visible="@isModelModalVisible"
+           OnCancel="@(() => isModelModalVisible = false)"
+           Footer="null"
+           Width="600">
+        <div style="max-height: 400px; overflow-y: auto;">
+            <AntList DataSource="@availableModels" TItem="string">
+                <ListItem OnClick="@(() => SelectModel(context))" Style="cursor: pointer;">
+                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Style="width: 100%;">
+                        <Text>@context</Text>
+                        <Button Type="@ButtonType.Link">选择</Button>
+                    </Flex>
+                </ListItem>
+            </AntList>
+        </div>
+    </Modal>
+
     @code {
         ChatServiceConfig config = new();
+        List<string> availableModels = new();
+        bool isLoadingModels = false;
+        bool isModelModalVisible = false;
 
         protected override void OnInitialized()
         {
@@ -47,9 +77,75 @@
             }
         }
 
+        async Task FetchModels()
+        {
+            if (string.IsNullOrWhiteSpace(config.endpoint) || string.IsNullOrWhiteSpace(config.apiKey))
+            {
+                MessageService.Warning("请先填写 Endpoint 和 API Key 喵！");
+                return;
+            }
+
+            isLoadingModels = true;
+            try
+            {
+                using HttpClient client = new();
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", config.apiKey);
+
+                string url = config.endpoint.TrimEnd('/');
+                if (!url.EndsWith("/models"))
+                {
+                    url += "/models";
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var obj = JObject.Parse(json);
+                    var models = obj["data"]?
+                        .Select(m => m["id"]?.ToString())
+                        .Where(id => !string.IsNullOrEmpty(id))
+                        .OrderBy(id => id)
+                        .ToList();
+
+                    if (models != null && models.Any())
+                    {
+                        availableModels = models!;
+                        isModelModalVisible = true;
+                        MessageService.Success($"成功探测到 {availableModels.Count} 个模型！");
+                    }
+                    else
+                    {
+                        MessageService.Warning("未发现可用模型，请检查 Endpoint 是否正确。");
+                    }
+                }
+                else
+                {
+                    string errorMsg = await response.Content.ReadAsStringAsync();
+                    MessageService.Error($"拉取失败 ({response.StatusCode}): {errorMsg}");
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageService.Error($"连接出错: {ex.Message}");
+            }
+            finally
+            {
+                isLoadingModels = false;
+                StateHasChanged();
+            }
+        }
+
+        void SelectModel(string modelId)
+        {
+            config.modelId = modelId;
+            isModelModalVisible = false;
+        }
+
         void Save()
         {
             ConfigurationSystem.SetConfiguration(PluginType, config);
+            MessageService.Success("配置保存成功喵！");
         }
     }
 </div>

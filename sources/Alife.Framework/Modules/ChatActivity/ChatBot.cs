@@ -114,7 +114,7 @@ public class ChatBot : IAsyncDisposable
                         if (usage is ChatTokenUsage chatTokenUsage)
                         {
                             Console.WriteLine(
-                                $"[Token消耗] total:{chatTokenUsage.TotalTokenCount} input:{chatTokenUsage.InputTokenCount}({chatTokenUsage.InputTokenDetails.CachedTokenCount}) output:{chatTokenUsage.OutputTokenCount} ");
+                                $"[Token消耗] total:{chatTokenUsage.TotalTokenCount} input:{chatTokenUsage.InputTokenCount}({chatTokenUsage.InputTokenDetails?.CachedTokenCount}) output:{chatTokenUsage.OutputTokenCount} ");
                             TokenUsed?.Invoke(chatTokenUsage);
                         }
                     }
@@ -173,7 +173,7 @@ public class ChatBot : IAsyncDisposable
     {
         lastContentIndex = ChatHistory.Count;
     }
-    public bool IsSystemMessage(string message)
+    public bool IsPokeMessage(string message)
     {
         return message.Contains("[系统缓存消息]");
     }

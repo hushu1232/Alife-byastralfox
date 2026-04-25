@@ -73,6 +73,7 @@ public partial class PythonService : InteractivePlugin<PythonService>
             return;
 
         string filePath = $"{AlifePath.TempFolderPath}/pythonScript.py";
+
         await File.WriteAllTextAsync(filePath, context.FullContent.Trim());
 
         string result = await Python(filePath, timeout);

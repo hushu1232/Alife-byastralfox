@@ -65,7 +65,7 @@ public class ChatMessageService
             messages.Add(new ChatMessage { Content = message, IsUser = true });
             messages.Add(new ChatMessage { IsUser = false, IsInputting = true });
             OnMessageChanged?.Invoke(name);
-            if (activity.ChatBot.IsSystemMessage(message) == false)
+            if (activity.ChatBot.IsPokeMessage(message) == false)
                 OnUserMessageSent?.Invoke(name);
         };
         activity.ChatBot.ChatReceived += (obj) => {

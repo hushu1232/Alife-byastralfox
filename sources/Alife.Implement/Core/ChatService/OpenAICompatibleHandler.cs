@@ -5,13 +5,21 @@ using Newtonsoft.Json.Linq;
 namespace Alife.Implement;
 
 /// <summary>
-/// 一个特殊的 HttpClient 处理器，用于拦截 DeepSeek 的原始流，
-/// 将其中的 reasoning_content 字段伪装成 content 字段，
-/// 从而让旧版本的 Semantic Kernel / OpenAI SDK 能够读取到思考过程。
+/// 通用的 OpenAI 兼容协议处理器，用于拦截各种厂商的原始流，
+/// 自动识别并捕获思维链内容（reasoning_content, thought, thinking 等），
+/// 将其统一封装为带前缀的 content 字段，确保 UI 层能够显示思考过程。
 /// </summary>
-public class DeepSeekReasoningHandler : DelegatingHandler
+public class OpenAICompatibleHandler : DelegatingHandler
 {
-    public DeepSeekReasoningHandler(HttpMessageHandler innerHandler) : base(innerHandler) { }
+    private static readonly string[] ReasoningKeys = { 
+        "reasoning_content", 
+        "thought", 
+        "thinking", 
+        "thought_content",
+        "reasoning"
+    };
+
+    public OpenAICompatibleHandler(HttpMessageHandler innerHandler) : base(innerHandler) { }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -22,20 +30,20 @@ public class DeepSeekReasoningHandler : DelegatingHandler
             response.Content.Headers.ContentType?.MediaType == "text/event-stream")
         {
             Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            response.Content = new StreamContent(new ReasoningStreamWrapper(stream));
+            response.Content = new StreamContent(new CompatibleStreamWrapper(stream));
             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream");
         }
 
         return response;
     }
 
-    class ReasoningStreamWrapper : Stream
+    class CompatibleStreamWrapper : Stream
     {
         readonly Stream innerStream;
         readonly StreamReader reader;
         readonly MemoryStream outputBuffer = new();
 
-        public ReasoningStreamWrapper(Stream innerStream)
+        public CompatibleStreamWrapper(Stream innerStream)
         {
             this.innerStream = innerStream;
             this.reader = new StreamReader(innerStream, Encoding.UTF8);
@@ -75,12 +83,21 @@ public class DeepSeekReasoningHandler : DelegatingHandler
                 JToken? delta = obj["choices"]?[0]?["delta"];
                 if (delta is JObject deltaObj)
                 {
-                    JToken? reasoning = deltaObj["reasoning_content"];
-                    if (reasoning != null && reasoning.Type != JTokenType.Null)
+                    // 扫描所有可能的思维链 Key
+                    foreach (var key in ReasoningKeys)
                     {
-                        // 发现思考内容，将其转移到 content 并加上前缀
-                        deltaObj["content"] = $"{ChatBot.ThinkContentPrefix}{reasoning}";
-                        deltaObj.Remove("reasoning_content");
+                        JToken? reasoning = deltaObj[key];
+                        if (reasoning != null && reasoning.Type != JTokenType.Null)
+                        {
+                            // 发现思考内容，将其转移到 content 并加上 UI 识别的前缀
+                            string val = reasoning.ToString();
+                            if (!string.IsNullOrEmpty(val))
+                            {
+                                deltaObj["content"] = $"{ChatBot.ThinkContentPrefix}{val}";
+                                deltaObj.Remove(key);
+                                break; // 匹配到一个即可
+                            }
+                        }
                     }
                 }
                 return "data: " + obj.ToString(Newtonsoft.Json.Formatting.None);
