@@ -6,7 +6,7 @@ using Alife.Function.Interpreter;
 using Alife.Function.QChat;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
-using Alife.Implement.Other;
+using Alife.Implement.Other.QChatService;
 
 namespace Alife.Implement;
 
@@ -255,7 +255,7 @@ public class QChatService :
         {
             if ((DateTime.Now - info.LastFlushedTime).TotalSeconds < Configuration!.FlushInterval)
                 continue;
-            
+
             FlushGroupBuffer(info);
         }
 
@@ -357,8 +357,16 @@ public class QChatService :
         GroupState state = GetGroupInfo(groupID);
         state.IsEnabled = enabled;
         if (enabled)
+        {
             state.LastActivityTime = DateTime.Now;
-        Poke($"群 {groupID} 消息已{(enabled ? "开启" : "关闭")}");
+            state.LastFlushedTime = DateTime.Now;
+        }
+        else
+        {
+            state.MessageBuffer.Clear();
+        }
+
+        Poke($"系统通知：群 {groupID} 消息已{(enabled ? "开启" : "关闭（本条消息不要回复）")}");
     }
 
     GroupState GetGroupInfo(long groupID)

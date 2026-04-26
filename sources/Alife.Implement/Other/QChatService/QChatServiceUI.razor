@@ -1,7 +1,7 @@
 @inherits Alife.Framework.PluginUIBase
 @implements IDisposable
 @using Alife.Framework
-@using AntDesign
+@using QChatService = Alife.Implement.QChatService
 @inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 
@@ -66,14 +66,14 @@
                 @foreach (var kv in service.GroupStates.OrderBy(x => x.Key).Take(20))
                 {
                     var groupId = kv.Key;
-                    var info = kv.Value;
+                    var state = kv.Value;
                     <TabPane Key="@groupId.ToString()">
                         <TabTemplate>
                             <span>
-                                @(info.IsEnabled ? "🟢" : "⚪") @groupId
-                                @if (info.MessageBuffer.Count > 0)
+                                @(state.IsEnabled ? "🟢" : "⚪") @groupId
+                                @if (state.MessageBuffer.Count > 0)
                                 {
-                                    <Badge Count="@info.MessageBuffer.Count" Style="margin-left: 4px;"/>
+                                    <Badge Count="@state.MessageBuffer.Count" Style="margin-left: 4px;"/>
                                 }
                             </span>
                         </TabTemplate>
@@ -89,32 +89,32 @@
                                                 </SpaceItem>
                                                 <SpaceItem>
                                                     @{
-                                                        var remaining = config.FlushInterval - (DateTime.Now - info.LastFlushedTime).TotalSeconds;
+                                                        var remaining = config.FlushInterval - (DateTime.Now - state.LastFlushedTime).TotalSeconds;
                                                     }
                                                     <Tag Color="TagColor.Orange">
                                                         <Icon Type="@IconType.Outline.ClockCircle"/>
-                                                        下次推送: @(remaining > 0 ? $"{remaining:F1}s" : "发送中...")
+                                                        @(state.IsEnabled ? $"下次推送: {remaining:F1}s" : "休眠中")
                                                     </Tag>
                                                 </SpaceItem>
                                             </Space>
                                             <br/>
                                             <Text Type="TextElementType.Secondary" Style="font-size: 12px;">
-                                                最后活动: @info.LastActivityTime.ToString("HH:mm:ss")</Text>
+                                                最后活动: @state.LastActivityTime.ToString("HH:mm:ss")</Text>
                                         </div>
                                         <Space>
                                             <SpaceItem>
-                                                <Button Danger="@info.IsEnabled"
+                                                <Button Danger="@state.IsEnabled"
                                                         Type="@ButtonType.Primary"
                                                         Size="@ButtonSize.Small"
-                                                        OnClick="@(() => service.QGroup(groupId, !info.IsEnabled))">
-                                                    @(info.IsEnabled ? "停用" : "激活")
+                                                        OnClick="@(() => service.QGroup(groupId, !state.IsEnabled))">
+                                                    @(state.IsEnabled ? "停用" : "激活")
                                                 </Button>
                                             </SpaceItem>
                                             <SpaceItem>
                                                 <Button Type="@ButtonType.Default"
                                                         Size="@ButtonSize.Small"
-                                                        Disabled="@(info.MessageBuffer.Count == 0)"
-                                                        OnClick="@(() => service.FlushGroupBuffer(info))">
+                                                        Disabled="@(state.MessageBuffer.Count == 0)"
+                                                        OnClick="@(() => service.FlushGroupBuffer(state))">
                                                     手动推送
                                                 </Button>
                                             </SpaceItem>
@@ -125,9 +125,9 @@
 
                                     <div
                                         style="max-height: 200px; overflow-y: auto; background: #fafafa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px;">
-                                        @if (info.MessageBuffer.Count > 0)
+                                        @if (state.MessageBuffer.Count > 0)
                                         {
-                                            @foreach (var msg in info.MessageBuffer)
+                                            @foreach (var msg in state.MessageBuffer)
                                             {
                                                 <div
                                                     style="margin-bottom: 4px; border-bottom: 1px solid #f0f0f0; padding-bottom: 2px;">
@@ -158,14 +158,17 @@
         </FormItem>
 
         <FormItem Label="群聊回复预设 (Prompt)">
-            <TextArea @bind-Value="@config.GroupChatPrompt" Rows="2" Placeholder="附加在消息末尾的指导提示词"/>
+            <TextArea @bind-Value="@config.GroupChatPrompt" Rows="2"
+                      Placeholder="附加在消息末尾的指导提示词"></TextArea>
         </FormItem>
 
         <GridRow Gutter="16">
             <GridCol Span="12">
                 <FormItem Label="自动休眠时间 (分钟)">
                     <AntDesign.InputNumber @bind-Value="@config.AutoCloseMinutes" Min="1f" Style="width: 100%;"/>
-                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">群聊无新消息超过此时间后自动关闭（节省资源）</Text>
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                        群聊无新消息超过此时间后自动关闭（节省资源）
+                    </Text>
                 </FormItem>
             </GridCol>
         </GridRow>
@@ -191,7 +194,9 @@
                     <FormItem Label="启用防抖 (Debounce)">
                         <Switch @bind-Value="@config.DebounceEnabled"/>
                         <br/>
-                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">开启后：每条新消息都会重置发送倒计时</Text>
+                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                            开启后：每条新消息都会重置发送倒计时
+                        </Text>
                     </FormItem>
                 </GridCol>
                 <GridCol Span="8">
@@ -211,23 +216,29 @@
             <GridRow Gutter="16" Style="margin-top: 8px;">
                 <GridCol Span="12">
                     <FormItem Label="主动发言概率">
-                        <AntDesign.InputNumber @bind-Value="@config.ProactiveChatProbability" Min="0f" Max="1f" Step="0.05f"
+                        <AntDesign.InputNumber @bind-Value="@config.ProactiveChatProbability" Min="0f" Max="1f"
+                                               Step="0.05f"
                                                Style="width: 100%;"/>
-                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">0 表示关闭，收到非 @@ 消息时以此概率尝试回复</Text>
+                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">0 表示关闭，收到非 @@
+                            消息时以此概率尝试回复
+                        </Text>
                     </FormItem>
                 </GridCol>
                 <GridCol Span="12">
                     <FormItem Label="回复后自动停用">
                         <Switch @bind-Value="@config.CloseGroupAfterFlush"/>
                         <br/>
-                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">单次回复后自动进入非激活状态（适合低频互动）</Text>
+                        <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                            单次回复后自动进入非激活状态（适合低频互动）
+                        </Text>
                     </FormItem>
                 </GridCol>
             </GridRow>
         </Card>
 
         <FormItem>
-            <Button id="btn-save-plugin-config" Type="@ButtonType.Primary" Block Size="@ButtonSize.Large" OnClick="@Save">
+            <Button id="btn-save-plugin-config" Type="@ButtonType.Primary" Block Size="@ButtonSize.Large"
+                    OnClick="@Save">
                 保存全部配置
             </Button>
         </FormItem>

@@ -35,12 +35,32 @@
 
     <WindowChrome.WindowChrome>
         <WindowChrome CaptionHeight="40"
-                      GlassFrameThickness="0"
+                      GlassFrameThickness="1"
                       CornerRadius="12"
                       ResizeBorderThickness="8" />
     </WindowChrome.WindowChrome>
 
+    <Window.Style>
+        <Style TargetType="Window">
+            <Style.Triggers>
+                <Trigger Property="WindowState" Value="Maximized">
+                    <Setter Property="Padding" Value="8" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Style>
+
     <Border BorderBrush="#f0f0f0" BorderThickness="1" Background="#ffffff" CornerRadius="12">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="CornerRadius" Value="0" />
+                        <Setter Property="BorderThickness" Value="0" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -72,7 +92,17 @@
             </Grid>
 
             <!-- 内容区：Blazor 视图 -->
-            <Border Grid.Row="1" CornerRadius="0,0,12,12" ClipToBounds="True">
+            <Border Grid.Row="1" ClipToBounds="True">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="0,0,12,12" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                <Setter Property="CornerRadius" Value="0" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <blazor:BlazorWebView HostPage="wwwroot/index.html" Services="{x:Static alife:App.ServiceProvider}">
                     <blazor:BlazorWebView.RootComponents>
                         <blazor:RootComponent Selector="#app" ComponentType="{x:Type alife:Components.Routes}" />
