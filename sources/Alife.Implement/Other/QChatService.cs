@@ -216,7 +216,7 @@ public class QChatService :
         await oneBotClient.DisposeAsync();
     }
 
-    void ITimeIterative.OnUpdate(ref int seconds)
+    void ITimeIterative.OnUpdate(ref float seconds)
     {
         if (seconds > 15)
         {

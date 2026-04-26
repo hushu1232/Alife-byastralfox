@@ -25,39 +25,43 @@
             }
             else
             {
-                @foreach (ChatMessage message in messages)
+                @lock (messages)
                 {
-                    <div
-                        style="display: flex; margin-bottom: 16px; width: 100%; @(message.IsUser ? "flex-direction: row-reverse" : "flex-direction: row")">
-                        <div class="chat-bubble @(message.IsUser ? "chat-bubble-user" : "chat-bubble-ai")">
-                            <Flex Direction="@FlexDirection.Vertical" Gap="@("small")">
-                                <div class="chat-message-content">
-                                    @if (!string.IsNullOrEmpty(message.Reasoning))
-                                    {
-                                        <div class="chat-reasoning">
-                                            <div class="chat-reasoning-title">
-                                                <Icon Type="bulb" Theme="IconThemeType.Outline"/> 思考过程
+                    @foreach (ChatMessage message in messages)
+                    {
+                        <div
+                            style="display: flex; margin-bottom: 16px; width: 100%; @(message.IsUser ? "flex-direction: row-reverse" : "flex-direction: row")">
+                            <div class="chat-bubble @(message.IsUser ? "chat-bubble-user" : "chat-bubble-ai")">
+                                <Flex Direction="@FlexDirection.Vertical" Gap="@("small")">
+                                    <div class="chat-message-content">
+                                        @if (!string.IsNullOrEmpty(message.Reasoning))
+                                        {
+                                            <div class="chat-reasoning">
+                                                <div class="chat-reasoning-title">
+                                                    <Icon Type="bulb" Theme="IconThemeType.Outline"/>
+                                                    思考过程
+                                                </div>
+                                                <div class="chat-reasoning-content">
+                                                    @message.Reasoning
+                                                </div>
                                             </div>
-                                            <div class="chat-reasoning-content">
-                                                @message.Reasoning
-                                            </div>
-                                        </div>
-                                    }
-                                    <AntDesign.Text Style="white-space: pre-wrap; font-size: 15px;">
-                                        @message.Content
-                                    </AntDesign.Text>
-                                </div>
+                                        }
+                                        <AntDesign.Text Style="white-space: pre-wrap; font-size: 15px;">
+                                            @message.Content
+                                        </AntDesign.Text>
+                                    </div>
 
-                                @if (message.IsInputting)
-                                {
-                                    <AntDesign.Text Style="color: rgba(0,0,0,0.45); font-size: 12px">
-                                        输入中
-                                        <Icon Type="@IconType.Outline.Loading"/>
-                                    </AntDesign.Text>
-                                }
-                            </Flex>
+                                    @if (message.IsInputting)
+                                    {
+                                        <AntDesign.Text Style="color: rgba(0,0,0,0.45); font-size: 12px">
+                                            输入中
+                                            <Icon Type="@IconType.Outline.Loading"/>
+                                        </AntDesign.Text>
+                                    }
+                                </Flex>
+                            </div>
                         </div>
-                    </div>
+                    }
                 }
             }
         }
@@ -74,12 +78,12 @@
             <Flex Gap="@("12")" Align="@FlexAlign.End" Style="width: 100%;">
                 <div style="flex: 1; position: relative;">
                     <textarea id="chatInput"
-                               class="native-chat-input"
-                               placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
-                               @bind="inputText"
-                               @bind:event="oninput"
-                               @onkeydown="HandleNativeKeyDown"
-                               @onkeydown:preventDefault="shouldPreventDefault"></textarea>
+                              class="native-chat-input"
+                              placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                              @bind="inputText"
+                              @bind:event="oninput"
+                              @onkeydown="HandleNativeKeyDown"
+                              @onkeydown:preventDefault="shouldPreventDefault"></textarea>
                 </div>
                 <Button Type="@ButtonType.Primary"
                         Icon="@IconType.Outline.Send"
@@ -97,7 +101,7 @@
         padding: 20px 24px;
         background: #fff;
         border-top: 1px solid #f0f0f0;
-        box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.02);
     }
 
     .native-chat-input {
@@ -145,7 +149,7 @@
     .chat-bubble-ai {
         background: #ffffff;
         border: 1px solid #f0f0f0;
-        color: rgba(0,0,0,0.85);
+        color: rgba(0, 0, 0, 0.85);
         border-bottom-left-radius: 2px;
     }
 
@@ -165,14 +169,14 @@
     .chat-reasoning {
         margin-bottom: 12px;
         padding: 8px 12px;
-        background: rgba(0,0,0,0.03);
+        background: rgba(0, 0, 0, 0.03);
         border-left: 3px solid #d9d9d9;
         border-radius: 4px;
         font-size: 13px;
     }
 
     .chat-reasoning-title {
-        color: rgba(0,0,0,0.45);
+        color: rgba(0, 0, 0, 0.45);
         font-weight: 500;
         margin-bottom: 4px;
         display: flex;
@@ -181,7 +185,7 @@
     }
 
     .chat-reasoning-content {
-        color: rgba(0,0,0,0.65);
+        color: rgba(0, 0, 0, 0.65);
         white-space: pre-wrap;
         font-style: italic;
     }
@@ -199,7 +203,7 @@
         element.addEventListener('scroll', () => {
             // 只有当内容高度稳定时（说明是用户在滚，而非内容在增加），才更新 isAtBottom
             if (Math.abs(element.scrollHeight - lastHeight) < 5) {
-                isAtBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+                isAtBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 50;
             }
         });
 

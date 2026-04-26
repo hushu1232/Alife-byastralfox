@@ -2,5 +2,5 @@
 
 public interface ITimeIterative
 {
-    public void OnUpdate(ref int time);
+    public void OnUpdate(ref float time);
 }
