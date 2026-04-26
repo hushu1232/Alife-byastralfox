@@ -20,16 +20,13 @@ public static class OneBotSegment
     /// </summary>
     public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, OneBotClient oneBotClient)
     {
-        string source = messageEvent.GetSourceTag();
         string content = messageEvent.RawMessage;
-        content = OneBotSegment.FilterFace(content);
-        content = OneBotSegment.FilterAt(content, oneBotClient.BotId);
-        content = await OneBotSegment.FilterReply(content, oneBotClient);
-        content = await OneBotSegment.FilterFile(content, messageEvent.GroupId, oneBotClient);
-        content = OneBotSegment.FilterImage(content);
-        string formatted = $"{source} {content}";
-        return formatted;
-        
+        content = FilterFace(content);
+        content = FilterAt(content, oneBotClient.BotId);
+        content = await FilterReply(content, oneBotClient);
+        content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
+        content = FilterImage(content);
+        return content;
     }
     public static string FilterFace(string text)
     {

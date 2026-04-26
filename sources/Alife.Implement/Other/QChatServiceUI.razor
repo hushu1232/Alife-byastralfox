@@ -35,47 +35,119 @@
         @* ───── 运行时状态 ───── *@
         @if (service != null)
         {
-            <Divider>运行状态</Divider>
+            <Divider>运行时管理</Divider>
 
-            <GridRow Gutter="16" Style="margin-bottom: 16px;">
-                <GridCol Span="8">
-                    <Card Size="CardSize.Small" Style="border-radius: 8px;">
-                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 4px;">缓存消息
-                        </Text>
-                        <Text Strong Style="font-size: 18px;">@service.TotalBufferedMessageCount 条</Text>
-                    </Card>
-                </GridCol>
-                <GridCol Span="16">
-                    <Card Size="CardSize.Small" Style="border-radius: 8px;">
-                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 4px;">群聊状态
-                        </Text>
-                        @{
-                            var activeGroups = service.GroupStates.Where(kv => kv.Value.IsEnabled).ToList();
-                        }
-                        @if (activeGroups.Count > 0)
-                        {
-                            <Space Wrap>
-                                @foreach (var kv in activeGroups)
+            <Tabs @bind-ActiveKey="@activeTabKey" Style="margin-bottom: 24px;">
+                <TabPane Tab="系统概览" Key="overview">
+                    <GridRow Gutter="16">
+                        <GridCol Span="8">
+                            <Card Size="CardSize.Small" Style="border-radius: 8px;">
+                                <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 4px;">
+                                    总缓存消息
+                                </Text>
+                                <Text Strong
+                                      Style="font-size: 18px;">@service.GroupStates.Values.Sum(i => i.MessageBuffer.Count) 条
+                                </Text>
+                            </Card>
+                        </GridCol>
+                        <GridCol Span="16">
+                            <Card Size="CardSize.Small" Style="border-radius: 8px;">
+                                <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 4px;">
+                                    活跃群组统计
+                                </Text>
+                                <Text Strong>@service.GroupStates.Count(kv => kv.Value.IsEnabled) 个激活中 /
+                                    共 @service.GroupStates.Count 个记录
+                                </Text>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                @foreach (var kv in service.GroupStates.OrderBy(x => x.Key).Take(20))
+                {
+                    var groupId = kv.Key;
+                    var info = kv.Value;
+                    <TabPane Key="@groupId.ToString()">
+                        <TabTemplate>
+                            <span>
+                                @(info.IsEnabled ? "🟢" : "⚪") @groupId
+                                @if (info.MessageBuffer.Count > 0)
                                 {
-                                    <SpaceItem>
-                                        <Tag Color="@("green")">
-                                            @kv.Key 
-                                            @if (kv.Value.MessageBuffer.Count > 0)
-                                            {
-                                                <span> (@kv.Value.MessageBuffer.Count)</span>
-                                            }
-                                        </Tag>
-                                    </SpaceItem>
+                                    <Badge Count="@info.MessageBuffer.Count" Style="margin-left: 4px;"/>
                                 }
-                            </Space>
-                        }
-                        else
-                        {
-                            <span style="color: #8c8c8c;">无激活群聊</span>
-                        }
-                    </Card>
-                </GridCol>
-            </GridRow>
+                            </span>
+                        </TabTemplate>
+                        <ChildContent>
+                            <Card Size="CardSize.Small" Style="border-radius: 8px;">
+                                <Flex Direction="FlexDirection.Vertical">
+                                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center"
+                                          Style="margin-bottom: 12px;">
+                                        <div>
+                                            <Space Align="SpaceAlign.Center">
+                                                <SpaceItem>
+                                                    <Text Strong Style="font-size: 16px;">群号: @groupId</Text>
+                                                </SpaceItem>
+                                                <SpaceItem>
+                                                    @{
+                                                        var remaining = config.FlushInterval - (DateTime.Now - info.LastFlushedTime).TotalSeconds;
+                                                    }
+                                                    <Tag Color="TagColor.Orange">
+                                                        <Icon Type="@IconType.Outline.ClockCircle"/>
+                                                        下次推送: @(remaining > 0 ? $"{remaining:F1}s" : "发送中...")
+                                                    </Tag>
+                                                </SpaceItem>
+                                            </Space>
+                                            <br/>
+                                            <Text Type="TextElementType.Secondary" Style="font-size: 12px;">
+                                                最后活动: @info.LastActivityTime.ToString("HH:mm:ss")</Text>
+                                        </div>
+                                        <Space>
+                                            <SpaceItem>
+                                                <Button Danger="@info.IsEnabled"
+                                                        Type="@ButtonType.Primary"
+                                                        Size="@ButtonSize.Small"
+                                                        OnClick="@(() => service.QGroup(groupId, !info.IsEnabled))">
+                                                    @(info.IsEnabled ? "停用" : "激活")
+                                                </Button>
+                                            </SpaceItem>
+                                            <SpaceItem>
+                                                <Button Type="@ButtonType.Default"
+                                                        Size="@ButtonSize.Small"
+                                                        Disabled="@(info.MessageBuffer.Count == 0)"
+                                                        OnClick="@(() => service.FlushGroupBuffer(info))">
+                                                    手动推送
+                                                </Button>
+                                            </SpaceItem>
+                                        </Space>
+                                    </Flex>
+
+                                    <Divider Style="margin: 4px 0;"/>
+
+                                    <div
+                                        style="max-height: 200px; overflow-y: auto; background: #fafafa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 12px;">
+                                        @if (info.MessageBuffer.Count > 0)
+                                        {
+                                            @foreach (var msg in info.MessageBuffer)
+                                            {
+                                                <div
+                                                    style="margin-bottom: 4px; border-bottom: 1px solid #f0f0f0; padding-bottom: 2px;">
+                                                    @msg
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div style="color: #bfbfbf; text-align: center; padding: 20px;">
+                                                暂无缓存消息
+                                            </div>
+                                        }
+                                    </div>
+                                </Flex>
+                            </Card>
+                        </ChildContent>
+                    </TabPane>
+                }
+            </Tabs>
         }
 
         @* ───── 行为配置 ───── *@
@@ -162,6 +234,7 @@
 </div>
 
 @code {
+    string activeTabKey = "overview";
     QChatConfig config = new();
     QChatService? service;
     bool isReconnecting;
@@ -189,9 +262,7 @@
         config.DebounceEnabled = false;
         config.FlushInterval = 15f;
         config.MaxBufferMessages = 0;
-        config.WakingWords = "";
         config.ProactiveChatProbability = 0;
-        config.GroupChatPrompt = "";
         config.CloseGroupAfterFlush = false;
     }
 
@@ -201,7 +272,6 @@
         config.FlushInterval = 2f;
         config.MaxBufferMessages = 5;
         config.ProactiveChatProbability = 0.1f;
-        config.GroupChatPrompt = "注意不要刷屏，选择性回复重要消息";
         config.CloseGroupAfterFlush = true;
     }
 
