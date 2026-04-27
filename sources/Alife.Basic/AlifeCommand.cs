@@ -1,17 +1,21 @@
 using System.Diagnostics;
 using System.Text;
+using System.Windows;
 
 namespace Alife.Basic;
 
 public static class AlifeCommand
 {
-    public static void EnsureInitialized()
+    public static bool EnsureInitialized()
     {
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
         if (HasPython() == false)
         {
+            MessageBoxResult result = MessageBox.Show("电脑中缺少python环境，点击确认后将自动下载安装。", "初始化异常", MessageBoxButton.OK);
+            if (result != MessageBoxResult.OK)
+                return false;
             InstallPython();
             Command("pip", "config set global.index-url https://mirrors.aliyun.com/pypi/simple/");
         }
@@ -68,9 +72,9 @@ public static class AlifeCommand
         string psScript = $@"
 $url = '{InstallerUrl}'
 $path = '{installerPath}'
-Write-Host '正在下载 Python 安装程序...'
+Write-Host 'Download Python Installer...'
 Invoke-WebRequest -Uri $url -OutFile $path
-Write-Host '正在启动静默安装 (可能需要管理员权限)...'
+Write-Host 'Installing ...'
 Start-Process -FilePath $path -ArgumentList '/quiet PrependPath=1' -Wait
 Remove-Item -Path $path -Force
 ";
@@ -81,13 +85,14 @@ Remove-Item -Path $path -Force
             FileName = "powershell.exe",
             Arguments = $"-ExecutionPolicy Bypass -File \"{scriptPath}\"",
             UseShellExecute = true, // 给予用户看到 UAC 和进度的机会
-            Verb = "runas" // 申请管理员权限进行系统级安装
+            Verb = "runas", // 申请管理员权限进行系统级安装
         };
 
         try
         {
             using Process? p = Process.Start(psi);
             p?.WaitForExit();
+            EnvironmentRefresher.RefreshEnvironmentVariables();
         }
         catch (Exception ex)
         {

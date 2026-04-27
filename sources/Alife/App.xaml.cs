@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text;
+using Alife.Basic;
 using Microsoft.Extensions.DependencyInjection;
 using Alife.Framework;
 using Alife.Components.Services;
@@ -14,12 +15,11 @@ public partial class App
     {
         base.OnStartup(e);
 
-        Console.OutputEncoding = Encoding.UTF8;
-        Console.InputEncoding = Encoding.UTF8;
-        
+        AlifeCommand.EnsureInitialized();
+
         // Alife官方插件
         Assembly.Load("Alife.Implement");
-        
+
         ServiceCollection services = new();
         // 基础 Blazor Desktop 支持
         services.AddWpfBlazorWebView();
