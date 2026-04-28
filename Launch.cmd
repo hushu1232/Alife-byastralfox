@@ -7,6 +7,31 @@ echo                Alife System Launcher
 echo ============================================================
 echo.
 
+:CHECK_DOTNET
+echo [System] Checking .NET 9 Desktop Runtime...
+dotnet --list-runtimes >nul 2>&1
+if %errorlevel% neq 0 goto INSTALL_DOTNET
+dotnet --list-runtimes | findstr /c:"Microsoft.WindowsDesktop.App 9." >nul 2>&1
+if %errorlevel% equ 0 goto CHECK_PYTHON
+
+:INSTALL_DOTNET
+echo [Warning] .NET 9 Desktop Runtime is missing.
+set /p "install_net=Install .NET 9 Desktop Runtime now? (y/n): "
+if /i "!install_net!" neq "y" (
+    echo [Error] .NET 9 Desktop Runtime is required.
+    pause
+    exit /b 1
+)
+
+echo [Info] Downloading .NET 9 Desktop Runtime (this may take a minute)...
+powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/dotnet/9.0/windowsdesktop-runtime-win-x64.exe' -OutFile '%TEMP%\dotnet_installer.exe'"
+
+echo [Info] Installing .NET 9 Desktop Runtime...
+start /wait "" "%TEMP%\dotnet_installer.exe" /quiet /norestart
+del "%TEMP%\dotnet_installer.exe"
+echo [Success] .NET 9 Desktop Runtime installed.
+echo.
+
 :CHECK_PYTHON
 echo [System] Checking Python environment...
 

@@ -1,7 +1,6 @@
 @using System.Reflection
 @using Newtonsoft.Json
 @inject ConfigurationSystem ConfigurationSystem
-@inject INotificationService NotificationService
 
 <div style="display: flex; flex-direction: column; gap: 24px;">
     <!-- 顶部元数据 -->
@@ -56,22 +55,20 @@
             <div style="display: flex; flex-direction: column; gap: 16px;">
                 <TextArea AutoSize="true" MinRows="10" Style="font-family: monospace;" @bind-Value="jsonConfig"
                           Disabled="@(ChatActivity != null)"></TextArea>
-                
+
                 @CreateConfigSaveUI()((GetConfigFromText(), newConfig => {
-                    if (newConfig != null) {
-                        jsonConfig = JsonConvert.SerializeObject(newConfig, Formatting.Indented);
-                        StateHasChanged();
-                    }
+                    jsonConfig = JsonConvert.SerializeObject(newConfig, Formatting.Indented);
+                    StateHasChanged();
                 }))
             </div>
         }
     };
 
-    RenderFragment<(object Config, Action<object> OnChanged)> CreateConfigSaveUI() => data => 
-        @<ConfigSaveUI PluginType="@PluginType" 
-                      Configuration="@data.Config" 
-                      CharacterName="@Character?.Name" 
-                      OnConfigurationChanged="@(newConfig => data.OnChanged?.Invoke(newConfig))" />;
+    RenderFragment<(object Config, Action<object> OnChanged)> CreateConfigSaveUI() => data =>
+        @<ConfigSaveUI PluginType="@PluginType"
+                       Configuration="@data.Config"
+                       CharacterName="@Character?.Name"
+                       OnConfigurationChanged="@(newConfig => data.OnChanged(newConfig))"/>;
 
     protected override void OnParametersSet()
     {
@@ -83,17 +80,14 @@
     {
         jsonConfig = ConfigurationSystem.GetConfigurationJson(PluginType)?.ToString(Formatting.Indented) ?? "{}";
     }
-    object? GetConfigFromText()
+    object GetConfigFromText()
     {
-        try
-        {
-            Type type = ConfigurationSystem.GetConfigurationType(PluginType)!;
-            return JsonConvert.DeserializeObject(jsonConfig, type);
-        }
-        catch
-        {
-            return null;
-        }
+        Type type = ConfigurationSystem.GetConfigurationType(PluginType)!;
+        object result =
+            JsonConvert.DeserializeObject(jsonConfig, type) ??
+            Activator.CreateInstance(type, null) ??
+            throw new NotSupportedException();
+        return result;
     }
 
     private Dictionary<string, object?> GetParameters()
