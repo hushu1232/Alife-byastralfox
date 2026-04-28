@@ -38,10 +38,10 @@ echo [Success] Visual C++ Redistributable installed.
 echo.
 
 :CHECK_DOTNET
-echo [System] Checking .NET 9 Desktop Runtime...
+echo [System] Checking .NET Runtime (9.0 or higher)...
 dotnet --list-runtimes >nul 2>&1
 if %errorlevel% neq 0 goto INSTALL_DOTNET
-dotnet --list-runtimes | findstr /c:"Microsoft.WindowsDesktop.App 9." >nul 2>&1
+powershell -Command "if ((dotnet --list-runtimes | Select-String 'Microsoft.WindowsDesktop.App [9-99]').Count -gt 0) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 goto CHECK_PYTHON
 
 :INSTALL_DOTNET

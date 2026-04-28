@@ -38,14 +38,14 @@ public class SkillService : InteractivePlugin<SkillService>
              ```
              """);
     }
-
-    public SkillService(InterpreterService interpreterService)
-    {
-        interpreterService.RegisterHandler(this);
-    }
+    
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
+
+        string[] skills = Directory.Exists(skillsPath)
+            ? Directory.GetDirectories(skillsPath).Select(directory => Path.GetFileName(directory)).ToArray()
+            : [];
 
         InterpreterService interpreterService = context.services.GetRequiredService<InterpreterService>();
         XmlHandler xmlHandler = new(this);
@@ -56,7 +56,7 @@ public class SkillService : InteractivePlugin<SkillService>
              你的所有 skill 都存在 {skillsPath} 这个根目录中，根据 skill 的格式你也可以创建自己的 skill。
 
              当前 skill根目录 中已经存在的 skill 有：
-             - {string.Join("\n- ", Directory.GetDirectories(skillsPath).Select(directory => Path.GetFileName(directory)))}
+             - {string.Join("\n- ", skills)}
              """;
         interpreterService.RegisterHandler(xmlHandler);
     }

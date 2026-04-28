@@ -5,6 +5,9 @@
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <OutputPath>$(MSBuildThisFileDirectory)Outputs\</OutputPath>
     <OutDir>$(OutputPath)</OutDir>
+    <RollForward>LatestMajor</RollForward>
+    <SelfContained>false</SelfContained>
+    <PublishSelfContained>false</PublishSelfContained>
     
     <!-- 核心修复：全局禁用 MVC 零件发现逻辑 -->
     <EnableDefaultMvcApplicationPartsDiscovery>false</EnableDefaultMvcApplicationPartsDiscovery>
@@ -17,5 +20,5 @@
       <FusionName>%(FileName)</FusionName>
     </ReferencePath>
   </ItemDefinitionGroup>
-  
+
 </Project>
