@@ -1,7 +1,16 @@
 @echo off
 setlocal enabledelayedexpansion
-title Alife Launcher [Auto-Repair]
 
+:: Auto Request Administrator Privileges
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [Info] Requesting Administrator Privileges...
+    powershell -Command "Start-Process -FilePath '%~dpnx0' -Verb RunAs"
+    exit
+)
+
+cd /d "%~dp0"
+title Alife Launcher [Auto-Repair]
 echo ============================================================
 echo                Alife System Launcher
 echo ============================================================

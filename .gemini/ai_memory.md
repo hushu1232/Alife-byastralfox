@@ -60,7 +60,8 @@
 
 ## 4. 项目里程碑 (Project Milestones)
 
-- **[2026-04-28] 解决 Razor SDK 编译冲突**: 修复了 `Accessibility.dll` 缺少 `FusionName` 导致的编译崩溃。通过降级至 .NET 9 稳定版工具链并在 `Directory.Build.props` 中使用 `ItemDefinitionGroup` 全局补全元数据解决。
-- **[2026-04-28] 存储路径无感迁移**: 实现了 `AlifePath` 在路径变更时自动搬迁数据的功能，增强了用户体验。
-- **[2026-04-27] 平台能力架构重构**: 完成了 `Alife.Basic` 层的解耦，所有 Win32 原生调用已集中管理，实现了业务与平台的初步分离。
-- **[2026-04-27] 环境管理外迁**: 引入 `Launch.cmd` 统一管理 Python 环境初始化。
+- [2026-04-28] 解决 Razor SDK 编译冲突: 修复了 `Accessibility.dll` 缺少 `FusionName` 导致的编译崩溃。通过降级至 .NET 9 稳定版工具链并在 `Directory.Build.props` 中使用 `ItemDefinitionGroup` 全局补全元数据解决。
+- [2026-04-28] 存储路径无感迁移: 实现了 `AlifePath` 在路径变更时自动搬迁数据的功能，增强了用户体验。
+- [2026-04-28] 打包与环境自动化升级: 引入了 `Build_Release.cmd` 解决 WPF Blazor 静态资产绝对路径依赖问题，并在 `Launch.cmd` 中加入了 `.NET 9 Desktop Runtime` 的全自动检测与静默安装逻辑，实现了真正的开箱即用。
+- [2026-04-27] 平台能力架构重构: 完成了 `Alife.Basic` 层的解耦，所有 Win32 原生调用已集中管理，实现了业务与平台的初步分离。
+- [2026-04-27] 环境管理外迁: 引入 `Launch.cmd` 统一管理 Python 环境初始化。

@@ -45,11 +45,26 @@ internal static class WindowsPlatform
         ProcessStartInfo psi = new() {
             FileName = "cmd.exe",
             Arguments = $"/c {fileName} {arguments}",
-            CreateNoWindow = false,
-            UseShellExecute = true,
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
         using Process? process = Process.Start(psi);
-        process?.WaitForExit();
+        if (process != null)
+        {
+            process.OutputDataReceived += (s, e) => 
+            {
+                if (!string.IsNullOrEmpty(e.Data)) AlifeTerminal.LogInfo(e.Data);
+            };
+            process.ErrorDataReceived += (s, e) => 
+            {
+                if (!string.IsNullOrEmpty(e.Data)) AlifeTerminal.LogError(e.Data);
+            };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            process.WaitForExit();
+        }
     }
 
     public static string Screenshot()
