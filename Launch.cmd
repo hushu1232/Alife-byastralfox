@@ -16,6 +16,27 @@ echo                Alife System Launcher
 echo ============================================================
 echo.
 
+:CHECK_VCREDIST
+echo [System] Checking Visual C++ Redistributable...
+powershell -Command "$i = Get-ItemProperty HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64 -Name Installed -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Installed; if ($i -eq 1) { exit 0 } else { exit 1 }"
+if %errorlevel% equ 0 goto CHECK_DOTNET
+
+echo [Warning] Visual C++ Redistributable is missing.
+set /p "install_vc=Install Visual C++ Redistributable now? (y/n): "
+if /i "!install_vc!" neq "y" (
+    echo [Error] Visual C++ Redistributable is required.
+    pause
+    exit /b 1
+)
+
+echo [Info] Downloading Visual C++ Redistributable...
+powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile '%TEMP%\vcredist_x64.exe'"
+echo [Info] Installing Visual C++ Redistributable...
+start /wait "" "%TEMP%\vcredist_x64.exe" /install /quiet /norestart
+del "%TEMP%\vcredist_x64.exe"
+echo [Success] Visual C++ Redistributable installed.
+echo.
+
 :CHECK_DOTNET
 echo [System] Checking .NET 9 Desktop Runtime...
 dotnet --list-runtimes >nul 2>&1

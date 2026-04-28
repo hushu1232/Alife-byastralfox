@@ -53,14 +53,8 @@ internal static class WindowsPlatform
         using Process? process = Process.Start(psi);
         if (process != null)
         {
-            process.OutputDataReceived += (s, e) => 
-            {
-                if (!string.IsNullOrEmpty(e.Data)) AlifeTerminal.LogInfo(e.Data);
-            };
-            process.ErrorDataReceived += (s, e) => 
-            {
-                if (!string.IsNullOrEmpty(e.Data)) AlifeTerminal.LogError(e.Data);
-            };
+            process.OutputDataReceived += (s, e) => Console.WriteLine(e.Data);
+            process.ErrorDataReceived += (s, e) => Console.WriteLine(e.Data);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             process.WaitForExit();
@@ -143,8 +137,7 @@ internal static class WindowsPlatform
 
     public static string? PickFolder(string title)
     {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
+        var dialog = new Microsoft.Win32.OpenFolderDialog {
             Title = title
         };
 
