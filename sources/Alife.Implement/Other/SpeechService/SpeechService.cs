@@ -29,12 +29,26 @@ public partial class SpeechService : InteractivePlugin<SpeechService>, IAsyncDis
     [Description("使用语音的方式向用户发送消息。")]
     public async Task Say(XmlExecutorContext context, [XmlContent] string content)
     {
-        // if (context.CallMode == CallMode.Opening)
-        // {
-        //     //模拟断句说话
-        //     await Synthesizer.LastSpeaking;
-        //     return;
-        // }
+        if (context.CallMode == CallMode.Reset)
+        {
+            if (Synthesizer.IsSpeaking)
+                await Synthesizer.StopSpeakAsync(); //中断语音
+
+            return;
+        }
+
+        if (hasHeadphones == false)
+        {
+            if (context.CallMode == CallMode.Opening)
+                TryStopRecognition();
+            else if (context.CallMode == CallMode.Closing)
+            {
+                //当停止说话时，等待当前语音结束后，恢复语音识别
+                if (Synthesizer.IsSpeaking)
+                    await Synthesizer.LastSpeaking;
+                TryStartRecognition();
+            }
+        }
 
         if (context.CallMode != CallMode.Content)
             return;
@@ -137,13 +151,6 @@ public partial class SpeechService : InteractivePlugin<SpeechService>, IAsyncDis
             TryStartRecognition();
 
             // SendNotification("语音输入常驻开启", "检测到耳机，已通过 SpeechService 开启实时识别。");
-        }
-        else
-        {
-            if (IsSpeaking)
-                TryStopRecognition();
-            else
-                TryStartRecognition();
         }
     }
 
