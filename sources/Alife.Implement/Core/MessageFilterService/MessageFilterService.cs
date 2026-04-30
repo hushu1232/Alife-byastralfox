@@ -6,7 +6,7 @@ namespace Alife.Implement;
 public class MessageFilterData
 {
     public bool EnableTimestamp { get; set; } = true;
-    public string MessageHeader { get; set; } = "（注意：回复请保持简洁，不要插入旁白，活用动作和表情功能。）\n";
+    public string MessageHeader { get; set; } = "（注意：回复请保持简洁，不要插入旁白，根据消息类型，正确灵活的使用标签功能。）\n";
     public string PokeHeader { get; set; } = "（注意：下方为非用户消息，请思考后再回复）\n";
 }
 [Plugin("消息滤网", "统一管理消息的提示词注入和格式化。负责添加时间戳、通用提示词以及系统消息头。", LaunchOrder = 900, EditorUI = typeof(MessageFilterServiceUI))]

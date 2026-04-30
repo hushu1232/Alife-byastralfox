@@ -57,6 +57,7 @@ public abstract class InteractivePlugin : Plugin
 }
 public class InteractivePlugin<T> : InteractivePlugin
 {
+    protected string ChatPrefixPrompt => $"[这是来自{typeof(T).Name}的消息]";
     protected void Prompt(string prompt)
     {
         ChatHistory.AddSystemMessage($"[{typeof(T).Name}] {prompt}");
@@ -67,14 +68,14 @@ public class InteractivePlugin<T> : InteractivePlugin
     }
     protected void Poke(string message)
     {
-        ChatBot.Poke($"[{typeof(T).Name}] {message}");
+        ChatBot.Poke($"{ChatPrefixPrompt}{message}");
     }
     protected void Chat(string message)
     {
-        ChatBot.Chat($"[{typeof(T).Name}] {message}");
+        ChatBot.Chat($"{ChatPrefixPrompt}{message}");
     }
     protected Task ChatAsync(string message)
     {
-        return ChatBot.ChatAsync($"[{typeof(T).Name}] {message}");
+        return ChatBot.ChatAsync($"{ChatPrefixPrompt}{message}");
     }
 }

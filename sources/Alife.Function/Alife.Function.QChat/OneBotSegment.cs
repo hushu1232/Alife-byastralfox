@@ -57,8 +57,8 @@ public static class OneBotSegment
             {
                 OneBotMessageEvent? quoted = await client.GetMessage(replyId);
                 string quotedInfo = quoted != null
-                    ? $"[回复 {quoted.UserId} 的消息: {quoted.RawMessage.GetPlainText()}]"
-                    : "[回复其他消息]";
+                    ? $"[对“{quoted.UserId}：{await quoted.GetReadableMessage(client)}”的回复]"
+                    : "[对其他消息的回复]";
                 text = text.Replace(match.Value, quotedInfo);
             }
         }
