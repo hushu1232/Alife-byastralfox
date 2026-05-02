@@ -9,7 +9,7 @@ namespace Alife.Function.QChat;
 /// <summary>
 /// 基础的 OneBot v11 客户端，提供多态事件分发。
 /// </summary>
-public class OneBotClient : IAsyncDisposable
+public class OneBotClient(string url) : IAsyncDisposable
 {
     /// <summary>
     /// 事件接收回调。
@@ -34,23 +34,27 @@ public class OneBotClient : IAsyncDisposable
     /// <summary>
     /// WebSocket 地址。
     /// </summary>
-    public string Url { get => url; set => url = value; }
+    public string Url
+    {
+        get => url;
+        set => url = value;
+    }
 
-    public OneBotClient(string url)
-    {
-        this.url = url;
-    }
-    public async ValueTask DisposeAsync()
-    {
-        if (ws.State == WebSocketState.Open)
-            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
-        ws.Dispose();
-    }
 
     public async Task ConnectAsync()
     {
-        if (ws.State == WebSocketState.Open)
-            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Reconnecting", CancellationToken.None);
+        try
+        {
+            if (ws.State == WebSocketState.Open)
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Reconnecting", CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // ignored
+        }
+
+        if (loopCancellation != null)
+            await loopCancellation.CancelAsync();
         ws.Dispose();
 
         ws = new ClientWebSocket();
@@ -63,7 +67,8 @@ public class OneBotClient : IAsyncDisposable
         if (ev is OneBotMetaEvent { MetaEventType: OneBotMetaType.Lifecycle, SubType: "connect" })
         {
             BotId = ev.SelfId;
-            ReceiveLoop();
+            loopCancellation = new CancellationTokenSource();
+            ReceiveLoop(loopCancellation.Token);
             ConnectionStatusChanged?.Invoke(true);
         }
         else
@@ -71,6 +76,14 @@ public class OneBotClient : IAsyncDisposable
             throw new ProtocolViolationException("[OneBotClient] 握手失败：无法识别首个报文。");
         }
     }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (ws.State == WebSocketState.Open)
+            await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+        ws.Dispose();
+    }
+
 
     public async Task SendActionAsync(string action, object? @params = null, string? echo = null)
     {
@@ -96,19 +109,19 @@ public class OneBotClient : IAsyncDisposable
     }
 
 
-
-    string url;
+    string url = url;
     readonly byte[] buffer = new byte[1024 * 64];
     readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> pendingActions = new();
     ClientWebSocket ws = new();
+    CancellationTokenSource? loopCancellation;
 
-    async void ReceiveLoop()
+    async void ReceiveLoop(CancellationToken ct = default)
     {
         try
         {
-            while (ws.State == WebSocketState.Open)
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
-                OneBotBaseEvent? ev = await ReceiveEventAsync();
+                OneBotBaseEvent? ev = await ReceiveEventAsync(ct);
                 if (ev != null) EventReceived?.Invoke(ev);
             }
         }
@@ -124,34 +137,52 @@ public class OneBotClient : IAsyncDisposable
 
     async Task<OneBotBaseEvent?> ReceiveEventAsync(CancellationToken ct = default)
     {
-        WebSocketReceiveResult result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-        if (result.MessageType == WebSocketMessageType.Close) return null;
-
-        string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-        using JsonDocument doc = JsonDocument.Parse(json);
-
-        // 如果包含 echo，说明是 API 的响应
-        if (doc.RootElement.TryGetProperty("echo", out JsonElement echoElem))
+        using var ms = new MemoryStream();
+        WebSocketReceiveResult result;
+        do
         {
-            string echo = echoElem.GetString() ?? "";
-            if (pendingActions.TryRemove(echo, out var tcs))
+            result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
+            if (result.MessageType == WebSocketMessageType.Close) return null;
+            ms.Write(buffer, 0, result.Count);
+        } while (!result.EndOfMessage);
+
+        string json = Encoding.UTF8.GetString(ms.ToArray());
+
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+
+            // 如果包含 echo，说明是 API 的响应
+            if (doc.RootElement.TryGetProperty("echo", out JsonElement echoElem))
             {
-                tcs.TrySetResult(doc.RootElement.Clone());
+                string echo = echoElem.GetString() ?? "";
+                if (pendingActions.TryRemove(echo, out var tcs))
+                {
+                    tcs.TrySetResult(doc.RootElement.Clone());
+                }
+
+                return null;
             }
+
+            // 手动检测 post_type 以处理 System.Text.Json 的多态限制
+            if (!doc.RootElement.TryGetProperty("post_type", out JsonElement typeElem)) return null;
+
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            string type = typeElem.GetString() ?? "";
+            return type switch
+            {
+                "message" => doc.RootElement.Deserialize<OneBotMessageEvent>(options),
+                "message_sent" => doc.RootElement.Deserialize<OneBotMessageSentEvent>(options),
+                "meta_event" => doc.RootElement.Deserialize<OneBotMetaEvent>(options),
+                "notice" => doc.RootElement.Deserialize<OneBotNoticeEvent>(options),
+                "request" => doc.RootElement.Deserialize<OneBotRequestEvent>(options),
+                _ => null
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[OneBotClient] 报文解析异常: {ex.Message}\nRaw: {json}");
             return null;
         }
-
-        // 手动检测 post_type 以处理 System.Text.Json 的多态限制
-        if (!doc.RootElement.TryGetProperty("post_type", out JsonElement typeElem)) return null;
-
-        string type = typeElem.GetString() ?? "";
-        return type switch {
-            "message" => doc.RootElement.Deserialize<OneBotMessageEvent>(),
-            "message_sent" => doc.RootElement.Deserialize<OneBotMessageSentEvent>(),
-            "meta_event" => doc.RootElement.Deserialize<OneBotMetaEvent>(),
-            "notice" => doc.RootElement.Deserialize<OneBotNoticeEvent>(),
-            "request" => doc.RootElement.Deserialize<OneBotRequestEvent>(),
-            _ => null
-        };
     }
 }

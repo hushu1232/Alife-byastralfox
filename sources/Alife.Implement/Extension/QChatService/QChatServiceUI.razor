@@ -194,10 +194,12 @@
                 <Text Strong>快速预设方案</Text>
                 <Space>
                     <SpaceItem>
-                        <Button OnClick="@ApplyDesktopPetPreset" Icon="@IconType.Outline.Smile">桌宠模式</Button>
+                        <Button OnClick="@ApplyDesktopPetPreset" Icon="@IconType.Outline.Smile">自主开关（适合桌宠玩耍）
+                        </Button>
                     </SpaceItem>
                     <SpaceItem>
-                        <Button OnClick="@ApplyGroupChatPreset" Icon="@IconType.Outline.Robot">群聊模式</Button>
+                        <Button OnClick="@ApplyGroupChatPreset" Icon="@IconType.Outline.Robot">全天挂机（适合群机器人）
+                        </Button>
                     </SpaceItem>
                 </Space>
             </Flex>
@@ -252,6 +254,8 @@
         @ConfigSaveUI((config, newConfig =>
         {
             config = (QChatConfig)newConfig;
+            if (service != null)
+                service.Configuration = config;
             StateHasChanged();
         }))
     </Form>

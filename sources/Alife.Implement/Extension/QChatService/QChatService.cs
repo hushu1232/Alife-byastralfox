@@ -58,7 +58,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
         string message = ctx.FullContent.Trim();
         if (string.IsNullOrEmpty(message))
             return;
-        
+
         if (targetID == 0)
             throw new ArgumentException("目标不能为空！", nameof(targetID));
         if (targetID == Configuration!.BotId)
@@ -88,7 +88,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
             throw new ArgumentException("目标不能为空！", nameof(targetID));
         if (targetID == Configuration!.BotId)
             throw new Exception("不允许将消息发生给自己");
-        
+
         // 尝试从表情库匹配 (优先)
         string emoteBase = Path.Combine(AlifePath.StorageFolderPath, "Emotes");
         string emotePath = Path.Combine(emoteBase, file).Replace('\\', '/');
@@ -149,7 +149,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
             throw new ArgumentException("目标不能为空！", nameof(targetID));
         if (targetID == Configuration!.BotId)
             throw new Exception("不允许将消息发生给自己");
-        
+
         string fileName = Path.GetFileName(file);
         if (type == OneBotMessageType.Group)
         {
@@ -187,10 +187,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
 
     public async Task ReconnectAsync()
     {
-        if (oneBotClient!.IsConnected)
-            return;
-
-        oneBotClient.Url = Configuration!.Url;
+        oneBotClient!.Url = Configuration!.Url;
         await oneBotClient.ConnectAsync();
     }
 
