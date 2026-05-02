@@ -1,5 +1,5 @@
 @namespace Alife.Implement
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<SpeechService>
 @implements IDisposable
 
 <div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
@@ -51,13 +51,13 @@
         <Alert Type="AlertType.Info" ShowIcon="true"
                Message="说明：非耳机状态，识别功能将根据语音合成情况自动开关；耳机状态时，将会常驻开启语音识别。"/>
 
-        @if (speechService != null)
+        @if (Plugin != null)
         {
             <Flex Align="@FlexAlign.Center" Justify="FlexJustify.SpaceBetween" Style="margin-bottom: 8px;">
                 <Title Level="4" Style="margin: 0;">特定于角色的开关</Title>
                 <Flex Align="@FlexAlign.Center" Gap="@("8")">
                     <Text Type="TextElementType.Secondary">是否接收语音</Text>
-                    <Switch @bind-Checked="@speechService.IsReceiving" Size="InputSize.Small"/>
+                    <Switch @bind-Checked="@Plugin.IsReceiving" Size="InputSize.Small"/>
                 </Flex>
             </Flex>
         }
@@ -67,8 +67,7 @@
 </div>
 
 @code {
-    SpeechService? speechService;
-    private System.Timers.Timer? refreshTimer;
+    System.Timers.Timer? refreshTimer;
 
     protected override void OnInitialized()
     {
@@ -83,14 +82,7 @@
         refreshTimer?.Dispose();
     }
 
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-
-        speechService = Plugin as SpeechService;
-    }
-
-    private void ToggleStt(bool value)
+    void ToggleStt(bool value)
     {
         if (value)
             SpeechService.TryStartRecognition();

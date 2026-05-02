@@ -1,4 +1,4 @@
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<Alife.Implement.MemoryService, Alife.Implement.MemoryConfig>
 @using Alife.Framework
 @using Alife.Implement
 
@@ -7,17 +7,17 @@
         <Title Level="4" Style="margin: 0;">分层记忆系统配置</Title>
     </Flex>
 
-    <Form TModel="MemoryConfig" Model="@config" Layout="@FormLayout.Vertical">
+    <Form TModel="MemoryConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <GridRow Gutter="16">
             <GridCol Span="12">
                 <FormItem Label="压缩阈值 (Threshold)">
-                    <AntDesign.InputNumber @bind-Value="@config.Threshold" Min="1" Style="width: 100%;"/>
+                    <AntDesign.InputNumber @bind-Value="@Configuration.Threshold" Min="1" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">当消息达到此数量时触发压缩</Text>
                 </FormItem>
             </GridCol>
             <GridCol Span="12">
                 <FormItem Label="批处理大小 (BatchSize)">
-                    <AntDesign.InputNumber @bind-Value="@config.BatchSize" Min="1" Style="width: 100%;"/>
+                    <AntDesign.InputNumber @bind-Value="@Configuration.BatchSize" Min="1" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">每次压缩的消息条数</Text>
                 </FormItem>
             </GridCol>
@@ -26,22 +26,20 @@
         <GridRow Gutter="16">
             <GridCol Span="12">
                 <FormItem Label="压缩触发率 (Probability)">
-                    <AntDesign.InputNumber @bind-Value="@config.Probability" Min="0f" Max="1f" Step="0.1f" Style="width: 100%;"/>
+                    <AntDesign.InputNumber @bind-Value="@Configuration.Probability" Min="0f" Max="1f" Step="0.1f" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">扰动压缩时机，避免连续压缩过于影响互动感</Text>
                 </FormItem>
             </GridCol>
             <GridCol Span="12">
                 <FormItem Label="最大压缩层级 (MaxLevel)">
-                    <AntDesign.InputNumber @bind-Value="@config.MaxCompressionLevel" Min="0" Style="width: 100%;"/>
+                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxCompressionLevel" Min="0" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">达到此层级的记忆将不再压缩，变为常驻上下文</Text>
                 </FormItem>
             </GridCol>
         </GridRow>
-
-        @ConfigSaveUI((config, newConfig => { config = (MemoryConfig)newConfig; StateHasChanged(); }))
     </Form>
 
-    @if (service != null)
+    @if (Plugin != null)
     {
         <Divider>核心记忆管理 (知识库)</Divider>
         <Card Size="CardSize.Small" Style="background: #fafafa; border-radius: 8px; border: 1px dashed #d9d9d9;">
@@ -71,18 +69,15 @@
         <div style="margin-top: 24px;">
             <Text Strong>管理提示：</Text>
             <Text Type="TextElementType.Secondary" Style="font-size: 12px; display: block; margin-top: 8px;">
-                若要删除已存在的记忆，请前往“完整背景”页面，点击对应“记忆归档”条目旁边的删除图标喵。
+                若要删除已存在的记忆，请前往"完整背景"页面，点击对应"记忆归档"条目旁边的删除图标喵。
             </Text>
         </div>
     }
 </div>
 
 @code {
-    [Inject] ConfigurationSystem ConfigurationSystem { get; set; } = null!;
     [Inject] IMessageService MessageService { get; set; } = null!;
 
-    MemoryConfig config = new();
-    MemoryService? service;
     ArchiveModel newArchiveModel = new();
     bool isProcessing;
 
@@ -92,22 +87,9 @@
         public string Content { get; set; } = "";
     }
 
-    protected override void OnInitialized()
-    {
-        var result = ConfigurationSystem.GetConfiguration(PluginType);
-        if (result is MemoryConfig c)
-            config = c with { };
-    }
-
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-        service = Plugin as MemoryService;
-    }
-
     async Task HandleAddArchive()
     {
-        if (service == null) return;
+        if (Plugin == null) return;
         if (string.IsNullOrWhiteSpace(newArchiveModel.Summary) || string.IsNullOrWhiteSpace(newArchiveModel.Content))
         {
             MessageService.Warning("概述和内容都不能为空喵！");
@@ -117,8 +99,8 @@
         isProcessing = true;
         try
         {
-            int maxLevel = config.MaxCompressionLevel;
-            await service.InsertMemory(maxLevel, newArchiveModel.Summary, newArchiveModel.Content, DateTime.Now, DateTime.Now);
+            int maxLevel = Configuration.MaxCompressionLevel;
+            await Plugin.InsertMemory(maxLevel, newArchiveModel.Summary, newArchiveModel.Content, DateTime.Now, DateTime.Now);
             MessageService.Success("核心记忆已成功存入喵！");
             newArchiveModel = new ArchiveModel();
         }

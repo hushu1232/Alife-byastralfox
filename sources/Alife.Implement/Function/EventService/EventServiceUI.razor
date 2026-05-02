@@ -1,8 +1,7 @@
 @namespace Alife.Implement
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<EventService, EventServiceData>
 @implements IDisposable
 @using Alife.Framework
-@inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 
 <div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
@@ -11,10 +10,10 @@
         <!-- 任务监控区域 -->
         <div>
             <Title Level="4" Style="margin-bottom: 16px;">时钟与定时任务监控</Title>
-            @if (service != null)
+            @if (Plugin != null)
             {
                 <GridRow Gutter="16">
-                    @foreach ((DateTime Time, string Name) task in service.ActiveTasks)
+                    @foreach ((DateTime Time, string Name) task in Plugin.ActiveTasks)
                     {
                         TimeSpan remaining = task.Time - DateTime.Now;
                         var isFinished = remaining.TotalSeconds <= 0;
@@ -60,62 +59,53 @@
             }
         </div>
 
-        @if (config != null)
-        {
-            <Divider Style="margin: 8px 0;"/>
+        <Divider Style="margin: 8px 0;"/>
 
-            <!-- 配置参数区域 -->
-            <div>
-                <Title Level="4" Style="margin-bottom: 16px;">配置参数</Title>
-                <GridRow Gutter="16">
-                    <GridCol Span="12">
-                        <div style="margin-bottom: 16px;">
-                            <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">报点基础间隔 (秒)</Text>
-                            <InputNumber @bind-Value="@config.UpdateInterval" Min="1" Style="width: 100%; border-radius: 6px;"/>
-                        </div>
-                    </GridCol>
-                    <GridCol Span="12">
-                        <div style="margin-bottom: 16px;">
-                            <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">随机偏移范围 (秒)</Text>
-                            <InputNumber @bind-Value="@config.UpdateRandomOffset" Min="0" Style="width: 100%; border-radius: 6px;"/>
-                        </div>
-                    </GridCol>
+        <!-- 配置参数区域 -->
+        <div>
+            <Title Level="4" Style="margin-bottom: 16px;">配置参数</Title>
+            <GridRow Gutter="16">
+                <GridCol Span="12">
+                    <div style="margin-bottom: 16px;">
+                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">报点基础间隔 (秒)</Text>
+                        <InputNumber @bind-Value="@Configuration.UpdateInterval" Min="1" Style="width: 100%; border-radius: 6px;"/>
+                    </div>
+                </GridCol>
+                <GridCol Span="12">
+                    <div style="margin-bottom: 16px;">
+                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">随机偏移范围 (秒)</Text>
+                        <InputNumber @bind-Value="@Configuration.UpdateRandomOffset" Min="0" Style="width: 100%; border-radius: 6px;"/>
+                    </div>
+                </GridCol>
 
-                    <GridCol Span="24">
-                        <div style="margin-bottom: 16px;">
-                            <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">程序启动附加提示</Text>
-                            <TextArea @bind-Value="@config.StartPrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
-                        </div>
-                    </GridCol>
+                <GridCol Span="24">
+                    <div style="margin-bottom: 16px;">
+                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">程序启动附加提示</Text>
+                        <TextArea @bind-Value="@Configuration.StartPrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
+                    </div>
+                </GridCol>
 
-                    <GridCol Span="24">
-                        <div style="margin-bottom: 16px;">
-                            <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">自动报点附加提示</Text>
-                            <TextArea @bind-Value="@config.UpdatePrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
-                        </div>
-                    </GridCol>
+                <GridCol Span="24">
+                    <div style="margin-bottom: 16px;">
+                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">自动报点附加提示</Text>
+                        <TextArea @bind-Value="@Configuration.UpdatePrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
+                    </div>
+                </GridCol>
 
-                    <GridCol Span="24">
-                        <div style="margin-bottom: 24px;">
-                            <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">程序关闭附加提示</Text>
-                            <TextArea @bind-Value="@config.DestroyPrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
-                        </div>
-                    </GridCol>
-
-                    <GridCol Span="24">
-                        @ConfigSaveUI((config, newConfig => { config = (EventServiceData)newConfig; StateHasChanged(); }))
-                    </GridCol>
-                </GridRow>
-            </div>
-        }
+                <GridCol Span="24">
+                    <div style="margin-bottom: 24px;">
+                        <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 8px;">程序关闭附加提示</Text>
+                        <TextArea @bind-Value="@Configuration.DestroyPrompt" Rows="2" Style="border-radius: 6px;"></TextArea>
+                    </div>
+                </GridCol>
+            </GridRow>
+        </div>
 
     </Flex>
 </div>
 
 @code {
-    EventService? service;
-    EventServiceData? config;
-    private System.Timers.Timer? refreshTimer;
+    System.Timers.Timer? refreshTimer;
 
     protected override void OnInitialized()
     {
@@ -124,22 +114,7 @@
         refreshTimer.Start();
     }
 
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-        service = Plugin as EventService;
-
-        if (service != null)
-        {
-            config = service.Configuration;
-        }
-        else
-        {
-            config = ConfigurationSystem.GetConfiguration(PluginType, Character?.StorageKey ?? "") as EventServiceData;
-        }
-    }
-
-    private string FormatRemaining(TimeSpan ts)
+    string FormatRemaining(TimeSpan ts)
     {
         if (ts.TotalHours >= 1) return $"{(int)ts.TotalHours}h {ts.Minutes}m {ts.Seconds}s";
         if (ts.TotalMinutes >= 1) return $"{(int)ts.TotalMinutes}m {ts.Seconds}s";

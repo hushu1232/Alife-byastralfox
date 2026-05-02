@@ -1,9 +1,6 @@
 @namespace Alife.Implement
-@inherits Alife.Framework.PluginUIBase
-@using Newtonsoft.Json
+@inherits Alife.Framework.PluginUIBase<McpService, McpPluginConfig>
 @using Alife.Framework
-
-@inject ConfigurationSystem ConfigurationSystem
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Flex Justify="@(FlexJustify.SpaceBetween)" Align="@(FlexAlign.Center)" Style="margin-bottom: 24px;">
@@ -17,7 +14,7 @@
         </Space>
     </Flex>
 
-<Table TItem="McpServerConfig" DataSource="@config.Servers" Bordered Size="@TableSize.Small">
+<Table TItem="McpServerConfig" DataSource="@Configuration.Servers" Bordered Size="@TableSize.Small">
     <PropertyColumn Property="c=>c.Name" Title="名称"></PropertyColumn>
     <PropertyColumn Property="c=>c.Command" Title="命令"></PropertyColumn>
     <PropertyColumn Property="c=>c.Description" Title="描述"></PropertyColumn>
@@ -60,34 +57,17 @@
         </Form>
     }
 </Drawer>
-
-    @ConfigSaveUI((config, newConfig => { config = (McpPluginConfig)newConfig; StateHasChanged(); }))
 </div>
 
 @code {
 
-    McpPluginConfig config = new();
     McpServerConfig? editingServer;
     bool isEditingServer;
-
-    protected override void OnInitialized()
-    {
-        LoadConfig();
-    }
-
-    void LoadConfig()
-    {
-        var result = ConfigurationSystem.GetConfiguration(PluginType);
-        if (result is McpPluginConfig mcpConfig)
-        {
-            config = JsonConvert.DeserializeObject<McpPluginConfig>(JsonConvert.SerializeObject(mcpConfig)) ?? new();
-        }
-    }
 
     void AddServer()
     {
         editingServer = new McpServerConfig();
-        config.Servers.Add(editingServer);
+        Configuration.Servers.Add(editingServer);
         isEditingServer = true;
     }
 
@@ -99,7 +79,7 @@
 
     void RemoveServer(McpServerConfig server)
     {
-        config.Servers.Remove(server);
+        Configuration.Servers.Remove(server);
     }
 
     void OnConfirm()

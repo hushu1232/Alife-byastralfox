@@ -9,19 +9,19 @@
         <Space>
             <SpaceItem>
                 <Popconfirm Title="确认保存到全局吗？所有未单独配置的角色将默认使用此配置。" OnConfirm="SaveToGlobal">
-                    <Button Type="@ButtonType.Primary" Icon="@IconType.Outline.Global">保存到全局</Button>
+                    <Button Type="@ButtonType.Primary" Icon="@IconType.Outline.Global">应用到全局</Button>
                 </Popconfirm>
             </SpaceItem>
             @if (!string.IsNullOrEmpty(CharacterName))
             {
                 <SpaceItem>
-                    <Button Icon="@IconType.Outline.User" OnClick="SaveToCharacter">保存到角色</Button>
+                    <Button Icon="@IconType.Outline.User" OnClick="SaveToCharacter">应用到角色</Button>
                 </SpaceItem>
                 <SpaceItem>
                     <Popconfirm Title="确认删除角色独立配置吗？删除后将回退至全局配置。"
                                 OnConfirm="DeleteCharacterConfig"
                                 Disabled="@(!hasCharacterConfig)">
-                        <Button Danger Icon="@IconType.Outline.Delete" Disabled="@(!hasCharacterConfig)">删除角色配置
+                        <Button Danger Icon="@IconType.Outline.Delete" Disabled="@(!hasCharacterConfig)">取消角色配置
                         </Button>
                     </Popconfirm>
                 </SpaceItem>

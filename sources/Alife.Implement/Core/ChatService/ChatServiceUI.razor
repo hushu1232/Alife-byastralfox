@@ -1,22 +1,21 @@
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<Alife.Implement.ChatService, Alife.Implement.ChatServiceConfig>
 @using Alife.Framework
 @using Newtonsoft.Json.Linq
 @using AntDesign
-@inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Title Level="4" Style="margin-bottom: 24px;">对话服务配置（OpenAI标准）</Title>
-    <Form TModel="ChatServiceConfig" Model="@config" Layout="@FormLayout.Vertical">
+    <Form TModel="ChatServiceConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <FormItem Label="Endpoint">
-            <Input @bind-Value="@config.endpoint" placeholder="例如: https://api.deepseek.com/v1"/>
+            <Input @bind-Value="@Configuration.endpoint" placeholder="例如: https://api.deepseek.com/v1"/>
         </FormItem>
         <FormItem Label="API Key">
-            <InputPassword @bind-Value="@config.apiKey"/>
+            <InputPassword @bind-Value="@Configuration.apiKey"/>
         </FormItem>
         <FormItem Label="Model ID">
             <div style="display: flex; gap: 8px;">
-                <Input @bind-Value="@config.modelId" Placeholder="例如: deepseek-chat" Style="flex: 1;"/>
+                <Input @bind-Value="@Configuration.modelId" Placeholder="例如: deepseek-chat" Style="flex: 1;"/>
                 <Button Type="@ButtonType.Default"
                         Icon="@IconType.Outline.Search"
                         Loading="@isLoadingModels"
@@ -26,12 +25,12 @@
         </FormItem>
         <Divider>思考模式</Divider>
         <FormItem Label="启用思考模式 (Thinking Mode)">
-            <Switch @bind-Value="@config.thinkingEnabled"/>
+            <Switch @bind-Value="@Configuration.thinkingEnabled"/>
         </FormItem>
-        @if (config.thinkingEnabled)
+        @if (Configuration.thinkingEnabled)
         {
             <FormItem Label="思考强度 (Reasoning Effort)">
-                <RadioGroup @bind-Value="@config.reasoningEffort">
+                <RadioGroup @bind-Value="@Configuration.reasoningEffort">
                     <Radio RadioButton Value="@("low")">Low</Radio>
                     <Radio RadioButton Value="@("medium")">Medium</Radio>
                     <Radio RadioButton Value="@("high")">High</Radio>
@@ -39,8 +38,6 @@
                 </RadioGroup>
             </FormItem>
         }
-
-        @ConfigSaveUI((config, newConfig => { config = (ChatServiceConfig)newConfig; StateHasChanged(); }))
     </Form>
 
     <Modal Title="探测到的模型列表"
@@ -61,23 +58,13 @@
     </Modal>
 
     @code {
-        ChatServiceConfig config = new();
         List<string> availableModels = new();
         bool isLoadingModels = false;
         bool isModelModalVisible = false;
 
-        protected override void OnInitialized()
-        {
-            var result = ConfigurationSystem.GetConfiguration(PluginType);
-            if (result is ChatServiceConfig c)
-            {
-                config = (ChatServiceConfig)c.Clone();
-            }
-        }
-
         async Task FetchModels()
         {
-            if (string.IsNullOrWhiteSpace(config.endpoint) || string.IsNullOrWhiteSpace(config.apiKey))
+            if (string.IsNullOrWhiteSpace(Configuration.endpoint) || string.IsNullOrWhiteSpace(Configuration.apiKey))
             {
                 MessageService.Warning("请先填写 Endpoint 和 API Key 喵！");
                 return;
@@ -87,9 +74,9 @@
             try
             {
                 using HttpClient client = new();
-                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", config.apiKey);
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Configuration.apiKey);
 
-                string url = config.endpoint.TrimEnd('/');
+                string url = Configuration.endpoint.TrimEnd('/');
                 if (!url.EndsWith("/models"))
                 {
                     url += "/models";
@@ -136,7 +123,7 @@
 
         void SelectModel(string modelId)
         {
-            config.modelId = modelId;
+            Configuration.modelId = modelId;
             isModelModalVisible = false;
         }
     }

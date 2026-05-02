@@ -1,7 +1,6 @@
 @namespace Alife.Implement
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<MessageProcessService, MessageFilterData>
 @using Alife.Framework
-@inject ConfigurationSystem ConfigurationSystem
 
 <div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
     <Flex Direction="FlexDirection.Vertical" Gap="@("24")">
@@ -10,64 +9,35 @@
             <Text Type="TextElementType.Secondary">统一管理所有消息的附加提示词和格式化模板。</Text>
         </div>
 
-        @if (config != null)
-        {
-            <GridRow Gutter="16">
-                <GridCol Span="24">
-                    <Flex Align="FlexAlign.Center" Style="margin-bottom: 24px;">
-                        <Text Strong Style="margin-right: 12px;">注入当前时间 (Timestamp)</Text>
-                        <Switch @bind-Checked="@config.EnableTimestamp"/>
-                    </Flex>
-                </GridCol>
+        <GridRow Gutter="16">
+            <GridCol Span="24">
+                <Flex Align="FlexAlign.Center" Style="margin-bottom: 24px;">
+                    <Text Strong Style="margin-right: 12px;">注入当前时间 (Timestamp)</Text>
+                    <Switch @bind-Checked="@Configuration.EnableTimestamp"/>
+                </Flex>
+            </GridCol>
 
-                <GridCol Span="24">
-                    <div style="margin-bottom: 16px;">
-                        <Text Strong Style="display: block; margin-bottom: 8px;">通用消息头 (MessageHeader)</Text>
-                        <Text Type="TextElementType.Secondary"
-                              Style="font-size: 12px; display: block; margin-bottom: 8px;">
-                            将附加在每条发给 AI 的消息开头，用于约束回复风格。
-                        </Text>
-                        <TextArea @bind-Value="@config.MessageAppend" Rows="3" Style="border-radius: 8px;"></TextArea>
-                    </div>
-                </GridCol>
+            <GridCol Span="24">
+                <div style="margin-bottom: 16px;">
+                    <Text Strong Style="display: block; margin-bottom: 8px;">通用消息头 (MessageHeader)</Text>
+                    <Text Type="TextElementType.Secondary"
+                          Style="font-size: 12px; display: block; margin-bottom: 8px;">
+                        将附加在每条发给 AI 的消息开头，用于约束回复风格。
+                    </Text>
+                    <TextArea @bind-Value="@Configuration.MessageAppend" Rows="3" Style="border-radius: 8px;"></TextArea>
+                </div>
+            </GridCol>
 
-                <GridCol Span="24">
-                    <div style="margin-bottom: 16px;">
-                        <Text Strong Style="display: block; margin-bottom: 8px;">缓存消息头 (PokeHeader)</Text>
-                        <Text Type="TextElementType.Secondary"
-                              Style="font-size: 12px; display: block; margin-bottom: 8px;">
-                            将附加在每条发给 AI 的系统缓存消息开头，用于对缓存消息进行特殊处理。
-                        </Text>
-                        <TextArea @bind-Value="@config.PokeAppend" Rows="2" Style="border-radius: 8px;"></TextArea>
-                    </div>
-                </GridCol>
-
-                <GridCol Span="24" Style="margin-top: 16px;">
-                    @ConfigSaveUI((config, newConfig => {
-                        config = (MessageFilterData)newConfig;
-                        StateHasChanged();
-                    }))
-                </GridCol>
-            </GridRow>
-        }
+            <GridCol Span="24">
+                <div style="margin-bottom: 16px;">
+                    <Text Strong Style="display: block; margin-bottom: 8px;">缓存消息头 (PokeHeader)</Text>
+                    <Text Type="TextElementType.Secondary"
+                          Style="font-size: 12px; display: block; margin-bottom: 8px;">
+                        将附加在每条发给 AI 的系统缓存消息开头，用于对缓存消息进行特殊处理。
+                    </Text>
+                    <TextArea @bind-Value="@Configuration.PokeAppend" Rows="2" Style="border-radius: 8px;"></TextArea>
+                </div>
+            </GridCol>
+        </GridRow>
     </Flex>
 </div>
-
-@code {
-    MessageFilterData? config;
-
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-
-        var service = Plugin as MessageProcessService;
-        if (service != null)
-        {
-            config = service.Configuration;
-        }
-        else
-        {
-            config = ConfigurationSystem.GetConfiguration(PluginType, Character?.StorageKey ?? "") as MessageFilterData;
-        }
-    }
-}

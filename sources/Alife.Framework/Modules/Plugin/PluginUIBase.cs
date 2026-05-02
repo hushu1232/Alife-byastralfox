@@ -3,16 +3,27 @@ using Microsoft.AspNetCore.Components;
 namespace Alife.Framework;
 
 /// <summary>
-/// 插件 UI 基类。
-/// 所有的插件自定义配置/管理界面应继承此类。
+/// 插件 UI 基类（带配置）。
+/// TPlugin: 插件类型，TConfig: 配置类型。
+/// PluginType 由泛型自动推导，ConfigSaveUI 由框架层常驻渲染，子类无需关心。
 /// </summary>
-public abstract class PluginUIBase : ComponentBase
+public abstract class PluginUIBase<TPlugin, TConfig> : ComponentBase
+    where TPlugin : Plugin
+    where TConfig : class, new()
 {
-    [Parameter] public Type PluginType { get; set; } = null!; //当前插件的类型。
-    [Parameter] public Character? Character { get; set; } //当前关联的角色（如果有）。
-    [Parameter] public ChatActivity? ChatActivity { get; set; } //当前关联的运行活动（如果有）。
-    [Parameter] public Plugin? Plugin { get; set; }
+    public Type PluginType => typeof(TPlugin);
 
+    [Parameter] public Character? Character { get; set; }
+    [Parameter] public ChatActivity? ChatActivity { get; set; }
+    [Parameter] public TPlugin? Plugin { get; set; }
+    [Parameter] public TConfig Configuration { get; set; } = new();
     [Parameter] public RenderFragment DefaultUI { get; set; } = _ => { };
-    [Parameter] public RenderFragment<(object Config, Action<object> OnChanged)> ConfigSaveUI { get; set; } = _ => _ => { };
+}
+
+/// <summary>
+/// 插件 UI 基类（无配置）。
+/// </summary>
+public abstract class PluginUIBase<TPlugin> : PluginUIBase<TPlugin, object>
+    where TPlugin : Plugin
+{
 }

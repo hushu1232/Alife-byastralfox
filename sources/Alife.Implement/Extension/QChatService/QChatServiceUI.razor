@@ -1,15 +1,14 @@
 @namespace Alife.Implement
-@inherits Alife.Framework.PluginUIBase
+@inherits Alife.Framework.PluginUIBase<QChatService, QChatConfig>
 @implements IDisposable
 @using Alife.Framework
-@inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Style="margin-bottom: 24px;">
-        <Title Level="4" Style="margin: 0;">QQ 聊天配置 (OneBot v11)</Title>
+        <Title Level="4" Style="margin: 0;">聊天配置 (OneBot V12)</Title>
         <div style="display: flex; align-items: center; gap: 8px;">
-            @if (Plugin is QChatService qChat)
+            @if (Plugin is { } qChat)
             {
                 <Badge Status="@(qChat.IsConnected ? BadgeStatus.Success : BadgeStatus.Error)"
                        Text="@(qChat.IsConnected ? "已连接" : "未连接")"/>
@@ -24,19 +23,19 @@
         </div>
     </Flex>
 
-    <Form TModel="QChatConfig" Model="@config" Layout="@FormLayout.Vertical">
+    <Form TModel="QChatConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <FormItem Label="WebSocket URL">
-            <Input @bind-Value="@config.Url" placeholder="例如: ws://127.0.0.1:3001"/>
+            <Input @bind-Value="@Configuration.Url" placeholder="例如: ws://127.0.0.1:3004"/>
         </FormItem>
-        <FormItem Label="机器人 QQ 号">
-            <InputNumber @bind-Value="@config.BotId" Style="width: 100%;"/>
+        <FormItem Label="机器人 ID">
+            <Input @bind-Value="@Configuration.BotId" Style="width: 100%;"/>
         </FormItem>
-        <FormItem Label="主人 QQ 号">
-            <InputNumber @bind-Value="@config.OwnerId" Style="width: 100%;"/>
+        <FormItem Label="主人 ID">
+            <Input @bind-Value="@Configuration.OwnerId" Style="width: 100%;"/>
         </FormItem>
 
         @* ───── 运行时状态 ───── *@
-        @if (service != null)
+        @if (Plugin != null)
         {
             <Divider>运行时管理</Divider>
 
@@ -49,7 +48,7 @@
                                     总缓存消息
                                 </Text>
                                 <Text Strong
-                                      Style="font-size: 18px;">@service.GroupStates.Values.Sum(i => i.MessageBuffer.Count) 条
+                                      Style="font-size: 18px;">@Plugin.GroupStates.Values.Sum(i => i.MessageBuffer.Count) 条
                                 </Text>
                             </Card>
                         </GridCol>
@@ -58,15 +57,15 @@
                                 <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 4px;">
                                     活跃群组统计
                                 </Text>
-                                <Text Strong>@service.GroupStates.Count(kv => kv.Value.IsEnabled) 个激活中 /
-                                    共 @service.GroupStates.Count 个记录
+                                <Text Strong>@Plugin.GroupStates.Count(kv => kv.Value.IsEnabled) 个激活中 /
+                                    共 @Plugin.GroupStates.Count 个记录
                                 </Text>
                             </Card>
                         </GridCol>
                     </GridRow>
                 </TabPane>
 
-                @foreach (var kv in service.GroupStates.OrderBy(x => x.Key).Take(20))
+                @foreach (var kv in Plugin.GroupStates.OrderBy(x => x.Key).Take(20))
                 {
                     var groupId = kv.Key;
                     var state = kv.Value;
@@ -92,7 +91,7 @@
                                                 </SpaceItem>
                                                 <SpaceItem>
                                                     @{
-                                                        var remaining = config.FlushInterval - (DateTime.Now - state.LastFlushedTime).TotalSeconds;
+                                                        var remaining = Configuration.FlushInterval - (DateTime.Now - state.LastFlushedTime).TotalSeconds;
                                                     }
                                                     <Tag Color="TagColor.Orange">
                                                         <Icon Type="@IconType.Outline.ClockCircle"/>
@@ -119,7 +118,7 @@
                                                 <Button Danger="@state.IsEnabled"
                                                         Type="@ButtonType.Primary"
                                                         Size="@ButtonSize.Small"
-                                                        OnClick="@(() => service.QGroup(groupId, !state.IsEnabled))">
+                                                        OnClick="@(() => Plugin.QGroup(groupId, !state.IsEnabled))">
                                                     @(state.IsEnabled ? "停用" : "激活")
                                                 </Button>
                                             </SpaceItem>
@@ -127,7 +126,7 @@
                                                 <Button Type="@ButtonType.Default"
                                                         Size="@ButtonSize.Small"
                                                         Disabled="@(state.MessageBuffer.Count == 0)"
-                                                        OnClick="@(() => service.FlushGroupBuffer(state))">
+                                                        OnClick="@(() => Plugin.FlushGroupBuffer(state))">
                                                     手动推送
                                                 </Button>
                                             </SpaceItem>
@@ -166,19 +165,19 @@
         @* ───── 行为与触发设置 ───── *@
         <Divider>行为与触发设置</Divider>
         <FormItem Label="唤醒关键词">
-            <Input @bind-Value="@config.WakingWords" Placeholder="逗号分隔，如: 小猫,喵喵"/>
+            <Input @bind-Value="@Configuration.WakingWords" Placeholder="逗号分隔，如: 小猫,喵喵"/>
             <Text Type="TextElementType.Secondary" Style="font-size: 11px;">匹配这些词时，等效于被 @@ 提及</Text>
         </FormItem>
 
         <FormItem Label="群聊回复预设 (Prompt)">
-            <TextArea @bind-Value="@config.AppendChatPrompt" Rows="2"
+            <TextArea @bind-Value="@Configuration.AppendChatPrompt" Rows="2"
                       Placeholder="附加在消息末尾的指导提示词"></TextArea>
         </FormItem>
 
         <GridRow Gutter="16">
             <GridCol Span="12">
                 <FormItem Label="自动休眠时间 (分钟)">
-                    <AntDesign.InputNumber @bind-Value="@config.AutoCloseMinutes" Min="1f" Style="width: 100%;"/>
+                    <AntDesign.InputNumber @bind-Value="@Configuration.AutoCloseMinutes" Min="1f" Style="width: 100%;"/>
                     <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
                         群聊无新消息超过此时间后自动关闭（节省资源）
                     </Text>
@@ -194,11 +193,11 @@
                 <Text Strong>快速预设方案</Text>
                 <Space>
                     <SpaceItem>
-                        <Button OnClick="@ApplyDesktopPetPreset" Icon="@IconType.Outline.Smile">自主开关（适合桌宠玩耍）
+                        <Button OnClick="@ApplyDesktopPetPreset" Icon="@IconType.Outline.Smile">自主开关
                         </Button>
                     </SpaceItem>
                     <SpaceItem>
-                        <Button OnClick="@ApplyGroupChatPreset" Icon="@IconType.Outline.Robot">全天挂机（适合群机器人）
+                        <Button OnClick="@ApplyGroupChatPreset" Icon="@IconType.Outline.Robot">全天挂机
                         </Button>
                     </SpaceItem>
                 </Space>
@@ -207,7 +206,7 @@
             <GridRow Gutter="16">
                 <GridCol Span="8">
                     <FormItem Label="启用防抖 (Debounce)">
-                        <Switch @bind-Value="@config.DebounceEnabled"/>
+                        <Switch @bind-Value="@Configuration.DebounceEnabled"/>
                         <br/>
                         <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
                             开启后：每条新消息都会重置发送倒计时
@@ -216,13 +215,13 @@
                 </GridCol>
                 <GridCol Span="8">
                     <FormItem Label="发送间隔 (秒)">
-                        <AntDesign.InputNumber @bind-Value="@config.FlushInterval" Min="0.5f" Step="0.5f"
+                        <AntDesign.InputNumber @bind-Value="@Configuration.FlushInterval" Min="0.5f" Step="0.5f"
                                                Style="width: 100%;"/>
                     </FormItem>
                 </GridCol>
                 <GridCol Span="8">
                     <FormItem Label="最大积压条数">
-                        <AntDesign.InputNumber @bind-Value="@config.MaxBufferMessages" Min="0" Style="width: 100%;"/>
+                        <AntDesign.InputNumber @bind-Value="@Configuration.MaxBufferMessages" Min="0" Style="width: 100%;"/>
                         <Text Type="TextElementType.Secondary" Style="font-size: 11px;">0 表示不限</Text>
                     </FormItem>
                 </GridCol>
@@ -231,7 +230,7 @@
             <GridRow Gutter="16" Style="margin-top: 8px;">
                 <GridCol Span="12">
                     <FormItem Label="主动发言概率">
-                        <AntDesign.InputNumber @bind-Value="@config.ProactiveChatProbability" Min="0f" Max="1f"
+                        <AntDesign.InputNumber @bind-Value="@Configuration.ProactiveChatProbability" Min="0f" Max="1f"
                                                Step="0.05f"
                                                Style="width: 100%;"/>
                         <Text Type="TextElementType.Secondary" Style="font-size: 11px;">0 表示关闭，收到非 @@
@@ -241,7 +240,7 @@
                 </GridCol>
                 <GridCol Span="12">
                     <FormItem Label="回复后自动停用">
-                        <Switch @bind-Value="@config.CloseGroupAfterReply"/>
+                        <Switch @bind-Value="@Configuration.CloseGroupAfterReply"/>
                         <br/>
                         <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
                             单次回复后自动进入非激活状态（适合低频互动）
@@ -250,14 +249,6 @@
                 </GridCol>
             </GridRow>
         </Card>
-
-        @ConfigSaveUI((config, newConfig =>
-        {
-            config = (QChatConfig)newConfig;
-            if (service != null)
-                service.Configuration = config;
-            StateHasChanged();
-        }))
     </Form>
 
     <Divider/>
@@ -265,7 +256,7 @@
     <div style="background: #f5f5f5; padding: 16px; border-radius: 4px;">
         <Text Strong>使用说明：</Text>
         <ul style="margin-top: 8px; padding-left: 20px; font-size: 13px; color: #666;">
-            <li>确保已启动 OneBot v11 兼容的服务端（如 LLOneBot, NapCat, Go-CQHTTP）。</li>
+            <li>确保已启动 OneBot V12 兼容的服务端。</li>
             <li>在服务端配置中开启 正向 WebSocket 服务，端口需与此处填写的 URL 一致。</li>
             <li>保存配置后，如果未自动连接，可点击上方的"重连"按钮。</li>
         </ul>
@@ -274,49 +265,37 @@
 
 @code {
     string activeTabKey = "overview";
-    QChatConfig config = new();
-    QChatService? service;
     bool isReconnecting;
     System.Timers.Timer? refreshTimer;
 
     protected override void OnInitialized()
     {
-        var result = ConfigurationSystem.GetConfiguration(PluginType);
-        if (result is QChatConfig c)
-            config = c with { };
-
         refreshTimer = new System.Timers.Timer(1000);
         refreshTimer.Elapsed += (_, _) => InvokeAsync(StateHasChanged);
         refreshTimer.Start();
     }
 
-    protected override void OnParametersSet()
-    {
-        base.OnParametersSet();
-        service = Plugin as QChatService;
-    }
-
     void ApplyDesktopPetPreset()
     {
-        config.DebounceEnabled = false;
-        config.FlushInterval = 15f;
-        config.MaxBufferMessages = 0;
-        config.ProactiveChatProbability = 0;
-        config.CloseGroupAfterReply = false;
+        Configuration.DebounceEnabled = false;
+        Configuration.FlushInterval = 15f;
+        Configuration.MaxBufferMessages = 0;
+        Configuration.ProactiveChatProbability = 0;
+        Configuration.CloseGroupAfterReply = false;
     }
 
     void ApplyGroupChatPreset()
     {
-        config.DebounceEnabled = true;
-        config.FlushInterval = 3f;
-        config.MaxBufferMessages = 5;
-        config.ProactiveChatProbability = 0.1f;
-        config.CloseGroupAfterReply = true;
+        Configuration.DebounceEnabled = true;
+        Configuration.FlushInterval = 3f;
+        Configuration.MaxBufferMessages = 5;
+        Configuration.ProactiveChatProbability = 0.1f;
+        Configuration.CloseGroupAfterReply = true;
     }
 
     async Task Reconnect()
     {
-        if (Plugin is QChatService qChat)
+        if (Plugin is { } qChat)
         {
             isReconnecting = true;
             try

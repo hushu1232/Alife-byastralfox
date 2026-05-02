@@ -11,6 +11,14 @@
     {
         @CreateDefaultUI()
     }
+
+    @if (ConfigurationSystem.CanConfiguration(PluginType))
+    {
+        <ConfigSaveUI PluginType="@PluginType"
+                      Configuration="@GetConfigFromText()"
+                      CharacterName="@Character?.Name"
+                      OnConfigurationChanged="@OnConfigChanged"/>
+    }
 </div>
 
 @code {
@@ -21,17 +29,10 @@
     Type? customUIType;
     Dictionary<string, object> customUIParameters = new();
 
-    RenderFragment CreateDefaultUI() => 
+    RenderFragment CreateDefaultUI() =>
         @<div style="display: flex; flex-direction: column; gap: 16px;">
-            <TextArea Style="min-height: 200px; border-radius: 8px;" @bind-Value="pluginConfiguration" />
-            <ConfigSaveUI PluginType="@PluginType" Configuration="@GetConfigFromText()" CharacterName="@Character?.Name" />
+            <TextArea Style="min-height: 200px; border-radius: 8px;" @bind-Value="pluginConfiguration"/>
         </div>;
-
-    RenderFragment<(object Config, Action<object> OnChanged)> CreateConfigSaveUI() => data => 
-        @<ConfigSaveUI PluginType="@PluginType" 
-                      Configuration="@data.Config" 
-                      CharacterName="@Character?.Name" 
-                      OnConfigurationChanged="@(newConfig => data.OnChanged?.Invoke(newConfig))" />;
 
     object? GetConfigFromText()
     {
@@ -46,20 +47,38 @@
         }
     }
 
+    void OnConfigChanged(object newConfig)
+    {
+        pluginConfiguration = JsonConvert.SerializeObject(newConfig, Formatting.Indented);
+        StateHasChanged();
+    }
+
     protected override void OnParametersSet()
     {
         var attr = PluginType.GetCustomAttribute<PluginAttribute>();
         pluginConfiguration = ConfigurationSystem.GetConfigurationJson(PluginType)?.ToString(Formatting.Indented) ?? "{}";
 
+        object? config = null;
+        if (ConfigurationSystem.CanConfiguration(PluginType))
+        {
+            object? raw = ConfigurationSystem.GetConfiguration(PluginType, Character?.StorageKey ?? "");
+            if (raw != null)
+            {
+                string json = JsonConvert.SerializeObject(raw);
+                config = JsonConvert.DeserializeObject(json, raw.GetType());
+            }
+        }
+
         if (attr?.EditorUI != null)
         {
             customUIType = attr.EditorUI;
-            customUIParameters = new Dictionary<string, object> {
-                { "PluginType", PluginType },
+            customUIParameters = new Dictionary<string, object>
+            {
                 { "Character", Character },
                 { "DefaultUI", CreateDefaultUI() },
-                { "ConfigSaveUI", CreateConfigSaveUI() }
             };
+            if (config != null)
+                customUIParameters["Configuration"] = config;
         }
         else
         {
