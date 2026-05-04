@@ -12,6 +12,8 @@ namespace Alife.Function.Vision;
 /// </summary>
 public class VisionAnalyzer : IDisposable
 {
+    private bool _isFallback = false;
+    private string _fallbackReason = "";
     /// <summary>
     /// 模型生成的最大字长限制（Token 数量）。
     /// </summary>
@@ -19,8 +21,8 @@ public class VisionAnalyzer : IDisposable
 
     public VisionAnalyzer(int timeoutSeconds = 120, Action<string>? onLog = null)
     {
-        AlifePlatform.Command("pip", "install torch torchvision --index-url https://download.pytorch.org/whl/cu121");
-        AlifePlatform.Command("pip", "install Pillow transformers timm einops");
+        AlifePlatform.Command("python", "-m pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --find-links https://mirrors.aliyun.com/pytorch-wheels/cu121/");
+        AlifePlatform.Command("python", "-m pip install Pillow transformers<4.58.0 timm einops sentencepiece tiktoken -i https://mirrors.aliyun.com/pypi/simple/");
 
         const string ModelId = "OpenGVLab/InternVL2_5-1B";
         string modelPath = AlifeModel.EnsureModelExisting(ModelId);
@@ -38,17 +40,30 @@ public class VisionAnalyzer : IDisposable
             CreateNoWindow = true,
             StandardInputEncoding = new UTF8Encoding(false),
             StandardOutputEncoding = new UTF8Encoding(false),
+            StandardErrorEncoding = new UTF8Encoding(false),
             Environment =
             {
-                ["PYTHONIOENCODING"] = "utf-8"
+                ["PYTHONIOENCODING"] = "utf-8",
+                ["PYTHONUTF8"] = "1"
             }
         };
 
-        process = Process.Start(psi)
-                  ?? throw new InvalidOperationException("Failed to start Python vision bridge.");
+        try
+        {
+            process = Process.Start(psi)
+                      ?? throw new InvalidOperationException("Failed to start Python vision bridge.");
 
-        stdin = process.StandardInput;
-        stdout = process.StandardOutput;
+            stdin = process.StandardInput;
+            stdout = process.StandardOutput;
+
+            // ... 同步 READY 信号 (此处省略，实际执行时会合并)
+        }
+        catch (Exception ex)
+        {
+            _isFallback = true;
+            _fallbackReason = ex.Message;
+            onLog?.Invoke($"[Vision] Entering Fallback Mode: {ex.Message}");
+        }
 
         if (onLog != null)
         {
@@ -98,11 +113,38 @@ public class VisionAnalyzer : IDisposable
     /// <summary>
     /// 视觉问答：用中文提问，获得中文回答。
     /// </summary>
-    public Task<string> QueryAsync(string imagePath, string question, int? maxResponseTokens = null,
-        CancellationToken ct = default)
+    public async Task<string> QueryAsync(string imagePath, string question, int? maxResponseTokens = null,
+        CancellationToken cancellationToken = default)
     {
-        return SendRequestAsync(
-            new { action = "query", image_path = imagePath, question, max_new_tokens = maxResponseTokens }, ct);
+        var sb = new StringBuilder();
+        
+        // 1. 基础元数据分析 (永远在线)
+        sb.AppendLine("【屏幕元数据分析】");
+        sb.AppendLine($"- 活跃窗口：{WindowsPlatform.GetActiveWindowTitle()}");
+        sb.AppendLine($"- 窗口列表：{AlifePlatform.GetRunningWindowTitles()}");
+        
+        // 2. AI 深度视觉分析 (CUDA 增强)
+        if (_isFallback)
+        {
+            sb.AppendLine("\n[AI 视觉状态]：CUDA 运行时未就绪，已跳过神经网络深度分析。");
+        }
+        else
+        {
+            try
+            {
+                var aiResult = await SendRequestAsync(
+                    new { action = "query", image_path = imagePath, question, max_new_tokens = maxResponseTokens }, cancellationToken);
+                
+                sb.AppendLine("\n【AI 视觉深度理解】");
+                sb.AppendLine(aiResult);
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"\n[AI 视觉调用失败]：{ex.Message}");
+            }
+        }
+
+        return sb.ToString();
     }
 
     async Task<string> SendRequestAsync(object request, CancellationToken ct)

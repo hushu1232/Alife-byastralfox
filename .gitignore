@@ -3,7 +3,7 @@
 /.idea/
 /Outputs/
 /Storage/
-/Resources/
+/Runtime/
 bin/
 obj/
 *.log

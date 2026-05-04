@@ -2,151 +2,67 @@
 setlocal enabledelayedexpansion
 
 :: Auto Request Administrator Privileges
-net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [Info] Requesting Administrator Privileges...
-    powershell -Command "Start-Process -FilePath '%~dpnx0' -Verb RunAs"
-    exit
-)
+net session >nul 2>&1 || (powershell -Command "Start-Process -FilePath '%~dpnx0' -Verb RunAs" & exit)
 
 cd /d "%~dp0"
-title Alife Launcher [Auto-Repair]
-echo ============================================================
-echo                Alife System Launcher
-echo ============================================================
-echo.
+title Alife Launcher [Private Runtime Mode]
+echo [Alife] System Initializing...
 
-:CHECK_VCREDIST
-echo [System] Checking Visual C++ Redistributable...
-powershell -Command "$i = Get-ItemProperty HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64 -Name Installed -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Installed; if ($i -eq 1) { exit 0 } else { exit 1 }"
-if %errorlevel% equ 0 goto CHECK_DOTNET
+:: 1. Check Visual C++ & .NET Desktop Runtime
+powershell -Command "if(Test-Path \"$env:SystemRoot\System32\vcruntime140.dll\"){exit 0}else{exit 1}" || call :INSTALL "Visual C++" "https://aka.ms/vs/17/release/vc_redist.x64.exe" "/install /quiet /norestart"
+dotnet --list-runtimes | findstr "Microsoft.WindowsDesktop.App [9-99]" >nul || call :INSTALL ".NET 9 Desktop" "https://aka.ms/dotnet/9.0/windowsdesktop-runtime-win-x64.exe" "/quiet /norestart"
 
-echo [Warning] Visual C++ Redistributable is missing.
-set /p "install_vc=Install Visual C++ Redistributable now? (y/n): "
-if /i "!install_vc!" neq "y" (
-    echo [Error] Visual C++ Redistributable is required.
-    pause
-    exit /b 1
+:: 2. Setup Forced Private Python Environment
+set "PY_DIR=%~dp0Runtime\Python312"
+
+if not exist "!PY_DIR!\python.exe" (
+    echo [Alife] Downloading Private Python 3.12...
+    if not exist "!PY_DIR!" mkdir "!PY_DIR!"
+    powershell -Command "Invoke-WebRequest -Uri 'https://repo.huaweicloud.com/python/3.12.10/python-3.12.10-embed-amd64.zip' -OutFile '%TEMP%\py.zip'"
+    echo [Alife] Extracting Python...
+    powershell -Command "Expand-Archive -Path '%TEMP%\py.zip' -DestinationPath '!PY_DIR!' -Force"
+    del "%TEMP%\py.zip"
+    
+    :: Fix .pth file (enable site-packages)
+    echo [Alife] Configuring path environment...
+    :: Fix .pth file (enable site-packages)
+    echo [Alife] Configuring path environment...
+    powershell -Command "$p = Join-Path '!PY_DIR!' 'python312._pth'; (Get-Content $p) | ForEach-Object { $_ -replace '#import site', 'import site' } | Set-Content $p"
+    
+    :: Install Pip
+    echo [Alife] Installing Pip...
+    powershell -Command "Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile '%TEMP%\get-pip.py'"
+    "!PY_DIR!\python.exe" "%TEMP%\get-pip.py" --no-warn-script-location --index-url https://mirrors.aliyun.com/pypi/simple/
+    del "%TEMP%\get-pip.py"
 )
 
-echo [Info] Downloading Visual C++ Redistributable...
-powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile '%TEMP%\vcredist_x64.exe'"
-echo [Info] Installing Visual C++ Redistributable...
-start /wait "" "%TEMP%\vcredist_x64.exe" /install /quiet /norestart
-del "%TEMP%\vcredist_x64.exe"
-echo [Success] Visual C++ Redistributable installed.
-echo.
+:: 3. PATH Injection & Launch
+:: Use private runtime and its scripts directly
+set "PATH=!PY_DIR!;!PY_DIR!\Scripts;%PATH%"
+set "PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/"
 
-:CHECK_DOTNET
-echo [System] Checking .NET Runtime (9.0 or higher)...
-dotnet --list-runtimes >nul 2>&1
-if %errorlevel% neq 0 goto INSTALL_DOTNET
-powershell -Command "if ((dotnet --list-runtimes | Select-String 'Microsoft.WindowsDesktop.App [9-99]').Count -gt 0) { exit 0 } else { exit 1 }"
-if %errorlevel% equ 0 goto CHECK_PYTHON
+echo [Alife] Isolated environment ready.
+python --version
+python -m pip install pip setuptools wheel >nul 2>&1
 
-:INSTALL_DOTNET
-echo [Warning] .NET 9 Desktop Runtime is missing.
-set /p "install_net=Install .NET 9 Desktop Runtime now? (y/n): "
-if /i "!install_net!" neq "y" (
-    echo [Error] .NET 9 Desktop Runtime is required.
-    pause
-    exit /b 1
-)
-
-echo [Info] Downloading .NET 9 Desktop Runtime (this may take a minute)...
-powershell -Command "Invoke-WebRequest -Uri 'https://aka.ms/dotnet/9.0/windowsdesktop-runtime-win-x64.exe' -OutFile '%TEMP%\dotnet_installer.exe'"
-
-echo [Info] Installing .NET 9 Desktop Runtime...
-start /wait "" "%TEMP%\dotnet_installer.exe" /quiet /norestart
-del "%TEMP%\dotnet_installer.exe"
-echo [Success] .NET 9 Desktop Runtime installed.
-echo.
-
-:CHECK_PYTHON
-echo [System] Checking Python environment...
-
-:: 1. Check if python command is valid
-python --version >nul 2>&1
-if %errorlevel% neq 0 goto TRY_FIX
-
-:: 2. Check if it is the Windows Store stub (even if version check passed)
-where python | findstr /i "WindowsApps" >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [Warning] Windows Store Python stub detected.
-    goto TRY_FIX
-)
-
-:: 3. Check for 'py' launcher
-py --version >nul 2>&1
-if %errorlevel% equ 0 (
-    set "PYTHON_CMD=py"
-    goto PYTHON_READY
-)
-set "PYTHON_CMD=python"
-goto PYTHON_READY
-
-:TRY_FIX
-:: --- Auto-Repair Logic ---
-echo [Info] Python not properly configured in PATH. Searching registry...
-set "FOUND_PY_DIR="
-for /f "delims=" %%i in ('powershell -Command "foreach($h in 'HKCU','HKLM'){ $p='Registry::'+$h+'\Software\Python\PythonCore\3.12\InstallPath'; if(Test-Path $p){ (Get-ItemProperty $p).'(default)'; break } }"') do set "FOUND_PY_DIR=%%i"
-
-if defined FOUND_PY_DIR (
-    if exist "!FOUND_PY_DIR!\python.exe" (
-        echo [Info] Found Python at !FOUND_PY_DIR!, fixing environment...
-        set "PATH=!FOUND_PY_DIR!;!FOUND_PY_DIR!\Scripts;!PATH!"
-        
-        :: Disable Store Aliases
-        powershell -Command "foreach($n in 'python.exe_0','python3.exe_0','python.exe','python3.exe'){ $p='HKCU:\Software\Microsoft\Windows\CurrentVersion\AppInstaller\AppExecutionAliases\'+$n; if(Test-Path $p){ Set-ItemProperty $p -Name 'State' -Value 0 -ErrorAction SilentlyContinue } }" >nul 2>&1
-        :: Permanently reorder User PATH
-        powershell -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $l=$p.Split(';',[System.StringSplitOptions]::RemoveEmptyEntries)|Where-Object{$_ -notlike '*Python312*'}; $nList=@('!FOUND_PY_DIR!','!FOUND_PY_DIR!\Scripts')+$l; [Environment]::SetEnvironmentVariable('Path',($nList -join ';'),'User')" >nul 2>&1
-        
-        echo [Success] Environment fixed permanently.
-        :: Re-verify after fix
-        python --version >nul 2>&1
-        if %errorlevel% equ 0 goto PYTHON_READY
-    )
-)
-:: --- End of Auto-Repair Logic ---
-
-echo [Warning] Python 3.12 is missing.
-set /p "install=Install Python 3.12.10 now? (y/n): "
-if /i "!install!" neq "y" (
-    echo [Error] Python required.
-    pause
-    exit /b 1
-)
-
-echo [Info] Downloading Python...
-powershell -Command "Invoke-WebRequest -Uri 'https://repo.huaweicloud.com/python/3.12.10/python-3.12.10-amd64.exe' -OutFile '%TEMP%\python_installer.exe'"
-
-echo [Info] Installing Python...
-start /wait "" "%TEMP%\python_installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0
-set "EXIT_CODE=%errorlevel%"
-del "%TEMP%\python_installer.exe"
-
-:: Refresh session PATH and retry
-set "PS_CMD=$p = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User'); [Environment]::ExpandEnvironmentVariables($p)"
-for /f "delims=" %%i in ('powershell -Command "%PS_CMD%"') do set "PATH=%%i"
-goto CHECK_PYTHON
-
-:PYTHON_READY
-echo [Success] Python detected and ready.
-if "!PYTHON_CMD!"=="" set "PYTHON_CMD=python"
-!PYTHON_CMD! --version
-
-echo.
-echo [Info] Configuring Pip...
-!PYTHON_CMD! -m pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ >nul 2>&1
-
-:LAUNCH_ALIFE
-echo.
-echo [Info] Launching Alife...
 if exist "Outputs\Alife\Alife.exe" (
     "Outputs\Alife\Alife.exe"
 ) else (
-    echo [Error] 'Outputs\Alife\Alife.exe' not found.
-    pause
-    exit /b 1
+    echo [Error] Alife.exe not found.
 )
+echo.
+echo [Alife] Process ended.
 pause
+exit /b
+
+:INSTALL
+echo [Warning] %~1 is missing.
+set /p "ans=Install %~1 now? (y/n): "
+if /i "!ans!" neq "y" exit /b 1
+echo [Alife] Downloading and installing %~1...
+powershell -Command "Invoke-WebRequest -Uri '%~2' -OutFile '%TEMP%\setup.exe'"
+start /wait "" "%TEMP%\setup.exe" %~3
+del "%TEMP%\setup.exe"
+echo [Success] %~1 installed.
+echo.
+goto :eof

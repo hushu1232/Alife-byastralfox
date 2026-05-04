@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Alife.Basic;
 
-internal static class WindowsPlatform
+public static class WindowsPlatform
 {
     public static (int Width, int Height) GetResolution()
     {
@@ -59,6 +59,19 @@ internal static class WindowsPlatform
             process.BeginErrorReadLine();
             process.WaitForExit();
         }
+    }
+
+    public static string GetActiveWindowTitle()
+    {
+        const int nChars = 256;
+        StringBuilder buff = new StringBuilder(nChars);
+        IntPtr handle = WindowsNative.GetForegroundWindow();
+
+        if (WindowsNative.GetWindowText(handle, buff, nChars) > 0)
+        {
+            return buff.ToString();
+        }
+        return "Unknown";
     }
 
     public static string Screenshot()

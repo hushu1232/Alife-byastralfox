@@ -176,7 +176,7 @@ public class SpeechSynthesizer
 
     public SpeechSynthesizer(string voiceTone)
     {
-        AlifePlatform.Command("pip", "install edge-tts");
+        AlifePlatform.Command("python", "-m pip install --upgrade edge-tts");
 
         invalidChars = Path.GetInvalidFileNameChars();
         this.voiceTone = voiceTone;

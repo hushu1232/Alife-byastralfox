@@ -32,8 +32,7 @@ public static class AlifeModel
 
     static AlifeModel()
     {
-        AlifePlatform.Command("pip", "install torch --index-url https://download.pytorch.org/whl/cu121");
-        AlifePlatform.Command("pip", "install modelscope optimum[onnxruntime]");
+        AlifePlatform.Command("python", "-m pip install modelscope optimum[onnxruntime] -i https://mirrors.aliyun.com/pypi/simple/");
         ModelScopeCachePath =
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "modelscope",
                 "hub", "models").Replace(Path.DirectorySeparatorChar, '/');

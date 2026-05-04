@@ -31,11 +31,9 @@ public partial class VisionService(FunctionService functionService) : Interactiv
             throw new Exception("错误的调用方式，应该使用自闭合标签调用。");
 
         string screenshotPath = AlifePlatform.Screenshot();
-        Task<string> visionTask = analyzer!.QueryAsync(screenshotPath, query);
-        string windowInfo = AlifePlatform.GetRunningWindowTitles();
-        string visionInfo = await visionTask;
+        string visionInfo = await analyzer!.QueryAsync(screenshotPath, query);
 
-        Poke($"窗口信息：{windowInfo}\n视觉分析结果：{visionInfo}");
+        Poke(visionInfo);
     }
 
     /// <summary>
