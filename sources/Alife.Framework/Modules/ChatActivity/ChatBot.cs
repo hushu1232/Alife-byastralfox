@@ -214,14 +214,14 @@ public class ChatBot : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await Task.Run(() =>
+        if (cancelTimerSource != null)
+            await cancelTimerSource.CancelAsync();
+
+        while (IsChatting || !messageCache.IsEmpty)
         {
-            while (IsChatting)
-            {
-                while (messageCache.Count != 0)
-                    TryFlushMessageCache();
-            }
-        });
+            TryFlushMessageCache();
+            await Task.Delay(50);
+        }
     }
 
     async void Update()

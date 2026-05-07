@@ -1,6 +1,7 @@
 const ui = {
     bubble: document.getElementById("bubble"),
     bubbleContainer: document.getElementById("bubble-container"),
+    thinkingIndicator: document.getElementById("thinking-indicator"),
     chatInput: document.getElementById("chat-input"),
     sendBtn: document.getElementById("send-btn")
 };
@@ -43,6 +44,14 @@ window.chrome.webview.addEventListener("message", (e) => {
         //修改注视目标
         case "look":
             model.focus(msg.x, msg.y, msg.instant);
+            break;
+        //修改状态反馈
+        case "status":
+            if (msg.working) {
+                ui.thinkingIndicator.classList.add("show");
+            } else {
+                ui.thinkingIndicator.classList.remove("show");
+            }
             break;
     }
 

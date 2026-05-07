@@ -191,6 +191,7 @@ public class PetActivity : IDisposable
             case PlayExpressionCommand e: bridge.PlayExpression(e.Id); break;
             case MotionCommand m: bridge.PlayMotion(m.Group, m.Index); break;
             case HideBubbleCommand: bridge.HideBubble(); break;
+            case StatusCommand s: bridge.SendStatus(s.Working); break;
         }
     }
 }

@@ -36,7 +36,10 @@ public class ChatMessageService
         }
     }
 
+    public string GetDraft(string name) => draftMap.GetValueOrDefault(name) ?? "";
+    public void SetDraft(string name, string draft) => draftMap[name] = draft;
 
+    readonly Dictionary<string, string> draftMap = new();
     readonly Dictionary<string, List<ChatMessage>> messagesMap = new();
     readonly Dictionary<string, ChatBot> chatbotMap = new();
 

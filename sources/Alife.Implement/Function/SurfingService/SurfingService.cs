@@ -37,13 +37,14 @@ public class SurfingService(FunctionService functionService)
 
 
     [XmlFunction("observe")]
-    [Description("观察当前页面：返回标题、URL、正文文本以及所有可交互元素的选择器。")]
-    public async Task Observe(XmlExecutorContext context)
+    [Description("观察当前页面：返回标题、URL、正文文本以及所有可交互元素的选择器。支持通过 scope 参数查看页面的不同区域。")]
+    public async Task Observe(XmlExecutorContext context,
+        [Description("观察区域索引（用于翻页），从 1 开始，默认 1")] int scope = 1)
     {
         if (context.CallMode != CallMode.OneShot)
             throw new Exception("请使用自闭合标签调用。");
 
-        string result = await browser.ObserveAsync();
+        string result = await browser.ObserveAsync(scope);
         Poke($"[Observe] 页面状态：\n{result}");
     }
 
@@ -73,18 +74,7 @@ public class SurfingService(FunctionService functionService)
         Poke($"[Type] {result}");
     }
 
-    [XmlFunction("scroll")]
-    [Description("滚动页面。")]
-    public async Task Scroll(XmlExecutorContext context,
-        [Description("方向：up 或 down")] string direction,
-        [Description("距离（像素），默认 500")] int pixels = 500)
-    {
-        if (context.CallMode != CallMode.OneShot)
-            throw new Exception("请使用自闭合标签调用。");
 
-        string result = await browser.ScrollAsync(direction, pixels);
-        Poke($"[Scroll] {result}");
-    }
 
     [XmlFunction("runjs")]
     [Description("在浏览器的控制台中执行js代码。")]

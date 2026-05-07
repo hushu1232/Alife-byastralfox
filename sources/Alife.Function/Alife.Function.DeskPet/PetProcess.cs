@@ -97,6 +97,7 @@ public class PetProcess : IDisposable
 [JsonDerivedType(typeof(PlayExpressionCommand), "expression")]
 [JsonDerivedType(typeof(MotionCommand), "motion")]
 [JsonDerivedType(typeof(HideBubbleCommand), "hide-bubble")]
+[JsonDerivedType(typeof(StatusCommand), "status")]
 public abstract record IpcCommand;
 
 public record WindowMoveCommand(double X, double Y, int Duration) : IpcCommand;
@@ -110,6 +111,8 @@ public record PlayExpressionCommand(string? Id) : IpcCommand;
 public record MotionCommand(string Group, int Index) : IpcCommand;
 
 public record HideBubbleCommand : IpcCommand;
+
+public record StatusCommand(bool Working) : IpcCommand;
 
 [JsonDerivedType(typeof(ReadyEvent), "ready")]
 [JsonDerivedType(typeof(InputEvent), "input")]

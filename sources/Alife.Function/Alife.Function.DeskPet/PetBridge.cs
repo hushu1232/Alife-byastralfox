@@ -78,6 +78,10 @@ public class PetBridge : IDisposable
     {
         SendCommand(new { type = "look", x, y, instant });
     }
+    public void SendStatus(bool working)
+    {
+        SendCommand(new { type = "status", working });
+    }
 
     readonly WebView2 webView;
     readonly PetModelMetadata metadata;

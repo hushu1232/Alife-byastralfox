@@ -134,11 +134,36 @@ public class DeskPetService : InteractivePlugin<DeskPetService>, IAsyncDisposabl
         await client!.WaitReadyAsync();
         client.OnInput += Chat;
         client.OnInteracted += text => Poke("交互：" + text);
+
+        // 启动状态轮询
+        _ = UpdateStatusLoop(chatActivity.ChatBot);
+    }
+
+    async Task UpdateStatusLoop(ChatBot chatBot)
+    {
+        bool lastStatus = false;
+        while (!isDisposed)
+        {
+            try
+            {
+                bool currentStatus = chatBot.IsChatting;
+                if (currentStatus != lastStatus)
+                {
+                    lastStatus = currentStatus;
+                    client?.SendStatus(currentStatus);
+                }
+            }
+            catch { }
+            await Task.Delay(250);
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
+        isDisposed = true;
         if (client != null)
             await client.DisposeAsync();
     }
+
+    bool isDisposed;
 }

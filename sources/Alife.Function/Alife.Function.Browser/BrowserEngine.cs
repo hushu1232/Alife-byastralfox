@@ -90,63 +90,81 @@ public class BrowserEngine : IDisposable
     }
 
     /// <summary>
-    /// 观察当前页面，返回精简的页面结构信息
+    /// 观察当前页面，返回精简的页面结构信息（支持逻辑区域分页）
     /// </summary>
-    public async Task<string> ObserveAsync()
+    public async Task<string> ObserveAsync(int scope = 1)
     {
-        return await ExecuteScriptAsync(@"
-        (function() {
-            const info = {
+        if (scope < 1) scope = 1;
+
+        return await ExecuteScriptAsync($@"
+        (function() {{
+            const scope = {scope};
+            const TEXT_SIZE = 3000;
+            const ELEMENT_SIZE = 60;
+
+            const info = {{
                 title: document.title,
                 url: location.href,
-                text: document.body.innerText.substring(0, 3000),
-                interactiveElements: []
-            };
+                currentScope: scope,
+                totalScopes: 1,
+                text: '',
+                interactiveElements: [],
+                status: ''
+            }};
+
+            const fullText = document.body ? document.body.innerText : '';
+            const textStart = (scope - 1) * TEXT_SIZE;
+            info.text = fullText.substring(textStart, textStart + TEXT_SIZE);
 
             // 1. 获取基础交互元素
             const elements = Array.from(document.querySelectorAll('a, button, input, textarea, select, [role=button], [onclick]'));
             
-            // 2. 深度扫描：找出所有 CSS 鼠标样式为 'pointer' (小手) 的隐式按钮 (如 MIDIClouds 的 div.pCls)
-            const allNodes = document.body.querySelectorAll('*');
-            for(let i = 0; i < allNodes.length; i++) {
+            // 2. 深度扫描：找出所有 CSS 鼠标样式为 'pointer' (小手) 的隐式按钮
+            const allNodes = document.body ? document.body.querySelectorAll('*') : [];
+            for(let i = 0; i < allNodes.length; i++) {{
                 let node = allNodes[i];
                 if (elements.includes(node)) continue;
-                
-                // 排除一些天然的非独立交互容器
                 if (['HTML', 'BODY', 'SCRIPT', 'STYLE'].includes(node.tagName)) continue;
 
                 let style = window.getComputedStyle(node);
-                if (style && style.cursor === 'pointer') {
+                if (style && style.cursor === 'pointer') {{
                     elements.push(node);
-                }
-            }
+                }}
+            }}
 
+            const processedElements = [];
             let index = 0;
-            elements.forEach((el) => {
-                // 过滤掉不可见元素以减少 token 消耗
+            elements.forEach((el) => {{
                 if (el.offsetWidth === 0 || el.offsetHeight === 0) return;
 
                 let id = el.getAttribute('data-alife-id');
-                if (!id) {
+                if (!id) {{
                     id = (++index).toString();
                     el.setAttribute('data-alife-id', id);
-                }
+                }}
                 const selector = '[data-alife-id=""' + id + '""]';
                 
-                // 提取对 AI 有意义的文本
                 const text = (el.innerText || el.value || el.placeholder || el.title || el.alt || '').substring(0, 60).trim();
                 const type = el.type || el.tagName.toLowerCase();
                 const href = el.href || '';
                 
-                // 跳过完全没有文本的纯装饰性元素（如果是 input/图片则保留）
                 if (!text && type !== 'input' && type !== 'img' && type !== 'button') return;
 
-                info.interactiveElements.push({ selector, type, text, href: href.substring(0, 150) });
-            });
+                processedElements.push({{ selector, type, text, href: href.substring(0, 150) }});
+            }});
             
-            info.interactiveElements = info.interactiveElements.slice(0, 60); // 稍微放宽限制
+            const elementStart = (scope - 1) * ELEMENT_SIZE;
+            info.interactiveElements = processedElements.slice(elementStart, elementStart + ELEMENT_SIZE);
+            
+            // 计算总区域数
+            const textScopes = Math.ceil(fullText.length / TEXT_SIZE);
+            const elementScopes = Math.ceil(processedElements.length / ELEMENT_SIZE);
+            info.totalScopes = Math.max(textScopes, elementScopes, 1);
+            
+            info.status = `Displaying scope ${{scope}} of ${{info.totalScopes}} (Text length: ${{fullText.length}}, Total elements: ${{processedElements.length}})`;
+
             return JSON.stringify(info, null, 2);
-        })()");
+        }})()");
     }
 
     /// <summary>
@@ -265,20 +283,7 @@ public class BrowserEngine : IDisposable
         return result ?? "SUCCESS: 输入操作已执行";
     }
 
-    /// <summary>
-    /// 滚动页面
-    /// </summary>
-    public async Task<string> ScrollAsync(string direction, int pixels = 500)
-    {
-        int scrollY = direction.Equals("up", StringComparison.OrdinalIgnoreCase) ? -pixels : pixels;
-        string result = await ExecuteScriptAsync($@"
-        (function() {{
-            window.scrollBy(0, {scrollY});
-            return '已滚动 {direction} {pixels}px';
-        }})()");
 
-        return result ?? "ACTION: 滚动操作已发出";
-    }
 
     /// <summary>
     /// 在当前页面执行 JavaScript 并返回结果

@@ -10,9 +10,17 @@
     <Flex Justify="@FlexJustify.SpaceBetween" Align="@FlexAlign.Center"
           Style="padding: 8px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid #f0f0f0;">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <Text Type="@TextElementType.Secondary" Style="font-size: 12px;">我的称呼:</Text>
+            <div class="status-dot @(isWorking ? "status-online" : "")"></div>
+            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">我的称呼:</AntDesign.Text>
             <Input @bind-Value="@adminTag" Placeholder="管理员" Size="@InputSize.Small" Style="width: 100px; border-radius: 4px;"/>
         </div>
+        @if (isWorking)
+        {
+            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px; color: #1890ff;">
+                <Icon Type="@IconType.Outline.Loading"/>
+                AI 正在工作中...
+            </AntDesign.Text>
+        }
         <Button Icon="@IconType.Outline.Clear"
                 Type="@ButtonType.Link"
                 Danger
@@ -83,18 +91,28 @@
             <Flex Gap="@("12")" Align="@FlexAlign.End" Style="width: 100%;">
                 <div style="flex: 1; position: relative;">
                     <textarea id="chatInput"
-                              class="native-chat-input"
-                              placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+                              class="native-chat-input @(isWorking ? "input-locked" : "")"
+                              placeholder="@(isWorking ? "AI 思考中，请稍候..." : "输入消息... (Enter 发送, Shift+Enter 换行)")"
+                              disabled="@isWorking"
                               @bind="inputText"
                               @bind:event="oninput"
                               @onkeydown="HandleNativeKeyDown"
                               @onkeydown:preventDefault="shouldPreventDefault"></textarea>
+                    
+                    @if (isWorking)
+                    {
+                        <div class="input-overlay">
+                            <Icon Type="@IconType.Outline.Loading" Style="font-size: 20px; color: #1890ff; margin-bottom: 8px;"/>
+                            <span style="color: #1890ff; font-weight: 500;">@(CharacterName) 正在思考中...</span>
+                        </div>
+                    }
                 </div>
                 <Button Type="@ButtonType.Primary"
-                        Icon="@IconType.Outline.Send"
+                        Icon="@(isWorking ? IconType.Outline.Loading : IconType.Outline.Send)"
+                        Disabled="@isWorking"
                         OnClick="@(async () => await OnSend())"
                         Style="height: 40px; border-radius: 8px; padding: 0 24px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(24, 144, 255, 0.2);">
-                    发送
+                    @(isWorking ? "处理中" : "发送")
                 </Button>
             </Flex>
         </div>
@@ -136,6 +154,29 @@
         border-color: #1890ff;
         background: #fff;
         box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
+    }
+
+    .input-locked {
+        background: #f5f5f5 !important;
+        cursor: not-allowed;
+        color: transparent !important; /* 隐藏输入文字 */
+    }
+
+    .input-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(2px);
+        border-radius: 12px;
+        z-index: 10;
+        pointer-events: none;
     }
 
     .chat-bubble {
@@ -254,8 +295,9 @@
 
     [Parameter] public string CharacterName { get; set; } = "";
 
-    string inputText = "";
     string adminTag = "管理员";
+    string inputText = "";
+    bool isWorking = false;
     List<ChatMessage>? messages;
 
     protected override void OnInitialized()
@@ -265,12 +307,45 @@
         messages = ChatMessageService.GetMessages(CharacterName);
         ChatMessageService.OnMessageChanged += OnMessageChanged;
         ChatMessageService.OnUserMessageSent += OnUserMessageSent;
+
+        _ = UpdateStatusLoop();
+    }
+
+    async Task UpdateStatusLoop()
+    {
+        while (!isDisposed)
+        {
+            ChatBot? chatBot = ChatMessageService.GetChatBot(CharacterName);
+            if (chatBot != null)
+            {
+                bool chatting = chatBot.IsChatting;
+                if (chatting != isWorking)
+                {
+                    isWorking = chatting;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            await Task.Delay(250);
+        }
     }
 
     protected override void OnParametersSet()
     {
+        if (lastCharacterName != CharacterName)
+        {
+            // 保存旧角色的草稿
+            if (!string.IsNullOrEmpty(lastCharacterName))
+                ChatMessageService.SetDraft(lastCharacterName, inputText);
+
+            // 加载新角色的草稿
+            inputText = ChatMessageService.GetDraft(CharacterName);
+            lastCharacterName = CharacterName;
+        }
+
         messages = ChatMessageService.GetMessages(CharacterName);
     }
+
+    string lastCharacterName = "";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -282,9 +357,15 @@
 
     public void Dispose()
     {
+        isDisposed = true;
+        if (!string.IsNullOrEmpty(CharacterName))
+            ChatMessageService.SetDraft(CharacterName, inputText);
+
         ChatMessageService.OnMessageChanged -= OnMessageChanged;
         ChatMessageService.OnUserMessageSent -= OnUserMessageSent;
     }
+
+    bool isDisposed = false;
 
     void OnMessageChanged(string name)
     {
@@ -337,6 +418,7 @@
         if (chatBot != null)
         {
             chatBot.Chat(formattedText);
+            ChatMessageService.SetDraft(CharacterName, ""); // 发送成功后清空草稿
         }
 
         await JsRuntime.InvokeVoidAsync("forceScrollBottom");
