@@ -26,8 +26,7 @@ public class SurfingService(FunctionService functionService)
             throw new Exception("请使用自闭合标签调用。");
 
         await browser.NavigateAsync(url);
-        string observation = await browser.ObserveAsync();
-        Poke($"[Navigate] 已打开: {url}\n[Auto-Observe] 页面内容 (提示：若遇到人机验证或登录，可请求主人协助)：\n{observation}");
+        Poke($"[Navigate] 已打开: {url}（接下来可以使用 observe 来查看页面内容）");
     }
 
 
@@ -69,9 +68,10 @@ public class SurfingService(FunctionService functionService)
                             "                " + code + "\n" +
                             "            })();\n" +
                             "        }\n" +
-                            "        let logPrefix = logs.length > 0 ? '[Console Log]\\n' + logs.join('\\n') + '\\n' : '';\n" +
-                            "        if (r === undefined) return logPrefix + (logs.length > 0 ? '' : '[Status] Success (No return value)');\n" +
-                            "        return logPrefix + '[Status] Success\\n[Return] ' + (typeof r === 'string' ? r : JSON.stringify(r, null, 2));\n" +
+                            "        let res = '[Status] Success' + (r === undefined ? ' (No return value)' : '');\n" +
+                            "        if (r !== undefined) res += '\\n[Return] ' + (typeof r === 'string' ? r : JSON.stringify(r, null, 2));\n" +
+                            "        if (logs.length > 0) res += '\\n[Console Log]\\n' + logs.join('\\n');\n" +
+                            "        return res;\n" +
                             "    } catch (e) {\n" +
                             "        return '[Status] Error: ' + e.toString();\n" +
                             "    } finally {\n" +
