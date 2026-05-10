@@ -117,7 +117,7 @@ public class DeskPetService : InteractivePlugin<DeskPetService>, IAsyncDisposabl
         FunctionService functionService = context.Services.GetRequiredService<FunctionService>();
         XmlHandler xmlHandler = new(this)
         {
-            Description = "此服务让你获得一具可活动且支持与用户互动的身体。",
+            Description = "此服务让你获得一副可控可交互的Live2D身体。（这是你主要输出表情动作的工具，一定要积极使用）",
             Explain = $"""
                        - 支持的 exp（表情）：{supportedExpressionsDescription}
                        - 支持的 mtn（动作）：{supportedMotionsDescription}

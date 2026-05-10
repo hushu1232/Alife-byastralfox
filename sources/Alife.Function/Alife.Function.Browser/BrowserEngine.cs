@@ -3,260 +3,187 @@ using Microsoft.Web.WebView2.Core;
 
 namespace Alife.Function.Browser;
 
+public class NavigateResult
+{
+    public bool Success { get; set; }
+    public int StatusCode { get; set; }
+}
+
 public class BrowserEngine : IDisposable
 {
-    readonly WebViewWorker worker = new();
-
+    /// <summary>
+    /// 跳转到指定页面
+    /// </summary>
     public async Task<NavigateResult> NavigateAsync(string url)
     {
-        var tcs = new TaskCompletionSource<NavigateResult>();
-
-        await worker.EnqueueAsync(async webView =>
+        return await worker.AddFormTask(async webView =>
         {
+            var tcs = new TaskCompletionSource<NavigateResult>();
+            webView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
+            webView.CoreWebView2.Navigate(url);
+            return await tcs.Task;
+
             void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
             {
                 webView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
                 tcs.SetResult(new NavigateResult { Success = e.IsSuccess, StatusCode = (int)e.WebErrorStatus });
             }
-
-            webView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
-            webView.CoreWebView2.Navigate(url);
-            return true;
-        });
-
-        var result = await tcs.Task;
-        if (result.Success)
-        {
-            await WaitUntilStableAsync();
-        }
-        return result;
-    }
-
-    /// <summary>
-    /// 等待页面加载稳定（内容长度不再剧烈变化）
-    /// </summary>
-    public async Task WaitUntilStableAsync(string? oldUrl = null)
-    {
-        await worker.EnqueueAsync(async webView =>
-        {
-            int lastLen = -1;
-            int stableCount = 0;
-
-            for (int i = 0; i < 20; i++)
-            {
-                if (oldUrl != null)
-                {
-                    string currentUrl = await webView.CoreWebView2.ExecuteScriptAsync("location.href");
-                    if (JsonSerializer.Deserialize<string>(currentUrl) != oldUrl) break;
-                }
-
-                int currentLen = (await webView.CoreWebView2.ExecuteScriptAsync("document.body.innerText.length"))?.Length ?? 0;
-                
-                if (currentLen > 200 || i > 10)
-                {
-                    if (currentLen == lastLen) stableCount++;
-                    else stableCount = 0;
-
-                    if (stableCount >= 3) break; 
-                }
-
-                lastLen = currentLen;
-                await Task.Delay(300);
-            }
-            return true;
         });
     }
-
     /// <summary>
-    /// 观察当前页面，返回精简的页面结构信息
+    /// 执行JavaScript并易读的结果
     /// </summary>
-    public async Task<string> ObserveAsync(int scope = 1)
+    public async Task<string> ExecuteScriptAsync(string code)
     {
-        if (scope < 1) scope = 1;
-
-        return await ExecuteScriptAsync($@"
-        (function() {{
-            try {{
-                const scope = {scope};
-                const TEXT_SIZE = 1500;
-                const ELEMENT_SIZE = 40;
-
-                const info = {{
-                    title: document.title,
-                    url: location.href,
-                    text: ''
-                }};
-
-                if (document.body) {{
-                    const fullText = (document.body.innerText || '').replace(/\s+/g, ' ').trim();
-                    const textStart = (scope - 1) * TEXT_SIZE;
-                    info.text = fullText.substring(textStart, textStart + TEXT_SIZE);
-                }}
-
-                const allInputs = [];
-                const allLinks = [];
-                let maxId = parseInt(document.body.getAttribute('data-alife-max-id') || '0');
-
-                const scan = (root) => {{
-                    if (!root) return;
-                    try {{
-                        const nodes = root.querySelectorAll('*');
-                        for (let i = 0; i < nodes.length; i++) {{
-                            const node = nodes[i];
-                            try {{
-                                const tagName = (node.tagName || '').toLowerCase();
-                                if (!tagName || ['script', 'style', 'svg', 'path', 'meta'].includes(tagName)) continue;
-
-                                const isInput = ['input', 'textarea', 'select'].includes(tagName) || node.contentEditable === 'true' || node.getAttribute('contenteditable') === 'true';
-                                const isLink = tagName === 'a' && node.href;
-                                const isBtn = tagName === 'button' || node.getAttribute('role') === 'button' || node.hasAttribute('onclick');
-                                
-                                let isPointer = false;
-                                let isTextCursor = false;
-                                if (!isInput && !isLink && !isBtn && !['html', 'body'].includes(tagName)) {{
-                                    const style = window.getComputedStyle(node);
-                                    if (style) {{
-                                        isPointer = style.cursor === 'pointer';
-                                        isTextCursor = style.cursor === 'text';
-                                    }}
-                                }}
-
-                                if (isInput || isTextCursor || isLink || isBtn || isPointer) {{
-                                    if (node.offsetWidth === 0 || node.offsetHeight === 0) continue;
-
-                                    // --- Super Enhanced label extraction ---
-                                    let text = (node.innerText || node.value || node.placeholder || node.title || node.alt || node.getAttribute('aria-label') || '').trim();
-                                    
-                                    if (!text) {{
-                                        // 1. Search for associated label
-                                        if (node.id) {{
-                                            const lbl = document.querySelector(`label[for='${{node.id}}']`);
-                                            if (lbl) text = lbl.innerText;
-                                        }}
-                                        // 2. Search for adjacent text nodes
-                                        if (!text && node.previousSibling) text = node.previousSibling.textContent;
-                                        if (!text && node.nextSibling) text = node.nextSibling.textContent;
-
-                                        // 3. Search parent text (covers <div>Search: <input/></div>)
-                                        if (!text && node.parentElement && node.parentElement.innerText.length < 60) {{
-                                            text = node.parentElement.innerText;
-                                        }}
-
-                                        // 4. Fallback to name, ID, or class
-                                        if (!text) {{
-                                            text = node.name || node.id || (typeof node.className === 'string' ? node.className.split(' ')[0] : '');
-                                        }}
-                                        
-                                        // 5. Image filename fallback
-                                        if (!text && node.tagName === 'IMG') {{
-                                            text = node.src.split('/').pop().split('.')[0];
-                                        }}
-                                    }}
-
-                                    text = text.substring(0, 40).replace(/\n/g, ' ').trim();
-                                    const href = node.href || '';
-
-                                    if (isInput || isTextCursor) {{
-                                        let id = node.getAttribute('data-alife-id');
-                                        if (!id) {{
-                                            id = (++maxId).toString();
-                                            node.setAttribute('data-alife-id', id);
-                                        }}
-                                        allInputs.push({{ text, type: 'input', id }});
-                                    }} else if (href || isPointer || isBtn) {{
-                                        let linkItem = {{ text: text || (href ? '[Link]' : '[Button]'), href: href.substring(0, 150) }};
-                                        if (!href || isBtn || isPointer) {{
-                                            let id = node.getAttribute('data-alife-id');
-                                            if (!id) {{
-                                                id = (++maxId).toString();
-                                                node.setAttribute('data-alife-id', id);
-                                            }}
-                                            linkItem.id = id;
-                                            linkItem.tagName = tagName;
-                                        }}
-                                        allLinks.push(linkItem);
-                                    }}
-                                }}
-                                if (node.shadowRoot) scan(node.shadowRoot);
-                            }} catch (e) {{}}
-                        }}
-                    }} catch (e) {{}}
-                }};
-
-                scan(document);
-                if (document.body) document.body.setAttribute('data-alife-max-id', maxId.toString());
-
-                const elementStart = (scope - 1) * ELEMENT_SIZE;
-                const linksPage = allLinks.slice(elementStart, elementStart + ELEMENT_SIZE);
-                
-                const linkScopes = Math.ceil(allLinks.length / ELEMENT_SIZE);
-                const totalScopes = Math.max(Math.ceil(((document.body ? document.body.innerText.length : 0)) / TEXT_SIZE), linkScopes, 1);
-
-                // --- Build custom layout ---
-                let output = `TITLE:${{document.title}}\nURL:${{location.href}}\n`;
-                output += `PAGING:${{scope}}/${{totalScopes}} (Hint: If you don't see the element you need, use observe(scope=${{scope+1}}) to see the next page of components)\n`;
-                output += `${{info.text}}\n\n`;
-
-                let componentsStr = """";
-                allInputs.forEach(i => {{
-                    componentsStr += `${{i.text}}:input[${{i.id}}]\n`;
-                }});
-                linksPage.forEach(l => {{
-                    if (l.id) {{
-                        componentsStr += `${{l.text}}:${{l.tagName || 'button'}}[${{l.id}}]\n`;
-                    }}
-                }});
-                if (componentsStr) output += `-- COMPONENTS (ID) --\n${{componentsStr}}`;
-
-                let linksStr = """";
-                linksPage.forEach(l => {{
-                    if (l.href) {{
-                        linksStr += `${{l.text}}:${{l.href}}\n`;
-                    }}
-                }});
-                if (linksStr) output += `-- LINKS (HREF) --\n${{linksStr}}`;
-
-                return output.trim();
-            }} catch (err) {{
-                return ""ERROR: "" + err.toString();
-            }}
-        }})()");
-    }
-
-    /// <summary>
-    /// 在当前页面执行 JavaScript 并返回结果
-    /// </summary>
-    public async Task<string> ExecuteScriptAsync(string script)
-    {
-        string rawRes = await worker.EnqueueAsync(async webView =>
+        return await worker.AddFormTask(async webView =>
         {
-            try
+            string wrapperScript =
+                $$$"""
+                   (function() {
+                       const logs = [];
+                       const originalLog = console.log;
+                       
+                       console.log = (...args) => {
+                           logs.push(args.map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(' '));
+                       };
+
+                       try {
+                           const rawCode = {{{JsonSerializer.Serialize(code)}}};
+                           let result;
+
+                           try {
+                               result = eval(rawCode);
+                           } catch (e) {
+                               if (e instanceof SyntaxError) {
+                                   result = eval("(function() {\n" + rawCode + "\n})()");
+                               } else {
+                                   // 如果是运行时错误（代码执行到一半报错），直接抛出，拒绝重试
+                                   throw e;
+                               }
+                           }
+                           
+                           const finalValue = result;
+                           
+                           let output = "";
+                           
+                           if (typeof finalValue !== 'undefined' && finalValue !== null) {
+                               output += typeof finalValue === 'object' ? JSON.stringify(finalValue, null, 2) : String(finalValue);
+                           } else {
+                               output += "[执行成功，无返回值]";
+                           }
+                           
+                           //追加控制台日志（如果有）
+                           if (logs.length > 0) {
+                               output += "\n\n[Console Logs]\n" + logs.join('\n');
+                           }
+                           
+                           return output.trim();
+                           
+                       } finally {
+                           console.log = originalLog;
+                       }
+                   })();
+                   """;
+            var result = await webView.CoreWebView2.ExecuteScriptWithResultAsync(wrapperScript);
+            if (result.Succeeded)
             {
-                return await webView.CoreWebView2.ExecuteScriptAsync(script);
+                result.TryGetResultAsString(out string stringResult, out int isSuccess);
+                stringResult = isSuccess == 1 ? stringResult : result.ResultAsJson;
+                return $"[Success] Return:\n{stringResult}";
             }
-            catch (Exception ex)
-            {
-                return JsonSerializer.Serialize("ERROR: JS 引擎异常 - " + ex.Message);
-            }
+
+            var ex = result.Exception;
+            return $"[Error]\nName: {ex.Name}\nMessage: {ex.Message}\nDetail: {ex.ToJson}\nLocation: Line {ex.LineNumber}, Column {ex.ColumnNumber}";
         });
-
-        if (string.IsNullOrEmpty(rawRes) || rawRes == "null") return "";
-
-        try
-        {
-            using var doc = JsonDocument.Parse(rawRes);
-            if (doc.RootElement.ValueKind == JsonValueKind.String)
-            {
-                return doc.RootElement.GetString() ?? "";
-            }
-            return rawRes;
-        }
-        catch
-        {
-            return rawRes;
-        }
     }
+    /// <summary>
+    /// 观察当前页面，返回格式化后的页面信息，同时会对可交互组件增加data-alife-id属性
+    /// </summary>
+    public async Task<string> ObserveAsync(int scope)
+    {
+        //等待页面稳定
+        while (worker.IsLoading)
+        {
+            await Task.Delay(300);
+        }
 
+        int currentScope = scope < 1 ? 1 : scope;
+
+
+        string jsCode = $$$"""
+                           (function() {
+                               document.querySelectorAll('[data-alife-id]').forEach(el => el.removeAttribute('data-alife-id'));
+
+                               const scope = {{{currentScope}}}; 
+                               const TEXT_SIZE = 1500;
+                               const ELEMENT_SIZE = 40;
+
+                               let id = 0;
+                               const allItems = [];
+                               
+                               const getTxt = n => {
+                                   let txt = (n.innerText || n.value || n.placeholder || n.title || n.getAttribute('aria-label') || '').trim();
+                                   if (!txt) {
+                                       const iconMatch = n.className?.toString().match(/(?:icon|btn|fa)[_-]([a-z0-9-]+)/i);
+                                       if (iconMatch) txt = `Icon:${iconMatch[1]}`;
+                                   }
+                                   return txt.replace(/\s+/g, ' ').slice(0, 40);
+                               };
+
+                               for (const n of document.querySelectorAll('body *')) {
+                                   if (!n.offsetWidth || ['SCRIPT', 'STYLE', 'SVG', 'PATH', 'META'].includes(n.tagName)) continue;
+
+                                   const cursor = window.getComputedStyle(n).cursor;
+                                   const isInput = cursor === 'text' || ['INPUT', 'TEXTAREA'].includes(n.tagName) || n.isContentEditable;
+                                   const isBtn = cursor === 'pointer' || ['A', 'BUTTON'].includes(n.tagName) || n.getAttribute('role') === 'button';
+
+                                   if (!isInput && (n.closest('a') && n.tagName !== 'A' || n.closest('button') && n.tagName !== 'BUTTON')) continue;
+
+                                   if (isInput || isBtn) {
+                                       const text = getTxt(n);
+                                       const href = n.href || '';
+                                       if (!isInput && !text && !href) continue;
+
+                                       // 使用符合 HTML5 标准的 data-alife-id
+                                       n.setAttribute('data-alife-id', ++id);
+                                       allItems.push({
+                                           type: isInput ? 'input' : 'btn',
+                                           text: text || (isInput ? 'Input' : 'Button'),
+                                           id: id,
+                                           href: href ? href.substring(0, 150) : ''
+                                       });
+                                   }
+                               }
+
+                               const fullText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+                               const totalScopes = Math.max(Math.ceil(fullText.length / TEXT_SIZE), Math.ceil(allItems.length / ELEMENT_SIZE), 1);
+
+                               const pageText = fullText.substring((scope - 1) * TEXT_SIZE, scope * TEXT_SIZE);
+                               const pageItems = allItems.slice((scope - 1) * ELEMENT_SIZE, scope * ELEMENT_SIZE); 
+
+                               const ins = [], btns = [];
+                               for (const i of pageItems) {
+                                   if (i.type === 'input') {
+                                       ins.push(`${i.text}[${i.id}]`);
+                                   } else {
+                                       // 链接紧跟 ID 后面，极致压缩
+                                       btns.push(`${i.text}[${i.id}]${i.href}`);
+                                   }
+                               }
+
+                               let out = `TITLE:${document.title}\nURL:${location.href}\nPAGING:${scope}/${totalScopes}`;
+                               if (scope < totalScopes) out += ` (Hint: use scope=${scope + 1} to see more)`;
+                               out += `\n\n${pageText}\n\n`;
+
+                               if (ins.length) out += `--INPUTS--\n${ins.join('\n')}\n\n`;
+                               if (btns.length) out += `--BUTTONS--\n${btns.join('\n')}`;
+
+                               return out.trim();
+                           })();
+                           """;
+
+        return await ExecuteScriptAsync(jsCode);
+    }
     /// <summary>
     /// 通过 HttpClient 下载文件到本地
     /// </summary>
@@ -273,12 +200,8 @@ public class BrowserEngine : IDisposable
 
         await File.WriteAllBytesAsync(savePath, bytes);
     }
-
+    
+    readonly WebViewWorker worker = new();
+    
     public void Dispose() => worker.Dispose();
-}
-
-public class NavigateResult
-{
-    public bool Success { get; set; }
-    public int StatusCode { get; set; }
 }

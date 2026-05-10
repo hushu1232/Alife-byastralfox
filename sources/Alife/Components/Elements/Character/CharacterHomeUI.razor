@@ -5,6 +5,7 @@
 @inject ChatActivitySystem ChatActivitySystem
 @inject CharacterSystem CharacterSystem
 @inject INotificationService NotificationService
+@implements IDisposable
 
 <ErrorWindowUI Title="角色激活失败喵！" @bind-Value="@activityException"></ErrorWindowUI>
 
@@ -143,14 +144,23 @@
         isLoading = true;
         try
         {
-            Progress<(string, float)> progress = new(tuple => {
+            Progress<(string, float)> progress = new(tuple =>
+            {
                 loadingTask = tuple.Item1;
                 loadingProgress = tuple.Item2;
                 InvokeAsync(UpdateState);
             });
 
-            await Task.Run(async () => {
-                activity = await ChatActivitySystem.Play(Character, progress);
+            await Task.Run(async () =>
+            {
+                try
+                {
+                    activity = await ChatActivitySystem.Play(Character, progress);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e);
+                }
             });
         }
         catch (Exception ex)
@@ -170,7 +180,6 @@
             return;
 
         await ChatActivitySystem.Stop(Character);
-        activity = null;
         UpdateState();
     }
 
@@ -195,7 +204,21 @@
             activity = ChatActivitySystem.GetAllChatActivities().FirstOrDefault(a => a.Character.Name == Character.Name);
             UpdateState();
         }
+
+        ChatActivitySystem.Destroyed += OnChatActivityDestroyed;
     }
+
+    public void Dispose()
+    {
+        ChatActivitySystem.Destroyed -= OnChatActivityDestroyed;
+    }
+
+    void OnChatActivityDestroyed(ChatActivity obj)
+    {
+        if (activity == obj)
+            activity = null;
+    }
+
 
     void UpdateState()
     {
@@ -236,4 +259,6 @@
             _ = InvokeAsync(StateHasChanged);
         }
     }
+
+
 }

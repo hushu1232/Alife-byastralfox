@@ -3,6 +3,7 @@ using Alife.Framework;
 using Alife.Function.Interpreter;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Implement;
 
@@ -91,7 +92,14 @@ public class EventService(FunctionService functionService)
 
         ChatBot.ChatSent += OnChatSent;
 
-        await ChatAsync($"系统报点：程序已重启。{Configuration!.StartPrompt}");
+        if (ChatHistory.All(content => content.Role != AuthorRole.Assistant))
+        {
+            await ChatAsync("系统提示：这是你第一次启动，初次见面，用上你丰富的能力，华丽的向用户打个招呼吧。");
+        }
+        else
+        {
+            await ChatAsync($"系统报点：程序已重启。{Configuration!.StartPrompt}");
+        }
     }
 
     public override async Task DestroyAsync()

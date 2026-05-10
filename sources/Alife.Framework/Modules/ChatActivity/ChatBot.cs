@@ -240,6 +240,9 @@ public class ChatBot : IAsyncDisposable
                 }
             }
         }
+        catch (OperationCanceledException)
+        {
+        }
         catch (Exception e)
         {
             Console.WriteLine(e);

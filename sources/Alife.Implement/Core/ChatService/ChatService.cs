@@ -11,7 +11,7 @@ public class ChatServiceConfig : ICloneable
     public string endpoint = "";
     public string modelId = "";
     public string apiKey = "";
-    public bool thinkingEnabled = false;
+    public bool thinkingEnabled = true;
     public string reasoningEffort = "high";
 
 

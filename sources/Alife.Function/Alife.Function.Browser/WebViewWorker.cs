@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
+using Alife.Basic;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
-using System.IO;
 
 namespace Alife.Function.Browser;
 
@@ -9,17 +11,18 @@ namespace Alife.Function.Browser;
 /// </summary>
 public class WebViewWorker : IDisposable
 {
-    public Task<T> EnqueueAsync<T>(Func<WebView2, Task<T>> action)
+    public bool IsLoading => isLoading;
+
+    public Task<T> AddFormTask<T>(Func<WebView2, Task<T>> action)
     {
         TaskCompletionSource<T> tcs = new();
 
-        jobs.Add(async () =>
+        formTasks.Add(async () =>
         {
             try
             {
-                if (initialized == false || webView == null)
-                    throw new InvalidOperationException("WebView2 引擎尚未就绪或未安装。");
-
+                if (webView == null)
+                    throw new ArgumentNullException(nameof(webView));
                 T result = await action(webView);
                 tcs.SetResult(result);
             }
@@ -31,15 +34,41 @@ public class WebViewWorker : IDisposable
 
         return tcs.Task;
     }
-    
-    readonly System.Collections.Concurrent.BlockingCollection<Func<Task>> jobs = new();
-    WebView2? webView;
+
     Form? form;
-    bool initialized;
+    WebView2? webView;
+    readonly BlockingCollection<Func<Task>> formTasks = new();
+    bool isLoading;
 
     public WebViewWorker()
     {
-        var thread = new Thread(RunLoop);
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                //创建窗口
+                form = new Form
+                {
+                    Text = "Alife Browser",
+                    Width = 1024,
+                    Height = 768,
+                    WindowState = FormWindowState.Normal,
+                    ShowInTaskbar = true,
+                    FormBorderStyle = FormBorderStyle.Sizable
+                };
+                webView = new WebView2 { Dock = DockStyle.Fill };
+
+                form.Controls.Add(webView);
+                //注入窗口初始化事件
+                form.Load += OnFormOnLoad;
+
+                Application.Run(form);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+        });
         thread.SetApartmentState(ApartmentState.STA);
         thread.IsBackground = true;
         thread.Start();
@@ -47,72 +76,61 @@ public class WebViewWorker : IDisposable
 
     public void Dispose()
     {
-        jobs.CompleteAdding();
+        formTasks.CompleteAdding();
         if (form is { IsDisposed: false })
-        {
             form.Invoke((Action)(() => form.Close()));
-        }
     }
 
-    void RunLoop()
+    async void OnFormOnLoad(object? s, EventArgs e)
     {
-        form = new Form
+        try
         {
-            Text = "Alife Browser",
-            Width = 1024,
-            Height = 768,
-            WindowState = FormWindowState.Normal,
-            ShowInTaskbar = true,
-            FormBorderStyle = FormBorderStyle.Sizable
-        };
+            //初始化基本环境
+            string userDataFolder = Path.Combine(AlifePath.StorageFolderPath, "WebView2Data");
+            if (!Directory.Exists(userDataFolder))
+                Directory.CreateDirectory(userDataFolder);
+            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
 
-        webView = new WebView2 { Dock = DockStyle.Fill };
-        form.Controls.Add(webView);
-
-        form.Load += async (s, e) =>
-        {
-            try
+            await form!.InvokeAsync(async _ =>
             {
-                // 指定一个绝对有写入权限的目录作为 WebView2 的数据文件夹
-                string userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Alife", "WebView2Data");
-                if (!Directory.Exists(userDataFolder)) Directory.CreateDirectory(userDataFolder);
-
-                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
-                await webView.EnsureCoreWebView2Async(env);
-                
-                webView.CoreWebView2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
-                
-                webView.CoreWebView2.NewWindowRequested += (sender, ev) =>
+                await webView!.EnsureCoreWebView2Async(env);
+                //伪装普通浏览器
+                webView.CoreWebView2.Settings.UserAgent =
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
+                //禁用新窗口跳转
+                webView.CoreWebView2.NewWindowRequested += (_, ev) =>
                 {
                     ev.Handled = true;
                     webView.CoreWebView2.Navigate(ev.Uri);
                 };
+                //统计加载状态
+                webView.CoreWebView2.NavigationStarting += (_, ev) => isLoading = true;
+                webView.CoreWebView2.NavigationCompleted += (_, ev) => isLoading = false;
+            });
 
-                initialized = true;
-
-                _ = Task.Run(() =>
-                {
-                    foreach (Func<Task> job in jobs.GetConsumingEnumerable())
-                    {
-                        if (form.IsDisposed) break;
-                        try
-                        {
-                            Task task = form.Invoke(job);
-                            task.Wait();
-                        }
-                        catch
-                        {
-                            // 忽略单个任务崩溃，保证队列继续运行
-                        }
-                    }
-                });
-            }
-            catch
+            //持续处理分配的formTask任务
+            _ = Task.Run(() =>
             {
-                // 浏览器核心初始化失败
-            }
-        };
+                foreach (Func<Task> formTask in formTasks.GetConsumingEnumerable())
+                {
+                    if (form.IsDisposed)
+                        break;
 
-        Application.Run(form);
+                    try
+                    {
+                        Task task = form.Invoke(formTask);
+                        task.Wait();
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex);
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
     }
 }
