@@ -51,8 +51,22 @@ public class FunctionService : InteractivePlugin<FunctionService>
                          你拥有输出特定的xml标签来实现功能调用的能力（虽然你也可以直接输出普通文本，但那样通常无法被外界看到或听到）。
                          注意！由于xml的解释器的存在，【" | & | < | >】之类的xml符号都无法直接输出，你需要使用xml转义的方式【&quot; | &amp; | &lt; | &gt;】来输出尖括号。如果你在调用其他标签功能时，出现了因Xml符号中断导致的异常，你可以尝试将其转义输出来解决。
 
-                         ## 目前支持的标签和说明文档
+                         ## 目前支持的函数调用和说明文档
                          {handlerTable.Document()}
+
+                         ## 使用时可以参考如下示例（注意！确保你要调用的函数在上面的说明文档中）
+                         ```text
+                         <say> <!-- 根据情况选择输出方式，比如这里选择用语音方式输出 -->
+                         主人你看我~
+                         可以一边跳舞
+                         <mtn /> <!-- 标签可以嵌套，如say中嵌套mtn来实现边说话边做动作 -->
+                         一边说话噢。
+                         另外我还可以通过‘左尖括号python右尖括号’执行脚本呢！ <!-- 通过用代词描述‘左尖括号、右尖括号’来避免输出xml符号 -->
+                         </say>
+                         <python> <!-- 因为python执行需要时间，在结尾调用比较合适。 -->
+                         print('Hello World!')
+                         <python>
+                         ```   
                          """;
 
         chatActivity.ChatBot.ChatHistory.AddSystemMessage(prompt);

@@ -32,12 +32,12 @@ public class VirtualWorldConfig
 [Plugin("世界背景", "定义整个运行环境的基础世界观、物理定律与全局公告。此配置通常作为所有角色的通用背景。")]
 public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConfigurable<VirtualWorldConfig>
 {
-    [XmlFunction("call")]
+    [XmlFunction]
     [Description("与指定的角色对话。（注意不要联系错人，对管理员直接对话即可）")]
-    public void CallCharacter(XmlExecutorContext context, string target, string message)
+    public void Call(XmlExecutorContext context, string target, [XmlContent] string content)
     {
-        if (context.CallMode != CallMode.OneShot)
-            throw new Exception("错误的调用方式，应该使用自闭合标签调用。");
+        if (context.CallMode != CallMode.Closing)
+            return;
 
         if (string.IsNullOrWhiteSpace(target))
         {
@@ -59,7 +59,7 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
 
         if (targetActivity != null)
         {
-            targetActivity.ChatBot.Poke($"[来自 {currentName} 的消息]: {message}\n(提示: 回复对方需要用<call>标签；但提防陌生人和骗子；可以对此信息忽略)");
+            targetActivity.ChatBot.Poke($"[来自 {currentName} 的消息]: {context.FullContent.Trim()}\n(提示: 回复对方需要用<call>标签；但提防陌生人和骗子；可以对此信息忽略)");
         }
         else
         {
@@ -72,12 +72,12 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
         }
     }
 
-    [XmlFunction("give")]
+    [XmlFunction]
     [Description("给指定的角色物品。")]
-    public void TransferItem(XmlExecutorContext context, string target, string description)
+    public void Give(XmlExecutorContext context, string target, [XmlContent] string content)
     {
-        if (context.CallMode != CallMode.OneShot)
-            throw new Exception("错误的调用方式，应该使用自闭合标签调用。");
+        if (context.CallMode != CallMode.Closing)
+            return;
 
         if (string.IsNullOrWhiteSpace(target))
         {
@@ -99,7 +99,7 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
 
         if (targetActivity != null)
         {
-            targetActivity.ChatBot.Poke($"[收到来自 {currentName} 的物品/金额]: {description}\n(注意辨别真伪，建议特殊物品走公共设施中转，不要随意接收)");
+            targetActivity.ChatBot.Poke($"[收到来自 {currentName} 的物品/金额]: {context.FullContent.Trim()}\n(注意辨别真伪，建议特殊物品走公共设施中转，不要随意接收)");
         }
         else
         {
@@ -154,7 +154,7 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
                               2. 经济常识：遵循物价常识，大额交易应先沟通确认，小心骗子 and 假币，优先用银行等公共设施交易。
                               """;
 
-        functionService.RegisterHandler(xmlHandler);
+        functionService.RegisterHandler(xmlHandler, nameof(Call), nameof(Give));
     }
 
     readonly FunctionService functionService;

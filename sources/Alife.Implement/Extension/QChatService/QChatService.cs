@@ -19,7 +19,7 @@ public record QChatConfig
     public int MaxBufferMessages { get; set; }
     public string WakingWords { get; set; } = "";
     public float ProactiveChatProbability { get; set; }
-    public string AppendChatPrompt { get; set; } = "（QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。）";
+    public string AppendChatPrompt { get; set; } = "（QQ消息必须极简回复（0-20字）来保证自然感，同时群聊消息要选择性忽略，避免刷屏。此外注意分清语境，群聊环境人声嘈杂，不要回复与自己无关的内容）";
     public bool CloseGroupAfterReply { get; set; }
     public float AutoCloseMinutes { get; set; } = 4f;
 }

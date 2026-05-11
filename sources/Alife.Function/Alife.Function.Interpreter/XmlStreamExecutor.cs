@@ -109,7 +109,7 @@ public class XmlStreamExecutor : IAsyncDisposable
                             await (lastTask = parser.Feed(cmd.Data));
                             break;
                         case CommandType.Flush:
-                            await (lastTask = parser.Flush());
+                            await (lastTask = parser.Flush(true));
                             ClearContentBuffer();
                             break;
                         case CommandType.Reset:

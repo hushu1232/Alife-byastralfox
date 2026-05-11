@@ -146,8 +146,16 @@ public class XmlStreamParser
             await Feed(ch);
     }
 
-    public async Task Flush()
+    public async Task Flush(bool checkError = false)
     {
+        if (checkError)
+        {
+            if (tagBuffer.Length != 0)
+            {
+                Error?.Invoke(currentTagName ?? "无名标签", new Exception("检测到标签不完整，请检查语法格式是否正确完整。"));
+            }
+        }
+
         while (tagStack.Count != 0)
         {
             if (TagClosed != null)

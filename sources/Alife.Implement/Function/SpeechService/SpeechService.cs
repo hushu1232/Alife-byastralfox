@@ -41,9 +41,9 @@ public partial class SpeechService
 public partial class SpeechService(FunctionService functionService)
     : InteractivePlugin<SpeechService>, IAsyncDisposable, ITimeIterative, IConfigurable<SpeechConfig>
 {
-    [XmlFunction("say", -10)]
-    [Description("将文本以语音方式输出。（这应该是你默认与外界的沟通方式）")]
-    public async Task Say(XmlExecutorContext context, [XmlContent] string content)
+    [XmlFunction(order: -10)]
+    [Description("将文本以语音方式输出。")]
+    public async Task Speak(XmlExecutorContext context, [XmlContent] string content)
     {
         if (context.CallMode == CallMode.Reset)
         {
@@ -138,7 +138,7 @@ public partial class SpeechService(FunctionService functionService)
             await synthesizer.StopSpeakAsync(); //中断语音
     }
 
-    protected override string ChatPrefixPrompt => "[回复请用Say标签]";
+    protected override string ChatPrefixPrompt => "[这是语音识别信息，注意使用Speak回复]";
     Task<string?> audioSynthesizingTask = Task.FromResult<string?>(null);
     CancellationTokenSource? audioFileSynthesizingCancellation;
     bool hasHeadphones;

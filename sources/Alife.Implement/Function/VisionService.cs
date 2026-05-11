@@ -29,7 +29,7 @@ public partial class VisionService
 }
 
 [Plugin("视觉感知", "让 AI 能够看到屏幕内容，理解图片，观察世界。")]
-[Description("此服务让你拥有视觉感知能力：你可以截取屏幕画面并理解其内容，或者分析用户提供的图片。（注意！分析系统并不准确，所以你需要配合结果，自己洞察出真正的实际情况）")]
+[Description("此服务让你拥有视觉感知能力：你可以截取屏幕画面并理解其内容，或者分析用户提供的图片。")]
 public partial class VisionService(FunctionService functionService) : InteractivePlugin<VisionService>
 {
     /// <summary>
@@ -92,6 +92,7 @@ public partial class VisionService(FunctionService functionService) : Interactiv
         }
     }
 
+    protected override string ChatPrefixPrompt => "[视觉识别结果(注意！误识别率非常高，请根据窗口列表、聊天背景、时间等多方面因素，洞察出真正的实际情况)]";
     readonly HttpClient httpClient = new();
 
     public override async Task AwakeAsync(AwakeContext context)
