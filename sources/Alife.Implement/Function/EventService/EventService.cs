@@ -24,8 +24,8 @@ public class EventService(FunctionService functionService)
     : InteractivePlugin<EventService>, IConfigurable<EventServiceData>, ITimeIterative
 {
     [XmlFunction]
-    [Description("等待几秒后继续行动。")]
-    public void Wait(XmlExecutorContext context, int delay)
+    [Description("等待一段时间后继续行动。（这可以重置你的系统报点，让你继续活跃一段时间）")]
+    public void Wait(XmlExecutorContext context, [Description("单位秒")] int delay)
     {
         if (context.CallMode != CallMode.OneShot)
             throw new Exception("错误的调用方式，应该使用自闭合标签调用。");
@@ -36,7 +36,7 @@ public class EventService(FunctionService functionService)
     }
 
     [XmlFunction]
-    [Description("设置一个自定义提醒（设置时自动取消上一个）。")]
+    [Description("设置一个定时提醒，比如用于日程安排（设置时自动取消上一个）")]
     public void Remind(XmlExecutorContext context, [Description("格式为ISO-8601")] DateTime time,
         [Description("备注信息")] string remark)
     {
