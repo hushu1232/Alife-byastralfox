@@ -36,6 +36,8 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
     [Description("与指定的角色对话。（注意不要联系错人，对管理员直接对话即可）")]
     public void Call(XmlExecutorContext context, string target, [XmlContent] string content)
     {
+        if (context.CallMode == CallMode.OneShot)
+            throw new Exception("错误的调用方式，应该使用开闭标签包裹调用。");
         if (context.CallMode != CallMode.Closing)
             return;
 
@@ -76,6 +78,8 @@ public class VirtualWorldService : InteractivePlugin<VirtualWorldService>, IConf
     [Description("给指定的角色物品。")]
     public void Give(XmlExecutorContext context, string target, [XmlContent] string content)
     {
+        if (context.CallMode == CallMode.OneShot)
+            throw new Exception("错误的调用方式，应该使用开闭标签包裹调用。");
         if (context.CallMode != CallMode.Closing)
             return;
 
