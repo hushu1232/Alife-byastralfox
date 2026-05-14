@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using Alife.Basic;
 
 namespace Alife.Framework;
 
@@ -17,10 +18,12 @@ public class PluginSystem : IDisposable
     {
         return pluginTypes.Values;
     }
+
     public Type? GetPlugin(string pluginID)
     {
         return pluginTypes.GetValueOrDefault(pluginID);
     }
+
     public string GetPluginID(Type pluginType)
     {
         return pluginType.FullName!;
@@ -36,7 +39,7 @@ public class PluginSystem : IDisposable
         pluginContext = new AssemblyLoadContext("AllPluginsContext", isCollectible: true);
 
         //获取插件
-        string pluginRoot = Path.Combine(AppContext.BaseDirectory, "Plugins");
+        string pluginRoot = Path.Combine(AlifePath.StorageFolderPath, "Plugins");
         if (!Directory.Exists(pluginRoot))
             Directory.CreateDirectory(pluginRoot);
         string[] pluginPaths = Directory.GetFiles(pluginRoot, "*.dll", SearchOption.AllDirectories);
