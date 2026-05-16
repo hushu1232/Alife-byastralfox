@@ -230,7 +230,7 @@ public class MemoryManager
         chatHistory.Insert(insertIndex, compressedContent);
         memoryMetaDatas[compressedContent] = new MemoryMeta(level, startTime, endTime);
 
-        Console.WriteLine($"压缩记忆：{name}");
+        Console.WriteLine($"保存记忆：{name}");
         return name;
     }
 

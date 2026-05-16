@@ -84,7 +84,7 @@ public partial class MemoryService(FunctionService functionService)
             DateTime start = startTime ?? DateTime.Now;
             DateTime end = endTime ?? DateTime.Now;
 
-            string name = await InsertMemory(100, ctx.FullContent, "手动存储的记忆，无原始内容。", start, end);
+            string name = await InsertMemory(100, ctx.FullContent.Trim(), "手动存储的记忆，无原始内容。", start, end);
             Poke($"成功插入永久记忆存档：{name}");
         }
     }
@@ -131,6 +131,7 @@ public partial class MemoryService(FunctionService functionService)
             if (Random.Shared.NextSingle() > probability)
                 return null;
 
+            Console.WriteLine("记忆压缩中......");
 
             history.AddMessage(AuthorRole.User,
             $"""

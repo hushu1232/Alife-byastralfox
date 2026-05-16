@@ -14,32 +14,37 @@ public class SpeechConfig
 
 public partial class SpeechService
 {
-    public static bool IsRecognizing => recognizer?.IsRecognizing ?? false;
-
-    public static void TryStartRecognition()
-    {
-        if (recognizer is { IsRecognizing: false })
-            recognizer.Start();
-    }
-
-    public static void TryStopRecognition()
-    {
-        if (recognizer is { IsRecognizing: true })
-            recognizer.Stop();
-    }
+    public static bool IsRecognizing => recognizer is { IsRecognizing: true };
 
     static SpeechRecognizer? recognizer;
 
-    static void TryInitialized()
+    static void TryInitializedAsync()
     {
         recognizer ??= new SpeechRecognizer();
+        _ = Task.Run(async () => {
+            try
+            {
+                while (true)//持续更新麦克风状态
+                {
+                    await Task.Delay(2000);
+                    if (recognizer.IsInitialized == false)
+                        await recognizer.TryInitializeAudioAsync();
+                    if (recognizer.IsInitialized && recognizer.IsRecognizing == false)
+                        recognizer.Start();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+        });
     }
 }
 
 [Plugin("语音对话", "为AI增加语音识别（基于本地模型）和语音转文字输出（基于edge-tts）的能力。", EditorUI = typeof(SpeechServiceUI))]
 [Description("此服务让你获得能将文字以语音形式输出的能力。")]
 public partial class SpeechService(FunctionService functionService)
-    : InteractivePlugin<SpeechService>, IAsyncDisposable, ITimeIterative, IConfigurable<SpeechConfig>
+    : InteractivePlugin<SpeechService>, IAsyncDisposable, IConfigurable<SpeechConfig>
 {
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出。")]
@@ -50,17 +55,14 @@ public partial class SpeechService(FunctionService functionService)
             switch (context.CallMode)
             {
                 case CallMode.Opening:
-                    if (hasHeadphones == false)
-                        TryStopRecognition();
-                    break;
-                case CallMode.Closing:
                     try
                     {
                         if (synthesizer!.IsSpeaking)
                             await synthesizer.LastSpeaking;
                     }
                     catch (OperationCanceledException) {}
-                    TryStartRecognition();
+                    break;
+                case CallMode.Closing:
                     break;
                 case CallMode.Content:
                 {
@@ -131,58 +133,39 @@ public partial class SpeechService(FunctionService functionService)
     }
 
     public bool IsSynthesizing => synthesizer?.IsSpeaking ?? false;
-    public bool IsSpeaking => IsSynthesizing || audioSynthesizingTask.IsCompleted == false;
     public bool IsReceiving { get; set; } = true;
 
     protected override string ChatPrefixPrompt => "[语音识别的信息，请用Speak回复]";
     Task<string?> audioSynthesizingTask = Task.FromResult<string?>(null);
-    bool hasHeadphones;
     SpeechSynthesizer? synthesizer;
     SpeechConfig? configuration;
 
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
-        TryInitialized();
-        synthesizer = new SpeechSynthesizer(Configuration!.VoiceTone);
+
+        TryInitializedAsync();//语音识别
+        synthesizer = new SpeechSynthesizer(Configuration!.VoiceTone);//语音合成
 
         functionService.RegisterHandler(this);
     }
-
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
         await base.StartAsync(kernel, chatActivity);
-        //打开语音识别
-        if (recognizer != null)
-        {
-            recognizer.Recognized += OnRecognized;
-            TryStartRecognition();
-        }
+        recognizer!.Recognized += OnRecognized;//开始接收语音识别
     }
-
     public override async Task DestroyAsync()
     {
-        if (recognizer != null)
-            recognizer.Recognized -= OnRecognized;
-
+        recognizer!.Recognized -= OnRecognized;
         await base.DestroyAsync();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (IsSpeaking)
-        {
-            if (audioSynthesizingTask.IsCompleted == false)
-                await audioSynthesizingTask;
-            if (synthesizer != null)
-                await synthesizer.LastSpeaking;
-        }
-    }
-
-    public void OnUpdate(ref float time)
-    {
-        hasHeadphones = SpeechEnvironment.HasHeadphones();
-        if (hasHeadphones) TryStartRecognition();
+        if (audioSynthesizingTask.IsCompleted == false)
+            await audioSynthesizingTask;
+        if (synthesizer != null)
+            await synthesizer.LastSpeaking;
     }
 
     void OnRecognized(string text)

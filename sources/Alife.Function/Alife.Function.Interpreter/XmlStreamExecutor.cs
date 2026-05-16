@@ -15,7 +15,9 @@ public class XmlExecutorContext : XmlContext
 public class XmlStreamExecutor : IAsyncDisposable
 {
     public event Action<string, Exception>? Error;
-    public bool IsIdle => commandChannel.Reader.TryPeek(out _) == false && lastTask is null or { IsCompleted: true };
+    public bool IsInactive =>
+        commandChannel.Reader.TryPeek(out _) == false &&
+        lastTask is null or { IsCompleted: true } || processingTokenSource.IsCancellationRequested;
 
     public void Feed(string text)
     {
@@ -31,11 +33,11 @@ public class XmlStreamExecutor : IAsyncDisposable
         while (commandChannel.Reader.TryRead(out _)) {}
         await handleTokenSource.CancelAsync();
         Flush();
-        await WaitToIdle();
+        await WaitToInactive();
     }
-    public async Task WaitToIdle(CancellationToken cancellationToken = default)
+    public async Task WaitToInactive(CancellationToken cancellationToken = default)
     {
-        while (IsIdle == false)
+        while (IsInactive == false)
         {
             await Task.Delay(100, cancellationToken);
         }

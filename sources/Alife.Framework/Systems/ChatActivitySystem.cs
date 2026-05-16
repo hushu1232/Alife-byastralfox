@@ -38,6 +38,9 @@ public class ChatActivitySystem
         await chatActivity.DisposeAsync();
         activities.Remove(character.Name);
         Destroyed?.Invoke(chatActivity);
+
+        if (activities.Count == 0)
+            pluginSystem.ReloadPlugins();
     }
 
     public ChatActivitySystem(ConfigurationSystem configuration, StorageSystem storageSystem, PluginSystem pluginSystem,

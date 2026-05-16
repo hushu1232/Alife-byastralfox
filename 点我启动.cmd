@@ -25,8 +25,6 @@ if not exist "!PY_DIR!\python.exe" (
     
     :: Fix .pth file (enable site-packages)
     echo [Alife] Configuring path environment...
-    :: Fix .pth file (enable site-packages)
-    echo [Alife] Configuring path environment...
     powershell -Command "$p = Join-Path '!PY_DIR!' 'python312._pth'; (Get-Content $p) | ForEach-Object { $_ -replace '#import site', 'import site' } | Set-Content $p"
     
     :: Install Pip
@@ -57,8 +55,6 @@ exit /b
 
 :INSTALL
 echo [Warning] %~1 is missing.
-set /p "ans=Install %~1 now? (y/n): "
-if /i "!ans!" neq "y" exit /b 1
 echo [Alife] Downloading and installing %~1...
 powershell -Command "Invoke-WebRequest -Uri '%~2' -OutFile '%TEMP%\setup.exe'"
 start /wait "" "%TEMP%\setup.exe" %~3

@@ -44,7 +44,7 @@ public class XmlStreamExecutorTests
         executor.Feed("<script timeout=\"20\">if(0 < 1) print(123 > 1)</ script>");
         executor.Flush();
 
-        while (executor.IsIdle == false)
+        while (executor.IsInactive == false)
         {
             await Task.Delay(200);
         }

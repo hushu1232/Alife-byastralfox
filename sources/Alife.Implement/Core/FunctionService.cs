@@ -7,7 +7,7 @@ namespace Alife.Implement;
 [Plugin("函数调用", "为AI增加一种基于Xml的流式函数执行功能，实现快速实时的交互能力。", launchOrder: -1000)]
 public class FunctionService : InteractivePlugin<FunctionService>
 {
-    public bool IsIdle => executor.IsIdle;
+    public bool IsIdle => executor.IsInactive;
 
     public void RegisterHandler(XmlHandler handler, params string[] plainAreas)
     {
@@ -79,10 +79,7 @@ public class FunctionService : InteractivePlugin<FunctionService>
 
     public override async Task DestroyAsync()
     {
-        await Task.Run(async () => {
-            while (executor.IsIdle == false)
-                await Task.Yield();
-        });
+        await executor.WaitToInactive();
         await executor.DisposeAsync();
 
         await base.DestroyAsync();
@@ -96,7 +93,7 @@ public class FunctionService : InteractivePlugin<FunctionService>
             try
             {
                 executor.Flush();
-                await executor.WaitToIdle(ChatBot.ChatBreakToken);
+                await executor.WaitToInactive(ChatBot.ChatBreakToken);
             }
             catch (OperationCanceledException)
             {

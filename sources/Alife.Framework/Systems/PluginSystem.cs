@@ -45,7 +45,7 @@ public class PluginSystem : IDisposable
         string[] pluginPaths = Directory.GetFiles(pluginRoot, "*.dll", SearchOption.AllDirectories);
 
         //加载插件
-        HashSet<string> currentAssemblies = AppDomain.CurrentDomain.GetAssemblies().Select(assembly => assembly.FullName).ToHashSet()!;
+        HashSet<string> currentAssemblies = System.Runtime.Loader.AssemblyLoadContext.Default.Assemblies.Select(assembly => assembly.FullName).ToHashSet()!;
         foreach (string pluginPath in pluginPaths)
         {
             try
@@ -65,7 +65,7 @@ public class PluginSystem : IDisposable
 
         // 重新扫描所有已加载程序集中的 IPlugin
         pluginTypes.Clear();
-        Assembly[] allAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        IEnumerable<Assembly> allAssemblies = System.Runtime.Loader.AssemblyLoadContext.Default.Assemblies.Concat(pluginContext.Assemblies);
         foreach (Assembly assembly in allAssemblies)
         {
             foreach (Type type in assembly.GetTypes())
