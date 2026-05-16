@@ -24,7 +24,7 @@ public class MyPlugin(FunctionService functionService, ILogger<MyPlugin> logger)
     public Task Rand([Description("随机的最大范围")] int? max = null/*支持任何可被字符串转换的参数，包括默认值可选这些特性*/)
     {
         if (max == null)
-            max = Configuration!.DefaultMax;//配置在插件构造后便立即注入，故系统事件期间都是不为空的
+            max = Configuration!.DefaultMax;//配置在插件构造后立即注入，故系统事件期间都是不为空的
         if (max < 0)
             throw new Exception("最大值必须大于 0");//可以正常抛出异常
 
