@@ -247,10 +247,16 @@ public partial class MemoryService(FunctionService functionService)
                 return;//只在ai说话后整理，这样对话更完整
 
             await ChatBot.RequestChatAsync();
-            memoryManager.SaveHistory(ChatHistory);
-            if (await memoryManager.Filter(ChatHistory))
-                ChatBot.UpdateHistoryEndIndex();
-            ChatBot.ReleaseChat();
+            try
+            {
+                memoryManager.SaveHistory(ChatHistory);
+                if (await memoryManager.Filter(ChatHistory))
+                    ChatBot.UpdateHistoryEndIndex();
+            }
+            finally
+            {
+                ChatBot.ReleaseChat();
+            }
         }
         catch (Exception e)
         {
