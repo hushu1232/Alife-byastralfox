@@ -165,7 +165,7 @@ public class XmlHandler
                 if (isFilled)
                     parameterValuesBuffer[index] = result;
                 else
-                    throw new Exception($"无法解析到 {method.Name} 标签的 {parameterInfo.Name} 值");
+                    throw new Exception($"{method.Name} 标签缺少 {parameterInfo.Name} 参数，或参数值解析失败！");
             }
 
             //调用

@@ -49,6 +49,11 @@ public class VirtualWorldService(
                 Poke($"这个世界不存在名为'{target}'的角色");
                 return;
             }
+            if (targetCharacter == Character)
+            {
+                Poke("不要给自己发消息！");
+                return;
+            }
 
             var targetActivity = chatActivitySystem.GetAllChatActivities()
                 .FirstOrDefault(a => a.Character.Name.Equals(target, StringComparison.OrdinalIgnoreCase));
@@ -80,6 +85,11 @@ public class VirtualWorldService(
             if (targetCharacter == null)
             {
                 Poke($"这个世界不存在名为'{target}'的角色");
+                return;
+            }
+            if (targetCharacter == Character)
+            {
+                Poke("不要给自己发消息！");
                 return;
             }
 

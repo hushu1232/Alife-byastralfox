@@ -43,6 +43,10 @@
     - 成功将所有 Windows 原生调用 (P/Invoke) 集中到 `WindowsNative.cs`。
     - 业务逻辑不再直接耦合 Windows API。
 - **依赖优化**: 清理了 `Alife.Implement` 中冗余的 `System.Drawing.Common` 引用，统一由 `Basic` 层处理。
+- **本地记忆检索极简重构**:
+    - 彻底干掉了 DuckDB FTS 全文检索，解决了原作者为使新记忆可搜而盲目在每次检索前执行 `PRAGMA drop_fts_index` 和 `PRAGMA create_fts_index` 的极重磁盘 I/O 开销。
+    - 将检索 SQL 改造为极其高效的 `ILIKE` 判断（精准命中加 1 分），结合大模型余弦相似度做同梯队内细粒度排序，中文匹配度达 100%。
+    - 实现 C# 与 DuckDB 端到端的 `float` 类型对齐，改用 `reader.GetFloat(6)` 零冗余原生存取，大幅简化了代码并降低了系统耦合。
 
 ## 3. 未来计划 (Future Plans)
 

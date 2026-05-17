@@ -187,9 +187,9 @@ public class MemoryManager
         return memoryStorage.LoadAsync(level, index);
     }
 
-    public async Task<List<SearchResult>> SearchMemory(string query, int count, DateTime? startTime, DateTime? endTime)
+    public async Task<List<SearchResult>> SearchMemory(int level, string keyword, string question, int count, DateTime? startTime, DateTime? endTime)
     {
-        return await memoryStorage.SearchAsync(query, count, startTime, endTime);
+        return await memoryStorage.SearchAsync(level, keyword, question, count, startTime, endTime);
     }
 
     public MemoryMeta GetMemoryMetaData(ChatMessageContent content)

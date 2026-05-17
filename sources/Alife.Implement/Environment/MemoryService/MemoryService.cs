@@ -44,19 +44,24 @@ public partial class MemoryService(FunctionService functionService)
 
     [XmlFunction(FunctionMode.OneShot)]
     [Description($"在归档的记忆存档中搜索内容（搜索到的结果是存档索引，你需要用 {nameof(Recall)} 打开）。")]
-    public async Task Search([Description("搜索的问题")] string query,
-        [Description("格式为ISO-8601")] DateTime? startTime = null,
-        [Description("格式为ISO-8601")] DateTime? endTime = null,
+    public async Task Search(
+        [Description("用于精确匹配的单关键词")] string keyword,
+        [Description("用于语义匹配的自然描述")] string description,
+        [Description("要搜索的存档层级，建议从高到低搜索，比如先搜3再搜2，逐步缩小搜索范围")] int level,
+        [Description("格式为ISO-8601")] DateTime? startTime,
+        [Description("格式为ISO-8601")] DateTime? endTime,
         [Description("可选，搜索条数")] int count = 5)
     {
-        query = query.Trim();
+        keyword = keyword.Trim();
+        if (keyword.Contains(' '))
+            throw new Exception("不支持使用空格拆分多关键词搜索！");
         if (endTime != null)
             endTime += TimeSpan.FromDays(1);//包含当前天
 
-        List<SearchResult> results = await memoryManager.SearchMemory(query, count, startTime, endTime);
+        List<SearchResult> results = await memoryManager.SearchMemory(level, keyword, description, count, startTime, endTime);
 
         StringBuilder stringBuilder = new();
-        stringBuilder.AppendLine($"{query}”的搜索结果如下：");
+        stringBuilder.AppendLine($"{keyword}”的搜索结果如下：");
         for (int index = 0; index < results.Count; index++)
         {
             SearchResult searchResult = results[index];

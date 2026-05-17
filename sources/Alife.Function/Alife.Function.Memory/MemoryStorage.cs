@@ -28,10 +28,6 @@ public class MemoryStorage
             connection.Open();
             using DuckDBCommand command = connection.CreateCommand();
 
-            // 加载全文搜索扩展
-            command.CommandText = "INSTALL fts; LOAD fts;";
-            command.ExecuteNonQuery();
-
             // 1. 尝试以 Name 为唯一主键创建表
             // 2. 动态增加可能缺失的字段（用于旧库升级）
             command.CommandText = @"
@@ -49,7 +45,7 @@ public class MemoryStorage
             command.ExecuteNonQuery();
         }
     }
-    
+
     public async Task SaveAsync(string name, int level, string summary, string content, DateTimeOffset startTime, DateTimeOffset endTime)
     {
         await using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
@@ -70,7 +66,7 @@ public class MemoryStorage
             StartTime = excluded.StartTime, 
             EndTime = excluded.EndTime, 
             Vector = excluded.Vector;
-        "; //由于是先保存后压缩，且是异步执行，所以如果程序中断，第二次启动时可能重复压缩
+        ";//由于是先保存后压缩，且是异步执行，所以如果程序中断，第二次启动时可能重复压缩
         command.Parameters.Add(new DuckDBParameter(name));
         command.Parameters.Add(new DuckDBParameter(level));
         command.Parameters.Add(new DuckDBParameter(summary));
@@ -87,18 +83,18 @@ public class MemoryStorage
 
             string filePath = Path.Combine(dir, $"{name}.txt");
             await File.WriteAllTextAsync(filePath,
-                $"""
-                 压缩级别：{level}
-                 时间范围：{startTime} 到 {endTime}
-                 内容概述：
-                 ```
-                 {summary}
-                 ```
-                 原始内容：
-                 ```
-                 {content}
-                 ```
-                 """);
+            $"""
+             压缩级别：{level}
+             时间范围：{startTime} 到 {endTime}
+             内容概述：
+             ```
+             {summary}
+             ```
+             原始内容：
+             ```
+             {content}
+             ```
+             """);
         }
     }
 
@@ -117,47 +113,35 @@ public class MemoryStorage
     /// <summary>
     /// 功能3：原生的 DuckDB 侧全库综合高能搜索。直接下推余弦计算并依靠索引剪枝！
     /// </summary>
-    public async Task<List<SearchResult>> SearchAsync(string query, int topK = 5, DateTimeOffset? minTime = null, DateTimeOffset? maxTime = null)
+    public async Task<List<SearchResult>> SearchAsync(int level, string keyword, string question, int topK = 5, DateTimeOffset? minTime = null, DateTimeOffset? maxTime = null)
     {
         await using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
         connection.Open();
 
-        // 1. 每次搜索前重建全文索引（针对 Summary 列）
-        await using (DuckDBCommand ftsCommand = connection.CreateCommand())
-        {
-            try
-            {
-                ftsCommand.CommandText = "PRAGMA drop_fts_index('MemoryStorage');";
-                ftsCommand.ExecuteNonQuery();
-            }
-            catch
-            {
-                /* 忽略索引不存在的情况 */
-            }
-
-            ftsCommand.CommandText = "PRAGMA create_fts_index('MemoryStorage', 'Name', 'Summary');";
-            ftsCommand.ExecuteNonQuery();
-        }
-
-        // 2. 执行混合搜索：向量余弦相似度 + 全文检索 BM25 评分
-        float[] queryVector = await vectorizer.VectorizeAsync(query);
+        // 执行混合搜索：向量余弦相似度 + 精准子串包含超级加分
+        float[] queryVector = await vectorizer.VectorizeAsync(question);
         string vectorLiteral = "[" + string.Join(",", queryVector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
         await using DuckDBCommand command = connection.CreateCommand();
         command.CommandText = $@"
                 SELECT Name, Level, Summary, Content, StartTime, EndTime, 
-                       (array_cosine_similarity(Vector, {vectorLiteral}::FLOAT[512]) + COALESCE(fts_main_MemoryStorage.match_bm25(Name, $3), 0.0)) as Score
+                       (
+                         array_cosine_similarity(Vector, {vectorLiteral}::FLOAT[512]) 
+                         + (CASE WHEN Summary ILIKE $4 THEN 1.0 ELSE 0.0 END)
+                       )::Double as Score
                 FROM MemoryStorage 
                 WHERE ($1 IS NULL OR EndTime >= $1) 
                   AND ($2 IS NULL OR StartTime <= $2)
+                  AND Level = $3
                 ORDER BY Score DESC
                 LIMIT {topK}
             ";
 
         object minVal = minTime.HasValue ? minTime.Value.ToUnixTimeMilliseconds() : DBNull.Value;
         object maxVal = maxTime.HasValue ? maxTime.Value.ToUnixTimeMilliseconds() : DBNull.Value;
-        command.Parameters.Add(new DuckDBParameter(minVal));
-        command.Parameters.Add(new DuckDBParameter(maxVal));
-        command.Parameters.Add(new DuckDBParameter(query));
+        command.Parameters.Add(new DuckDBParameter(minVal));// $1
+        command.Parameters.Add(new DuckDBParameter(maxVal));// $2
+        command.Parameters.Add(new DuckDBParameter(level));// $3
+        command.Parameters.Add(new DuckDBParameter($"%{keyword}%"));// $4
 
         await using DuckDBDataReader reader = command.ExecuteReader();
 
@@ -165,15 +149,14 @@ public class MemoryStorage
         while (reader.Read())
         {
             string name = reader.GetString(0);
-            int level = reader.GetInt32(1);
             string summary = reader.GetString(2);
             string content = reader.GetString(3);
             long startMs = reader.GetInt64(4);
             long endMs = reader.GetInt64(5);
             float score = (float)reader.GetDouble(6);
             results.Add(new SearchResult(name, level, summary, content,
-                DateTimeOffset.FromUnixTimeMilliseconds(startMs),
-                DateTimeOffset.FromUnixTimeMilliseconds(endMs), score));
+            DateTimeOffset.FromUnixTimeMilliseconds(startMs),
+            DateTimeOffset.FromUnixTimeMilliseconds(endMs), score));
         }
         return results;
     }
