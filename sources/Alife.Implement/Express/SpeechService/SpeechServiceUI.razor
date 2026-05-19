@@ -5,6 +5,51 @@
 <div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
     <Flex Direction="FlexDirection.Vertical" Gap="@("24")">
 
+        <GridRow Gutter="16">
+            <GridCol Span="12">
+                <Card Size="CardSize.Small" Title="语音识别 (STT)" Style="border-radius: 8px;">
+                    <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
+                        <div style="margin-bottom: 16px;">
+                            @if (SpeechService.IsRecognizing)
+                            {
+                                <Badge Status="BadgeStatus.Processing" Text="正在监听中..."/>
+                            }
+                            else
+                            {
+                                <Badge Status="BadgeStatus.Default" Text="未启用"/>
+                            }
+                        </div>
+                        <Button Type="@ButtonType.Default" Size="@ButtonSize.Small" OnClick="ResetRecognizer"
+                                Loading="@isRestarting">重置识别
+                        </Button>
+                        <Text Type="TextElementType.Secondary" Style="font-size: 11px; margin-top: 8px;">
+                            重启语音识别服务，适用于麦克风监听卡死或异常时重新初始化。
+                        </Text>
+                    </Flex>
+                </Card>
+            </GridCol>
+
+            @if (Plugin != null)
+            {
+                <GridCol Span="12">
+                    <Card Size="CardSize.Small" Title="语音合成 (TTS)" Style="border-radius: 8px;">
+                        <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
+                            <div style="margin-bottom: 16px;">
+                                @if (Plugin.IsSynthesizing)
+                                {
+                                    <Badge Status="BadgeStatus.Processing" Color="@("green")" Text="正在播放语音..."/>
+                                }
+                                else
+                                {
+                                    <Badge Status="BadgeStatus.Default" Text="待机"/>
+                                }
+                            </div>
+                        </Flex>
+                    </Card>
+                </GridCol>
+            }
+        </GridRow>
+
         <Form TModel="SpeechConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
             <FormItem Label="语音合成引擎">
                 <RadioGroup @bind-Value="@Configuration.SynthesizerType" TValue="SpeechSynthesizerType">
@@ -59,46 +104,6 @@
             }
         </Form>
 
-        <GridRow Gutter="16">
-            <GridCol Span="12">
-                <Card Size="CardSize.Small" Title="语音识别 (STT)" Style="border-radius: 8px;">
-                    <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
-                        <div style="margin-bottom: 16px;">
-                            @if (SpeechService.IsRecognizing)
-                            {
-                                <Badge Status="BadgeStatus.Processing" Text="正在监听中..."/>
-                            }
-                            else
-                            {
-                                <Badge Status="BadgeStatus.Default" Text="未启用"/>
-                            }
-                        </div>
-                    </Flex>
-                </Card>
-            </GridCol>
-
-            @if (Plugin != null)
-            {
-                <GridCol Span="12">
-                    <Card Size="CardSize.Small" Title="语音合成 (TTS)" Style="border-radius: 8px;">
-                        <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
-                            <div style="margin-bottom: 16px;">
-                                @if (Plugin.IsSynthesizing)
-                                {
-                                    <Badge Status="BadgeStatus.Processing" Color="@("green")" Text="正在播放语音..."/>
-                                }
-                                else
-                                {
-                                    <Badge Status="BadgeStatus.Default" Text="待机"/>
-                                }
-                            </div>
-                        </Flex>
-                    </Card>
-                </GridCol>
-            }
-
-        </GridRow>
-
         @if (Plugin != null)
         {
             <Flex Align="@FlexAlign.Center" Justify="FlexJustify.SpaceBetween" Style="margin-bottom: 8px;">
@@ -110,19 +115,41 @@
             </Flex>
         }
 
-
     </Flex>
 
 </div>
 
 @code {
     System.Timers.Timer? refreshTimer;
+    bool isRestarting;
 
     protected override void OnInitialized()
     {
         refreshTimer = new System.Timers.Timer(1000);
         refreshTimer.Elapsed += (_, _) => InvokeAsync(StateHasChanged);
         refreshTimer.Start();
+    }
+
+    async Task ResetRecognizer()
+    {
+        if (SpeechService.Recognizer == null)
+            return;
+
+        isRestarting = true;
+        try
+        {
+            SpeechService.Recognizer.Stop();
+            await SpeechService.Recognizer.TryStartAsync();
+        }
+        catch
+        {
+            // ignored
+        }
+        finally
+        {
+            isRestarting = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     public void Dispose()

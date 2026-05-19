@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.SemanticKernel;
 using System.Net;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
@@ -21,6 +22,7 @@ editorUI: typeof(ChatServiceUI)
 public class ChatService : Plugin, IConfigurable<ChatServiceConfig>, IProvideExecutionSettings
 {
     public ChatServiceConfig? Configuration { get; set; }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -49,16 +51,16 @@ public class ChatService : Plugin, IConfigurable<ChatServiceConfig>, IProvideExe
         );
     }
 
+    [Experimental("SKEXP0010")]
     public void ProvideSettings(OpenAIPromptExecutionSettings settings)
     {
-        settings.ReasoningEffort = Configuration!.reasoningEffort;
+        if (Configuration!.thinkingEnabled)
+            settings.ReasoningEffort = Configuration!.reasoningEffort;
 
-        // 设置 DeepSeek 特有的思考模式参数 (通过 extra_body 传递)
-        settings.ExtensionData ??= new Dictionary<string, object>();
-        settings.ExtensionData["extra_body"] = new {
-            thinking = new {
-                type = "enabled"
-            }
+        // 思考模式支持
+        settings.ExtraBody = new Dictionary<string, object?>();
+        settings.ExtraBody["thinking"] = new {
+            type = Configuration!.thinkingEnabled ? "enabled" : "disabled"
         };
     }
 }

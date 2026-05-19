@@ -61,7 +61,7 @@ public abstract class SpeechSynthesizer : IDisposable
     }
 
     public abstract Task<string?> GenerateSpeechFileAsync(string text, CancellationToken cancellationToken = default);
-    
+
     public virtual void Dispose()
     {
         if (speakCancellation != null)

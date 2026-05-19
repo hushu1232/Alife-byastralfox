@@ -33,9 +33,9 @@ public class SpeechRecognizer : IDisposable
         string vadModelPath = AlifeModel.EnsureModelExisting(VadId, "silero_vad.onnx");
         VadModelConfig vadConfig = new();
         vadConfig.SileroVad.Model = vadModelPath;
-        vadConfig.SileroVad.Threshold = 0.25f;
-        vadConfig.SileroVad.MinSilenceDuration = 0.25f;
-        vadConfig.SileroVad.MinSpeechDuration = 0.2f;
+        vadConfig.SileroVad.Threshold = 0.5f;
+        vadConfig.SileroVad.MinSilenceDuration = 0.5f;
+        vadConfig.SileroVad.MinSpeechDuration = 0.25f;
         vadConfig.SampleRate = 16000;
         vad = new VoiceActivityDetector(vadConfig, bufferSizeInSeconds: 30);
     }
@@ -65,13 +65,6 @@ public class SpeechRecognizer : IDisposable
             if (result.Status != AudioGraphCreationStatus.Success)
                 throw new Exception($"AudioGraph 创建失败: {result.Status}");
             graph = result.Graph;
-
-            //设置音频切片接收回调
-            graph.QuantumStarted += OnQuantumStarted;
-            //异常回调（重置状态）
-            graph.UnrecoverableErrorOccurred += (sender, args) => {
-                Stop();
-            };
         }
 
         if (outputNode == null)
@@ -87,9 +80,11 @@ public class SpeechRecognizer : IDisposable
             inputNode.AddOutgoingConnection(outputNode);
         }
 
-        graph?.Start();
-        lock (vad)
-            vad.Reset();
+        graph.Start();
+        graph.QuantumStarted += OnQuantumStarted;
+        graph.UnrecoverableErrorOccurred += (_, _) => {
+            Stop();
+        };
 
         IsRunning = true;
     }

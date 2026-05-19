@@ -24,8 +24,7 @@ public partial class ChatActivity
         ServiceCollection serviceBuilder = new();
         {
             //添加系统服务
-            serviceBuilder.AddLogging(builder =>
-            {
+            serviceBuilder.AddLogging(builder => {
                 builder.AddConsole();
                 builder.SetMinimumLevel(LogLevel.Information);
             });
@@ -79,8 +78,7 @@ public partial class ChatActivity
             //创建上下文构建器
             ChatHistoryAgentThread contentBuilder = new();
             //构建环境
-            Plugin.AwakeContext awakeContext = new()
-            {
+            Plugin.AwakeContext awakeContext = new() {
                 Character = character,
                 Services = services,
                 KernelBuilder = kernelBuilder,
@@ -135,8 +133,7 @@ public partial class ChatActivity : IAsyncDisposable
         foreach (IProvideExecutionSettings plugin in plugins.OfType<IProvideExecutionSettings>())
             plugin.ProvideSettings(executionSettings);
 
-        ChatCompletionAgent llmAgent = new()
-        {
+        ChatCompletionAgent llmAgent = new() {
             Name = character.Name,
             Instructions =
                 $"名称：{character.Name}\n生日：{character.Birthday}\n简介：{character.Description}\n设定：\n{character.Prompt}",
@@ -163,8 +160,7 @@ public partial class ChatActivity : IAsyncDisposable
     {
         return kernelService.Plugins.GetFunctionsMetadata()
             .Select(metadata => metadata.ToOpenAIFunction().ToFunctionDefinition(true))
-            .Select(chatTool => new JObject()
-            {
+            .Select(chatTool => new JObject() {
                 ["kind"] = chatTool.Kind.GetHashCode(),
                 ["FunctionName"] = chatTool.FunctionName,
                 ["FunctionDescription"] = chatTool.FunctionDescription,
@@ -187,7 +183,6 @@ public partial class ChatActivity : IAsyncDisposable
                 await plugin.DestroyAsync();
             await chatBot.DisposeAsync();
             await pluginService.DisposeAsync();
-            await Task.Delay(1000); //等待一秒让用户反应
         }
         catch (Exception e)
         {
