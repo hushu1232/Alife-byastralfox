@@ -47,7 +47,7 @@ public static class AlifePath
 
         // 更新配置
         StorageFolderPath = newPath;
-        File.WriteAllText(Path.Combine(OutputsFolderPath, "storage_path.txt"), newPath);
+        File.WriteAllText(Path.Combine(RuntimeFolderPath, "storage_path.txt"), newPath);
     }
 
     static AlifePath()

@@ -18,10 +18,10 @@ public class SpeechConfig
 {
     public SpeechSynthesizerType SynthesizerType { get; set; } = SpeechSynthesizerType.Edge;
     public string EdgeVoiceTone { get; set; } = "zh-CN-XiaoyiNeural";
-    public int VitsSpeakerId { get; set; } = 192;
-    public float VitsNoiseScale { get; set; } = 0.45f;
-    public float VitsNoiseScaleW { get; set; } = 0.5f;
-    public float VitsLengthScale { get; set; } = 1.4f;
+    public int VitsSpeakerId { get; set; } = 142;
+    public float VitsNoiseScale { get; set; } = 0.42f;
+    public float VitsNoiseScaleW { get; set; } = 0.57f;
+    public float VitsLengthScale { get; set; } = 1.7f;
 }
 
 public partial class SpeechService

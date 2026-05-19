@@ -66,10 +66,19 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
             {
                 if (speechSynthesizer == null) throw new Exception("当前语音消息不可用");
                 message = OneBotSegment.GetPlainText(message);
-                string? file = await speechSynthesizer.GenerateSpeechFileAsync(message);
-                if (file == null)
-                    throw new Exception("语音合成失败");
-                message = $"[CQ:record,file={file}]";
+                VitsSpeechSynthesizer? vitsSpeechSynthesizer = speechSynthesizer as VitsSpeechSynthesizer;
+                if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.Speed /= 1.3f;
+                try
+                {
+                    string? file = await speechSynthesizer.GenerateSpeechFileAsync(message);
+                    if (file == null)
+                        throw new Exception("语音合成失败");
+                    message = $"[CQ:record,file={file}]";
+                }
+                finally
+                {
+                    if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.Speed *= 1.3f;
+                }
             }
 
             if (type == OneBotMessageType.Group)
