@@ -67,7 +67,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
                 if (speechSynthesizer == null) throw new Exception("当前语音消息不可用");
                 message = OneBotSegment.GetPlainText(message);
                 VitsSpeechSynthesizer? vitsSpeechSynthesizer = speechSynthesizer as VitsSpeechSynthesizer;
-                // if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.Speed /= 1.2f;
+                if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.LengthScale *= 1.2f;
                 try
                 {
                     string? file = await speechSynthesizer.GenerateSpeechFileAsync(message);
@@ -77,7 +77,7 @@ public class QChatService(FunctionService functionService, ILogger<QChatService>
                 }
                 finally
                 {
-                    // if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.Speed *= 1.2f;
+                    if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.LengthScale /= 1.2f;
                 }
             }
 

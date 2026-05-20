@@ -99,23 +99,20 @@
                 </FormItem>
                 <FormItem Label="VITS 声音长度 (Length Scale)">
                     <AntDesign.InputNumber @bind-Value="@Configuration.VitsLengthScale" Min="0.1f" Max="5.0f"
-                                           Step="0.1f" Style="width: 100%;"/>
-                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制整体声音长度/说话快慢（推荐 1.0 ~
-                        1.5）。值越大说话越慢（声音越长）。
+                                           Step="0.01f" Style="width: 100%;"/>
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制整体声音长度，值越大说话越慢（声音越长）。
                     </Text>
                 </FormItem>
                 <FormItem Label="VITS 感情变化程度 (Noise Scale)">
                     <AntDesign.InputNumber @bind-Value="@Configuration.VitsNoiseScale" Min="0.01f" Max="2.0f"
-                                           Step="0.05f" Style="width: 100%;"/>
-                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制发音的感情起伏变化程度（推荐 0.3
-                        ~ 0.8）。
+                                           Step="0.01f" Style="width: 100%;"/>
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制发音的感情起伏变化程度。
                     </Text>
                 </FormItem>
                 <FormItem Label="VITS 音素发音长度 (Noise Scale W)">
                     <AntDesign.InputNumber @bind-Value="@Configuration.VitsNoiseScaleW" Min="0.01f" Max="2.0f"
-                                           Step="0.05f" Style="width: 100%;"/>
-                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制单个音素的长度起伏（推荐 0.4 ~
-                        0.8）。
+                                           Step="0.01f" Style="width: 100%;"/>
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">控制单个音素的长度起伏。
                     </Text>
                 </FormItem>
             }

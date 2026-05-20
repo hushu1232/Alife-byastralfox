@@ -18,7 +18,7 @@ public class SpeechConfig
 {
     public SpeechSynthesizerType SynthesizerType { get; set; } = SpeechSynthesizerType.Edge;
     public string EdgeVoiceTone { get; set; } = "zh-CN-XiaoyiNeural";
-    public int VitsSpeakerId { get; set; } = 142;
+    public int VitsSpeakerId { get; set; } = 551;
     public float VitsNoiseScale { get; set; } = 0.6f;
     public float VitsNoiseScaleW { get; set; } = 0.668f;
     public float VitsLengthScale { get; set; } = 1.2f;
@@ -44,7 +44,7 @@ public partial class SpeechService(FunctionService functionService)
 
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出。")]
-    public async Task Speak(XmlExecutorContext context, [XmlContent] string content, CancellationToken cancellationToken)
+    public async Task Speak(XmlExecutorContext context, CancellationToken cancellationToken)
     {
         try
         {
@@ -59,18 +59,14 @@ public partial class SpeechService(FunctionService functionService)
                     catch (OperationCanceledException) {}
                     break;
                 case CallMode.Closing:
-                    content = content.Trim();
-                    if (string.IsNullOrWhiteSpace(content))
-                        break;
-                    if (cancellationToken.IsCancellationRequested)
-                        break;
-
-                    if (synthesizer != null)
-                        await synthesizer.SpeakAsync(content, cancellationToken);
                     break;
                 case CallMode.Content:
                 {
-         
+                    string content = context.Content.Trim();
+                    if (string.IsNullOrWhiteSpace(content))
+                        break;
+                    if (synthesizer != null)
+                        await synthesizer.SpeakAsync(content, cancellationToken);
                     break;
                 }
             }
