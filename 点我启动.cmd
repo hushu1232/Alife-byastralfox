@@ -1,5 +1,7 @@
 @echo off
 setlocal
+set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
 
 :: Auto Request Administrator Privileges (Silent fallback)
 net session >nul 2>&1 || (powershell -Command "Start-Process -FilePath '%~dpnx0' -Verb RunAs" & exit)
