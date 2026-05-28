@@ -20,8 +20,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Sources\Alife.Basic\Alife.Basic.csproj" />
-      <ProjectReference Include="..\..\Sources\Alife.Implement\Alife.Implement.csproj" />
+      <ProjectReference Include="..\..\Sources\Alife\Alife.Platform\Alife.Platform.csproj" />
+      <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Python\Alife.Function.Python.csproj" />
     </ItemGroup>
 
 </Project>

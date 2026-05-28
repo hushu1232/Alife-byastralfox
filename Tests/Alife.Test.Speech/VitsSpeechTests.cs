@@ -1,4 +1,4 @@
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Function.Speech;
 
 namespace Alife.Test.Speech;

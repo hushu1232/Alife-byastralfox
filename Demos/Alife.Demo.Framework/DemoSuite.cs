@@ -1,9 +1,10 @@
 using System;
 using System.Linq;
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -13,13 +14,14 @@ public class DemoSuite : IAsyncDisposable
     {
         Console.OutputEncoding = Encoding.UTF8;
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
-        AlifeTerminal.Log($"   Alife Demo 套件: {character.Name}", ConsoleColor.Magenta);
+        AlifeTerminal.Log($"   Alife.Client Demo 套件: {character.Name}", ConsoleColor.Magenta);
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 
         AlifeTerminal.LogInfo("正在初始化系统环境 (Storage, Config)...");
         StorageSystem storage = new();
         ConfigurationSystem config = new(storage);
-        PluginSystem plugins = new(storage);
+        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        PluginSystem plugins = new(storage, loggerFactory.CreateLogger<PluginSystem>());
         configure?.Invoke(config);
 
         AlifeTerminal.LogInfo("正在创建 ChatActivity 并注入插件...");

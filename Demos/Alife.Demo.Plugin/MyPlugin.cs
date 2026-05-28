@@ -12,7 +12,7 @@ public class MyPluginData
 }
 
 [Plugin("我的插件", "一个示例插件", EditorUI = typeof(MyPluginUI)/*支持用razor自定义插件界面*/)]
-public class MyPlugin(FunctionService functionService, ILogger<MyPlugin> logger) :
+public class MyPlugin(XmlFunctionCaller functionService, ILogger<MyPlugin> logger) :
     InteractivePlugin<MyPlugin>,/*插件必要基类*/
     IConfigurable<MyPluginData>,/*通过实现IConfigurable接入配置功能*/
     IProvideExecutionSettings

@@ -1,6 +1,7 @@
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
-using Alife.Implement;
+using Alife.ChatService;
+using Alife.Function.Mcp;
 
 AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 AlifeTerminal.Log("   真央 MCP 工具集成验证 Demo", ConsoleColor.Magenta);
@@ -14,8 +15,8 @@ var character = new Character {
              "你可以通过 XML 标签来调用这些工具。系统会自动为你列出可用的工具标签。\n" +
              "请在对话中根据需要主动使用这些工具喵！",
     Plugins = new HashSet<string> {
-        typeof(ChatService).FullName!,
-        typeof(FunctionService).FullName!,
+        typeof(OpenAIChatService).FullName!,
+        typeof(XmlFunctionCaller).FullName!,
         typeof(McpService).FullName!,
     }
 };

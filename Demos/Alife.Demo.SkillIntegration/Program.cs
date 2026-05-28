@@ -2,9 +2,12 @@ using System;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
-using Alife.Implement;
+using Alife.ChatService;
+using Alife.Function.Skill;
+using Alife.Function.Python;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,19 +18,20 @@ public class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
         AlifeTerminal.Log("========================================", ConsoleColor.Cyan);
-        AlifeTerminal.Log("   Alife Skill 集成测试 Demo", ConsoleColor.Cyan);
+        AlifeTerminal.Log("   Alife.Client Skill 集成测试 Demo", ConsoleColor.Cyan);
         AlifeTerminal.Log("========================================", ConsoleColor.Cyan);
 
         // 0. 强制加载程序集以确保插件被扫描
-        _ = typeof(Alife.Implement.ChatService).Assembly;
-        _ = typeof(Alife.Implement.SkillService).Assembly;
+        _ = typeof(OpenAIChatService).Assembly;
+        _ = typeof(Alife.Function.Skill.SkillService).Assembly;
 
         // 1. 初始化系统环境
         AlifeTerminal.LogInfo("正在初始化系统环境...");
-        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Storage");
+        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Client.Storage");
         StorageSystem storage = new();
         ConfigurationSystem config = new(storage);
-        PluginSystem plugins = new(storage);
+        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        PluginSystem plugins = new(storage, loggerFactory.CreateLogger<PluginSystem>());
 
         // 2. 准备角色
         Character character = new()
@@ -39,10 +43,10 @@ public class Program
                      "阅读手册后，请严格按照手册中的 Python 示例代码或指导来完成任务。",
             Plugins = 
             { 
-                "Alife.Implement.ChatService", 
-                "Alife.Implement.SkillService", 
-                "Alife.Implement.PythonService", 
-                "Alife.Implement.FunctionService" 
+                "Alife.Client.Framework.ChatService", 
+                "Alife.Client.Function.Skill.SkillService", 
+                "Alife.Client.Function.Python.PythonService", 
+                "Alife.Client.Framework.FunctionService" 
             }
         };
 
@@ -64,7 +68,7 @@ public class Program
         };
 
         // 检查是否有对话模型
-        if (!activity.Plugins.Any(p => p is ChatService))
+        if (!activity.Plugins.Any(p => p is OpenAIChatService))
         {
             AlifeTerminal.LogError("警告: ChatService 未加载！请检查插件配置。");
         }

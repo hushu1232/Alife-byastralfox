@@ -1,11 +1,14 @@
-using System.Buffers;
+using System;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using Windows.Media.Audio;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Media.Render;
 using SherpaOnnx;
-using Alife.Basic;
+using Alife.Platform;
 
 namespace Alife.Function.Speech;
 

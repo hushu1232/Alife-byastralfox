@@ -1,5 +1,10 @@
+using System;
 using System.Diagnostics;
-using Alife.Basic;
+using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Alife.Platform;
 
 namespace Alife.Function.Speech;
 

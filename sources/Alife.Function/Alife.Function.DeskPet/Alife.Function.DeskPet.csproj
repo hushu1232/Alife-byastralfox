@@ -1,29 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Alife.Function.DeskPet</AssemblyName>
     <RootNamespace>Alife.Function.DeskPet</RootNamespace>
-    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3065.39" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <ProjectReference Include="..\..\Alife.Basic\Alife.Basic.csproj" />
-  </ItemGroup>
-
-  <PropertyGroup>
-    <NoWarn>$(NoWarn);NU1605</NoWarn>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <None Update="wwwroot\**">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
+        <ProjectReference Include="..\..\Alife.DeskPet\Alife.DeskPet.Protocol\Alife.DeskPet.Protocol.csproj" />
   </ItemGroup>
 
 </Project>

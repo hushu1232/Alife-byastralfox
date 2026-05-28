@@ -1,5 +1,5 @@
-﻿using Alife.Basic;
-using Alife.Implement;
+﻿using Alife.Platform;
+using Alife.Function.Python;
 
 namespace Alife.Test.Python;
 

@@ -1,5 +1,10 @@
+using System;
 using System.Collections.Concurrent;
-using Alife.Basic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using Alife.Platform;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
@@ -51,7 +56,7 @@ public class WebViewWorker : IDisposable
             {
                 //创建窗口
                 form = new AlifeForm {
-                    Text = "Alife Browser",
+                    Text = "Alife.Client Browser",
                     Width = 1024,
                     Height = 768,
                     WindowState = FormWindowState.Minimized,

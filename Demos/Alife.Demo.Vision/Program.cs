@@ -1,6 +1,8 @@
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
-using Alife.Implement;
+using Alife.ChatService;
+using Alife.Function.Vision;
+
 
 
 class Program
@@ -18,8 +20,8 @@ class Program
                      "主人问：帮我看看屏幕上在运行什么？\n" +
                      "你答：好的喵！主人请稍候，我这就来看看屏幕喵！<look_screen>描述一下屏幕上的主要窗口内容</look_screen>",
             Plugins = new HashSet<string> {
-                typeof(ChatService).FullName!,// 大模型对话支持
-                typeof(FunctionService).FullName!,// 标签解析支持
+                typeof(OpenAIChatService).FullName!,// 大模型对话支持
+                typeof(XmlFunctionCaller).FullName!,// 标签解析支持
                 typeof(VisionService).FullName!,// 视觉服务插件
             }
         };

@@ -1,7 +1,6 @@
 using System.Diagnostics;
-using System.IO;
 using System.Text;
-using Alife.Basic;
+using Alife.Platform;
 
 namespace Alife.Function.DeskPet;
 
@@ -19,11 +18,11 @@ public class PetServer : IAsyncDisposable
     public PetServer(string modelPath)
     {
         //加载模型信息
-        string modelJsonPath = Path.Combine(AlifePath.OutputsFolderPath, $"Alife.Function.DeskPet/wwwroot/model/{modelPath}");
+        string modelJsonPath = Path.Combine(AlifePath.OutputsFolderPath, $"Alife.Client.Function.DeskPet/wwwroot/model/{modelPath}");
         metadata = PetModelMetadata.Load(modelJsonPath);
 
         //创建进程
-        string petExePath = Path.Combine(AlifePath.OutputsFolderPath, "Alife.Function.DeskPet/Alife.Function.DeskPet.exe");
+        string petExePath = Path.Combine(AlifePath.OutputsFolderPath, "Alife.Client.Function.Alife.DeskPet.Client/Alife.Client.Function.Alife.DeskPet.Client.exe");
         if (File.Exists(petExePath) == false)
             throw new FileNotFoundException($"找不到桌宠程序: {petExePath}");
         nativeProcess = new Process {

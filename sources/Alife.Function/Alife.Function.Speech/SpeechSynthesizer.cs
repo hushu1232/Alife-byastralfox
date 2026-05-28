@@ -1,4 +1,9 @@
-using Alife.Basic;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using Alife.Platform;
 using NAudio.Wave;
 
 namespace Alife.Function.Speech;

@@ -1,8 +1,12 @@
-using Alife.Basic;
+using System;
+using Alife.Platform;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Alife.Function.Speech;
 

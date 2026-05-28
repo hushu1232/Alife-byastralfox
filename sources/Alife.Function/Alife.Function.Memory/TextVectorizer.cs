@@ -1,6 +1,9 @@
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.Extensions.AI;
 using Microsoft.SemanticKernel;
-using Alife.Basic;
+using Alife.Platform;
 
 namespace Alife.Function.Memory;
 

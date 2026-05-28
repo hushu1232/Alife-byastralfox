@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <RootNamespace>Alife.Function.Event</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
+  </ItemGroup>
+
+</Project>

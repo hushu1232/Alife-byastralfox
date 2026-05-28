@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Sources\Alife.Implement\Alife.Implement.csproj" />
+    <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.DeskPet\Alife.Function.DeskPet.csproj" />
   </ItemGroup>
 
 </Project>

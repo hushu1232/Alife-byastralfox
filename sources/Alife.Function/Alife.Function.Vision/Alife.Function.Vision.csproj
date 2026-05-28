@@ -1,22 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <AssemblyName>Alife.Function.Vision</AssemblyName>
-    <RootNamespace>Alife.Function.Vision</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Python bridge script: copy to output directory -->
-    <Content Include="obj\Debug\Alife.Fu.914583CB.Up2Date" />
-    <Content Include="obj\Debug\Alife.Function.Vision.csproj.CoreCompileInputs.cache" />
-    <Content Include="obj\Debug\Alife.Function.Vision.csproj.FileListAbsolute.txt" />
-    <Content Include="obj\Debug\Alife.Function.Vision.dll" />
-    <Content Include="obj\Debug\Alife.Function.Vision.pdb" />
-    <Content Include="obj\Debug\Alife.Function.Vision.sourcelink.json" />
-    <Content Include="obj\rider.project.model.nuget.info" />
     <Content Include="vision_bridge.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -29,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Alife.Basic\Alife.Basic.csproj" />
+        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
   </ItemGroup>
 </Project>

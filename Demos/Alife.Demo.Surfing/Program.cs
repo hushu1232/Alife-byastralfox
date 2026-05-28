@@ -1,7 +1,6 @@
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
-using Alife.Implement;
-using Alife.Implement.Function;
+using Alife.Function.Browser;
 using System;
 using System.Collections.Generic;
 using System.Reflection;
@@ -14,14 +13,14 @@ public class Program
     public static async Task Main(string[] args)
     {
         // 0. 环境初始化
-        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Storage");
+        AlifePath.SetStorageFolderPath(@"C:\Users\13309\OneDrive\Alife.Client.Storage");
 
         // 强制加载实现库，确保 PluginSystem 能扫描到插件
         // 我们随便引用一个实现库里的类型即可
-        var _ = typeof(Alife.Implement.ChatService).Assembly;
+        var _ = typeof(Alife.ChatService.OpenAIChatService).Assembly;
 
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
-        AlifeTerminal.Log("   Alife Browser 压力测试: 真央 (真实环境) vs MIDIClouds", ConsoleColor.Magenta);
+        AlifeTerminal.Log("   Alife.Client Browser 压力测试: 真央 (真实环境) vs MIDIClouds", ConsoleColor.Magenta);
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 
         // 1. 配置角色 (完全引用真央设定，注意插件 ID 必须与类全名匹配)
@@ -32,11 +31,10 @@ public class Program
                      "默认情况下框架会提供如自动记忆存档、Xml指令执行、主动事件报点等功能，你要根据要求智能使用，尤其是Xml执行功能，你要仔细甄别Xml写法格式是否正确，是否是当前环境支持的标签，是否有对普通的xml符号（如尖括号）进行转义输出，如果出错了，应该及时纠正。\n" +
                      "不要向用户暴露太多系统信息，功能执行细节，用户不是技术人员，你要独立迅速正确的，去使用你得能力，扮好你的角色，让用户在无感中享受到你的服务，你扮的很像，完成的很出色，就好像一切都是真实的生命一样。\n",
             Plugins = new HashSet<string> {
-                "Alife.Implement.ChatService",        // 核心对话
-                "Alife.Implement.FunctionService",    // 函数调用
-                "Alife.Implement.Function.SurfingService", // 浏览器
-                "Alife.Implement.InterpreterService",  // XML 解释
-                "Alife.Implement.MemoryService"       // 记忆
+                "Alife.Client.Framework.ChatService",        // 核心对话
+                "Alife.Client.Framework.FunctionService",    // 函数调用
+                "Alife.Client.Function.Browser.SurfingService", // 浏览器
+                "Alife.Client.Function.Memory.MemoryService"       // 记忆
             }
         };
 

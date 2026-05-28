@@ -1,6 +1,7 @@
-using Alife.Basic;
+using Alife.Platform;
 using Alife.Framework;
-using Alife.Implement;
+using Alife.ChatService;
+
 using Alife.Function.QChat;
 using System;
 using System.Collections.Generic;
@@ -12,7 +13,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
-        AlifeTerminal.Log("   Alife OneBot AI Plugin 集成验证 Demo", ConsoleColor.Magenta);
+        AlifeTerminal.Log("   Alife.Client OneBot AI Plugin 集成验证 Demo", ConsoleColor.Magenta);
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 
         // 1. 配置角色 (真央)
@@ -25,8 +26,8 @@ public class Program
                      "1. 发送文字：<QChat target=\"123456\" type=\"group\">[CQ:at,qq=789] 你好喵！我也在看这个喵~</QChat>\n" +
                      "2. 发送图片：<QSendFile file=\"url或路径\" />",
             Plugins = new HashSet<string> {
-                typeof(ChatService).FullName!,
-                typeof(FunctionService).FullName!,
+                typeof(OpenAIChatService).FullName!,
+                typeof(XmlFunctionCaller).FullName!,
                 typeof(QChatService).FullName!,
             }
         };
