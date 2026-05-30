@@ -17,7 +17,7 @@ public class Program
 
         // 强制加载实现库，确保 PluginSystem 能扫描到插件
         // 我们随便引用一个实现库里的类型即可
-        var _ = typeof(Alife.ChatService.OpenAIChatService).Assembly;
+        var _ = typeof(Alife.ChatService.OpenAILanguageModel).Assembly;
 
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
         AlifeTerminal.Log("   Alife.Client Browser 压力测试: 真央 (真实环境) vs MIDIClouds", ConsoleColor.Magenta);

@@ -1,0 +1,49 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.PluginUIBase<VitsSpeechModel, VitsSpeechModelConfig>
+@using AntDesign
+@using System.IO
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">VITS语音合成配置</Title>
+
+    @if (!Directory.Exists(VitsSpeechModel.RuntimeFolder))
+    {
+        <Alert Type="AlertType.Warning"
+               Message="Runtime/VITS 目录不存在"
+               Description="请下载 VITS 模型文件并放置到 Runtime/VITS 目录下，否则语音合成功能将无法使用。"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+    else
+    {
+        <Alert Type="AlertType.Success"
+               Message="Runtime 环境已就绪"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+
+    <Form TModel="VitsSpeechModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+        <GridRow Gutter="16">
+            <GridCol Span="12">
+                <FormItem Label="说话人ID">
+                    <InputNumber @bind-Value="@Configuration.SpeakerId" Min="0" Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="噪声规模">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.NoiseScale" Min="0" Max="1" Step="0.1f" Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="噪声宽度">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.NoiseScaleW" Min="0" Max="1" Step="0.1f" Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="长度规模">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.LengthScale" Min="0.5f" Max="2f" Step="0.1f" Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+        </GridRow>
+    </Form>
+</div>

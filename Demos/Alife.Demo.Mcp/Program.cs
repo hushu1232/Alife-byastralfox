@@ -1,6 +1,7 @@
 using Alife.Platform;
 using Alife.Framework;
 using Alife.ChatService;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Mcp;
 
 AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
@@ -15,7 +16,7 @@ var character = new Character {
              "你可以通过 XML 标签来调用这些工具。系统会自动为你列出可用的工具标签。\n" +
              "请在对话中根据需要主动使用这些工具喵！",
     Plugins = new HashSet<string> {
-        typeof(OpenAIChatService).FullName!,
+        typeof(OpenAILanguageModel).FullName!,
         typeof(XmlFunctionCaller).FullName!,
         typeof(McpService).FullName!,
     }

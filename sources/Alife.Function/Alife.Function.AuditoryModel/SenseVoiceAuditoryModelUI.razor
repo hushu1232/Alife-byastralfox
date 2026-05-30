@@ -1,0 +1,27 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.PluginUIBase<SenseVoiceAuditoryModel, SenseVoiceAuditoryModelConfig>
+@using AntDesign
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">SenseVoice语音识别配置</Title>
+
+    @if (!SenseVoiceAuditoryModel.ModelsExists)
+    {
+        <Alert Type="AlertType.Warning"
+               Message="语音识别模型未下载"
+               Description="SenseVoice 和 VAD 模型尚未下载，首次使用时将自动从 ModelScope 下载。"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+    else
+    {
+        <Alert Type="AlertType.Success"
+               Message="模型环境已就绪"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+
+    <Text Type="TextElementType.Secondary">
+        SenseVoice 是阿里的多语言语音识别模型，支持中英日韩粤语。
+    </Text>
+</div>

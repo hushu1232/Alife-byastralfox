@@ -33,14 +33,20 @@
     <Project Path="Sources/Alife.Function/Alife.Function.Vision/Alife.Function.Vision.csproj" />
   </Folder>
   <Folder Name="/Sources/Alife.Function/Interaction/">
+    <Project Path="Sources/Alife.Function/Alife.Function.Auditory/Alife.Function.Auditory.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.DeskPet/Alife.Function.DeskPet.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.QChat/Alife.Function.QChat.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Speech/Alife.Function.Speech.csproj" />
   </Folder>
+  <Folder Name="/Sources/Alife.Function/Models/">
+    <Project Path="Sources/Alife.Function/Alife.Function.AuditoryModel/Alife.Function.AuditoryModel.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.SpeechModel/Alife.Function.SpeechModel.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.VisionModel/Alife.Function.VisionModel.csproj" />
+  </Folder>
   <Folder Name="/Sources/Alife/">
-    <Project Path="Sources/Alife/Alife.ChatService/Alife.ChatService.csproj" />
     <Project Path="Sources/Alife/Alife.Client/Alife.Client.csproj" />
     <Project Path="Sources/Alife/Alife.Framework/Alife.Framework.csproj" />
+    <Project Path="Sources/Alife/Alife.LanguageModel/Alife.LanguageModel.csproj" />
     <Project Path="Sources/Alife/Alife.Platform/Alife.Platform.csproj" />
   </Folder>
   <Folder Name="/Tests/">

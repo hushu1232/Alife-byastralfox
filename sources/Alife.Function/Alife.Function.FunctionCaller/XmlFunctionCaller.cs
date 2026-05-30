@@ -1,15 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Alife.Framework;
 using Alife.Function.Interpreter;
+using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 
-namespace Alife.Framework;
+namespace Alife.Function.FunctionCaller;
 
 [Plugin("Xml函数执行器", "提供一种Xml函数调用框架，可以将注册其中的函数，暴露给AI，并指导其用Xml标签调用。",
 defaultCategory: "Alife 官方/功能底座",
 launchOrder: -1000)]
-public class XmlFunctionCaller : InteractivePlugin<XmlFunctionCaller>
+public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractivePlugin<XmlFunctionCaller>
 {
     public bool IsIdle => executor.IsInactive;
 
@@ -83,6 +85,10 @@ public class XmlFunctionCaller : InteractivePlugin<XmlFunctionCaller>
 
     public override async Task DestroyAsync()
     {
+        await Task.Run(async () => {
+            while (ChatBot.IsChatting)
+                await Task.Delay(100);
+        });
         await executor.WaitToInactive();
         await executor.DisposeAsync();
 
@@ -123,5 +129,6 @@ public class XmlFunctionCaller : InteractivePlugin<XmlFunctionCaller>
     void OnError(string tag, Exception exception)
     {
         Poke($"执行{tag}标签出错：{exception.Message}");
+        logger.LogWarning(exception, $"执行{tag}标签出错");
     }
 }

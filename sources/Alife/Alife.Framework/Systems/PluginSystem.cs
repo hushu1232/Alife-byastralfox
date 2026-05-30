@@ -1,17 +1,81 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Runtime.Loader;
-using System.Text;
 using Alife.Platform;
-using CSScriptLib;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
+using Python.Runtime;
 
 namespace Alife.Framework;
 
+public class PluginLoadContext(string nuGetDir) : AssemblyLoadContext("PluginContext", isCollectible: true)
+{
+    readonly string rid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+        ? $"win-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}"
+        : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+            ? $"linux-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}"
+            : $"osx-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}";
+    string[] searchPaths = new string[4];
+
+    protected override Assembly? Load(AssemblyName assemblyName)
+    {
+        string path = Path.Combine(nuGetDir, $"{assemblyName.Name}.dll");
+        if (File.Exists(path))
+        {
+            using var stream = new MemoryStream(File.ReadAllBytes(path));
+            string pdbPath = Path.ChangeExtension(path, ".pdb");
+            MemoryStream? pdbStream = File.Exists(pdbPath) ? new MemoryStream(File.ReadAllBytes(pdbPath)) : null;
+            Assembly assembly = LoadFromStream(stream, pdbStream);
+            pdbStream?.Dispose();
+            return assembly;
+        }
+        return null;
+    }
+
+    protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
+    {
+        if (Path.HasExtension(unmanagedDllName) == false)
+            unmanagedDllName += ".dll";
+        searchPaths[0] = Path.Combine(nuGetDir, "runtimes", rid, "native", unmanagedDllName);
+        searchPaths[1] = Path.Combine(nuGetDir, unmanagedDllName);
+        searchPaths[2] = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", unmanagedDllName);
+        searchPaths[3] = Path.Combine(AppContext.BaseDirectory, unmanagedDllName);
+
+        foreach (string path in searchPaths)
+        {
+            if (File.Exists(path))
+                return LoadUnmanagedDllFromPath(path);
+        }
+
+        if (NativeLibrary.TryLoad(unmanagedDllName, out IntPtr handle))
+            return handle;
+
+        return IntPtr.Zero;
+    }
+}
+
 public class PluginSystem
 {
+    public string GetPluginFolder<T>()
+    {
+        return Path.Combine(pluginRoot, GetType().Namespace!);
+    }
+    public string GetPluginFolderRoot()
+    {
+        return pluginRoot;
+    }
     public StringFolder GetPluginFolder()
     {
         return pluginFolder;
+    }
+    public IEnumerable<Type> GetAllPlugins()
+    {
+        return pluginTypes.Values;
     }
     public Type? GetPlugin(string pluginID)
     {
@@ -24,11 +88,12 @@ public class PluginSystem
     public void ReloadPlugins()
     {
         //确保插件文件夹存在，防止报错
-        string pluginRoot = Path.Combine(AlifePath.StorageFolderPath, "Plugins");
+
         if (Directory.Exists(pluginRoot) == false)
             Directory.CreateDirectory(pluginRoot);
 
-        AssemblyLoadContext compilingContext = new("CompilingContext", true);
+        string nuGetDir = Path.Combine(pluginRoot, "NuGet");
+        PluginLoadContext compilingContext = new(nuGetDir);
         try
         {
             void LoadDll(string dllPath)
@@ -42,65 +107,69 @@ public class PluginSystem
 
             //加载dll
             List<string> dllFiles = Directory.GetFiles(pluginRoot, "*.dll", SearchOption.AllDirectories).ToList();
-            foreach (string dllFile in dllFiles)
+            for (int index = 0; index < dllFiles.Count;)
             {
                 try
                 {
+                    string dllFile = dllFiles[index];
                     string assemblyName = AssemblyName.GetAssemblyName(dllFile).FullName;
                     if (defaultAssemblies.Contains(assemblyName))
                         continue;
 
                     LoadDll(dllFile);
+                    index++;
                 }
-                catch (Exception)
+                catch
                 {
-                    // 可能包含一些非C#的dll
-                    // Console.WriteLine(e);
+                    dllFiles.RemoveAt(index);
                 }
             }
 
             //编译cs
             {
-                var codeBuilder = new StringBuilder();
+                string dllPath = Path.Combine(AppContext.BaseDirectory, "Plugins.dll");
+                string pdbPath = Path.ChangeExtension(dllPath, ".pdb");
 
-                //收集cs
+                //解析语法树
+                var syntaxTrees = Directory.GetFiles(pluginRoot, "*.cs", SearchOption.AllDirectories)
+                    .Select(file => CSharpSyntaxTree.ParseText(
+                    File.ReadAllText(file),
+                    new CSharpParseOptions(LanguageVersion.Latest)))
+                    .ToList();
+
+                //收集元数据引用（去重）
+                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var references = new List<MetadataReference>();
+                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    string[] csFiles = Directory.GetFiles(pluginRoot, "*.cs", SearchOption.AllDirectories);
-                    foreach (var file in csFiles)
-                        codeBuilder.AppendLine($"//css_include {file};");
+                    if (asm.IsDynamic || string.IsNullOrEmpty(asm.Location))
+                        continue;
+                    if (seenPaths.Add(asm.Location))
+                        references.Add(MetadataReference.CreateFromFile(asm.Location));
+                }
+                foreach (var dll in dllFiles)
+                {
+                    if (seenPaths.Add(dll))
+                        references.Add(MetadataReference.CreateFromFile(dll));
                 }
 
-                // //收集razor
-                // {
-                //     var fileSystem = RazorProjectFileSystem.Create(pluginRoot);
-                //     var engine = RazorProjectEngine.Create(
-                //     RazorConfiguration.Default,
-                //     fileSystem,
-                //     _ => {});
-                //     var razorFiles = Directory.GetFiles(pluginRoot, "*.razor", SearchOption.AllDirectories);
-                //     foreach (var razorFile in razorFiles)
-                //     {
-                //         string relativePath = Path.GetRelativePath(pluginRoot, razorFile);
-                //         var projectItem = fileSystem.GetItem(relativePath, fileKind: null);
-                //         var codeDocument = engine.Process(projectItem);
-                //         string output = Path.ChangeExtension(Path.Combine(AlifePath.TempFolderPath, relativePath), ".cs");
-                //         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                //         File.WriteAllText(output, codeDocument.GetCSharpDocument().GeneratedCode);
-                //         codeBuilder.AppendLine($"//css_include {output};");
-                //     }
-                // }
+                //编译
+                var compilation = CSharpCompilation.Create(
+                "Plugins",
+                syntaxTrees,
+                references,
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                    .WithAllowUnsafe(true)
+                    .WithOptimizationLevel(OptimizationLevel.Release));
 
-                string dllPath = Path.Combine(AlifePath.TempFolderPath, "Plugins.dll");
+                var emitResult = compilation.Emit(dllPath, pdbPath);
+
+                if (!emitResult.Success)
                 {
-                    //添加环境
-                    var compiler = CSScript.Evaluator.Clone();
-                    compiler.ReferenceDomainAssemblies(DomainAssemblies.AllStatic);
-                    foreach (var dll in dllFiles)//很遗憾，Roslyn似乎必须依赖于dll的原始文件，结果他又会把这些文件锁住
-                        compiler.ReferenceAssembly(dll);
-
-                    //编译代码
-                    string masterScript = codeBuilder.ToString();
-                    compiler.CompileAssemblyFromCode(masterScript, new CompileInfo { AssemblyFile = dllPath });
+                    var errors = string.Join("\n", emitResult.Diagnostics
+                        .Where(d => d.Severity == DiagnosticSeverity.Error)
+                        .Select(d => d.ToString()));
+                    throw new Exception($"插件编译失败:\n{errors}");
                 }
 
                 //加载到上下文
@@ -109,35 +178,6 @@ public class PluginSystem
 
             //替换插件环境
             ReloadContext(compilingContext);
-
-            void ReloadContext(AssemblyLoadContext context)
-            {
-                //替换上下文
-                pluginTypes.Clear();
-                if (pluginAssemblies != null)
-                    pluginAssemblies.Unload();
-                pluginAssemblies = context;
-
-                //统计Plugin
-                foreach (Assembly assembly in pluginAssemblies.Assemblies.Union(thisAssemblies))
-                {
-                    foreach (Type type in assembly.GetTypes())
-                    {
-                        if (type.IsAssignableTo(typeof(Plugin)) == false)
-                            continue;
-                        if (type.IsAbstract)
-                            continue;
-                        if (type.IsInterface)
-                            continue;
-                        if (type.GetCustomAttribute<PluginAttribute>() == null)
-                            continue;
-
-                        pluginTypes.Add(GetPluginID(type), type);
-                    }
-                }
-
-                SyncFolder();
-            }
         }
         catch
         {
@@ -150,6 +190,7 @@ public class PluginSystem
         storageSystem.SetObject("PluginSystem/PluginFolder", pluginFolder);
     }
 
+    readonly string pluginRoot = Path.Combine(AlifePath.StorageFolderPath, "Plugins");
     readonly StorageSystem storageSystem;
     readonly Dictionary<string, Type> pluginTypes;
     readonly StringFolder pluginFolder;
@@ -169,6 +210,83 @@ public class PluginSystem
         defaultAssemblies = AssemblyLoadContext.Default.Assemblies.Select(assembly => assembly.FullName).ToHashSet()!;
         thisAssemblies = AppDomain.CurrentDomain.GetAssemblies().Where(assembly => assembly.GetName().Name?.StartsWith("Alife") ?? false).ToArray();
 
+        //加载python环境，很多插件会用
+        Runtime.PythonDLL = DetectPythonDll() ?? throw new InvalidOperationException(
+        "未找到 Python DLL，请安装 Python 或设置 PYTHONNET_PYDLL 环境变量。");
+        PythonEngine.Initialize();
+        PythonEngine.BeginAllowThreads();
+
+        string? DetectPythonDll()
+        {
+            // 1. 环境变量
+            string? envPath = Environment.GetEnvironmentVariable("PYTHONNET_PYDLL")
+                              ?? Environment.GetEnvironmentVariable("PYTHON_DLL");
+            if (!string.IsNullOrEmpty(envPath) && File.Exists(envPath))
+                return envPath;
+
+            // 2. PATH 中的 python.exe 所在目录
+            string? pythonDir = FindPythonInPath();
+            if (pythonDir != null)
+            {
+                string? dll = FindDllInDir(pythonDir);
+                if (dll != null) return dll;
+            }
+
+            // 3. 常见安装目录（Windows）
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                string appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+
+                string[] searchRoots = [
+                    Path.Combine(appData, "Programs", "Python"),
+                    programFiles,
+                    @"C:\Python",
+                ];
+
+                foreach (string root in searchRoots)
+                {
+                    if (!Directory.Exists(root)) continue;
+
+                    // 按版本降序搜索（优先最新版）
+                    foreach (string dir in Directory.GetDirectories(root).OrderByDescending(d => d))
+                    {
+                        string? dll = FindDllInDir(dir);
+                        if (dll != null) return dll;
+                    }
+                }
+            }
+
+            return null;
+
+            static string? FindPythonInPath()
+            {
+                string? pathEnv = Environment.GetEnvironmentVariable("PATH");
+                if (string.IsNullOrEmpty(pathEnv)) return null;
+
+                foreach (string dir in pathEnv.Split(Path.PathSeparator))
+                {
+                    string pythonExe = Path.Combine(dir, "python.exe");
+                    if (File.Exists(pythonExe)) return dir;
+                }
+                return null;
+            }
+
+            static string? FindDllInDir(string dir)
+            {
+                // python3XX.dll (标准命名)
+                for (int minor = 20; minor >= 8; minor--)
+                {
+                    string dll = Path.Combine(dir, $"python3{minor}.dll");
+                    if (File.Exists(dll)) return dll;
+                }
+                // python3.dll (通用符号链接)
+                string genericDll = Path.Combine(dir, "python3.dll");
+                if (File.Exists(genericDll)) return genericDll;
+                return null;
+            }
+        }
+
         try
         {
             ReloadPlugins();
@@ -179,6 +297,32 @@ public class PluginSystem
         }
     }
 
+    void ReloadContext(AssemblyLoadContext context)
+    {
+        //替换上下文
+        pluginTypes.Clear();
+        if (pluginAssemblies != null)
+            pluginAssemblies.Unload();
+        pluginAssemblies = context;
+
+        //统计Plugin
+        foreach (Assembly assembly in pluginAssemblies.Assemblies.Union(thisAssemblies))
+        {
+            foreach (Type type in assembly.GetTypes())
+            {
+                if (type.GetCustomAttribute<PluginAttribute>() == null)
+                    continue;
+                if (type.IsAbstract)
+                    continue;
+                if (type.IsInterface)
+                    continue;
+
+                pluginTypes.Add(GetPluginID(type), type);
+            }
+        }
+
+        SyncFolder();
+    }
     void SyncFolder()
     {
         HashSet<string> currentPlugins = pluginTypes.Keys.ToHashSet();

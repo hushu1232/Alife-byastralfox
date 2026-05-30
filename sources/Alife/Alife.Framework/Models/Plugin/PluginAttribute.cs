@@ -1,3 +1,5 @@
+using System;
+
 namespace Alife.Framework;
 
 public class PluginAttribute(

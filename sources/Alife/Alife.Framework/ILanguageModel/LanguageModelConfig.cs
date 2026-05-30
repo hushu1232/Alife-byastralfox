@@ -1,6 +1,6 @@
-﻿namespace Alife.ChatService;
+﻿namespace Alife.Framework;
 
-public class ChatServiceConfig
+public class LanguageModelConfig
 {
     public string endpoint = "https://api.deepseek.com/v1";
     public string modelId = "deepseek-v4-flash";

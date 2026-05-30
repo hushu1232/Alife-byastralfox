@@ -4,7 +4,7 @@
 <div class="plugin-tree-container" @onmouseup="OnGlobalMouseUp">
     <Tree TItem="object"
           BlockNode Selectable
-          DefaultExpandedKeys="@(new[] { Context.Name })">
+          DefaultExpandedKeys="@([Context.GetHashCode().ToString()])">
         @RenderFolder(Context, null)
     </Tree>
 
@@ -22,7 +22,7 @@
         align-items: center;
         gap: 8px;
         width: 100%;
-        padding: 4px 8px;
+        padding-bottom: 4px;
         border-radius: 4px;
         transition: all 0.2s;
         user-select: none;
@@ -74,9 +74,8 @@
 
     RenderFragment RenderFolder(StringFolder folder, StringFolder? parent) => __builder => {
         <TreeNode TItem="object"
-                  @key="@folder"
+                  key="@folder.GetHashCode().ToString()"
                   DataItem="@((object)folder)"
-                  Expanded="true"
                   Selectable="false">
             <TitleTemplate>
                 @{
@@ -89,7 +88,7 @@
                     @onmouseup="@(() => OnEndDrag(folder))"
                     @onmouseenter="@(() => OnMouseEnter(folder))">
                     <Flex Justify="@FlexJustify.SpaceBetween" Align="@FlexAlign.Center" Style="width: 100%;">
-                        <Space>
+                        <Space Size="SpaceSize.Small">
                             <SpaceItem>
                                 <Icon Type="folder"/>
                             </SpaceItem>
@@ -101,7 +100,7 @@
                         @if (!IsReadOnly)
                         {
                             <div class="node-actions" @onmousedown:stopPropagation @onmouseup:stopPropagation>
-                                <Space>
+                                <Space Size="SpaceSize.Small">
                                     <SpaceItem>
                                         <Button Icon="@IconType.Outline.Plus" Size="@ButtonSize.Small"
                                                 Type="@ButtonType.Text" OnClick="@(() => OnCreateSub(folder))"></Button>
@@ -150,10 +149,11 @@
                   @key="@type"
                   DataItem="@((object)type)">
             <TitleTemplate>
-                <div class="node-item @(!IsReadOnly ? "node-item-editable" : "") @(IsDragging(type) ? "node-dragging" : "")"
-                     @onmousedown="@(() => OnStartDrag(type, parent))"
-                     @onclick="() => OnPluginSelected.InvokeAsync(type)"
-                     @onclick:stopPropagation>
+                <div
+                    class="node-item @(!IsReadOnly ? "node-item-editable" : "") @(IsDragging(type) ? "node-dragging" : "")"
+                    @onmousedown="@(() => OnStartDrag(type, parent))"
+                    @onclick="() => OnPluginSelected.InvokeAsync(type)"
+                    @onclick:stopPropagation>
                     <Icon Type="build"/>
                     <Text>@pluginName</Text>
                 </div>

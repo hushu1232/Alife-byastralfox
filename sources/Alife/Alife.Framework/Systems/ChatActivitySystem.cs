@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
 namespace Alife.Framework;
 
 public class ChatActivitySystem
@@ -17,20 +21,14 @@ public class ChatActivitySystem
 
     public async Task<ChatActivity> Play(Character character, IProgress<(string, float)>? progress = null)
     {
-        if (activities.Count == 0)
-            pluginSystem.ReloadPlugins();
-
-        ChatActivity chatActivity = await ChatActivity.Create(character, configuration, pluginSystem, progress, [
-            configuration,
-            storageSystem,
-            pluginSystem,
-            characterSystem,
-            this
-        ]);
+        ChatActivity chatActivity = await ChatActivity.Create(
+        character, configurationSystem, pluginSystem, progress,
+        appendObjects.ToArray()
+        );
 
         activities.Add(character.Name, chatActivity);
         Created?.Invoke(chatActivity);
-        await chatActivity.Start(progress);
+        await chatActivity.Launch(progress);
 
         return chatActivity;
     }
@@ -43,18 +41,23 @@ public class ChatActivitySystem
         Destroyed?.Invoke(chatActivity);
     }
 
-    public ChatActivitySystem(ConfigurationSystem configuration, StorageSystem storageSystem, PluginSystem pluginSystem,
-        CharacterSystem characterSystem)
+    public ChatActivitySystem(
+        CharacterSystem characterSystem,
+        ConfigurationSystem configurationSystem,
+        PluginSystem pluginSystem,
+        StorageSystem storageSystem)
     {
-        this.configuration = configuration;
-        this.storageSystem = storageSystem;
+        appendObjects.Add(characterSystem);
+        appendObjects.Add(configurationSystem);
+        appendObjects.Add(pluginSystem);
+        appendObjects.Add(storageSystem);
+        appendObjects.Add(this);
         this.pluginSystem = pluginSystem;
-        this.characterSystem = characterSystem;
+        this.configurationSystem = configurationSystem;
     }
 
-    readonly ConfigurationSystem configuration;
-    readonly StorageSystem storageSystem;
     readonly PluginSystem pluginSystem;
-    readonly CharacterSystem characterSystem;
+    readonly ConfigurationSystem configurationSystem;
+    readonly List<object> appendObjects = new();
     readonly Dictionary<string, ChatActivity> activities = new();
 }

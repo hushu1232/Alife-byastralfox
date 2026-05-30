@@ -5,6 +5,7 @@ using Alife.ChatService;
 using Alife.Function.QChat;
 using System;
 using System.Collections.Generic;
+using Alife.Function.FunctionCaller;
 
 namespace Alife.Demo.QChat;
 
@@ -26,7 +27,7 @@ public class Program
                      "1. 发送文字：<QChat target=\"123456\" type=\"group\">[CQ:at,qq=789] 你好喵！我也在看这个喵~</QChat>\n" +
                      "2. 发送图片：<QSendFile file=\"url或路径\" />",
             Plugins = new HashSet<string> {
-                typeof(OpenAIChatService).FullName!,
+                typeof(OpenAILanguageModel).FullName!,
                 typeof(XmlFunctionCaller).FullName!,
                 typeof(QChatService).FullName!,
             }

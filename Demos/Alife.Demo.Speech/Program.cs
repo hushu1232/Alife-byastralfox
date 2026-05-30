@@ -1,6 +1,7 @@
 using Alife.Platform;
 using Alife.Framework;
 using Alife.ChatService;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Speech;
 
 
@@ -10,22 +11,24 @@ using Alife.Function.Speech;
 
 Character character = new() {
     Name = "SpeechTest",
-    Prompt = "你是一个桌面上名为真央的 AI 语音助手。你非常活泼，喜欢模仿猫娘（说话带喵）。\n" +
-             "主人正在通过语音或文字与你交流。请保持回答简短有力（回复控制在 30 字以内），适合语音播报。\n",
+    Prompt = "用<speak>说话",
     Plugins = [
-        typeof(OpenAIChatService).FullName!,
+        typeof(OpenAILanguageModel).FullName!,
         typeof(XmlFunctionCaller).FullName!,
-        typeof(SpeechService).FullName!
+        typeof(SpeechService).FullName!,
+        typeof(VitsSpeechSynthesizer).FullName!
     ]
 };
 
 DemoSuite suite = await DemoSuite.InitializeAsync(character, system => {
-    system.SetConfiguration(typeof(SpeechService), new SpeechConfig() {
-        SynthesizerType = SpeechSynthesizerType.Edge
+    system.SetConfiguration(typeof(VitsSpeechSynthesizer), new VitsSynthesizerConfig() {
+        SpeakerId = 551,
+        NoiseScale = 0.6f,
+        NoiseScaleW = 0.668f,
+        LengthScale = 1.2f
     }, character.StorageKey);
 });
 
-AlifeTerminal.LogInfo("规则：插上耳机激活语音识别，拔掉耳机自动待机保护隐私。");
 AlifeTerminal.Log("----------------------------------------");
 
 await suite.RunAsync();

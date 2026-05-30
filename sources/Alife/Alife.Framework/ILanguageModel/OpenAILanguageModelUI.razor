@@ -1,12 +1,13 @@
 @using System.Net.Http
 @using AntDesign
 @using Newtonsoft.Json.Linq
-@inherits Alife.Framework.PluginUIBase<OpenAIChatService, ChatServiceConfig>
+@namespace Alife.Framework
+@inherits PluginUIBase<OpenAILanguageModel, LanguageModelConfig>
 @inject IMessageService MessageService
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Title Level="4" Style="margin-bottom: 24px;">对话服务配置（OpenAI标准）</Title>
-    <Form TModel="ChatServiceConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+    <Form TModel="LanguageModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <FormItem Label="Endpoint">
             <Input @bind-Value="@Configuration.endpoint" placeholder="例如: https://api.deepseek.com/v1"/>
         </FormItem>

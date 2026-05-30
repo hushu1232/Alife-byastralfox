@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 
 namespace Alife.Function.Skill;

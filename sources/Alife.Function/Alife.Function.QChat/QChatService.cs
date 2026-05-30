@@ -7,10 +7,9 @@ using System.Text;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
-using Alife.Function.QChat;
 using Alife.Function.Speech;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
 
@@ -55,7 +54,7 @@ public class GroupState
                 """,
 defaultCategory: "Alife 官方/交互方式",
 editorUI: typeof(QChatServiceUI), LaunchOrder = 10)]
-public class QChatService(XmlFunctionCaller functionService, ILogger<QChatService> logger) :
+public class QChatService(XmlFunctionCaller functionService, ILogger<QChatService> logger, ISpeechModel speechModel) :
     InteractivePlugin<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -74,21 +73,13 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
 
             if (voice)
             {
-                if (speechSynthesizer == null) throw new Exception("当前语音消息不可用");
+                if (speechModel == null) throw new Exception("当前语音消息不可用");
                 message = OneBotSegment.GetPlainText(message);
-                VitsSpeechSynthesizer? vitsSpeechSynthesizer = speechSynthesizer as VitsSpeechSynthesizer;
-                if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.LengthScale *= 1.2f;
-                try
-                {
-                    string? file = await speechSynthesizer.GenerateSpeechFileAsync(message);
-                    if (file == null)
-                        throw new Exception("语音合成失败");
-                    message = $"[CQ:record,file={file}]";
-                }
-                finally
-                {
-                    if (vitsSpeechSynthesizer != null) vitsSpeechSynthesizer.LengthScale /= 1.2f;
-                }
+
+                string? file = await speechModel.GenerateSpeechFileAsync(message);
+                if (file == null)
+                    throw new Exception("语音合成失败");
+                message = $"[CQ:record,file={file}]";
             }
 
             try
@@ -246,7 +237,6 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
 
     QChatConfig? configuration;
     OneBotClient? oneBotClient;
-    SpeechSynthesizer? speechSynthesizer;
     protected override string ChatPrefixPrompt => $"[回复请用qchat及相关标签]{Configuration?.AppendChatPrompt}";
     string[] groupAwakingWords = [];
     string[] ignoredGroup = [];
@@ -259,7 +249,6 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
 
         //加载基本环境
         oneBotClient = new OneBotClient(Configuration!.Url, Configuration.Token);
-        speechSynthesizer = context.Services.GetService<SpeechService>()?.Synthesizer;
 
         // 动态扫描表情库资源，告知 AI 可用的视觉表达
         string emoteBase = Path.Combine(AlifePath.StorageFolderPath, "Emotes");
@@ -386,6 +375,10 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
         }
     }
 
+    void OnConnectionStatusChanged(bool connected)
+    {
+        _ = ChatBot.ImplicitChatAsync($"{nameof(QChatService)}当前状态: {(connected ? "在线" : "离线")}");
+    }
     async void OnEventReceived(OneBotBaseEvent oneBotEvent)
     {
         try
@@ -413,47 +406,52 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
                                        messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
                 await HandleFormattedMessage(messageEvent, formatted, isAwakening);
             }
-
-            async Task HandleFormattedMessage(OneBotBasicMessageEvent messageEvent, string formatted, bool isAwakening)
-            {
-                if (messageEvent.MessageType == OneBotMessageType.Private)//私聊消息
-                {
-                    if (messageEvent.UserId == Configuration!.OwnerId)
-                        await ChatAsync(formatted);
-                    else
-                        Poke(formatted);
-                }
-                else//群聊消息
-                {
-                    GroupState state = GetGroupInfo(messageEvent.GroupId);
-                    state.Tag = messageEvent.GetGroupTag();
-
-                    if (isAwakening && state.IsEnabled == false)
-                        QGroup(messageEvent.GroupId, true);
-
-                    if (state.IsEnabled)//群聊已激活时（直接接收）
-                    {
-                        BufferGroupMessage(state, formatted);
-                    }
-                    else if (Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
-                    {
-                        BufferGroupMessage(state, formatted);
-                        state.LastFlushedTime = DateTime.Now;
-                    }
-                }
-            }
         }
         catch (Exception e)
         {
             logger.LogError(e, null);
         }
     }
-
-    void OnConnectionStatusChanged(bool connected)
+    void OnAIGroupActivity(long groupId)
     {
-        _ = ChatBot.ImplicitChatAsync($"{nameof(QChatService)}当前状态: {(connected ? "在线" : "离线")}");
-    }
+        GroupState state = GetGroupInfo(groupId);
+        state.LastActivityTime = DateTime.Now;
 
+        if (Configuration!.CloseGroupAfterReply)
+            QGroup(groupId, false);
+        else if (state.IsEnabled == false)
+            QGroup(groupId, true);
+    }
+    
+    async Task HandleFormattedMessage(OneBotBasicMessageEvent messageEvent, string formatted, bool isAwakening)
+    {
+        if (messageEvent.MessageType == OneBotMessageType.Private)//私聊消息
+        {
+            if (messageEvent.UserId == Configuration!.OwnerId)
+                await ChatAsync(formatted);
+            else
+                Poke(formatted);
+        }
+        else//群聊消息
+        {
+            GroupState state = GetGroupInfo(messageEvent.GroupId);
+            state.Tag = messageEvent.GetGroupTag();
+
+            if (isAwakening && state.IsEnabled == false)
+                QGroup(messageEvent.GroupId, true);
+
+            if (state.IsEnabled)//群聊已激活时（直接接收）
+            {
+                BufferGroupMessage(state, formatted);
+            }
+            else if (Random.Shared.NextSingle() < Configuration!.ProactiveChatProbability)//群聊未激活时（概率接收）
+            {
+                BufferGroupMessage(state, formatted);
+                state.LastFlushedTime = DateTime.Now;
+            }
+        }
+    }
+    
     void BufferGroupMessage(GroupState state, string formatted)
     {
         state.MessageBuffer.Add(formatted);
@@ -480,18 +478,7 @@ public class QChatService(XmlFunctionCaller functionService, ILogger<QChatServic
         state.MessageBuffer.Clear();
         Poke(cachedMessage);
     }
-
-    void OnAIGroupActivity(long groupId)
-    {
-        GroupState state = GetGroupInfo(groupId);
-        state.LastActivityTime = DateTime.Now;
-
-        if (Configuration!.CloseGroupAfterReply)
-            QGroup(groupId, false);
-        else if (state.IsEnabled == false)
-            QGroup(groupId, true);
-    }
-
+    
     public void QGroup(long groupId, bool enabled)
     {
         GroupState state = GetGroupInfo(groupId);

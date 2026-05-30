@@ -22,8 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Alife.ChatService\Alife.ChatService.csproj" />
+    <ProjectReference Include="..\Alife.LanguageModel\Alife.LanguageModel.csproj" />
     <ProjectReference Include="..\Alife.Framework\Alife.Framework.csproj" />
+    <!-- <ProjectReference Include="..\..\Alife.Function\**\*.csproj" /> -->
   </ItemGroup>
 
 </Project>

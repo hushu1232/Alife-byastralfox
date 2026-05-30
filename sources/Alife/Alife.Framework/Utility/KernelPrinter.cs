@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.SemanticKernel;
 using OpenAI.Chat;
 using ChatMessageContent=Microsoft.SemanticKernel.ChatMessageContent;

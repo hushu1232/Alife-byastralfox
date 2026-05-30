@@ -28,11 +28,11 @@ public static class AlifeModel
         $"-c \"from optimum.exporters.onnx import main_export; main_export(model_name_or_path=r'{modelDir}', output=r'{modelDir}', task='{taskType}')\"");
     }
 
-    static string ModelScopeModelPath { get; }
+    public static string ModelScopeModelPath { get; }
 
     static AlifeModel()
     {
-        AlifePlatform.Command("python", "-m pip install modelscope optimum[onnxruntime] -i https://mirrors.aliyun.com/pypi/simple/");
+        AlifePlatform.Command("python", "-m pip install modelscope optimum[onnxruntime]");
 
         string modelScopeCachePath = Environment.GetEnvironmentVariable("MODELSCOPE_CACHE") ??
                                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "modelscope", "hub");

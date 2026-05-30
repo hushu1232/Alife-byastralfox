@@ -1,4 +1,5 @@
 @using System.Reflection
+@using Autofac
 @using Newtonsoft.Json
 @inject ConfigurationSystem ConfigurationSystem
 
@@ -58,15 +59,14 @@
     [Parameter] public Character? Character { get; set; }
 
     PluginAttribute PluginAttr => PluginType.GetCustomAttribute<PluginAttribute>()!;
-    Plugin? Plugin { get; set; }
+    object? Plugin { get; set; }
     object? configuration;
     bool isConfigurable;
 
     string jsonConfig = "{}";
-    bool isInputted = false;
+    bool isInputted;
 
-    RenderFragment DefaultUI => __builder =>
-    {
+    RenderFragment DefaultUI => __builder => {
         if (isConfigurable)
         {
             <div style="display: flex; flex-direction: column; gap: 16px;">
@@ -81,8 +81,7 @@
 
                     <Button Type="@ButtonType.Primary"
                             Icon="@IconType.Outline.Check"
-                            OnClick="@(() =>
-                                     {
+                            OnClick="@(() => {
                                          OnConfigSaved(GetConfigFromText());
                                          isInputted = false;
                                      })"
@@ -96,7 +95,8 @@
 
     protected override void OnParametersSet()
     {
-        Plugin = ChatActivity?.PluginService.GetService(PluginType) as Plugin;
+        if (ChatActivity != null && ChatActivity.PluginService.TryResolve(PluginType, out object? instance))
+            Plugin = instance;
         isConfigurable = ConfigurationSystem.CanConfiguration(PluginType);
         LoadConfiguration();
     }
@@ -161,8 +161,7 @@
             configuration = GetConfigFromText();
         }
 
-        return new Dictionary<string, object?>
-        {
+        return new Dictionary<string, object?> {
             { "Character", Character },
             { "ChatActivity", ChatActivity },
             { "Plugin", Plugin },

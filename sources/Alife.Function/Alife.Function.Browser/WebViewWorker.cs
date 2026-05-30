@@ -3,10 +3,10 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Forms;
+using System.Windows;
 using Alife.Platform;
 using Microsoft.Web.WebView2.Core;
-using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace Alife.Function.Browser;
 
@@ -21,7 +21,7 @@ public class WebViewWorker : IDisposable
 
     public Task<T> AddFormTask<T>(Func<WebView2, Task<T>> action)
     {
-        if (form == null || form.IsDisposed)
+        if (window == null)
             throw new ObjectDisposedException(nameof(WebViewWorker));
 
         TaskCompletionSource<T> tcs = new();
@@ -43,7 +43,7 @@ public class WebViewWorker : IDisposable
         return tcs.Task;
     }
 
-    AlifeForm? form;
+    Window? window;
     WebView2? webView;
     readonly BlockingCollection<Func<Task>> formTasks = new();
     bool isNavigating;
@@ -54,22 +54,21 @@ public class WebViewWorker : IDisposable
         var thread = new Thread(() => {
             try
             {
-                //创建窗口
-                form = new AlifeForm {
-                    Text = "Alife.Client Browser",
+                window = new Window {
+                    Title = "Alife.Client Browser",
                     Width = 1024,
                     Height = 768,
-                    WindowState = FormWindowState.Minimized,
+                    WindowState = WindowState.Minimized,
                     ShowInTaskbar = true,
-                    FormBorderStyle = FormBorderStyle.Sizable,
+                    ResizeMode = ResizeMode.CanResize,
                 };
-                webView = new WebView2 { Dock = DockStyle.Fill };
+                webView = new WebView2();
+                window.Content = webView;
+                window.Loaded += OnWindowLoaded;
+                window.Closing += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
 
-                form.Controls.Add(webView);
-                //注入窗口初始化事件
-                form.Load += OnFormOnLoad;
-
-                Application.Run(form);
+                window.Show();
+                System.Windows.Threading.Dispatcher.Run();
             }
             catch (Exception ex)
             {
@@ -84,46 +83,38 @@ public class WebViewWorker : IDisposable
     public void Dispose()
     {
         formTasks.CompleteAdding();
-        if (form is { IsDisposed: false })
-            form.Invoke((Action)(() => form.Close()));
+        if (window != null)
+            window.Dispatcher.Invoke(() => window.Close());
     }
 
-    async void OnFormOnLoad(object? s, EventArgs e)
+    async void OnWindowLoaded(object? s, RoutedEventArgs e)
     {
         try
         {
-            //初始化基本环境
             string userDataFolder = Path.Combine(AlifePath.RuntimeFolderPath, "WebView2Data");
             if (!Directory.Exists(userDataFolder))
                 Directory.CreateDirectory(userDataFolder);
             var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
 
-            await form!.InvokeAsync(async _ => {
+            await webView!.Dispatcher.InvokeAsync(async () => {
                 await webView!.EnsureCoreWebView2Async(env);
-                //伪装普通浏览器
                 webView.CoreWebView2.Settings.UserAgent =
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
-                //禁用新窗口跳转
                 webView.CoreWebView2.NewWindowRequested += (_, ev) => {
                     ev.Handled = true;
                     webView.CoreWebView2.Navigate(ev.Uri);
                 };
-                //统计加载状态
                 webView.CoreWebView2.NavigationStarting += (_, ev) => isNavigating = true;
                 webView.CoreWebView2.NavigationCompleted += (_, ev) => isNavigating = false;
             });
 
-            //持续处理分配的formTask任务
             isLoaded = true;
             await Task.Run(() => {
                 foreach (Func<Task> formTask in formTasks.GetConsumingEnumerable())
                 {
-                    if (form.IsDisposed)
-                        break;
-
                     try
                     {
-                        Task task = form.Invoke(formTask);
+                        Task task = window!.Dispatcher.Invoke(formTask);
                         task.Wait();
                     }
                     catch (Exception ex)
@@ -136,21 +127,6 @@ public class WebViewWorker : IDisposable
         catch (Exception ex)
         {
             Console.WriteLine(ex);
-        }
-    }
-}
-
-public class AlifeForm : Form
-{
-    const int CP_NOCLOSE_BUTTON = 0x200;
-
-    protected override CreateParams CreateParams
-    {
-        get
-        {
-            CreateParams myCp = base.CreateParams;
-            myCp.ClassStyle = myCp.ClassStyle | CP_NOCLOSE_BUTTON;
-            return myCp;
         }
     }
 }

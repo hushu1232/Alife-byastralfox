@@ -1,23 +1,26 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Framework;
 
-public abstract class InteractivePlugin : Plugin
+public abstract class InteractivePlugin : ISystemEvent
 {
     protected Character Character { get; private set; } = null!;
     protected ChatActivity ChatActivity { get; private set; } = null!;
     protected ChatBot ChatBot { get; private set; } = null!;
     protected ChatHistory ChatHistory { get; private set; } = null!;
 
-    public override Task AwakeAsync(AwakeContext context)
+    public virtual Task AwakeAsync(AwakeContext context)
     {
         Character = context.Character;
         ChatHistory = context.ContextBuilder.ChatHistory;
 
         return Task.CompletedTask;
     }
-    public override Task StartAsync(Kernel kernel, ChatActivity chatActivity)
+    public virtual Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
         ChatActivity = chatActivity;
         ChatBot = chatActivity.ChatBot;
@@ -30,11 +33,12 @@ public abstract class InteractivePlugin : Plugin
 
         return Task.CompletedTask;
     }
-    public override Task DestroyAsync()
+    public virtual Task DestroyAsync()
     {
         if (updateCancellation != null)
             return updateCancellation.CancelAsync();
-        return base.DestroyAsync();
+
+        return Task.CompletedTask;
     }
 
     CancellationTokenSource? updateCancellation;

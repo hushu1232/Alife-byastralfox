@@ -7,38 +7,25 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Framework;
 
 namespace Alife.Function.Vision;
 
 /// <summary>
 /// 在线 API 视觉分析器，兼容 OpenAI Chat Completions 多模态标准协议（如 GPT-4o, DashScope 兼容端点等）。
 /// </summary>
-public class OpenAIVisionAnalyzer : VisionAnalyzer
+[Plugin("OpenAI视觉分析", "基于OpenAI兼容API的在线视觉分析引擎",
+defaultCategory: "Alife 官方/模型接入/视觉模型",
+EditorUI = typeof(OpenAIVisionModelUI))]
+public class OpenAIVisionModel :
+    IVisionModel,
+    IDisposable,
+    IConfigurable<OpenAIVisionModelConfig>
 {
-    public OpenAIVisionAnalyzer(string baseUrl, string apiKey, string modelName)
-    {
-        this.baseUrl = baseUrl;
-        this.apiKey = apiKey;
-        this.modelName = modelName;
-        httpClient = new HttpClient();
-    }
-    public override void Dispose()
-    {
-        httpClient.Dispose();
-        base.Dispose();
-    }
+    public OpenAIVisionModelConfig? Configuration { get; set; }
 
-    public override async Task<string> QueryAsync(string imagePath, string question, int maxResponseTokens, CancellationToken cancellationToken = default)
+    public async Task<string> QueryAsync(string imagePath, string question, int maxResponseTokens, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            return "【在线模式错误】尚未配置 ApiKey，请前往视觉感知设置中填写。";
-        }
-        if (string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return "【在线模式错误】尚未配置 BaseUrl，请前往视觉感知设置中填写。";
-        }
-
         try
         {
             //构建图片段
@@ -48,7 +35,7 @@ public class OpenAIVisionAnalyzer : VisionAnalyzer
 
             //构造请求体
             var requestBody = new {
-                model = modelName,
+                model = Configuration!.ModelName,
                 messages = new[] {
                     new {
                         role = "user",
@@ -62,8 +49,8 @@ public class OpenAIVisionAnalyzer : VisionAnalyzer
             };
 
             string jsonContent = JsonSerializer.Serialize(requestBody);
-            using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            using var request = new HttpRequestMessage(HttpMethod.Post, Configuration.BaseUrl);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Configuration.ApiKey);
             request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
             //进行HTTP请求
@@ -87,15 +74,10 @@ public class OpenAIVisionAnalyzer : VisionAnalyzer
         }
     }
 
-    public void UpdateConfig(string baseUrl, string apiKey, string modelName)
-    {
-        this.baseUrl = baseUrl;
-        this.apiKey = apiKey;
-        this.modelName = modelName;
-    }
+    readonly HttpClient httpClient = new();
 
-    string baseUrl;
-    string apiKey;
-    string modelName;
-    readonly HttpClient httpClient;
+    public void Dispose()
+    {
+        httpClient.Dispose();
+    }
 }

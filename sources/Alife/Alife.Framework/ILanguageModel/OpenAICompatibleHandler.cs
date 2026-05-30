@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Alife.Framework;
 using Newtonsoft.Json.Linq;
 
-namespace Alife.ChatService;
+namespace Alife.Framework;
 
 /// <summary>
 /// 通用的 OpenAI 兼容协议处理器，用于拦截各种厂商的原始流，

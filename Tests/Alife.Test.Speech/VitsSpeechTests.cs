@@ -6,7 +6,7 @@ namespace Alife.Test.Speech;
 [TestFixture]
 public class VitsSpeechTests
 {
-    private VitsSpeechSynthesizer? _synth;
+    VitsSpeechModel? _synth;
 
     [OneTimeSetUp]
     public void Init()
@@ -17,11 +17,7 @@ public class VitsSpeechTests
         Console.WriteLine($"[Test] VITS model dir     = {Path.Combine(AlifePath.RuntimeFolderPath, "VITS", "model")}");
         Console.WriteLine($"[Test] VITS src   dir     = {Path.Combine(AlifePath.RuntimeFolderPath, "VITS", "src")}");
 
-        _synth = new VitsSpeechSynthesizer(
-            noiseScale: 0.667f,
-            noiseScaleW: 0.8f,
-            lengthScale: 1.0f,
-            speakerId: 175);
+        _synth = new VitsSpeechModel();
     }
 
     [OneTimeTearDown]

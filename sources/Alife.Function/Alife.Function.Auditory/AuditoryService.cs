@@ -1,5 +1,5 @@
 using System;
-using System.IO;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,54 +7,26 @@ using Windows.Media.Audio;
 using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Media.Render;
-using SherpaOnnx;
-using Alife.Platform;
+using Alife.Framework;
+using Microsoft.SemanticKernel;
 
 namespace Alife.Function.Speech;
 
-public class SpeechRecognizer : IDisposable
+[Plugin("语音识别", "为AI增加语音识别能力。",
+defaultCategory: "Alife 官方/交互方式",
+EditorUI = typeof(AuditoryServiceUI))]
+[Description("此服务让你获得将语音转换为文字的能力。")]
+public class AuditoryService(IAuditoryModel auditoryModel) :
+    InteractivePlugin<AuditoryService>,
+    IConfigurable<AuditoryServiceConfig>,
+    IDisposable
 {
-    public event Action<string>? Recognized;
+    public AuditoryServiceConfig? Configuration { get; set; }
     public bool IsRunning { get; private set; }
 
-    public SpeechRecognizer()
-    {
-        // 下载语音识别模型
-        const string SenseVoiceId = "pengzhendong/sherpa-onnx-sense-voice-zh-en-ja-ko-yue";
-        string senseVoicePath = AlifeModel.EnsureModelExisting(SenseVoiceId);
-        OfflineRecognizerConfig config = new();
-        config.ModelConfig.SenseVoice.Model = Path.Combine(senseVoicePath, "model.int8.onnx");
-        config.ModelConfig.SenseVoice.Language = "zh";
-        config.ModelConfig.SenseVoice.UseInverseTextNormalization = 1;
-        config.ModelConfig.Tokens = Path.Combine(senseVoicePath, "tokens.txt");
-        config.ModelConfig.NumThreads = 1;
-        config.ModelConfig.Debug = 0;
-        recognizer = new OfflineRecognizer(config);
-
-        // 下载语音检测模型
-        const string VadId = "pengzhendong/silero-vad";
-        string vadModelPath = AlifeModel.EnsureModelExisting(VadId, "silero_vad.onnx");
-        VadModelConfig vadConfig = new();
-        vadConfig.SileroVad.Model = vadModelPath;
-        vadConfig.SileroVad.Threshold = 0.4f;
-        vadConfig.SileroVad.MinSilenceDuration = 0.3f;
-        vadConfig.SileroVad.MinSpeechDuration = 0.25f;
-        vadConfig.SampleRate = 16000;
-        vad = new VoiceActivityDetector(vadConfig, bufferSizeInSeconds: 30);
-    }
-    public void Dispose()
-    {
-        Stop();
-        recognizer.Dispose();
-        vad.Dispose();
-        GC.SuppressFinalize(this);
-    }
-
-    public async Task TryStartAsync()
+    public async Task StartRecordingAsync()
     {
         if (IsRunning)
-            return;
-        if (SpeechEnvironment.HasMicrophone() == false)
             return;
 
         //创建语音专用 AudioGraph（支持回声消除）
@@ -86,12 +58,12 @@ public class SpeechRecognizer : IDisposable
         graph.Start();
         graph.QuantumStarted += OnQuantumStarted;
         graph.UnrecoverableErrorOccurred += (_, _) => {
-            Stop();
+            StopRecording();
         };
 
         IsRunning = true;
     }
-    public void Stop()
+    public void StopRecording()
     {
         outputNode?.Dispose();
         outputNode = null;
@@ -102,11 +74,26 @@ public class SpeechRecognizer : IDisposable
         IsRunning = false;
     }
 
-    readonly OfflineRecognizer recognizer;
-    readonly VoiceActivityDetector vad;
     AudioGraph? graph;
     AudioDeviceInputNode? inputNode;
     AudioFrameOutputNode? outputNode;
+
+    public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
+    {
+        await base.StartAsync(kernel, chatActivity);
+        auditoryModel.Recognized += OnRecognized;
+        await StartRecordingAsync();
+    }
+    public override async Task DestroyAsync()
+    {
+        auditoryModel.Recognized -= OnRecognized;
+        await base.DestroyAsync();
+    }
+    public void Dispose()
+    {
+        StopRecording();
+    }
+
 
     unsafe void OnQuantumStarted(AudioGraph sender, object args)
     {
@@ -149,7 +136,7 @@ public class SpeechRecognizer : IDisposable
                     Buffer.MemoryCopy(dataInBytes, dest, capacityInBytes, capacityInBytes);
                 //由于是在后台线程，通过线程池投递处理，避免阻塞 AudioGraph
                 ThreadPool.QueueUserWorkItem(_ => {
-                    AcceptWaveform(samples);
+                    auditoryModel.AcceptWaveform(samples);
                 });
             }
         }
@@ -158,29 +145,8 @@ public class SpeechRecognizer : IDisposable
             Marshal.Release(ptr);
         }
     }
-
-    void AcceptWaveform(float[] samples)
+    void OnRecognized(string text)
     {
-        lock (vad)
-        {
-            vad.AcceptWaveform(samples);
-            while (vad.IsEmpty() == false)
-            {
-                SpeechSegment segment = vad.Front();
-                if (segment.Samples is { Length: > 0 })
-                    ProcessSegment(segment.Samples);
-                vad.Pop();
-            }
-        }
-    }
-
-    void ProcessSegment(float[] samples)
-    {
-        using OfflineStream stream = recognizer.CreateStream();
-        stream.AcceptWaveform(16000, samples);
-        recognizer.Decode(stream);
-
-        if (string.IsNullOrWhiteSpace(stream.Result.Text) == false)
-            Recognized?.Invoke(stream.Result.Text);
+        ChatBot.Chat(Configuration!.ResultPrefixPrompt + text);
     }
 }

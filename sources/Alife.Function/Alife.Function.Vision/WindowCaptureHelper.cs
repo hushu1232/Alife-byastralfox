@@ -78,7 +78,7 @@ public static class WindowCaptureHelper
         new("6F15AAF2-D208-4E89-9AB4-489535D34F9C");
 
     // -------- Win32 常量 --------
-    private const int SW_SHOWNOACTIVATE = 4;   // 显示但不激活（不抢焦点）
+    private const int SW_SHOWNOACTIVATE = 4;// 显示但不激活（不抢焦点）
     private const int SW_MINIMIZE = 6;
     private const uint MONITOR_DEFAULTTONEAREST = 2;
 
@@ -89,7 +89,7 @@ public static class WindowCaptureHelper
     static extern int GetWindowTextLength(IntPtr hWnd);
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     static extern int GetWindowText(IntPtr hWnd, StringBuilder sb, int max);
-    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);          // 是否最小化
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);// 是否最小化
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
     [DllImport("user32.dll")] static extern bool EnumDisplayMonitors(
         IntPtr hdc, IntPtr clip, MonitorEnumProc cb, IntPtr data);
@@ -109,6 +109,7 @@ public static class WindowCaptureHelper
     static extern int WindowsDeleteString(IntPtr hstring);
 
     delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
     delegate bool MonitorEnumProc(IntPtr hMon, IntPtr hdc, IntPtr rect, IntPtr data);
 
     // -------- 共享 D3D11 设备（延迟初始化）--------
@@ -127,10 +128,10 @@ public static class WindowCaptureHelper
             // 创建 D3D11 硬件设备，启用 BGRA 支持（WGC 要求）
             var featureLevels = new[] { FeatureLevel.Level_11_0, FeatureLevel.Level_10_1 };
             D3D11.D3D11CreateDevice(
-                null, DriverType.Hardware,
-                DeviceCreationFlags.BgraSupport,
-                featureLevels,
-                out _device!, out _, out _context!);
+            null, DriverType.Hardware,
+            DeviceCreationFlags.BgraSupport,
+            featureLevels,
+            out _device!, out _, out _context!);
 
             // 获取 IDXGIDevice 并转换为 WinRT IDirect3DDevice
             using IDXGIDevice dxgiDevice = _device.QueryInterface<IDXGIDevice>();
@@ -150,8 +151,7 @@ public static class WindowCaptureHelper
     public static List<WindowInfo> EnumerateWindows()
     {
         var list = new List<WindowInfo>();
-        EnumWindows((hwnd, _) =>
-        {
+        EnumWindows((hwnd, _) => {
             if (!IsWindowVisible(hwnd)) return true;
             int len = GetWindowTextLength(hwnd);
             if (len == 0) return true;
@@ -159,8 +159,7 @@ public static class WindowCaptureHelper
             GetWindowText(hwnd, sb, sb.Capacity);
             string title = sb.ToString();
             if (string.IsNullOrWhiteSpace(title)) return true;
-            list.Add(new WindowInfo
-            {
+            list.Add(new WindowInfo {
                 Handle = hwnd,
                 Title = title,
                 IsMinimized = IsIconic(hwnd)
@@ -174,8 +173,7 @@ public static class WindowCaptureHelper
     public static List<IntPtr> EnumerateMonitors()
     {
         var list = new List<IntPtr>();
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (hm, _, _, _) =>
-        {
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (hm, _, _, _) => {
             list.Add(hm);
             return true;
         }, IntPtr.Zero);
@@ -194,8 +192,8 @@ public static class WindowCaptureHelper
         if (wasMinimized)
         {
             Console.WriteLine("[WGC] 检测到最小化窗口，执行离屏恢复...");
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);   // 不抢焦点地恢复
-            await Task.Delay(200);                  // 等 GPU 重渲一帧
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);// 不抢焦点地恢复
+            await Task.Delay(200);// 等 GPU 重渲一帧
         }
 
         try
@@ -238,10 +236,10 @@ public static class WindowCaptureHelper
         SizeInt32 size = item.Size;
 
         using var framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
-            _winRtDevice!,
-            DirectXPixelFormat.B8G8R8A8UIntNormalized,
-            2,        // 双缓冲
-            size);
+        _winRtDevice!,
+        DirectXPixelFormat.B8G8R8A8UIntNormalized,
+        2,// 双缓冲
+        size);
 
         using var session = framePool.CreateCaptureSession(item);
 
@@ -250,21 +248,22 @@ public static class WindowCaptureHelper
         // 通过反射按需调用，编译期不依赖具体版本
         TrySetSessionProp(session, "IsBorderRequired", false);
         TrySetSessionProp(session, "IsCursorCaptureEnabled", false);
-        
+
         void TrySetSessionProp(GraphicsCaptureSession s, string propName, bool value)
         {
-            try {
+            try
+            {
                 var prop = s.GetType().GetProperty(propName);
                 if (prop != null && prop.CanWrite) prop.SetValue(s, value);
-            } catch { }
+            }
+            catch {}
         }
 
         // 等待第一帧
         var tcs = new TaskCompletionSource<Direct3D11CaptureFrame?>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCreationOptions.RunContinuationsAsynchronously);
 
-        framePool.FrameArrived += (pool, _) =>
-        {
+        framePool.FrameArrived += (pool, _) => {
             if (!tcs.Task.IsCompleted)
                 tcs.TrySetResult(pool.TryGetNextFrame());
         };
@@ -289,7 +288,7 @@ public static class WindowCaptureHelper
 
         // 2. QI -> IDirect3DDxgiInterfaceAccess
         Guid dxgiGuid = IID_IDirect3DDxgiInterfaceAccess;
-        int hr = Marshal.QueryInterface(surfaceAbi, ref dxgiGuid, out IntPtr dxgiAccessPtr);
+        int hr = Marshal.QueryInterface(surfaceAbi, dxgiGuid, out IntPtr dxgiAccessPtr);
         Marshal.Release(surfaceAbi);
         Marshal.ThrowExceptionForHR(hr);
 
@@ -305,8 +304,7 @@ public static class WindowCaptureHelper
 
         // 4. 创建 Staging 纹理（CPU 可读）
         Texture2DDescription desc = sourceTexture.Description;
-        var stagingDesc = new Texture2DDescription
-        {
+        var stagingDesc = new Texture2DDescription {
             Width = desc.Width,
             Height = desc.Height,
             MipLevels = 1,
@@ -315,7 +313,7 @@ public static class WindowCaptureHelper
             SampleDescription = new SampleDescription(1, 0),
             Usage = ResourceUsage.Staging,
             BindFlags = BindFlags.None,
-            CPUAccessFlags = CpuAccessFlags.Read,   // Vortice 3.8 改名 CPUAccessFlags
+            CPUAccessFlags = CpuAccessFlags.Read,// Vortice 3.8 改名 CPUAccessFlags
             MiscFlags = ResourceOptionFlags.None
         };
         using ID3D11Texture2D staging = _device!.CreateTexture2D(stagingDesc);
@@ -329,9 +327,9 @@ public static class WindowCaptureHelper
         {
             Bitmap bmp = new Bitmap(size.Width, size.Height, PixelFormat.Format32bppArgb);
             BitmapData bmpData = bmp.LockBits(
-                new Rectangle(0, 0, bmp.Width, bmp.Height),
-                ImageLockMode.WriteOnly,
-                PixelFormat.Format32bppArgb);
+            new Rectangle(0, 0, bmp.Width, bmp.Height),
+            ImageLockMode.WriteOnly,
+            PixelFormat.Format32bppArgb);
 
             int rowBytes = size.Width * 4;
             for (int y = 0; y < size.Height; y++)
@@ -384,9 +382,9 @@ public static class WindowCaptureHelper
         {
             Guid interopGuid = IID_IGraphicsCaptureItemInterop;
             RoGetActivationFactory(
-                hString,
-                ref interopGuid,
-                out IntPtr factoryPtr);
+            hString,
+            ref interopGuid,
+            out IntPtr factoryPtr);
             var factory = (IGraphicsCaptureItemInterop)Marshal.GetObjectForIUnknown(factoryPtr);
             Marshal.Release(factoryPtr);
             return factory;

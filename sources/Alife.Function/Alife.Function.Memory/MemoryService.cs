@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;

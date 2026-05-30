@@ -27,14 +27,14 @@ public class DemoSuite : IAsyncDisposable
         AlifeTerminal.LogInfo("正在创建 ChatActivity 并注入插件...");
         ChatActivity activity = await ChatActivity.Create(character, config, plugins, null, [config, storage]);
 
-        AlifeTerminal.LogInfo($"[插件加载完毕]: {string.Join(", ", activity.Plugins.Select(p => p.GetType().Name))}");
+        AlifeTerminal.LogInfo($"[插件加载完毕]: {string.Join(", ", activity.EventPlugins.Select(p => p.GetType().Name))}");
 
         DemoSuite suite = new(activity);
 
         LogSystem($"[角色系统提示词]:\n{character.Prompt}");
         AlifeTerminal.LogHint("环境构建完成喵！✨");
 
-        await activity.Start();
+        await activity.Launch();
 
         return suite;
     }

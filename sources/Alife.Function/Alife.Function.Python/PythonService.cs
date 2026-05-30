@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 
 namespace Alife.Function.Python;
@@ -61,7 +62,8 @@ public partial class PythonService
 }
 
 [Plugin("脚本执行", "借助Python，让AI几乎可以执行任何任务！",
-defaultCategory: "Alife 官方/实用工具")]
+defaultCategory: "Alife 官方/实用工具"
+)]
 [Description(@"此服务能让你获得执行python的能力，可用于文件管理、设备控制、绘画演奏等各种复杂的自定义能力。
 如果缺少环境你还可以利用`subprocess.check_call([sys.executable, ""-m"", ""pip"", ""install"", package_name])`来安装环境。")]
 public partial class PythonService(XmlFunctionCaller functionCaller) : InteractivePlugin<PythonService>

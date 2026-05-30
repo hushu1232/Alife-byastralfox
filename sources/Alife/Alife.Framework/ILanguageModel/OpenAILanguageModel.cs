@@ -5,27 +5,25 @@ using System.Text.Json;
 using Microsoft.SemanticKernel;
 using System.Net;
 using System.Net.Http;
-using System.Threading.Tasks;
-using Alife.Framework;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 
-namespace Alife.ChatService;
+namespace Alife.Framework;
 
 [Plugin(
 "OpenAI大语言模型", "接入基于OpenAI协议的对话模型，实现最基本的文本对话功能。",
 url: "https://www.deepseek.com/",
-editorUI: typeof(OpenAIChatServiceUI),
-defaultCategory: "Alife 官方/对话能力"
+editorUI: typeof(OpenAILanguageModelUI),
+defaultCategory: "Alife 官方/模型接入/文本模型"
 )]
-public class OpenAIChatService(ILogger<OpenAIChatService> logger) : Plugin, IConfigurable<ChatServiceConfig>, IProvideExecutionSettings
+public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
+    ILanguageModel,
+    IConfigurable<LanguageModelConfig>
 {
-    public ChatServiceConfig? Configuration { get; set; }
+    public LanguageModelConfig? Configuration { get; set; }
 
-    public override async Task AwakeAsync(AwakeContext context)
+    public void RegisterChatCompletion(IKernelBuilder kernelBuilder)
     {
-        await base.AwakeAsync(context);
-
         // 强制使用 HTTP 1.1 以解决某些提供者（如 DeepSeek）在流式传输时可能出现的 HttpIOException
         SocketsHttpHandler handler = new() {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
@@ -61,17 +59,18 @@ public class OpenAIChatService(ILogger<OpenAIChatService> logger) : Plugin, ICon
             }
         }
 
-        context.KernelBuilder.AddOpenAIChatCompletion(
+        kernelBuilder.AddOpenAIChatCompletion(
         endpoint: new Uri(Configuration!.endpoint),
         modelId: Configuration!.modelId,
         apiKey: Configuration!.apiKey,
         httpClient: httpClient
         );
     }
-
     [Experimental("SKEXP0010")]
-    public void ProvideSettings(OpenAIPromptExecutionSettings settings)
+    public PromptExecutionSettings ProvidePromptExecutionSettings()
     {
+        OpenAIPromptExecutionSettings settings = new OpenAIPromptExecutionSettings();
+
         if (Configuration!.thinkingEnabled)
             settings.ReasoningEffort = Configuration!.reasoningEffort;
 
@@ -99,5 +98,7 @@ public class OpenAIChatService(ILogger<OpenAIChatService> logger) : Plugin, ICon
                 logger.LogError(ex, "解析自定义请求体失败");
             }
         }
+
+        return settings;
     }
 }

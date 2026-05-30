@@ -1,5 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Alife.Platform;
 
 namespace Alife.Function.DeskPet;
@@ -18,11 +23,11 @@ public class PetServer : IAsyncDisposable
     public PetServer(string modelPath)
     {
         //加载模型信息
-        string modelJsonPath = Path.Combine(AlifePath.OutputsFolderPath, $"Alife.Client.Function.DeskPet/wwwroot/model/{modelPath}");
+        string modelJsonPath = Path.Combine(AlifePath.OutputsFolderPath, $"Alife.DeskPet.Client/wwwroot/model/{modelPath}");
         metadata = PetModelMetadata.Load(modelJsonPath);
 
         //创建进程
-        string petExePath = Path.Combine(AlifePath.OutputsFolderPath, "Alife.Client.Function.Alife.DeskPet.Client/Alife.Client.Function.Alife.DeskPet.Client.exe");
+        string petExePath = Path.Combine(AlifePath.OutputsFolderPath, "Alife.DeskPet.Client/Alife.DeskPet.Client.exe");
         if (File.Exists(petExePath) == false)
             throw new FileNotFoundException($"找不到桌宠程序: {petExePath}");
         nativeProcess = new Process {
@@ -50,7 +55,7 @@ public class PetServer : IAsyncDisposable
         //创建桌宠进行封装器
         petProcess = new PetProcess(nativeProcess.StandardInput, nativeProcess.StandardOutput);
         petProcess.OutputReceived += OnEventReceived;
-        petProcess.ListenOutput(); // 宿主只听输出(Event)
+        petProcess.ListenOutput();// 宿主只听输出(Event)
     }
     public async ValueTask DisposeAsync()
     {
@@ -63,7 +68,12 @@ public class PetServer : IAsyncDisposable
         petProcess.Dispose();
         await Task.CompletedTask;
     }
-    public Task WaitReadyAsync() => readyTask.Task;
+    public async Task WaitReadyAsync()
+    {
+        using CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromSeconds(10));
+        await using CancellationTokenRegistration registration = cancellationTokenSource.Token.Register(() => readyTask.TrySetException(new TimeoutException("无法连接到桌宠客户端")));
+        await readyTask.Task;
+    }
 
     public void ShowBubble(string text) => petProcess.SendInput(new BubbleCommand(text));
 

@@ -22,7 +22,7 @@ public class Program
         AlifeTerminal.Log("========================================", ConsoleColor.Cyan);
 
         // 0. 强制加载程序集以确保插件被扫描
-        _ = typeof(OpenAIChatService).Assembly;
+        _ = typeof(OpenAILanguageModel).Assembly;
         _ = typeof(Alife.Function.Skill.SkillService).Assembly;
 
         // 1. 初始化系统环境
@@ -53,9 +53,9 @@ public class Program
         // 3. 创建 ChatActivity 并注入插件
         AlifeTerminal.LogInfo("正在创建 ChatActivity 并注入插件...");
         ChatActivity activity = await ChatActivity.Create(character, config, plugins, null, [config, storage]);
-        await activity.Start(); // 必须调用 Start 才能激活插件
+        await activity.Launch(); // 必须调用 Start 才能激活插件
 
-        AlifeTerminal.LogInfo($"[插件加载完毕]: {string.Join(", ", activity.Plugins.Select(p => p.GetType().Name))}");
+        AlifeTerminal.LogInfo($"[插件加载完毕]: {string.Join(", ", activity.EventPlugins.Select(p => p.GetType().Name))}");
 
         // 订阅聊天事件以查看输出
         activity.ChatBot.ChatSent += (msg) => AlifeTerminal.Log($"> USER: {msg}", ConsoleColor.Green);
@@ -68,7 +68,7 @@ public class Program
         };
 
         // 检查是否有对话模型
-        if (!activity.Plugins.Any(p => p is OpenAIChatService))
+        if (!activity.EventPlugins.Any(p => p is OpenAILanguageModel))
         {
             AlifeTerminal.LogError("警告: ChatService 未加载！请检查插件配置。");
         }

@@ -1,0 +1,55 @@
+@namespace Alife.Function.Speech
+@using AntDesign
+@using Alife.Framework
+@using Microsoft.Extensions.Logging
+@inherits PluginUIBase<AuditoryService>
+@inject ILogger<AuditoryServiceUI> Logger
+
+<Form TModel="object" Model="@new()" Layout="@FormLayout.Vertical">
+    <FormItem>
+        <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
+            <div style="margin-bottom: 16px;">
+                @if (Plugin?.IsRunning == true)
+                {
+                    <Badge Status="BadgeStatus.Processing" Text="正在监听中..."/>
+                }
+                else
+                {
+                    <Badge Status="BadgeStatus.Default" Text="未启用"/>
+                }
+            </div>
+            <Button Type="@ButtonType.Default" Size="@ButtonSize.Small" OnClick="@ResetRecognizer"
+                    Loading="@isRestarting">重置录音机
+            </Button>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px; margin-top: 8px;">
+                当无法进行语音识别时，可以尝试重置录音机（实测没啥用，还是得重启角色）。
+            </Text>
+        </Flex>
+    </FormItem>
+</Form>
+
+@code {
+    bool isRestarting;
+
+    async Task ResetRecognizer()
+    {
+        if (Plugin == null)
+            return;
+
+        isRestarting = true;
+        try
+        {
+            Plugin.StopRecording();
+            await Plugin.StartRecordingAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "重启录音机失败");
+        }
+        finally
+        {
+            isRestarting = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

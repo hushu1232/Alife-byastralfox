@@ -4,21 +4,21 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Framework;
 using Alife.Platform;
 
 namespace Alife.Function.Speech;
 
-public class EdgeSpeechSynthesizer : SpeechSynthesizer
+[Plugin("Edge语音合成", "基于Edge-TTS的在线语音合成引擎",
+defaultCategory: "Alife 官方/模型接入/语音模型",
+EditorUI = typeof(EdgeSpeechModelUI))]
+public class EdgeSpeechModel :
+    ISpeechModel,
+    IConfigurable<EdgeSpeechModelConfig>
 {
-    public string VoiceTone { get; set; }
+    public EdgeSpeechModelConfig? Configuration { get; set; }
 
-    public EdgeSpeechSynthesizer(string voiceTone)
-    {
-        AlifePlatform.Command("python", "-m pip install --upgrade edge-tts");
-        VoiceTone = voiceTone;
-    }
-
-    public override async Task<string?> GenerateSpeechFileAsync(string text, CancellationToken cancellationToken = default)
+    public async Task<string?> GenerateSpeechFileAsync(string text, CancellationToken cancellationToken = default)
     {
         //计算输出位置
         string fileSafeText = string.Concat(text.Where(ch => invalidChars.Contains(ch) == false));
@@ -30,7 +30,7 @@ public class EdgeSpeechSynthesizer : SpeechSynthesizer
 
         ProcessStartInfo psi = new() {
             FileName = "python",
-            Arguments = $"-m edge_tts --text \"{fileSafeText}\" --voice {VoiceTone} --write-media \"{outputPath}\"",
+            Arguments = $"-m edge_tts --text \"{fileSafeText}\" --voice {Configuration!.VoiceTone} --write-media \"{outputPath}\"",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -69,5 +69,11 @@ public class EdgeSpeechSynthesizer : SpeechSynthesizer
         }
     }
 
-    readonly char[] invalidChars = Path.GetInvalidFileNameChars();
+    readonly char[] invalidChars;
+
+    public EdgeSpeechModel()
+    {
+        AlifePlatform.Command("python", "-m pip install --upgrade edge-tts");
+        invalidChars = Path.GetInvalidFileNameChars();
+    }
 }

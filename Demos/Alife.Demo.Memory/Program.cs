@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Alife.Platform;
 using Alife.Framework;
 using Alife.ChatService;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Memory;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -21,7 +22,7 @@ public class Program
             Name = "MemoryDemo",
             Prompt = "你是一个拥有长期记忆能力的助手。请尽量简洁地回答用户。",
             Plugins = new HashSet<string> {
-                typeof(OpenAIChatService).FullName!,
+                typeof(OpenAILanguageModel).FullName!,
                 typeof(XmlFunctionCaller).FullName!,
                 typeof(MemoryService).FullName!,
             }

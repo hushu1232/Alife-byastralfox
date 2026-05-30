@@ -13,8 +13,10 @@
 !/README.md
 !/LICENSE
 
-!/点我发布.cmd
-!/点我启动.cmd
+!/Launch.cmd
+!/Publish.cmd
+!/Build.cmd
+!/SyncPlugins.ps1
 
 obj/
 bin/

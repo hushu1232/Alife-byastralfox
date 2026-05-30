@@ -1,10 +1,9 @@
 ﻿using System.ComponentModel;
 using Alife.Demo.Plugin;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 
 public class MyPluginData
 {
@@ -14,8 +13,7 @@ public class MyPluginData
 [Plugin("我的插件", "一个示例插件", EditorUI = typeof(MyPluginUI)/*支持用razor自定义插件界面*/)]
 public class MyPlugin(XmlFunctionCaller functionService, ILogger<MyPlugin> logger) :
     InteractivePlugin<MyPlugin>,/*插件必要基类*/
-    IConfigurable<MyPluginData>,/*通过实现IConfigurable接入配置功能*/
-    IProvideExecutionSettings
+    IConfigurable<MyPluginData>/*通过实现IConfigurable接入配置功能*/
 {
     // [KernelFunction]//与SemanticKernel函数实现方法兼容
     [XmlFunction(FunctionMode.OneShot)]// 表明该函数支持让AI通过Xml函数调用且格式为自闭合标签
@@ -47,11 +45,5 @@ public class MyPlugin(XmlFunctionCaller functionService, ILogger<MyPlugin> logge
         Prompt("""
                此服务可以为你提供一个生成随机数的功能。
                """);
-    }
-
-    public void ProvideSettings(OpenAIPromptExecutionSettings settings)
-    {
-        //基于SemanticKernel的函数调用需要（这对模型会产生限制和兼容性问题，而且没有回显，不建议使用）
-        // settings.ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions;
     }
 }

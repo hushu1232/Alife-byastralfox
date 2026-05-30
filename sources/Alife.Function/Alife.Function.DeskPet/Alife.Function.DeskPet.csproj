@@ -1,12 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AssemblyName>Alife.Function.DeskPet</AssemblyName>
-    <RootNamespace>Alife.Function.DeskPet</RootNamespace>
-  </PropertyGroup>
-
   <ItemGroup>
         <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
         <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />

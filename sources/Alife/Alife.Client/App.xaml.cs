@@ -1,6 +1,4 @@
-using System.Reflection;
 using System.Text;
-using Alife.Platform;
 using Microsoft.Extensions.DependencyInjection;
 using Alife.Framework;
 using Alife.Components.Services;
@@ -14,6 +12,29 @@ public partial class App
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
+        // Console.WriteLine(typeof(Function.Memory.MemoryService).Assembly);
+        // Console.WriteLine(typeof(Function.MessageFilter.MessageFilterService).Assembly);
+        // Console.WriteLine(typeof(Function.SystemEvent.SystemEventService).Assembly);
+        // Console.WriteLine(typeof(Function.VirtualWorld.VirtualWorldService).Assembly);
+        //
+        // Console.WriteLine(typeof(Function.FunctionCaller.XmlFunctionCaller).Assembly);
+        // Console.WriteLine(typeof(Function.Mcp.McpService).Assembly);
+        // Console.WriteLine(typeof(Function.Skill.SkillService).Assembly);
+        //
+        // Console.WriteLine(typeof(Function.Browser.BrowserService).Assembly);
+        // Console.WriteLine(typeof(Function.Python.PythonService).Assembly);
+        // Console.WriteLine(typeof(Function.Vision.VisionService).Assembly);
+        //
+        // Console.WriteLine(typeof(Function.Speech.AuditoryService).Assembly);
+        // Console.WriteLine(typeof(Function.DeskPet.DeskPetService).Assembly);
+        // Console.WriteLine(typeof(Function.QChat.QChatService).Assembly);
+        // Console.WriteLine(typeof(Function.Speech.SpeechService).Assembly);
+        //
+        // Console.WriteLine(typeof(Function.Speech.IAuditoryModel).Assembly);
+        // Console.WriteLine(typeof(Function.Speech.ISpeechModel).Assembly);
+        // Console.WriteLine(typeof(Function.Vision.IVisionModel).Assembly);
+
+
         base.OnStartup(e);
 
         Console.OutputEncoding = Encoding.UTF8;

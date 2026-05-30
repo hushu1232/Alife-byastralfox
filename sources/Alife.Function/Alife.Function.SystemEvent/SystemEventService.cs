@@ -3,11 +3,12 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using Alife.Framework;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
-namespace Alife.Function.Event;
+namespace Alife.Function.SystemEvent;
 
 public class SystemEventServiceConfig
 {

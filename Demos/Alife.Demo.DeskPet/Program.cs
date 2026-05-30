@@ -2,6 +2,7 @@ using Alife.Platform;
 using Alife.Framework;
 using Alife.ChatService;
 using Alife.Function.DeskPet;
+using Alife.Function.FunctionCaller;
 
 
 
@@ -17,7 +18,7 @@ var character = new Character {
     Plugins = new HashSet<string> {
         typeof(XmlFunctionCaller).FullName!,
         typeof(DeskPetService).FullName!,
-        typeof(OpenAIChatService).FullName!,
+        typeof(OpenAILanguageModel).FullName!,
     }
 };
 
