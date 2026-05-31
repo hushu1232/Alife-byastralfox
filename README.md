@@ -20,7 +20,7 @@
 ![Alife Logo](https://img.shields.io/badge/Alife-AI_Assistant-blue?style=for-the-badge)
 ![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4?style=for-the-badge&logo=dotnet)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python)
-![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
+![License](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge)
 
 Alife 是一个功能丰富、高扩展性的 AI桌宠 框架。它不是一个简单的对话机器人，而是一个支持多模态，主动陪伴，永久记忆，真实的赛博生命。
 
@@ -224,4 +224,4 @@ Tests/                                  # 单元测试
 
 ## 📄 许可证 (License)
 
-本项目采用 [MIT License](LICENSE) 许可协议。
+本项目采用 [GNU General Public License v3.0](LICENSE) 许可协议。
