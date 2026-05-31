@@ -45,7 +45,7 @@ for /d %%d in ("%SRC%\Alife.Function\Alife.Function.*") do (
 echo.
 echo [3/3] Syncing NuGet deps...
 
-set "NUGET_DIR=%PLUGIN_TARGET%\NuGet"
+set "NUGET_DIR=%PLUGIN_TARGET%\BaseDirectory"
 if not exist "%NUGET_DIR%" mkdir "%NUGET_DIR%"
 
 powershell -ExecutionPolicy Bypass -File "%ROOT%SyncPlugins.ps1" -OutputsDir "%OUT%" -NuGetDir "%NUGET_DIR%"

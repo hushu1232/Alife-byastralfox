@@ -1,6 +1,5 @@
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
 using Alife.Function.DeskPet;
 using Alife.Function.FunctionCaller;
 

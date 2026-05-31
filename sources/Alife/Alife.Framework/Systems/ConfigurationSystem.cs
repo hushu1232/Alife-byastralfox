@@ -6,7 +6,7 @@ using Newtonsoft.Json.Linq;
 
 namespace Alife.Framework;
 
-public class ConfigurationSystem
+public class ConfigurationSystem(StorageSystem storageSystem)
 {
     public Type? GetConfigurationType(Type target)
     {
@@ -61,12 +61,5 @@ public class ConfigurationSystem
         return storageSystem.GetObject<JObject>(path) != null;
     }
 
-    readonly StorageSystem storageSystem;
-    readonly Dictionary<Type, Type> configurationTypes;
-
-    public ConfigurationSystem(StorageSystem storageSystem)
-    {
-        this.storageSystem = storageSystem;
-        configurationTypes = new Dictionary<Type, Type>();
-    }
+    readonly Dictionary<Type, Type> configurationTypes = new();
 }

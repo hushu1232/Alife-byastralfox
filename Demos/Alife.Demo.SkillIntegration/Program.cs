@@ -4,7 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
+using Alife.Function.FunctionCaller;
 using Alife.Function.Skill;
 using Alife.Function.Python;
 using Microsoft.Extensions.Logging;
@@ -43,10 +43,10 @@ public class Program
                      "阅读手册后，请严格按照手册中的 Python 示例代码或指导来完成任务。",
             Plugins = 
             { 
-                "Alife.Client.Framework.ChatService", 
-                "Alife.Client.Function.Skill.SkillService", 
-                "Alife.Client.Function.Python.PythonService", 
-                "Alife.Client.Framework.FunctionService" 
+                typeof(OpenAILanguageModel).FullName!, 
+                typeof(SkillService).FullName!, 
+                typeof(PythonService).FullName!, 
+                typeof(XmlFunctionCaller).FullName! 
             }
         };
 

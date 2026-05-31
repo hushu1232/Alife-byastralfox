@@ -1,6 +1,5 @@
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Python;
 

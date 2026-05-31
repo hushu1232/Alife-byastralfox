@@ -80,7 +80,7 @@
                             @foreach (ChatActivity chatActivity in ChatActivitySystem.GetAllChatActivities())
                             {
                                 <ChatActivityUI Context="chatActivity"
-                                                Stopped="@(() => ChatActivitySystem.Stop(chatActivity.Character))"></ChatActivityUI>
+                                                Stopped="@(() => ChatActivitySystem.Deactivate(chatActivity.Character))"></ChatActivityUI>
                             }
                         </div>
                     </div>
@@ -164,7 +164,7 @@
         if (confirmResult == ConfirmResult.Yes)
         {
             if (ChatActivitySystem.IsActivated(character))
-                await ChatActivitySystem.Stop(character);
+                await ChatActivitySystem.Deactivate(character);
             CharacterSystem.DeleteCharacter(character);
             _ = NotificationService.Success(new NotificationConfig { Message = $"角色 [{character.Name}] 已删除喵。" });
         }

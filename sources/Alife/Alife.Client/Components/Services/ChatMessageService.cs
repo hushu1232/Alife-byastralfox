@@ -45,7 +45,7 @@ public class ChatMessageService
 
     public ChatMessageService(ChatActivitySystem system)
     {
-        system.Created += OnActivityCreated;
+        system.Activated += OnActivityCreated;
         system.Destroyed += OnActivityDestroyed;
     }
     void OnActivityDestroyed(ChatActivity activity)

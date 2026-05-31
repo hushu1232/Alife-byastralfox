@@ -2,17 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Alife.Platform;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Alife.Framework;
 
-public class CharacterSystem : IDisposable
+public class CharacterSystem
 {
     public event Action? OnChanged;
 
     public List<Character> GetAllCharacters()
     {
         return characters;
+    }
+    public string GetCharacterConfigFile(Character character)
+    {
+        return storageSystem.GetObjectRealPath($"Character/{character.Name}/index");
     }
 
     public Character CreateCharacter(string name)
@@ -44,16 +50,15 @@ public class CharacterSystem : IDisposable
         characters.Remove(character);
         OnChanged?.Invoke();
     }
-
-    public void SaveCharacters()
-    {
-        foreach (Character character in characters)
-            SaveCharacter(character);
-    }
     public void SaveCharacter(Character character)
     {
         JObject jObject = JObject.FromObject(character);
         storageSystem.SetObject($"Character/{character.Name}/index", jObject);
+    }
+    public void LoadCharacter(Character character)
+    {
+        string json = File.ReadAllText(Path.Combine(AlifePath.StorageFolderPath, "Character", character.Name, "index.json"));
+        JsonConvert.PopulateObject(json, character);
     }
 
     readonly StorageSystem storageSystem;
@@ -64,17 +69,6 @@ public class CharacterSystem : IDisposable
         this.storageSystem = storageSystem;
         characters = new List<Character>();
 
-        LoadCharacters();
-    }
-    public void Dispose()
-    {
-        SaveCharacters();
-    }
-
-    void LoadCharacters()
-    {
-        characters.Clear();
-
         string[] folder = storageSystem.GetFolders("Character");
         foreach (string name in folder)
         {
@@ -83,6 +77,7 @@ public class CharacterSystem : IDisposable
                 characters.Add(character);
         }
     }
+
     Character? LoadCharacter(string name)
     {
         JObject? jObject = storageSystem.GetObject<JObject>(Path.Combine("Character", name, "index"));

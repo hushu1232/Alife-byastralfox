@@ -12,7 +12,12 @@ public partial class App
 
     protected override void OnStartup(System.Windows.StartupEventArgs e)
     {
-        // Console.WriteLine(typeof(Function.Memory.MemoryService).Assembly);
+        base.OnStartup(e);
+
+        Console.OutputEncoding = Encoding.UTF8;
+        Console.InputEncoding = Encoding.UTF8;
+        
+        // Console.WriteLine(typeof(Function.Memory.MemoryService).Assembly.FullName);
         // Console.WriteLine(typeof(Function.MessageFilter.MessageFilterService).Assembly);
         // Console.WriteLine(typeof(Function.SystemEvent.SystemEventService).Assembly);
         // Console.WriteLine(typeof(Function.VirtualWorld.VirtualWorldService).Assembly);
@@ -33,13 +38,7 @@ public partial class App
         // Console.WriteLine(typeof(Function.Speech.IAuditoryModel).Assembly);
         // Console.WriteLine(typeof(Function.Speech.ISpeechModel).Assembly);
         // Console.WriteLine(typeof(Function.Vision.IVisionModel).Assembly);
-
-
-        base.OnStartup(e);
-
-        Console.OutputEncoding = Encoding.UTF8;
-        Console.InputEncoding = Encoding.UTF8;
-
+        
         ServiceCollection services = new();
         // 基础 Blazor Desktop 支持
         services.AddWpfBlazorWebView();
@@ -61,7 +60,7 @@ public partial class App
         services.AddSingleton<ActivityNotifyService>();
         services.AddSingleton<ChatMessageService>();
         services.AddSingleton<MainWindow>();
-
+        
         ServiceProvider = services.BuildServiceProvider();
         ServiceProvider.GetRequiredService<ChatMessageService>();
         ServiceProvider.GetRequiredService<MainWindow>().Show();

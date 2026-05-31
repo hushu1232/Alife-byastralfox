@@ -1,6 +1,7 @@
 @using System.Reflection
-@using Alife.Components.Elements.Character
+@using System.Text.RegularExpressions
 @using Alife.Components.Elements.Utility
+@using Autofac.Core
 @inject PluginSystem PluginSystem
 @inject ChatActivitySystem ChatActivitySystem
 @inject CharacterSystem CharacterSystem
@@ -136,36 +137,27 @@
     public bool IsLoading => isLoading;
     public HashSet<string> PluginIDs => pluginIDs;
 
-    public async Task StartActivity()
+    public Task StartActivity()
     {
         if (Character == null || isLoading || activity != null)
-            return;
+            return Task.CompletedTask;
 
-        isLoading = true;
-        try
-        {
-            Progress<(string, float)> progress = new(tuple => {
-                loadingTask = tuple.Item1;
-                loadingProgress = tuple.Item2;
-                InvokeAsync(UpdateState);
-            });
+        activityException = null;
 
-            await Task.Run(async () => {
-                try
-                {
-                    activity = await ChatActivitySystem.Play(Character, progress);
-                }
-                catch (Exception ex)
-                {
-                    activityException = ex;
-                }
-            });
-        }
-        finally
-        {
-            isLoading = false;
-            await InvokeAsync(UpdateState);
-        }
+        _ = Task.Run(async () => {
+            try
+            {
+                await ChatActivitySystem.Activate(Character);
+            }
+            catch (Exception ex)
+            {
+                activityException = ex;
+                isLoading = false;
+                await InvokeAsync(UpdateState);
+            }
+        });
+
+        return Task.CompletedTask;
     }
 
     public async Task StopActivity()
@@ -173,8 +165,7 @@
         if (Character == null)
             return;
 
-        await ChatActivitySystem.Stop(Character);
-        UpdateState();
+        await ChatActivitySystem.Deactivate(Character);
     }
 
     [Parameter] public Character? Character { get; set; }
@@ -189,30 +180,87 @@
     bool isSaving;
     HashSet<string> pluginIDs = new();
 
-
     protected override void OnInitialized()
     {
         if (Character != null)
         {
             pluginIDs = Character.Plugins.ToHashSet();
-            activity = ChatActivitySystem.GetAllChatActivities().FirstOrDefault(a => a.Character.Name == Character.Name);
-            UpdateState();
+            activity = ChatActivitySystem.GetChatActivity(Character);
         }
 
+        ChatActivitySystem.Activating += OnActivating;
+        ChatActivitySystem.Activated += OnActivated;
+        ChatActivitySystem.ActivationFailed += OnActivationFailed;
+        ChatActivitySystem.ActivatingProcess += OnActivatingProcess;
         ChatActivitySystem.Destroyed += OnChatActivityDestroyed;
+        UpdateState();
     }
 
     public void Dispose()
     {
+        ChatActivitySystem.Activating -= OnActivating;
+        ChatActivitySystem.Activated -= OnActivated;
+        ChatActivitySystem.ActivationFailed -= OnActivationFailed;
+        ChatActivitySystem.ActivatingProcess -= OnActivatingProcess;
         ChatActivitySystem.Destroyed -= OnChatActivityDestroyed;
     }
 
+    void OnActivating(Character character)
+    {
+        if (character.Name != Character?.Name) return;
+        isLoading = true;
+        loadingProgress = 0;
+        loadingTask = "正在初始化环境喵...";
+        InvokeAsync(UpdateState);
+    }
+    void OnActivationFailed(Character character, Exception ex)
+    {
+        if (character.Name != Character?.Name) return;
+        if (ex is DependencyResolutionException dependencyResolutionException)
+        {
+            Exception? exception = dependencyResolutionException.InnerException;
+            if (exception != null)
+            {
+                Match match1 = Regex.Match(exception.Message, "on type '([^']+)'");
+                Match match2 = Regex.Match(exception.Message, @"Cannot resolve parameter\s+'(\S+)\s+\w+'");
+                if (match1.Success && match2.Success)
+                {
+                    string typeName = match2.Groups[1].Value;
+                    PluginAttribute? pluginAttribute = PluginSystem.GetPluginAssembly()?.GetType(typeName)?.GetCustomAttribute<PluginAttribute>();
+                    ex = new Exception($"你需要在插件界面寻找并勾选“{pluginAttribute?.Name ?? typeName}”插件，因为插件 {match1.Groups[1].Value} 依赖于 {match2.Groups[1].Value}，"
+                    , exception);
+                }
+            }
+        }
+
+        activityException = ex;
+        isLoading = false;
+        activity = null;
+        InvokeAsync(UpdateState);
+    }
+    void OnActivatingProcess(Character character, (string Task, float Progress) tuple)
+    {
+        if (character.Name != Character?.Name) return;
+        loadingTask = tuple.Task;
+        loadingProgress = tuple.Progress;
+        InvokeAsync(UpdateState);
+    }
+    void OnActivated(ChatActivity chatActivity)
+    {
+        if (chatActivity.Character.Name != Character?.Name) return;
+        isLoading = false;
+        activityException = null;
+        activity = chatActivity;
+        InvokeAsync(UpdateState);
+    }
     void OnChatActivityDestroyed(ChatActivity obj)
     {
         if (activity == obj)
+        {
             activity = null;
+            InvokeAsync(UpdateState);
+        }
     }
-
 
     void UpdateState()
     {

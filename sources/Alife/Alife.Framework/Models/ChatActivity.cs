@@ -142,6 +142,7 @@ public partial class ChatActivity(Character character, Kernel kernelService, ICo
     public Kernel KernelService => kernelService;
     public IContainer PluginService => pluginService;
     public ChatBot ChatBot => chatBot;
+    public IReadOnlyList<ISystemEvent> EventPlugins => eventPlugins;
 
     public async Task Launch(IProgress<(string, float)>? progress = null)
     {

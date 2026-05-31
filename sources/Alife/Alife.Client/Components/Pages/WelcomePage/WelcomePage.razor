@@ -4,17 +4,13 @@
 @inject ChatActivitySystem ChatActivitySystem
 @inject NavigationManager Navigation
 
-@if (characterHomeUI == null || characterHomeUI.IsLoading == false)
+@if (!isActivating)
 {
     <WelcomeUI/>
 }
 
-<CharacterHomeUI @key="character?.Name" @ref="characterHomeUI" Character="character" Visibility="false"
-                 StateChanged="@(StateHasChanged)"></CharacterHomeUI>
-
 @code {
-    Character? character;
-    CharacterHomeUI? characterHomeUI;
+    bool isActivating;
     static bool hasBootstrapped;
 
     protected override void OnAfterRender(bool firstRender)
@@ -26,14 +22,20 @@
             List<Character> startingCharacters = CharacterSystem.GetAllCharacters()
                 .Where(c => c.AutoActivate && !ChatActivitySystem.IsActivated(c))
                 .ToList();
+
+            if (startingCharacters.Count > 0)
+            {
+                isActivating = true;
+                await InvokeAsync(StateHasChanged);
+            }
+
             foreach (Character startingCharacter in startingCharacters)
             {
-                character = startingCharacter;
-                await InvokeAsync(StateHasChanged);
-                await Task.Delay(100); // 给一点时间让 @key 触发组件重建并更新 ref
-                
-                if (characterHomeUI != null)
-                    await characterHomeUI.StartActivity();
+                try
+                {
+                    await ChatActivitySystem.Activate(startingCharacter);
+                }
+                catch { }
             }
 
             if (CharacterSystem.GetAllCharacters().Count != 0)

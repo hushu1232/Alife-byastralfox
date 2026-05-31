@@ -8,6 +8,10 @@ namespace Alife.Framework;
 
 public class StorageSystem
 {
+    public string GetObjectRealPath(string key)
+    {
+        return $"{AlifePath.StorageFolderPath}/{key}.json";
+    }
     public string[] GetFolders(string key)
     {
         string path = $"{AlifePath.StorageFolderPath}/{key}";

@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Memory;
 using Microsoft.SemanticKernel.ChatCompletion;

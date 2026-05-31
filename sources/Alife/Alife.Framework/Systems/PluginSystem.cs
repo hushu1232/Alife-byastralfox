@@ -13,18 +13,31 @@ using Python.Runtime;
 
 namespace Alife.Framework;
 
-public class PluginLoadContext(string nuGetDir) : AssemblyLoadContext("PluginContext", isCollectible: true)
+public class PluginLoadContext(string pluginDirectory) : AssemblyLoadContext("PluginContext", isCollectible: true)
 {
+    public Dictionary<Assembly, string> AssemblyPaths => assemblyPaths;
+
+    public void LoadDll(string dllPath)
+    {
+        using var assemblyStream = new MemoryStream(File.ReadAllBytes(dllPath));
+        string pdbPath = Path.ChangeExtension(dllPath, ".pdb");
+        MemoryStream? pdbStream = File.Exists(pdbPath) ? new MemoryStream(File.ReadAllBytes(pdbPath)) : null;
+        Assembly assembly = LoadFromStream(assemblyStream, pdbStream);
+        pdbStream?.Dispose();
+        assemblyPaths.Add(assembly, dllPath);
+    }
+
+    readonly string baseDirectory = Path.Combine(pluginDirectory, "BaseDirectory");
     readonly string rid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
         ? $"win-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}"
         : RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
             ? $"linux-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}"
             : $"osx-{RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant()}";
-    string[] searchPaths = new string[4];
+    readonly string[] searchPaths = new string[4];
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
-        string path = Path.Combine(nuGetDir, $"{assemblyName.Name}.dll");
+        string path = Path.Combine(baseDirectory, $"{assemblyName.Name}.dll");
         if (File.Exists(path))
         {
             using var stream = new MemoryStream(File.ReadAllBytes(path));
@@ -41,8 +54,8 @@ public class PluginLoadContext(string nuGetDir) : AssemblyLoadContext("PluginCon
     {
         if (Path.HasExtension(unmanagedDllName) == false)
             unmanagedDllName += ".dll";
-        searchPaths[0] = Path.Combine(nuGetDir, "runtimes", rid, "native", unmanagedDllName);
-        searchPaths[1] = Path.Combine(nuGetDir, unmanagedDllName);
+        searchPaths[0] = Path.Combine(baseDirectory, "runtimes", rid, "native", unmanagedDllName);
+        searchPaths[1] = Path.Combine(baseDirectory, unmanagedDllName);
         searchPaths[2] = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", unmanagedDllName);
         searchPaths[3] = Path.Combine(AppContext.BaseDirectory, unmanagedDllName);
 
@@ -57,10 +70,16 @@ public class PluginLoadContext(string nuGetDir) : AssemblyLoadContext("PluginCon
 
         return IntPtr.Zero;
     }
+
+    readonly Dictionary<Assembly, string> assemblyPaths = new();
 }
 
 public class PluginSystem
 {
+    public Assembly? GetPluginAssembly()
+    {
+        return pluginAssemblies?.Assemblies.FirstOrDefault(assembly => assembly.GetName().Name == "Plugins");
+    }
     public string GetPluginFolder<T>()
     {
         return Path.Combine(pluginRoot, GetType().Namespace!);
@@ -87,70 +106,55 @@ public class PluginSystem
     }
     public void ReloadPlugins()
     {
-        //确保插件文件夹存在，防止报错
-
+        //确保插件文件夹存在，防止报错]
         if (Directory.Exists(pluginRoot) == false)
             Directory.CreateDirectory(pluginRoot);
 
-        string nuGetDir = Path.Combine(pluginRoot, "NuGet");
-        PluginLoadContext compilingContext = new(nuGetDir);
+        ReloadContext(CompilePlugin(pluginRoot));
+    }
+    public PluginLoadContext CompilePlugin(string source)
+    {
+        PluginLoadContext compilingContext = new(source);
         try
         {
-            void LoadDll(string dllPath)
-            {
-                using var assemblyStream = new MemoryStream(File.ReadAllBytes(dllPath));
-                string pdbPath = Path.ChangeExtension(dllPath, ".pdb");
-                MemoryStream? pdbStream = File.Exists(pdbPath) ? new MemoryStream(File.ReadAllBytes(pdbPath)) : null;
-                compilingContext.LoadFromStream(assemblyStream, pdbStream);
-                pdbStream?.Dispose();
-            }
-
             //加载dll
-            List<string> dllFiles = Directory.GetFiles(pluginRoot, "*.dll", SearchOption.AllDirectories).ToList();
-            for (int index = 0; index < dllFiles.Count;)
+            foreach (string file in Directory.GetFiles(source, "*.dll", SearchOption.AllDirectories))
             {
                 try
                 {
-                    string dllFile = dllFiles[index];
-                    string assemblyName = AssemblyName.GetAssemblyName(dllFile).FullName;
-                    if (defaultAssemblies.Contains(assemblyName))
-                        continue;
-
-                    LoadDll(dllFile);
-                    index++;
+                    string assemblyName = AssemblyName.GetAssemblyName(file).FullName;
+                    if (defaultAssemblies.Contains(assemblyName) == false)
+                        compilingContext.LoadDll(file);
                 }
                 catch
                 {
-                    dllFiles.RemoveAt(index);
+                    // ignored
                 }
             }
 
             //编译cs
             {
-                string dllPath = Path.Combine(AppContext.BaseDirectory, "Plugins.dll");
+                string dllPath = Path.Combine(AlifePath.TempFolderPath, "Plugins.dll");
                 string pdbPath = Path.ChangeExtension(dllPath, ".pdb");
 
                 //解析语法树
-                var syntaxTrees = Directory.GetFiles(pluginRoot, "*.cs", SearchOption.AllDirectories)
+                var syntaxTrees = Directory.GetFiles(source, "*.cs", SearchOption.AllDirectories)
                     .Select(file => CSharpSyntaxTree.ParseText(
                     File.ReadAllText(file),
                     new CSharpParseOptions(LanguageVersion.Latest)))
                     .ToList();
 
                 //收集元数据引用（去重）
-                var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 var references = new List<MetadataReference>();
                 foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
                     if (asm.IsDynamic || string.IsNullOrEmpty(asm.Location))
                         continue;
-                    if (seenPaths.Add(asm.Location))
-                        references.Add(MetadataReference.CreateFromFile(asm.Location));
+                    references.Add(MetadataReference.CreateFromFile(asm.Location));
                 }
-                foreach (var dll in dllFiles)
+                foreach (var path in compilingContext.AssemblyPaths.Values)
                 {
-                    if (seenPaths.Add(dll))
-                        references.Add(MetadataReference.CreateFromFile(dll));
+                    references.Add(MetadataReference.CreateFromFile(path));
                 }
 
                 //编译
@@ -172,12 +176,10 @@ public class PluginSystem
                     throw new Exception($"插件编译失败:\n{errors}");
                 }
 
-                //加载到上下文
-                LoadDll(dllPath);
+                compilingContext.LoadDll(dllPath);
             }
 
-            //替换插件环境
-            ReloadContext(compilingContext);
+            return compilingContext;
         }
         catch
         {

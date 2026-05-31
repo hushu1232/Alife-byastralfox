@@ -1,6 +1,5 @@
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Vision;
 
@@ -30,7 +29,6 @@ class Program
         // 2. 初始化 Demo 套件
         DemoSuite suite = await DemoSuite.InitializeAsync(character, system => {
             system.SetConfiguration(typeof(VisionService), new VisionServiceConfig() {
-                AnalyzerType = VisionAnalyzerType.Qwen
             }, character.StorageKey);
         });
 

@@ -12,7 +12,7 @@ public class ActivityNotifyService
 
     public ActivityNotifyService(ChatActivitySystem system)
     {
-        system.Created += _ => OnChanged?.Invoke();
+        system.Activated += _ => OnChanged?.Invoke();
         system.Destroyed += _ => OnChanged?.Invoke();
     }
 }

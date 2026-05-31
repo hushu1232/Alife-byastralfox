@@ -15,6 +15,7 @@
   <Folder Name="/Sources/Alife.Function/Environment/">
     <Project Path="Sources/Alife.Function/Alife.Function.Memory/Alife.Function.Memory.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.MessageFilter/Alife.Function.MessageFilter.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.PluginEditor/Alife.Function.PluginEditor.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.SystemEvent/Alife.Function.SystemEvent.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.VirtualWorld/Alife.Function.VirtualWorld.csproj" />
   </Folder>

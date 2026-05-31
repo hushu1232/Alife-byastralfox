@@ -1,6 +1,5 @@
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Speech;
 
@@ -16,12 +15,12 @@ Character character = new() {
         typeof(OpenAILanguageModel).FullName!,
         typeof(XmlFunctionCaller).FullName!,
         typeof(SpeechService).FullName!,
-        typeof(VitsSpeechSynthesizer).FullName!
+        typeof(VitsSpeechModel).FullName!
     ]
 };
 
 DemoSuite suite = await DemoSuite.InitializeAsync(character, system => {
-    system.SetConfiguration(typeof(VitsSpeechSynthesizer), new VitsSynthesizerConfig() {
+    system.SetConfiguration(typeof(VitsSpeechModel), new VitsSpeechModelConfig() {
         SpeakerId = 551,
         NoiseScale = 0.6f,
         NoiseScaleW = 0.668f,

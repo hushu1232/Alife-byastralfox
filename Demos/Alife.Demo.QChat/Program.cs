@@ -1,10 +1,6 @@
 using Alife.Platform;
 using Alife.Framework;
-using Alife.ChatService;
-
 using Alife.Function.QChat;
-using System;
-using System.Collections.Generic;
 using Alife.Function.FunctionCaller;
 
 namespace Alife.Demo.QChat;
