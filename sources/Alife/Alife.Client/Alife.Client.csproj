@@ -16,7 +16,10 @@
   <ItemGroup>
     <ProjectReference Include="..\Alife.LanguageModel\Alife.LanguageModel.csproj" />
     <ProjectReference Include="..\Alife.Framework\Alife.Framework.csproj" />
-    <!-- <ProjectReference Include="..\..\Alife.Function\**\*.csproj" /> -->
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <ProjectReference Include="..\..\Alife.Function\**\*.csproj" />
   </ItemGroup>
 
 </Project>

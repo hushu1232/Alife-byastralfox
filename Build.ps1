@@ -1,51 +1,85 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Alife Build Script - Build all projects and sync plugins
+    Alife Build Script - Build or Publish all projects
 .DESCRIPTION
-    Builds Client, DeskPet, and all Function plugins.
-    Copies plugin sources and syncs shared NuGet dependencies.
-.PARAMETER PluginTarget
-    Output directory for plugins. Defaults to Storage\Plugins.
+    Builds or publishes Client, DeskPet, and all Function plugins.
+    Copies plugin files and syncs shared NuGet dependencies.
+.PARAMETER Mode
+    "build" (default) or "publish".
+.PARAMETER OutputDir
+    Output directory. Defaults to "Outputs" for build mode.
+.EXAMPLE
+    .\Build.ps1
+    .\Build.ps1 -Mode publish -OutputDir "C:\path\to\dist\Outputs"
 #>
 
 param(
-    [string]$PluginTarget = ""
+    [string]$Mode = "build",
+    [string]$OutputDir = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 $Src = Join-Path $Root "Sources"
-$Out = Join-Path $Root "Outputs"
 
-if (-not $PluginTarget) {
-    $PluginTarget = Join-Path $Root "Storage\Plugins"
+if (-not $OutputDir) {
+    $OutputDir = Join-Path $Root "Outputs"
 }
 
-Write-Host "[Build] Plugin target: $PluginTarget" -ForegroundColor Cyan
+# Resolve to absolute path before any operations
+$OutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
+$PluginTarget = Join-Path (Split-Path $OutputDir -Parent) "Storage\Plugins"
+
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host "[Alife] $Mode Mode"                                    -ForegroundColor Cyan
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host "[Alife] Output:      $OutputDir"                       -ForegroundColor Cyan
+Write-Host "[Alife] PluginTarget: $PluginTarget"                    -ForegroundColor Cyan
 Write-Host ""
 
 # ============================================================
-# Step 1/3: Build
+# Step 0: Clean output directory
 # ============================================================
-Write-Host "[1/3] Building..." -ForegroundColor Yellow
+Write-Host "[0/3] Cleaning output directory..." -ForegroundColor Yellow
 
-dotnet build (Join-Path $Src "Alife\Alife.Client\Alife.Client.csproj") -c Release -nologo --verbosity quiet
-dotnet build (Join-Path $Src "Alife.DeskPet\Alife.DeskPet.Client\Alife.DeskPet.Client.csproj") -c Release -nologo --verbosity quiet
+if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
+New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+Write-Host "  Cleaned: $OutputDir" -ForegroundColor Green
+Write-Host ""
+
+# ============================================================
+# Step 1: Build or Publish
+# ============================================================
+Write-Host "[1/3] $Mode applications..." -ForegroundColor Yellow
+
+$buildCmd = if ($Mode -eq "publish") { "publish" } else { "build" }
+$ridArg = if ($Mode -eq "publish") { @("-r", "win-x64") } else { @() }
+
+Write-Host "  $Mode Alife.Client..."
+dotnet $buildCmd (Join-Path $Src "Alife\Alife.Client\Alife.Client.csproj") `
+    -c Release -o (Join-Path $OutputDir "Alife.Client") --self-contained false @ridArg -nologo --verbosity quiet
+
+Write-Host "  $Mode Alife.DeskPet.Client..."
+dotnet $buildCmd (Join-Path $Src "Alife.DeskPet\Alife.DeskPet.Client\Alife.DeskPet.Client.csproj") `
+    -c Release -o (Join-Path $OutputDir "Alife.DeskPet.Client") --self-contained false @ridArg -nologo --verbosity quiet
 
 $functionDirs = Get-ChildItem (Join-Path $Src "Alife.Function") -Directory | Where-Object { $_.Name -match '^Alife\.Function\.' }
 foreach ($dir in $functionDirs) {
     $csproj = Join-Path $dir.FullName "$($dir.Name).csproj"
-    dotnet build $csproj -c Release -nologo --verbosity quiet
+    $funcOut = Join-Path $OutputDir $dir.Name
+    Write-Host "  $Mode $($dir.Name)..."
+    dotnet $buildCmd $csproj -c Release -o $funcOut @ridArg -nologo --verbosity quiet
 }
 
+Write-Host ""
+
 # ============================================================
-# Step 2/3: Copy Function Sources
+# Step 2: Copy plugins
 # ============================================================
-Write-Host "[2/3] Copying Function sources..." -ForegroundColor Yellow
+Write-Host "[2/3] Copying plugins..." -ForegroundColor Yellow
 
 if (Test-Path $PluginTarget) {
-    Write-Host "  Cleaning: $PluginTarget"
     Remove-Item $PluginTarget -Recurse -Force
 }
 New-Item -ItemType Directory -Path $PluginTarget -Force | Out-Null
@@ -54,7 +88,7 @@ foreach ($dir in $functionDirs) {
     $target = Join-Path $PluginTarget $dir.Name
     New-Item -ItemType Directory -Path $target -Force | Out-Null
 
-    # Copy .cs files
+    # Copy .cs files from source directory
     Get-ChildItem $dir.FullName -Filter "*.cs" -File | ForEach-Object {
         Copy-Item $_.FullName $target -Force
     }
@@ -75,18 +109,18 @@ foreach ($dir in $functionDirs) {
 
     Write-Host "  [done] $($dir.Name)" -ForegroundColor Green
 }
+Write-Host ""
 
 # ============================================================
-# Step 3/3: Sync NuGet Dependencies
+# Step 3: Sync NuGet dependencies
 # ============================================================
-Write-Host ""
 Write-Host "[3/3] Syncing NuGet deps..." -ForegroundColor Yellow
 
 $nuGetDir = Join-Path $PluginTarget "BaseDirectory"
 New-Item -ItemType Directory -Path $nuGetDir -Force | Out-Null
 
-$clientDir = Join-Path $Out "Alife.Client"
-$functionOutputDirs = Get-ChildItem $Out -Directory | Where-Object { $_.Name -match '^Alife\.Function\.' }
+$clientDir = Join-Path $OutputDir "Alife.Client"
+$functionOutputDirs = Get-ChildItem $OutputDir -Directory | Where-Object { $_.Name -match '^Alife\.Function\.' }
 
 foreach ($funcDir in $functionOutputDirs) {
     $files = Get-ChildItem $funcDir.FullName -Recurse -File
@@ -109,7 +143,18 @@ foreach ($funcDir in $functionOutputDirs) {
     }
 }
 
+# Clean non-Client output directories (publish mode only)
+if ($Mode -eq "publish") {
+    Write-Host ""
+    Write-Host "  Cleaning non-Client outputs..."
+    Get-ChildItem $OutputDir -Directory | Where-Object { $_.Name -notin @("Alife.Client", "Alife.DeskPet.Client") } | ForEach-Object {
+        Remove-Item $_.FullName -Recurse -Force
+    }
+}
+
 Write-Host ""
-Write-Host "[Build] Done." -ForegroundColor Green
-Write-Host "  Plugins: $PluginTarget"
-Write-Host "  NuGet:   $nuGetDir"
+Write-Host "===================================================" -ForegroundColor Green
+Write-Host "[Success] $Mode complete!"                              -ForegroundColor Green
+Write-Host "  Plugins: $PluginTarget"                               -ForegroundColor Green
+Write-Host "  NuGet:   $nuGetDir"                                   -ForegroundColor Green
+Write-Host "===================================================" -ForegroundColor Green

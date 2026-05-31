@@ -136,6 +136,16 @@ if ($torchCheck -eq "ok") {
 Write-Host ""
 
 # ============================================================
+# Install Additional Python Tools
+# ============================================================
+Write-Host "[Alife] Installing Additional Python Tools..." -ForegroundColor Yellow
+
+Write-Host "[Alife] Installing uv (uvx)..."
+& $pyExe -m pip install uv 2>$null | Out-Null
+Write-Host "[Alife] Additional Python tools ready." -ForegroundColor Green
+Write-Host ""
+
+# ============================================================
 # Step 3/4: PATH Injection & Update Packages
 # ============================================================
 Write-Host "[Alife] [Step 3/4] Injecting Variables and Updating Packages..." -ForegroundColor Yellow

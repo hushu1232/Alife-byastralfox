@@ -106,7 +106,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractivePlug
     {
         await base.AwakeAsync(context);
 
-        string modelName = Configuration?.ModelName;
+        string? modelName = Configuration?.ModelName;
         if (string.IsNullOrWhiteSpace(modelName))
             modelName = "Mao";
         client = new PetServer(modelName);
