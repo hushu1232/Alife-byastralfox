@@ -10,6 +10,7 @@ public class ChatActivitySystem
     public event Action<Character>? Activating;
     public event Action<Character, (string Task, float Progress)>? ActivatingProcess;
     public event Action<Character, Exception>? ActivationFailed;
+    public event Action<ChatActivity>? ActivatingCreated;
     public event Action<ChatActivity>? Activated;
     public event Action<ChatActivity>? Destroying;
     public event Action<ChatActivity>? Destroyed;
@@ -47,6 +48,7 @@ public class ChatActivitySystem
             character, configurationSystem, pluginSystem, progress,
             appendObjects.ToArray()
             );
+            ActivatingCreated?.Invoke(chatActivity);
             await chatActivity.Launch(progress);
             activities.Add(character.Name, chatActivity);
             Activated?.Invoke(chatActivity);

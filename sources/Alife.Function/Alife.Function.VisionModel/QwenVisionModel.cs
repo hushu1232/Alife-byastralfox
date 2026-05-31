@@ -56,12 +56,13 @@ public class QwenVisionModel : IVisionModel,
         from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
         from qwen_vl_utils import process_vision_info
 
-        device = None
+        device = torch.device('cuda')
+        
         model = None
         processor = None
 
         def load_model(path):
-            global device, model, processor
+            global model, processor
 
             quantization_config = BitsAndBytesConfig(
                 load_in_4bit=True,
@@ -70,7 +71,6 @@ public class QwenVisionModel : IVisionModel,
                 bnb_4bit_quant_type="nf4"
             )
 
-            device = torch.device("cuda")
             model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
                 path,
                 dtype="auto",

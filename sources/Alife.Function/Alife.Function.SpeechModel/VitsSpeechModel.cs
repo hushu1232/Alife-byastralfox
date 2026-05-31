@@ -74,6 +74,7 @@ public class VitsSpeechModel :
         # Globals – populated in init()
         # ---------------------------------------------------------------------------
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print('Use Device ' + str(device))
         hps_ms = None
         net_g_ms = None
 

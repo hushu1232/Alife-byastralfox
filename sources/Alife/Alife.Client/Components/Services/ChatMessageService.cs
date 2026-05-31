@@ -48,7 +48,7 @@ public class ChatMessageService
     {
         this.storage = storage;
         settings = storage.GetObject(SettingsKey, new ChatSettings())!;
-        system.Activated += OnActivityActivated;
+        system.ActivatingCreated += OnActivityCreated;
         system.Destroyed += OnActivityDestroyed;
     }
 
@@ -102,7 +102,7 @@ public class ChatMessageService
     /// 确保指定Activity的ChatBot事件已挂接到UI消息列表。
     /// 幂等操作，重复调用安全。
     /// </summary>
-    void OnActivityActivated(ChatActivity activity)
+    void OnActivityCreated(ChatActivity activity)
     {
         string name = activity.Character.Name;
         List<ChatMessage> messages = GetMessages(name);
