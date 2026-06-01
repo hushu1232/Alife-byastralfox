@@ -11,19 +11,22 @@ using Microsoft.SemanticKernel.Connectors.OpenAI;
 namespace Alife.Framework;
 
 [Plugin(
-"OpenAI大语言模型", "接入基于OpenAI协议的文本模型，实现最基本的文本对话功能。",
-url: "https://www.deepseek.com/",
-editorUI: typeof(OpenAILanguageModelUI),
-defaultCategory: "Alife 官方/模型接入/文本模型"
+    "OpenAI语言模型", "接入与OpenAI协议兼容的文本模型，实现最基本的文本对话功能。",
+    url: "https://www.deepseek.com/",
+    editorUI: typeof(OpenAILanguageModelUI),
+    defaultCategory: "Alife 官方/模型接入/文本模型"
 )]
 public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
     ILanguageModel,
-    IConfigurable<LanguageModelConfig>
+    IConfigurable<OpenAILanguageModelConfig>
 {
-    public LanguageModelConfig? Configuration { get; set; }
+    public OpenAILanguageModelConfig? Configuration { get; set; }
 
     public void RegisterChatCompletion(IKernelBuilder kernelBuilder)
     {
+        if (string.IsNullOrWhiteSpace(Configuration!.apiKey))
+            throw new Exception("文本模型的key为空，请检查你的“OpenAI大语言模型”插件配置是否正确。");
+
         // 强制使用 HTTP 1.1 以解决某些提供者（如 DeepSeek）在流式传输时可能出现的 HttpIOException
         SocketsHttpHandler handler = new() {
             SslOptions = new System.Net.Security.SslClientAuthenticationOptions {
@@ -40,11 +43,11 @@ public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact
         };
 
-        if (!string.IsNullOrWhiteSpace(Configuration!.customHeaders))
+        if (!string.IsNullOrWhiteSpace(Configuration!.extraHeaders))
         {
             try
             {
-                var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(Configuration.customHeaders);
+                var headers = JsonSerializer.Deserialize<Dictionary<string, string>>(Configuration.extraHeaders);
                 if (headers != null)
                 {
                     foreach (var header in headers)
@@ -60,31 +63,26 @@ public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
         }
 
         kernelBuilder.AddOpenAIChatCompletion(
-        endpoint: new Uri(Configuration!.endpoint),
-        modelId: Configuration!.modelId,
-        apiKey: Configuration!.apiKey,
-        httpClient: httpClient
+            endpoint: new Uri(Configuration!.endpoint),
+            modelId: Configuration!.modelId,
+            apiKey: Configuration!.apiKey,
+            httpClient: httpClient
         );
     }
     [Experimental("SKEXP0010")]
     public PromptExecutionSettings ProvidePromptExecutionSettings()
     {
-        OpenAIPromptExecutionSettings settings = new OpenAIPromptExecutionSettings();
+        OpenAIPromptExecutionSettings settings = new();
 
-        if (Configuration!.thinkingEnabled)
+        if (string.IsNullOrEmpty(Configuration!.reasoningEffort) == false)
             settings.ReasoningEffort = Configuration!.reasoningEffort;
-
-        // 思考模式支持
+        
         settings.ExtraBody = new Dictionary<string, object?>();
-        settings.ExtraBody["thinking"] = new {
-            type = Configuration!.thinkingEnabled ? "enabled" : "disabled"
-        };
-
-        if (!string.IsNullOrWhiteSpace(Configuration!.customBody))
+        if (!string.IsNullOrWhiteSpace(Configuration!.extraBody))
         {
             try
             {
-                var bodyDict = JsonSerializer.Deserialize<Dictionary<string, object>>(Configuration.customBody);
+                var bodyDict = JsonSerializer.Deserialize<Dictionary<string, object>>(Configuration.extraBody);
                 if (bodyDict != null)
                 {
                     foreach (var kvp in bodyDict)

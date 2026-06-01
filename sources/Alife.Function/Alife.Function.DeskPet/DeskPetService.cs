@@ -39,7 +39,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractivePlug
 
                 if (DateTimeOffset.Now.ToUnixTimeMilliseconds() < lastBubbleEndTime)
                     await Task.Delay(
-                    TimeSpan.FromMilliseconds(lastBubbleEndTime - DateTimeOffset.Now.ToUnixTimeMilliseconds()));
+                        TimeSpan.FromMilliseconds(lastBubbleEndTime - DateTimeOffset.Now.ToUnixTimeMilliseconds()));
                 client!.ShowBubble(content);
                 lastBubbleEndTime = DateTimeOffset.Now.ToUnixTimeMilliseconds() + content.Length * 150;
                 break;
@@ -96,6 +96,8 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractivePlug
         (x, y) = await client!.GetPositionAsync();
         Poke($"移动成功，当前位置: x={x}, y={y}");
     }
+
+    protected override string ChatPrefixPrompt => "[请使用DeskPet的功能回复]";
 
     public DeskPetServiceConfig? Configuration { get; set; }
 

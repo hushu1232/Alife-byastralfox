@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Alife.Framework;
 
@@ -45,8 +46,8 @@ public class ChatActivitySystem
 
             Activating?.Invoke(character);
             ChatActivity chatActivity = await ChatActivity.Create(
-            character, configurationSystem, pluginSystem, progress,
-            appendObjects.ToArray()
+                character, configurationSystem, pluginSystem, progress,
+                appendObjects.ToArray()
             );
             ActivatingCreated?.Invoke(chatActivity);
             await chatActivity.Launch(progress);

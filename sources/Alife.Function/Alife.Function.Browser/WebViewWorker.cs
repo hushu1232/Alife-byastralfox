@@ -54,7 +54,7 @@ public class WebViewWorker : IDisposable
         var thread = new Thread(() => {
             try
             {
-                window = new Window {
+                window = new UnclosableWindow {
                     Title = "Alife.Client Browser",
                     Width = 1024,
                     Height = 768,

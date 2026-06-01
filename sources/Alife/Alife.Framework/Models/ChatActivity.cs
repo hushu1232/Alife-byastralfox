@@ -94,16 +94,33 @@ public partial class ChatActivity
                     for (int index = 0; index < allEventPluginTypes.Length; index++)
                     {
                         Type pluginType = allEventPluginTypes[index];
-                        progress?.Report(($"创建服务 {pluginType.Name}", (float)index / pluginTypes.Length));
-                        allEventPlugin.Add((ISystemEvent)pluginContainer.Resolve(pluginType));
+                        PluginAttribute pluginAttribute = pluginType.GetCustomAttribute<PluginAttribute>()!;
+                        progress?.Report(($"实例化插件 {pluginAttribute.Name}", (float)index / pluginTypes.Length));
+                        try
+                        {
+                            allEventPlugin.Add((ISystemEvent)pluginContainer.Resolve(pluginType));
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new Exception($"实例化插件 {pluginAttribute.Name} 失败", ex);
+                        }
                     }
                 }
 
                 for (int index = 0; index < allEventPlugin.Count; index++)
                 {
                     ISystemEvent systemEvent = allEventPlugin[index];
-                    progress?.Report(($"初始化服务 {systemEvent.GetType().Name}", (float)index / allEventPlugin.Count));
-                    await systemEvent.AwakeAsync(awakeContext);
+                    PluginAttribute pluginAttribute = systemEvent.GetType().GetCustomAttribute<PluginAttribute>()!;
+                    progress?.Report(($"初始化插件 {pluginAttribute.Name}", (float)index / allEventPlugin.Count));
+
+                    try
+                    {
+                        await systemEvent.AwakeAsync(awakeContext);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception($"初始化插件 {pluginAttribute.Name} 失败", ex);
+                    }
                 }
             }
 
@@ -125,7 +142,6 @@ public partial class ChatActivity
                 };
                 chatBot = new ChatBot(chatCompletionAgent, contextBuilder);
             }
-
 
             return new(character, kernelService, pluginContainer, chatBot, allEventPlugin);
         }
@@ -150,8 +166,16 @@ public partial class ChatActivity(Character character, Kernel kernelService, ICo
         for (int index = 0; index < eventPlugins.Count; index++)
         {
             ISystemEvent systemEvent = eventPlugins[index];
-            progress?.Report(($"开始服务 {systemEvent.GetType().Name}", (float)index / eventPlugins.Count));
-            await systemEvent.StartAsync(kernelService, this);
+            progress?.Report(($"启动插件 {systemEvent.GetType().Name}", (float)index / eventPlugins.Count));
+            PluginAttribute pluginAttribute = systemEvent.GetType().GetCustomAttribute<PluginAttribute>()!;
+            try
+            {
+                await systemEvent.StartAsync(kernelService, this);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"启动插件 {pluginAttribute.Name} 失败", ex);
+            }
         }
     }
     public async ValueTask DisposeAsync()

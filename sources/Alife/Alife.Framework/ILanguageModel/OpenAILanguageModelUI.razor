@@ -2,12 +2,12 @@
 @using AntDesign
 @using Newtonsoft.Json.Linq
 @namespace Alife.Framework
-@inherits PluginUIBase<OpenAILanguageModel, LanguageModelConfig>
+@inherits PluginUIBase<OpenAILanguageModel, OpenAILanguageModelConfig>
 @inject IMessageService MessageService
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Title Level="4" Style="margin-bottom: 24px;">对话服务配置（OpenAI标准）</Title>
-    <Form TModel="LanguageModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+    <Form TModel="OpenAILanguageModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
         <FormItem Label="Endpoint">
             <Input @bind-Value="@Configuration.endpoint" placeholder="例如: https://api.deepseek.com/v1"/>
         </FormItem>
@@ -24,29 +24,17 @@
                 </Button>
             </div>
         </FormItem>
-        <Divider>思考模式</Divider>
-        <FormItem Label="启用思考模式 (Thinking Mode)">
-            <Switch @bind-Value="@Configuration.thinkingEnabled"/>
+        <FormItem Label="思考强度 (Reasoning Effort)">
+            <Input @bind-Value="@Configuration.reasoningEffort" placeholder="例如: low,medium,high"/>
         </FormItem>
-        @if (Configuration.thinkingEnabled)
-        {
-            <FormItem Label="思考强度 (Reasoning Effort)">
-                <RadioGroup @bind-Value="@Configuration.reasoningEffort">
-                    <Radio RadioButton Value="@("low")">Low</Radio>
-                    <Radio RadioButton Value="@("medium")">Medium</Radio>
-                    <Radio RadioButton Value="@("high")">High</Radio>
-                    <Radio RadioButton Value="@("max")">Max</Radio>
-                </RadioGroup>
-            </FormItem>
-        }
         <Divider>高级配置 (可选)</Divider>
         <FormItem Label="自定义请求头 (JSON 格式)">
-            <TextArea @bind-Value="@Configuration.customHeaders" Rows="3"
-                      Placeholder='{"Authorization": "Bearer XXX", "X-Custom-Header": "value"}'/>
+            <TextArea @bind-Value="@Configuration.extraHeaders" Rows="3"
+                      Placeholder='{"Authorization": "Bearer XXX", "X-Custom-Header": "value"}'></TextArea>
         </FormItem>
         <FormItem Label="自定义请求体附加字段 (JSON 格式)">
-            <TextArea @bind-Value="@Configuration.customBody" Rows="3"
-                      Placeholder='{"image_detail": "high", "top_p": 0.9}'/>
+            <TextArea @bind-Value="@Configuration.extraBody" Rows="3"
+                      Placeholder='{"image_detail": "high", "top_p": 0.9}'></TextArea>
         </FormItem>
     </Form>
 
@@ -69,8 +57,8 @@
 
     @code {
         List<string> availableModels = new();
-        bool isLoadingModels = false;
-        bool isModelModalVisible = false;
+        bool isLoadingModels;
+        bool isModelModalVisible;
 
         async Task FetchModels()
         {

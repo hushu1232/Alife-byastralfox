@@ -51,7 +51,7 @@
     <div style="margin-bottom: 24px;">
         <Text>请输入您的 OpenAI 兼容协议接口信息喵！填写后我们将自动配置并创建首个专属智能角色助理。</Text>
     </div>
-    <Form TModel="LanguageModelConfig" Model="quickConfig" Layout="@FormLayout.Vertical">
+    <Form TModel="OpenAILanguageModelConfig" Model="quickConfig" Layout="@FormLayout.Vertical">
         <FormItem Label="API Base URL (端点)">
             <Input @bind-Value="quickConfig.endpoint" Placeholder="例如: https://api.deepseek.com/v1"/>
         </FormItem>
@@ -66,7 +66,7 @@
 
 @code {
     bool isQuickSetupVisible;
-    readonly LanguageModelConfig quickConfig = new();
+    readonly OpenAILanguageModelConfig quickConfig = new();
     string storageFolderPath = Platform.AlifePath.StorageFolderPath;
 
     void OnPickFolder()

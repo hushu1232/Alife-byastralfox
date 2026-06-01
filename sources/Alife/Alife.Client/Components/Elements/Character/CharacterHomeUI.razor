@@ -216,7 +216,7 @@
     void OnActivationFailed(Character character, Exception ex)
     {
         if (character.Name != Character?.Name) return;
-        if (ex is DependencyResolutionException dependencyResolutionException)
+        if (ex.InnerException is DependencyResolutionException dependencyResolutionException)
         {
             Exception? exception = dependencyResolutionException.InnerException;
             if (exception != null)
@@ -226,9 +226,12 @@
                 if (match1.Success && match2.Success)
                 {
                     string typeName = match2.Groups[1].Value;
-                    PluginAttribute? pluginAttribute = PluginSystem.GetPluginAssembly()?.GetType(typeName)?.GetCustomAttribute<PluginAttribute>();
-                    ex = new Exception($"你需要在插件界面寻找并勾选“{pluginAttribute?.Name ?? typeName}”插件，因为插件 {match1.Groups[1].Value} 依赖于 {match2.Groups[1].Value}，"
-                    , exception);
+                    Type? type = PluginSystem.GetPlugin(typeName);
+                    PluginAttribute? pluginAttribute = type?.GetCustomAttribute<PluginAttribute>();
+                    ex = new Exception(
+                        $"你需要在插件界面寻找并勾选“{pluginAttribute?.Name ?? typeName}”插件，因为插件 {match1.Groups[1].Value} 依赖于 {match2.Groups[1].Value}，"
+                        , exception
+                    );
                 }
             }
         }

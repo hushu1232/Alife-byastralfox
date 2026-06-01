@@ -191,7 +191,12 @@ public class PluginSystem
         storageSystem.SetObject(pluginSystemConfig, pluginFolder);
     }
 
+#if DEBUG
+    readonly string pluginRoot = Path.Combine(AlifePath.StorageFolderPath, "PluginsDebug");
+#else
     readonly string pluginRoot = Path.Combine(AlifePath.StorageFolderPath, "Plugins");
+#endif
+
     readonly string pluginSystemConfig = "PluginCategory";
     readonly StorageSystem storageSystem;
     readonly Dictionary<string, Type> pluginTypes;

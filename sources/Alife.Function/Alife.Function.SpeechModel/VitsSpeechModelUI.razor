@@ -2,6 +2,7 @@
 @inherits Alife.Framework.PluginUIBase<VitsSpeechModel, VitsSpeechModelConfig>
 @using AntDesign
 @using System.IO
+@using System.Linq
 
 <div style="background: #fff; padding: 20px; border-radius: 8px;">
     <Title Level="4" Style="margin-bottom: 24px;">VITS语音合成配置</Title>
@@ -37,7 +38,17 @@
         <GridRow Gutter="16">
             <GridCol Span="12">
                 <FormItem Label="说话人ID">
-                    <InputNumber @bind-Value="@Configuration.SpeakerId" Min="0" Style="width: 100%;"/>
+                    <GridRow Gutter="8" Style="width: 100%; display: flex; align-items: center;">
+                        <GridCol Span="14">
+                            <InputNumber @bind-Value="@Configuration.SpeakerId" Min="0" Style="width: 100%;"/>
+                        </GridCol>
+                        <GridCol Span="10">
+                            <Button Type="@ButtonType.Default" OnClick="@(() => isModalVisible = true)"
+                                    Style="width: 100%;">
+                                选择角色
+                            </Button>
+                        </GridCol>
+                    </GridRow>
                 </FormItem>
             </GridCol>
             <GridCol Span="12">
@@ -60,4 +71,109 @@
             </GridCol>
         </GridRow>
     </Form>
+
+    <Modal Title="VITS 说话人角色 ID 映射表"
+           Visible="@isModalVisible"
+           OnOk="@(() => isModalVisible = false)"
+           OnCancel="@(() => isModalVisible = false)"
+           Width="600"
+           Footer="null"
+           DestroyOnClose="true">
+        <Input Placeholder="输入角色姓名或 ID 搜索..." @bind-Value="@searchQuery" Style="margin-bottom: 16px;"/>
+        <div
+            style="max-height: 400px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 4px; padding: 8px; background: #fff;">
+            @foreach (var speaker in filteredSpeakers)
+            {
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 8px 12px; border-bottom: 1px solid #f0f0f0;">
+                    <div>
+                        <Tag Color="TagColor.Blue">ID: @speaker.Id</Tag>
+                        <span style="font-weight: 500; font-size: 14px; margin-left: 8px;">@speaker.Name</span>
+                    </div>
+                    <Button Type="@ButtonType.Link" Size="@ButtonSize.Small"
+                            OnClick="@(() => SelectSpeaker(speaker.Id))">
+                        选择该角色
+                    </Button>
+                </div>
+            }
+        </div>
+    </Modal>
 </div>
+
+@code {
+    bool isModalVisible;
+
+    string? _searchQuery;
+    string? searchQuery
+    {
+        get => _searchQuery;
+        set
+        {
+            if (_searchQuery != value)
+            {
+                _searchQuery = value;
+                FilterSpeakers(value);
+            }
+        }
+    }
+
+    List<(int Id, string Name)> speakers = new();
+    List<(int Id, string Name)> filteredSpeakers = new();
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        LoadSpeakers();
+    }
+
+    void LoadSpeakers()
+    {
+        try
+        {
+            string listPath = Path.Combine(VitsSpeechModel.RuntimeFolder, "speakers_list.txt");
+            if (File.Exists(listPath))
+            {
+                var lines = File.ReadAllLines(listPath);
+                var temp = new List<(int Id, string Name)>();
+                foreach (var line in lines)
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    var parts = line.Split(':', 2);
+                    if (parts.Length == 2 && int.TryParse(parts[0].Trim(), out int id))
+                    {
+                        temp.Add((id, parts[1].Trim()));
+                    }
+                }
+                speakers = temp;
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+        filteredSpeakers = speakers;
+    }
+
+    void FilterSpeakers(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            filteredSpeakers = speakers;
+        }
+        else
+        {
+            filteredSpeakers = speakers
+                .Where(s => s.Id.ToString().Contains(value) || s.Name.Contains(value, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    void SelectSpeaker(int id)
+    {
+        if (Configuration != null)
+        {
+            Configuration.SpeakerId = id;
+        }
+        isModalVisible = false;
+    }
+}

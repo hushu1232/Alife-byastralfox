@@ -10,8 +10,11 @@ namespace Alife.Function.Browser;
 
 [Plugin("网上冲浪", "让AI可以像人一样操控真实的浏览器，从而能够执行各种网页任务的同时，避免反爬。",
 defaultCategory: "Alife 官方/实用工具")]
-[Description(@"你拥有一个真实的浏览器窗口，可以借此进行网上冲浪，从而每天学点新知识，找点新话题。
-提示：若遇到验证或登录，一定要尝试请求主人协助，不然总被反爬就没意义了。此外优先使用搜索引擎（谷歌 > 必应 > 百度）来明确需求，再行动。")]
+[Description(@"你拥有一个独属于自己的真实浏览器，可借此进行网上冲浪，每天学点新知识，找点新话题。
+提示：
+1. 若遇到验证或登录，可以请求主人协助，从而避免被反爬。
+2. 办事前先明确需求，再行动。
+3. 优先使用搜索引擎`谷歌 > 必应 > 百度`")]
 public class BrowserService(XmlFunctionCaller functionService)
     : InteractivePlugin<BrowserService>, IDisposable
 {
@@ -32,7 +35,7 @@ public class BrowserService(XmlFunctionCaller functionService)
     }
 
     [XmlFunction(FunctionMode.Content)]
-    [Description("在浏览器中执行JS表达式。")]
+    [Description("执行JS表达式。")]
     public async Task RunJs(XmlExecutorContext context, [XmlContent] string script)
     {
         if (context.CallMode == CallMode.Closing)
@@ -44,7 +47,7 @@ public class BrowserService(XmlFunctionCaller functionService)
     }
 
     [XmlFunction(FunctionMode.OneShot)]
-    [Description("下载文件到本地。")]
+    [Description("下载文件。")]
     public async Task Download([Description("下载链接")] string url, [Description("本地绝对路径")] string path)
     {
         await AlifePlatform.DownloadFileAsync(url, path);
