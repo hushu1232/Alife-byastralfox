@@ -1,16 +1,11 @@
-using System;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Skill;
 using Alife.Function.Python;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
-using Microsoft.Extensions.DependencyInjection;
 
 public class Program
 {
@@ -68,7 +63,7 @@ public class Program
         };
 
         // 检查是否有对话模型
-        if (!activity.EventPlugins.Any(p => p is OpenAILanguageModel))
+        if (!activity.EventModules.Any(p => p is OpenAILanguageModel))
         {
             AlifeTerminal.LogError("警告: ChatService 未加载！请检查模块配置。");
         }
