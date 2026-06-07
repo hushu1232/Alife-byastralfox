@@ -36,13 +36,13 @@ public class VisionService(XmlFunctionCaller functionService, IVisionModel? visi
             .Where(w => !string.IsNullOrWhiteSpace(w.Title))
             .ToList();
 
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("【当前窗口列表】");
-        foreach (var w in windows)
-            sb.AppendLine($"Handle: {w.Handle.ToInt64()} | 标题: {w.Title}");
-        sb.AppendLine($"Handle: -1 | 直接查看全屏内容");
-
-        Poke(sb.ToString());
+        Poke($"""
+              【当前窗口列表】
+              {string.Join("\n", windows.Select(info => $"Handle: {info.Handle.ToInt64()} | 标题: {info.Title}"))}
+              Handle: -1 | 直接查看全屏内容
+              【当前焦点窗口】
+              {WindowsPlatform.GetActiveWindowTitle()}
+              """);
     }
 
     /// <summary>
@@ -85,8 +85,7 @@ public class VisionService(XmlFunctionCaller functionService, IVisionModel? visi
         {
             Poke($"""
                   【屏幕分析结果】
-                  - 窗口列表：{AlifePlatform.GetRunningWindowTitles()}
-                  - 焦点窗口：{WindowsPlatform.GetActiveWindowTitle()}
+                  - 文字识别：全屏识图不支持文字识别，请针对特定窗口识别
                   - 深度视觉：{deepVisionResult}（内容不一定准确仅供参考）
                   """);
         }
