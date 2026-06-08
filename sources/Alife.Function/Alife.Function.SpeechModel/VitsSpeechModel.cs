@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -130,15 +133,72 @@ public class VitsSpeechModel(
 
     public async Task AwakeAsync(AwakeContext context)
     {
+        if (Directory.Exists(RuntimeFolder) == false)
+            await DownloadAndExtractAsync();
+
         string requirements = Path.Combine(RuntimeFolder, "requirements.txt");
         if (File.Exists(requirements) == false)
-            throw new Exception("缺少VITS模型文件，请前往插件页按要求操作！");
+            throw new Exception("VITS 模型文件不完整，请删除 Runtime/VITS 目录后重试。");
 
         AlifePlatform.Command("python", $"-m pip install -r \"{Path.Combine(RuntimeFolder, "requirements.txt")}\"");
         pythonPipe = new("vits_speech", pythonCode);
         pythonPipe.OnStderr += line => logger.LogWarning(line);
         await pythonPipe.StartAsync();
         await pythonPipe.InvokeAsync<string>("init", RuntimeFolder);
+    }
+
+    async Task DownloadAndExtractAsync()
+    {
+        const string zipUrl = "https://github.com/BDFFZI/Alife/releases/download/VITS/VITS.zip";
+        string zipPath = Path.Combine(AlifePath.TempFolderPath, "VITS.zip");
+
+        logger.LogInformation("正在下载 VITS 模型文件...");
+
+        using var httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, zipUrl);
+        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+
+        {
+            long totalBytes = response.Content.Headers.ContentLength ?? -1;
+            await using var contentStream = await response.Content.ReadAsStreamAsync();
+            await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None);
+
+            byte[] buffer = new byte[81920];
+            long readSoFar = 0;
+            int bytesRead;
+            long nextReport = 10 * 1024 * 1024;
+
+            while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                await fileStream.WriteAsync(buffer, 0, bytesRead);
+                readSoFar += bytesRead;
+                if (readSoFar >= nextReport)
+                {
+                    if (totalBytes > 0)
+                        logger.LogInformation("下载进度: {Pct:F1}% ({ReadMB}MB / {TotalMB}MB)",
+                            (double)readSoFar / totalBytes * 100,
+                            readSoFar / 1024 / 1024,
+                            totalBytes / 1024 / 1024);
+                    else
+                        logger.LogInformation("下载进度: {ReadMB}MB", readSoFar / 1024 / 1024);
+                    nextReport = readSoFar + 10 * 1024 * 1024;
+                }
+            }
+        }
+
+        logger.LogInformation("下载完成，正在解压...");
+        string extractRoot = AlifePath.RuntimeFolderPath;
+        bool hasTopLevelVits;
+        using (var archive = ZipFile.OpenRead(zipPath))
+            hasTopLevelVits = archive.Entries.Any(e => e.FullName.StartsWith("VITS/", StringComparison.OrdinalIgnoreCase));
+        if (hasTopLevelVits == false)
+            extractRoot = Path.Combine(AlifePath.RuntimeFolderPath, "VITS");
+
+        ZipFile.ExtractToDirectory(zipPath, extractRoot, overwriteFiles: true);
+        File.Delete(zipPath);
+        logger.LogInformation("VITS 模型文件准备就绪。");
     }
     public async ValueTask DisposeAsync()
     {

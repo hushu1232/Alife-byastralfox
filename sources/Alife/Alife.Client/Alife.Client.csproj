@@ -14,7 +14,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Alife.LanguageModel\Alife.LanguageModel.csproj" />
     <ProjectReference Include="..\Alife.Framework\Alife.Framework.csproj" />
   </ItemGroup>
 

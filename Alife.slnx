@@ -47,7 +47,6 @@
   <Folder Name="/Sources/Alife/">
     <Project Path="Sources/Alife/Alife.Client/Alife.Client.csproj" />
     <Project Path="Sources/Alife/Alife.Framework/Alife.Framework.csproj" />
-    <Project Path="Sources/Alife/Alife.LanguageModel/Alife.LanguageModel.csproj" />
     <Project Path="Sources/Alife/Alife.Platform/Alife.Platform.csproj" />
   </Folder>
   <Folder Name="/Tests/">
