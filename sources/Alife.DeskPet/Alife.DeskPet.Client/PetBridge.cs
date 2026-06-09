@@ -24,6 +24,7 @@ public class PetBridge : IDisposable
     public event Action? OnDragStart;
     public event Action? OnDragEnd;
     public event Action<double, double>? OnResizeDelta;
+    public event Action<Dictionary<string, ParamInfo>>? OnParamsReceived;
 
     public PetBridge(WebView2 webView, PetModelMetadata metadata)
     {
@@ -90,6 +91,26 @@ public class PetBridge : IDisposable
     {
         SendCommand(new { type = "status", working });
     }
+    public void SetParam(string id, float value)
+    {
+        SendCommand(new { type = "param", id, value });
+    }
+    public void SetParams(Dictionary<string, float> parameters)
+    {
+        SendCommand(new { type = "params", @params = parameters });
+    }
+    public void SetLipSync(float value)
+    {
+        SendCommand(new { type = "lip-sync", value = Math.Clamp(value, 0f, 1f) });
+    }
+    public void SetIdleCycle(bool enabled, Dictionary<string, float>? parameters = null)
+    {
+        SendCommand(new { type = "idle-cycle", enabled, @params = parameters });
+    }
+    public void RequestParams()
+    {
+        SendCommand(new { type = "get-params" });
+    }
 
     readonly WebView2 webView;
     readonly PetModelMetadata metadata;
@@ -143,12 +164,32 @@ public class PetBridge : IDisposable
                 case "resize_delta":
                     OnResizeDelta?.Invoke(root.GetProperty("dx").GetDouble(), root.GetProperty("dy").GetDouble());
                     break;
+                case "params-list":
+                    OnParamsReceived?.Invoke(ReadParams(root));
+                    break;
             }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"PetBridge Message Error: {ex.Message}");
         }
+    }
+    static Dictionary<string, ParamInfo> ReadParams(JsonElement root)
+    {
+        Dictionary<string, ParamInfo> parameters = new();
+        if (root.TryGetProperty("params", out JsonElement paramsProp) == false)
+            return parameters;
+
+        foreach (JsonProperty property in paramsProp.EnumerateObject())
+        {
+            JsonElement value = property.Value;
+            parameters[property.Name] = new ParamInfo(
+                value.GetProperty("value").GetSingle(),
+                value.GetProperty("min").GetSingle(),
+                value.GetProperty("max").GetSingle());
+        }
+
+        return parameters;
     }
 
 

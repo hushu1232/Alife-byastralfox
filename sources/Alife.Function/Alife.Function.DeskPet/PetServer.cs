@@ -16,6 +16,7 @@ public class PetServer : IAsyncDisposable
 {
     public event Action<string>? OnInput;
     public event Action<string>? OnInteracted;
+    public event Action<Dictionary<string, ParamInfo>>? OnParamsReceived;
 
     public IEnumerable<string> SupportedExpressions => metadata.Expressions;
     public IDictionary<string, (string Group, int Index)> SupportedMotions => metadata.Motions;
@@ -85,6 +86,11 @@ public class PetServer : IAsyncDisposable
 
     public void PlayMotion(string group, int index) => petProcess.SendInput(new MotionCommand(group, index));
     public void SendStatus(bool working) => petProcess.SendInput(new StatusCommand(working));
+    public void SetParam(string id, float value) => petProcess.SendInput(new ParamCommand(id, value));
+    public void SetParams(Dictionary<string, float> parameters) => petProcess.SendInput(new ParamsCommand(parameters));
+    public void SetLipSync(float value) => petProcess.SendInput(new LipSyncCommand(value));
+    public void SetIdleCycle(bool enabled, Dictionary<string, float>? parameters = null) => petProcess.SendInput(new IdleCycleCommand(enabled, parameters));
+    public void RequestParams() => petProcess.SendInput(new GetParamsCommand());
 
     public async Task MoveAsync(double x, double y, int duration)
     {
@@ -129,6 +135,7 @@ public class PetServer : IAsyncDisposable
             case InputEvent input: OnInput?.Invoke(input.Text); break;
             case InteractionEvent interaction: OnInteracted?.Invoke(interaction.Interaction); break;
             case PositionEvent position: positionTask?.TrySetResult((position.X, position.Y)); break;
+            case ParamsListEvent paramsList: OnParamsReceived?.Invoke(paramsList.Params); break;
         }
     }
 }

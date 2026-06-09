@@ -66,6 +66,7 @@ public class PetActivity : IDisposable
             bridge.OnInput += text => process.SendOutput(new InputEvent(text));
             bridge.OnDragStart += () => isDragging = true;
             bridge.OnDragEnd += () => isDragging = false;
+            bridge.OnParamsReceived += parameters => process.SendOutput(new ParamsListEvent(parameters));
             bridge.OnResizeDelta += (dx, dy) => {
                 (double ScaleX, double ScaleY) dpi = window.GetDpi();
                 window.Width = Math.Max(150, window.Width + dx / dpi.ScaleX);
@@ -204,6 +205,11 @@ public class PetActivity : IDisposable
             case MotionCommand m: bridge.PlayMotion(m.Group, m.Index); break;
             case HideBubbleCommand: bridge.HideBubble(); break;
             case StatusCommand s: bridge.SendStatus(s.Working); break;
+            case ParamCommand p: bridge.SetParam(p.Id, p.Value); break;
+            case ParamsCommand p: bridge.SetParams(p.Params); break;
+            case LipSyncCommand l: bridge.SetLipSync(l.Value); break;
+            case IdleCycleCommand i: bridge.SetIdleCycle(i.Enabled, i.Params); break;
+            case GetParamsCommand: bridge.RequestParams(); break;
         }
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -101,6 +102,11 @@ public class PetProcess : IDisposable
 [JsonDerivedType(typeof(MotionCommand), "motion")]
 [JsonDerivedType(typeof(HideBubbleCommand), "hide-bubble")]
 [JsonDerivedType(typeof(StatusCommand), "status")]
+[JsonDerivedType(typeof(ParamCommand), "param")]
+[JsonDerivedType(typeof(ParamsCommand), "params")]
+[JsonDerivedType(typeof(LipSyncCommand), "lip-sync")]
+[JsonDerivedType(typeof(IdleCycleCommand), "idle-cycle")]
+[JsonDerivedType(typeof(GetParamsCommand), "get-params")]
 public abstract record IpcCommand;
 
 public record WindowMoveCommand(double X, double Y, int Duration) : IpcCommand;
@@ -117,10 +123,21 @@ public record HideBubbleCommand : IpcCommand;
 
 public record StatusCommand(bool Working) : IpcCommand;
 
+public record ParamCommand(string Id, float Value) : IpcCommand;
+
+public record ParamsCommand(Dictionary<string, float> Params) : IpcCommand;
+
+public record LipSyncCommand(float Value) : IpcCommand;
+
+public record IdleCycleCommand(bool Enabled, Dictionary<string, float>? Params = null) : IpcCommand;
+
+public record GetParamsCommand : IpcCommand;
+
 [JsonDerivedType(typeof(ReadyEvent), "ready")]
 [JsonDerivedType(typeof(InputEvent), "input")]
 [JsonDerivedType(typeof(InteractionEvent), "interaction")]
 [JsonDerivedType(typeof(PositionEvent), "position")]
+[JsonDerivedType(typeof(ParamsListEvent), "params-list")]
 public abstract record IpcEvent;
 
 public record ReadyEvent : IpcEvent;
@@ -130,3 +147,7 @@ public record InputEvent(string Text) : IpcEvent;
 public record InteractionEvent(string Interaction) : IpcEvent;
 
 public record PositionEvent(double X, double Y) : IpcEvent;
+
+public record ParamInfo(float Value, float Min, float Max);
+
+public record ParamsListEvent(Dictionary<string, ParamInfo> Params) : IpcEvent;
