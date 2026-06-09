@@ -23,6 +23,7 @@
         <ProjectReference Include="..\..\Sources\Alife\Alife.Client\Alife.Client.csproj" />
         <ProjectReference Include="..\..\Sources\Alife\Alife.Framework\Alife.Framework.csproj" />
         <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Emotion\Alife.Function.Emotion.csproj" />
+        <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.WebBridge\Alife.Function.WebBridge.csproj" />
     </ItemGroup>
 
 </Project>
