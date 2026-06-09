@@ -4,7 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Alife.Platform;
+using Autofac;
 using Alife.Framework;
+using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
@@ -112,6 +114,9 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
     public DeskPetServiceConfig? Configuration { get; set; }
 
     PetServer? client;
+    EmotionLive2DParameterDriver? emotionParameterDriver;
+    CancellationTokenSource? emotionSyncCancellation;
+    Task? emotionSyncTask;
     long lastBubbleEndTime;
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -152,9 +157,41 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
         await client!.WaitReadyAsync();
         client.OnInput += Chat;
         client.OnInteracted += text => Chat("交互：" + text);
+        TryStartEmotionParameterSync(chatActivity);
 
         // 启动状态轮询
         _ = UpdateStatusLoop(chatActivity.ChatBot);
+    }
+
+    void TryStartEmotionParameterSync(ChatActivity chatActivity)
+    {
+        if (Configuration?.EnableEmotionParameterSync == false)
+            return;
+
+        if (chatActivity.ModuleService.TryResolve(out PADEmotionEngine? emotionEngine) == false)
+            return;
+
+        emotionParameterDriver = new EmotionLive2DParameterDriver(emotionEngine, client!);
+        emotionSyncCancellation = new CancellationTokenSource();
+        emotionSyncTask = UpdateEmotionParameterLoop(emotionSyncCancellation.Token);
+    }
+
+    async Task UpdateEmotionParameterLoop(CancellationToken cancellationToken)
+    {
+        int intervalMilliseconds = Math.Max(50, Configuration?.EmotionSyncIntervalMilliseconds ?? 250);
+        try
+        {
+            while (!isDisposed && cancellationToken.IsCancellationRequested == false)
+            {
+                emotionParameterDriver?.PushCurrentState();
+                await Task.Delay(intervalMilliseconds, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) {}
+        catch (Exception e)
+        {
+            AlifeTerminal.LogError(e.ToString());
+        }
     }
 
     async Task UpdateStatusLoop(ChatBot chatBot)
@@ -183,6 +220,10 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
     public async ValueTask DisposeAsync()
     {
         isDisposed = true;
+        emotionSyncCancellation?.Cancel();
+        if (emotionSyncTask != null)
+            await emotionSyncTask;
+        emotionSyncCancellation?.Dispose();
         if (client != null)
             await client.DisposeAsync();
     }

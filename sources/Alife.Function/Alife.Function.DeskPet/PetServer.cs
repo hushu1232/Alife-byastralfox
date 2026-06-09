@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Function.Emotion;
 using Alife.Platform;
 
 namespace Alife.Function.DeskPet;
@@ -12,7 +13,7 @@ namespace Alife.Function.DeskPet;
 /// <summary>
 /// 桌宠服务的控制中枢，负责管理进程生命周期与业务逻辑分配
 /// </summary>
-public class PetServer : IAsyncDisposable
+public class PetServer : IAsyncDisposable, IEmotionParameterSink
 {
     public event Action<string>? OnInput;
     public event Action<string>? OnInteracted;

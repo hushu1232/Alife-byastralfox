@@ -79,4 +79,38 @@ public class PadEmotionEngineTests
         Assert.That(parameters["ParamEyeLOpen"], Is.EqualTo(0.85f).Within(0.0001f));
         Assert.That(mapper.MapEmotionToExpression(PetEmotion.Happy), Is.EqualTo("happy"));
     }
+
+    [Test]
+    public void EmotionLive2DDriverPushesCurrentPadParametersToSink()
+    {
+        PADEmotionEngine engine = new()
+        {
+            Configuration = new EmotionConfig
+            {
+                InitialPleasure = 0.4f,
+                InitialArousal = 0.5f,
+                InitialDominance = 0.2f
+            }
+        };
+        CapturingEmotionParameterSink sink = new();
+        EmotionLive2DParameterDriver driver = new(engine, sink);
+
+        Dictionary<string, float> parameters = driver.PushCurrentState();
+
+        Assert.That(sink.LastParameters, Is.SameAs(parameters));
+        Assert.That(parameters["ParamAngleX"], Is.EqualTo(4f).Within(0.0001f));
+        Assert.That(parameters["ParamAngleY"], Is.EqualTo(2.5f).Within(0.0001f));
+        Assert.That(parameters["ParamMouthOpenY"], Is.EqualTo(0.1f).Within(0.0001f));
+        Assert.That(parameters["ParamEyeLOpen"], Is.EqualTo(0.85f).Within(0.0001f));
+    }
+
+    sealed class CapturingEmotionParameterSink : IEmotionParameterSink
+    {
+        public Dictionary<string, float>? LastParameters { get; private set; }
+
+        public void SetParams(Dictionary<string, float> parameters)
+        {
+            LastParameters = parameters;
+        }
+    }
 }
