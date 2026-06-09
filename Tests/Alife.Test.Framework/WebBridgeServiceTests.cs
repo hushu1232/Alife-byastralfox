@@ -137,6 +137,47 @@ public class WebBridgeServiceTests
         }, CancellationToken.None));
     }
 
+    [Test]
+    public async Task WebBridgeSyncOncePullsAvatarAssetsAndPushesState()
+    {
+        RecordingHandler handler = new();
+        string targetDirectory = Path.Combine(Path.GetTempPath(), "alife-webbridge-sync-once", Guid.NewGuid().ToString("N"));
+        WebBridgeService service = CreateService(handler, new MemoryCharacterBridgeStore(), new WebAssetSync(targetDirectory));
+
+        WebBridgeSyncResult result = await service.SyncOnce(CancellationToken.None);
+
+        Assert.That(result.Character.Name, Is.EqualTo("远端角色"));
+        Assert.That(result.AssetsSynced, Is.True);
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/pet/config",
+            "/api/pet/assets",
+            "/api/pet/sync"
+        }));
+        Assert.That(File.Exists(Path.Combine(targetDirectory, "model", "Mao", "texture.png")), Is.True);
+    }
+
+    [Test]
+    public async Task WebBridgePollingStartsAndStopsWithoutLeavingRequestsRunning()
+    {
+        RecordingHandler handler = new();
+        WebBridgeService service = CreateService(handler, new MemoryCharacterBridgeStore(), new WebAssetSync(Path.Combine(Path.GetTempPath(), "alife-webbridge-poll", Guid.NewGuid().ToString("N"))));
+        service.Configuration = new WebBridgeServiceConfig
+        {
+            AutoSyncEnabled = true,
+            SyncIntervalMilliseconds = 20
+        };
+
+        await service.StartAsync(null!, new ChatActivity(new Character { Name = "PollTest" }, null!, null!, new ChatBot(null!, null!), []));
+        await WaitUntil(() => handler.Requests.Count >= 3, TimeSpan.FromSeconds(2));
+        await service.DestroyAsync();
+        int countAfterDestroy = handler.Requests.Count;
+        await Task.Delay(80);
+
+        Assert.That(countAfterDestroy, Is.GreaterThanOrEqualTo(3));
+        Assert.That(handler.Requests.Count, Is.EqualTo(countAfterDestroy));
+    }
+
     sealed class RecordingHandler : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = new();
@@ -189,5 +230,28 @@ public class WebBridgeServiceTests
             SavedCharacters.Add(character);
             return character;
         }
+    }
+
+    static WebBridgeService CreateService(RecordingHandler handler, ICharacterBridgeStore characterStore, WebAssetSync assetSync)
+    {
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        return new WebBridgeService(client, characterStore, assetSync);
+    }
+
+    static async Task WaitUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(10);
+        }
+
+        Assert.Fail("等待条件超时");
     }
 }

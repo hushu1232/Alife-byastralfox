@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Platform;
+using Microsoft.SemanticKernel;
 
 namespace Alife.Function.WebBridge;
 
@@ -37,6 +38,20 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return GetClient().PushState(avatarConfig, cancellationToken);
     }
 
+    public async Task<WebBridgeSyncResult> SyncOnce(CancellationToken cancellationToken = default)
+    {
+        Character character = await PullConfig(cancellationToken);
+        bool assetsSynced = false;
+        if (Configuration?.SyncAssetsEnabled != false)
+        {
+            await PullAssets(cancellationToken);
+            assetsSynced = true;
+        }
+
+        await PushState(character, cancellationToken);
+        return new WebBridgeSyncResult(character, assetsSynced);
+    }
+
     public Task SetAvatar(string avatarId, CancellationToken cancellationToken = default)
     {
         return GetClient().SetAvatar(avatarId, cancellationToken);
@@ -60,10 +75,23 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
                """);
     }
 
-    public ValueTask DisposeAsync()
+    public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
+        await base.StartAsync(kernel, chatActivity);
+        if (Configuration?.AutoSyncEnabled == true)
+            StartSyncLoop();
+    }
+
+    public override async Task DestroyAsync()
+    {
+        await StopSyncLoop();
+        await base.DestroyAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopSyncLoop();
         httpClient?.Dispose();
-        return ValueTask.CompletedTask;
     }
 
     WebApiClient GetClient()
@@ -83,8 +111,46 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return assetSync;
     }
 
+    void StartSyncLoop()
+    {
+        syncCancellation?.Cancel();
+        syncCancellation?.Dispose();
+        syncCancellation = new CancellationTokenSource();
+        syncTask = RunSyncLoop(syncCancellation.Token);
+    }
+
+    async Task StopSyncLoop()
+    {
+        syncCancellation?.Cancel();
+        if (syncTask != null)
+            await syncTask;
+        syncCancellation?.Dispose();
+        syncCancellation = null;
+        syncTask = null;
+    }
+
+    async Task RunSyncLoop(CancellationToken cancellationToken)
+    {
+        int intervalMilliseconds = Math.Max(1000, Configuration?.SyncIntervalMilliseconds ?? 30000);
+        try
+        {
+            while (cancellationToken.IsCancellationRequested == false)
+            {
+                await SyncOnce(cancellationToken);
+                await Task.Delay(intervalMilliseconds, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) {}
+        catch (Exception e)
+        {
+            AlifeTerminal.LogError(e.ToString());
+        }
+    }
+
     HttpClient? httpClient;
     WebApiClient? webApiClient;
     ICharacterBridgeStore? characterStore;
     WebAssetSync? assetSync;
+    CancellationTokenSource? syncCancellation;
+    Task? syncTask;
 }
