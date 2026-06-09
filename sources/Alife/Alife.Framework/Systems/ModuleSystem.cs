@@ -73,6 +73,11 @@ public class ModuleLoadContext(string moduleDirectory) : AssemblyLoadContext("Mo
     readonly Dictionary<Assembly, string> assemblyPaths = new();
 }
 
+public class ModuleSecuritySettings
+{
+    public bool CompatibilityMode { get; set; }
+}
+
 public class ModuleSystem
 {
     public string GetModuleFolderRoot()
@@ -91,9 +96,36 @@ public class ModuleSystem
     {
         return moduleTypes.GetValueOrDefault(moduleID);
     }
+    public bool CompatibilityMode
+    {
+        get => securitySettings.CompatibilityMode;
+        set
+        {
+            if (securitySettings.CompatibilityMode == value)
+                return;
+
+            securitySettings.CompatibilityMode = value;
+            SaveSecuritySettings();
+        }
+    }
     public string GetModuleID(Type moduleType)
     {
         return moduleType.FullName!;
+    }
+    public static bool IsModuleTypeAllowed(Type type, bool compatibilityMode = false)
+    {
+        if (type.GetCustomAttribute<ModuleAttribute>() == null)
+            return false;
+        if (type.IsAbstract)
+            return false;
+        if (type.IsInterface)
+            return false;
+        if (type.ContainsGenericParameters)
+            return false;
+        if (compatibilityMode)
+            return true;
+
+        return typeof(ISystemEvent).IsAssignableFrom(type);
     }
     public void ReloadModules()
     {
@@ -182,6 +214,10 @@ public class ModuleSystem
     {
         storageSystem.SetObject(moduleSystemConfig, moduleFolder);
     }
+    public void SaveSecuritySettings()
+    {
+        storageSystem.SetObject(moduleSecurityConfig, securitySettings);
+    }
 
 #if DEBUG
     readonly string moduleRoot = Path.Combine(AlifePath.StorageFolderPath, "PluginsDebug");
@@ -190,9 +226,11 @@ public class ModuleSystem
 #endif
 
     readonly string moduleSystemConfig = "ModuleCategory";
+    readonly string moduleSecurityConfig = "ModuleSecurity";
     readonly StorageSystem storageSystem;
     readonly Dictionary<string, Type> moduleTypes;
     readonly StringFolder moduleFolder;
+    readonly ModuleSecuritySettings securitySettings;
     readonly HashSet<string> defaultAssemblies;
     readonly Assembly[] thisAssemblies;
     AssemblyLoadContext? moduleAssemblies;
@@ -203,6 +241,7 @@ public class ModuleSystem
 
         moduleTypes = new Dictionary<string, Type>();
         moduleFolder = storageSystem.GetObject(moduleSystemConfig, new StringFolder("全部模块"))!;
+        securitySettings = storageSystem.GetObject(moduleSecurityConfig, new ModuleSecuritySettings())!;
 
         //预热程序集，因为模块可能依赖Alife自身的程序集，结果Alife本身目前未用到，导致未加载
         PreloadAllAssemblies();
@@ -232,11 +271,7 @@ public class ModuleSystem
         {
             foreach (Type type in assembly.GetTypes())
             {
-                if (type.GetCustomAttribute<ModuleAttribute>() == null)
-                    continue;
-                if (type.IsAbstract)
-                    continue;
-                if (type.IsInterface)
+                if (IsModuleTypeAllowed(type, securitySettings.CompatibilityMode) == false)
                     continue;
 
                 moduleTypes.Add(GetModuleID(type), type);
