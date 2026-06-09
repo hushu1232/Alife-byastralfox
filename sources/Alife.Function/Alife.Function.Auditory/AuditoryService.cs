@@ -7,6 +7,7 @@ using Windows.Media.Capture;
 using Windows.Media.MediaProperties;
 using Windows.Media.Render;
 using Alife.Framework;
+using Alife.Platform;
 using Microsoft.SemanticKernel;
 
 namespace Alife.Function.Speech;
@@ -112,7 +113,7 @@ public class AuditoryService(IAuditoryModel auditoryModel) :
 
         if (outputNode == null)
         {
-            Console.WriteLine("初始化异常，outputNode为空！");
+            AlifeTerminal.LogError("初始化异常，outputNode为空！");
             return;
         }
 
@@ -126,7 +127,7 @@ public class AuditoryService(IAuditoryModel auditoryModel) :
         Guid iid = new Guid("5B0D3235-4DBA-4D44-865E-8F1D0E4FD04D");// IMemoryBufferByteAccess
         if (Marshal.QueryInterface(unk, in iid, out IntPtr ptr) != 0)
         {
-            Console.WriteLine("查询音频缓存区COM对象失败！");
+            AlifeTerminal.LogError("查询音频缓存区COM对象失败！");
             return;
         }
 

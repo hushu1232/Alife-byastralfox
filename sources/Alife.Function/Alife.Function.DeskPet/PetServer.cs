@@ -50,7 +50,8 @@ public class PetServer : IAsyncDisposable
         //进程异常信息
         nativeProcess.BeginErrorReadLine();
         nativeProcess.ErrorDataReceived += (_, e) => {
-            if (e.Data != null) Console.WriteLine($"[PetProcess Error] {e.Data}");
+            if (e.Data != null)
+                AlifeTerminal.LogWarning($"[PetProcess Error] {e.Data}");
         };
 
         //创建桌宠进行封装器

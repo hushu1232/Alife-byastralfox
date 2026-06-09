@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Platform;
 
 namespace Alife.Function.QChat;
 
@@ -143,7 +144,7 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OneBotClient] 链路异常: {ex.Message}");
+            AlifeTerminal.LogError($"[OneBotClient] 链路异常: {ex}");
         }
         finally
         {
@@ -209,7 +210,7 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OneBotClient] 报文解析异常: {ex.Message}\nRaw: {json}");
+            AlifeTerminal.LogError($"[OneBotClient] 报文解析异常: {ex}\nRaw: {json}");
             return null;
         }
     }

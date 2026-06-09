@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Newtonsoft.Json;
+using Alife.Platform;
 
 namespace Alife.Function.Memory;
 
@@ -232,7 +233,7 @@ public class MemoryManager
         chatHistory.Insert(insertIndex, compressedContent);
         memoryMetaDatas[compressedContent] = new MemoryMeta(level, startTime, endTime);
 
-        Console.WriteLine($"保存记忆：{name}");
+        AlifeTerminal.LogInfo($"保存记忆：{name}");
         return name;
     }
 

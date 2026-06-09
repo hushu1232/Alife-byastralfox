@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Platform;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 
@@ -59,7 +60,7 @@ public abstract class InteractiveModule : ISystemEvent
         catch (OperationCanceledException) {}
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
         }
     }
 }

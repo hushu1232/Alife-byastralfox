@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using Alife.Platform;
 using Autofac;
 using Autofac.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -189,7 +190,7 @@ public partial class ChatActivity(Character character, Kernel kernelService, ICo
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
             throw;
         }
     }

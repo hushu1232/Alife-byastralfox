@@ -14,6 +14,7 @@ using Windows.Graphics;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
+using Alife.Platform;
 
 namespace Alife.Function.Vision;
 
@@ -139,7 +140,7 @@ public static class WindowCaptureHelper
             _winRtDevice = WinRT.MarshalInterface<IDirect3DDevice>.FromAbi(winRtPtr);
             Marshal.Release(winRtPtr);
 
-            Console.WriteLine("[WGC] D3D11 设备初始化完成。");
+            AlifeTerminal.LogInfo("[WGC] D3D11 设备初始化完成。");
         }
     }
 
@@ -191,7 +192,7 @@ public static class WindowCaptureHelper
         bool wasMinimized = IsIconic(hwnd);
         if (wasMinimized)
         {
-            Console.WriteLine("[WGC] 检测到最小化窗口，执行离屏恢复...");
+            AlifeTerminal.LogInfo("[WGC] 检测到最小化窗口，执行离屏恢复...");
             ShowWindow(hwnd, SW_SHOWNOACTIVATE);// 不抢焦点地恢复
             await Task.Delay(200);// 等 GPU 重渲一帧
         }
@@ -206,7 +207,7 @@ public static class WindowCaptureHelper
             if (wasMinimized)
             {
                 ShowWindow(hwnd, SW_MINIMIZE);
-                Console.WriteLine("[WGC] 已重新最小化。");
+                AlifeTerminal.LogInfo("[WGC] 已重新最小化。");
             }
         }
     }

@@ -121,7 +121,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         catch (OperationCanceledException) {}
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            logger.LogError(e, "处理聊天发送事件失败");
         }
     }
 

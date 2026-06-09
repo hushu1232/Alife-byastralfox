@@ -72,7 +72,7 @@ public class WebViewWorker : IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex);
+                AlifeTerminal.LogError(ex.ToString());
             }
         });
         thread.SetApartmentState(ApartmentState.STA);
@@ -119,14 +119,14 @@ public class WebViewWorker : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine(ex);
+                        AlifeTerminal.LogError(ex.ToString());
                     }
                 }
             });
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex);
+            AlifeTerminal.LogError(ex.ToString());
         }
     }
 }

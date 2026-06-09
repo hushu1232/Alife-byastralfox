@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -18,44 +19,40 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
 
     public async Task StartAsync(CancellationToken ct = default)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(scriptPath)!);
-        await File.WriteAllTextAsync(scriptPath, BoilerplateHeader + "\n" + pythonCode + "\n" + BoilerplateFooter, ct);
+        ObjectDisposedException.ThrowIf(disposed, this);
 
-        ProcessStartInfo psi = new() {
-            FileName = pythonExe,
-            Arguments = $"\"{scriptPath}\"",
-            UseShellExecute = false,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-            Environment = { { "PYTHONIOENCODING", "utf-8" }, { "PYTHONUTF8", "1" } },
-        };
-
-        process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        process.ErrorDataReceived += (_, e) => {
-            if (e.Data is not null)
-                OnStderr?.Invoke(e.Data);
-        };
-
-        process.Start();
-        process.BeginErrorReadLine();
-
-        stdin = process.StandardInput;
-        stdout = process.StandardOutput;
-        callLock = new SemaphoreSlim(1, 1);
+        await callLock.WaitAsync(ct);
+        try
+        {
+            await StartProcessWithBackoffAsync(ct);
+            hasStarted = true;
+        }
+        finally
+        {
+            callLock.Release();
+        }
     }
 
     public async Task<JsonElement> InvokeAsync(string funcName, params object[] args)
     {
-        EnsureStarted();
-        await callLock!.WaitAsync();
+        EnsureStartRequested();
+        await callLock.WaitAsync();
         try
         {
-            await WriteRequestAsync(funcName, args);
-            return await ReadResponseAsync();
+            await EnsureProcessAvailableAsync(CancellationToken.None);
+            try
+            {
+                JsonElement result = await InvokeCoreAsync(funcName, args);
+                RememberInitialization(funcName, args);
+                return result;
+            }
+            catch (Exception exception) when (IsRecoverableProcessFailure(exception))
+            {
+                await RestartAsync(CancellationToken.None);
+                JsonElement result = await InvokeCoreAsync(funcName, args);
+                RememberInitialization(funcName, args);
+                return result;
+            }
         }
         finally
         {
@@ -73,28 +70,8 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
         if (disposed) return;
         disposed = true;
 
-        if (process is not null && !process.HasExited)
-        {
-            try
-            {
-                await stdin!.WriteLineAsync("""{"func":"__shutdown__","args":[]}""");
-                await stdin.FlushAsync();
-
-                if (!process.WaitForExit(3000))
-                    process.Kill();
-            }
-            catch
-            {
-                try { process.Kill(); }
-                catch {}
-            }
-        }
-
-        if (stdin != null)
-            await stdin.DisposeAsync();
-        stdout?.Dispose();
-        process?.Dispose();
-        callLock?.Dispose();
+        await StopProcessAsync(sendShutdown: true);
+        callLock.Dispose();
 
         try { File.Delete(scriptPath); }
         catch {}
@@ -143,8 +120,127 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
     Process? process;
     StreamWriter? stdin;
     StreamReader? stdout;
-    SemaphoreSlim? callLock;
+    readonly SemaphoreSlim callLock = new(1, 1);
+    string? initializationFunctionName;
+    object[]? initializationArgs;
+    bool hasStarted;
     bool disposed;
+
+    async Task StartProcessWithBackoffAsync(CancellationToken cancellationToken)
+    {
+        Exception? lastException = null;
+        for (int attempt = 0; attempt < MaxStartAttempts; attempt++)
+        {
+            try
+            {
+                await StopProcessAsync(sendShutdown: false);
+                await StartProcessAsync(cancellationToken);
+                return;
+            }
+            catch (Exception exception) when (attempt + 1 < MaxStartAttempts)
+            {
+                lastException = exception;
+                AlifeTerminal.LogWarning($"Python 进程 '{scriptName}' 启动失败，准备重试: {exception.Message}");
+                await Task.Delay(GetBackoffDelay(attempt), cancellationToken);
+            }
+        }
+
+        throw new InvalidOperationException($"Python 进程 '{scriptName}' 启动失败", lastException);
+    }
+
+    async Task StartProcessAsync(CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(scriptPath)!);
+        await File.WriteAllTextAsync(scriptPath, BoilerplateHeader + "\n" + pythonCode + "\n" + BoilerplateFooter, cancellationToken);
+
+        ProcessStartInfo processStartInfo = new() {
+            FileName = pythonExe,
+            Arguments = $"\"{scriptPath}\"",
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+            Environment = { { "PYTHONIOENCODING", "utf-8" }, { "PYTHONUTF8", "1" } },
+        };
+
+        process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true };
+        process.ErrorDataReceived += (_, e) => {
+            if (e.Data is not null)
+                OnStderr?.Invoke(e.Data);
+        };
+
+        process.Start();
+        process.BeginErrorReadLine();
+
+        stdin = process.StandardInput;
+        stdout = process.StandardOutput;
+    }
+
+    async Task StopProcessAsync(bool sendShutdown)
+    {
+        Process? currentProcess = process;
+        StreamWriter? currentStdin = stdin;
+        StreamReader? currentStdout = stdout;
+
+        process = null;
+        stdin = null;
+        stdout = null;
+
+        if (currentProcess is not null && !currentProcess.HasExited)
+        {
+            try
+            {
+                if (sendShutdown && currentStdin is not null)
+                {
+                    await currentStdin.WriteLineAsync("""{"func":"__shutdown__","args":[]}""");
+                    await currentStdin.FlushAsync();
+                }
+
+                if (!currentProcess.WaitForExit(3000))
+                    currentProcess.Kill();
+            }
+            catch
+            {
+                try { currentProcess.Kill(); }
+                catch {}
+            }
+        }
+
+        if (currentStdin != null)
+            await currentStdin.DisposeAsync();
+        currentStdout?.Dispose();
+        currentProcess?.Dispose();
+    }
+
+    async Task EnsureProcessAvailableAsync(CancellationToken cancellationToken)
+    {
+        if (process is null || process.HasExited)
+            await RestartAsync(cancellationToken);
+    }
+
+    async Task RestartAsync(CancellationToken cancellationToken)
+    {
+        AlifeTerminal.LogWarning($"Python 进程 '{scriptName}' 已退出，准备重启");
+        await StartProcessWithBackoffAsync(cancellationToken);
+        await ReplayInitializationAsync();
+    }
+
+    async Task ReplayInitializationAsync()
+    {
+        if (initializationFunctionName == null || initializationArgs == null)
+            return;
+
+        await InvokeCoreAsync(initializationFunctionName, initializationArgs);
+    }
+
+    async Task<JsonElement> InvokeCoreAsync(string funcName, object[] args)
+    {
+        await WriteRequestAsync(funcName, args);
+        return await ReadResponseAsync();
+    }
 
     async Task WriteRequestAsync(string funcName, object[] args)
     {
@@ -160,7 +256,7 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
             string? line = await stdout!.ReadLineAsync();
 
             if (line is null)
-                throw new PythonException("Python 进程已退出，未收到响应");
+                throw new PythonProcessUnavailableException("Python 进程已退出，未收到响应");
 
             if (string.IsNullOrWhiteSpace(line))
                 continue;
@@ -189,9 +285,33 @@ public sealed class PythonPipeProcess(string scriptName, string pythonCode, stri
             }
         }
     }
-    void EnsureStarted()
+    void EnsureStartRequested()
     {
-        if (process is null || process.HasExited)
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (!hasStarted)
             throw new InvalidOperationException($"Python 进程 '{scriptName}' 未启动或已退出，请先调用 StartAsync()");
     }
+
+    void RememberInitialization(string funcName, object[] args)
+    {
+        if (funcName != "init")
+            return;
+
+        initializationFunctionName = funcName;
+        initializationArgs = args.ToArray();
+    }
+
+    static bool IsRecoverableProcessFailure(Exception exception)
+    {
+        return exception is PythonProcessUnavailableException or IOException or ObjectDisposedException or InvalidOperationException;
+    }
+
+    static TimeSpan GetBackoffDelay(int attempt)
+    {
+        return TimeSpan.FromMilliseconds(100 * Math.Pow(2, attempt));
+    }
+
+    const int MaxStartAttempts = 3;
+
+    sealed class PythonProcessUnavailableException(string message) : Exception(message);
 }

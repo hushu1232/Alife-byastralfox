@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using Alife.Platform;
 
 namespace Alife.Function.Interpreter;
 
@@ -122,7 +123,7 @@ public class XmlStreamExecutor : IAsyncDisposable
         catch (OperationCanceledException) {}
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
         }
     }
 

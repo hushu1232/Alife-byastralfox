@@ -173,7 +173,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
             }
             catch (Exception e)
             {
-                Console.WriteLine(e);
+                AlifeTerminal.LogError(e.ToString());
             }
 
             await Task.Delay(250);

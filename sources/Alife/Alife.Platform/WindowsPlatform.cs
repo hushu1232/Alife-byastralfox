@@ -102,8 +102,14 @@ public static class WindowsPlatform
         using Process? process = Process.Start(psi);
         if (process != null)
         {
-            process.OutputDataReceived += (s, e) => Console.WriteLine(e.Data);
-            process.ErrorDataReceived += (s, e) => Console.WriteLine(e.Data);
+            process.OutputDataReceived += (_, eventArgs) => {
+                if (eventArgs.Data != null)
+                    AlifeTerminal.LogInfo(eventArgs.Data);
+            };
+            process.ErrorDataReceived += (_, eventArgs) => {
+                if (eventArgs.Data != null)
+                    AlifeTerminal.LogWarning(eventArgs.Data);
+            };
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             process.WaitForExit();

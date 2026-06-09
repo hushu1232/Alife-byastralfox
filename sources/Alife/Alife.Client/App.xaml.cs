@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Alife.Framework;
 using Alife.Components.Services;
+using Alife.Platform;
 using Microsoft.Extensions.Logging;
 
 namespace Alife;
@@ -18,28 +19,28 @@ public partial class App
         Console.InputEncoding = Encoding.UTF8;
 
 #if DEBUG
-        Console.WriteLine(typeof(Function.Memory.MemoryService).Assembly.FullName);
-        Console.WriteLine(typeof(Function.MessageFilter.MessageFilterService).Assembly);
-        Console.WriteLine(typeof(Function.SystemEvent.SystemEventService).Assembly);
-        Console.WriteLine(typeof(Function.VirtualWorld.VirtualWorldService).Assembly);
-        Console.WriteLine(typeof(Function.Developer.DeveloperService).Assembly);
+        LogLoadedAssembly(typeof(Function.Memory.MemoryService).Assembly);
+        LogLoadedAssembly(typeof(Function.MessageFilter.MessageFilterService).Assembly);
+        LogLoadedAssembly(typeof(Function.SystemEvent.SystemEventService).Assembly);
+        LogLoadedAssembly(typeof(Function.VirtualWorld.VirtualWorldService).Assembly);
+        LogLoadedAssembly(typeof(Function.Developer.DeveloperService).Assembly);
 
-        Console.WriteLine(typeof(Function.FunctionCaller.XmlFunctionCaller).Assembly);
-        Console.WriteLine(typeof(Function.Mcp.McpService).Assembly);
-        Console.WriteLine(typeof(Function.Skill.SkillService).Assembly);
+        LogLoadedAssembly(typeof(Function.FunctionCaller.XmlFunctionCaller).Assembly);
+        LogLoadedAssembly(typeof(Function.Mcp.McpService).Assembly);
+        LogLoadedAssembly(typeof(Function.Skill.SkillService).Assembly);
 
-        Console.WriteLine(typeof(Function.Browser.BrowserService).Assembly);
-        Console.WriteLine(typeof(Function.Python.PythonService).Assembly);
-        Console.WriteLine(typeof(Function.Vision.VisionService).Assembly);
+        LogLoadedAssembly(typeof(Function.Browser.BrowserService).Assembly);
+        LogLoadedAssembly(typeof(Function.Python.PythonService).Assembly);
+        LogLoadedAssembly(typeof(Function.Vision.VisionService).Assembly);
 
-        Console.WriteLine(typeof(Function.Speech.AuditoryService).Assembly);
-        Console.WriteLine(typeof(Function.DeskPet.DeskPetService).Assembly);
-        Console.WriteLine(typeof(Function.QChat.QChatService).Assembly);
-        Console.WriteLine(typeof(Function.Speech.SpeechService).Assembly);
+        LogLoadedAssembly(typeof(Function.Speech.AuditoryService).Assembly);
+        LogLoadedAssembly(typeof(Function.DeskPet.DeskPetService).Assembly);
+        LogLoadedAssembly(typeof(Function.QChat.QChatService).Assembly);
+        LogLoadedAssembly(typeof(Function.Speech.SpeechService).Assembly);
 
-        Console.WriteLine(typeof(Function.Speech.IAuditoryModel).Assembly);
-        Console.WriteLine(typeof(Function.Speech.ISpeechModel).Assembly);
-        Console.WriteLine(typeof(Function.Vision.IVisionModel).Assembly);
+        LogLoadedAssembly(typeof(Function.Speech.IAuditoryModel).Assembly);
+        LogLoadedAssembly(typeof(Function.Speech.ISpeechModel).Assembly);
+        LogLoadedAssembly(typeof(Function.Vision.IVisionModel).Assembly);
 #endif
 
         ServiceCollection services = new();
@@ -68,4 +69,11 @@ public partial class App
         ServiceProvider.GetRequiredService<ChatMessageService>();
         ServiceProvider.GetRequiredService<MainWindow>().Show();
     }
+
+#if DEBUG
+    static void LogLoadedAssembly(System.Reflection.Assembly assembly)
+    {
+        AlifeTerminal.LogInfo(assembly.ToString());
+    }
+#endif
 }

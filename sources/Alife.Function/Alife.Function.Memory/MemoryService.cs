@@ -235,7 +235,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
             if (Random.Shared.NextSingle() > probability)
                 return null;
 
-            Console.WriteLine("记忆压缩中......");
+            AlifeTerminal.LogInfo("记忆压缩中......");
 
             string prompt = promptTemplate.Replace("{range}", range);
             history.AddMessage(AuthorRole.User, prompt);
@@ -244,7 +244,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
             if (content.Content == null)
                 throw new Exception("记忆压缩失败！");
             if (content.Metadata != null)
-                Console.WriteLine("[记忆压缩]" + KernelPrinter.ToTokenLog(content.Metadata));
+                AlifeTerminal.LogInfo("[记忆压缩]" + KernelPrinter.ToTokenLog(content.Metadata));
 
             string result = Regex.Replace(content.Content, "<think>.*?</think>", "", RegexOptions.Singleline).Trim();
             return result;
@@ -314,7 +314,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
         }
     }
 }

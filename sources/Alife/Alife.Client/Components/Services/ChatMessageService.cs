@@ -20,7 +20,7 @@ public class ChatMessage
 /// UI层的聊天消息状态管理。在角色激活后立即挂接事件，确保后台对话也能被记录。
 /// 采用名称索引以确保在活动重启（Character对象被Clone）时记录依然能够持久。
 /// </summary>
-public class ChatMessageService
+public class ChatMessageService : IDisposable
 {
     public event Action<string>? OnMessageChanged;
     public event Action<string>? OnUserMessageSent;
@@ -46,6 +46,7 @@ public class ChatMessageService
 
     public ChatMessageService(ChatActivitySystem system, StorageSystem storage)
     {
+        this.system = system;
         this.storage = storage;
         settings = storage.GetObject(SettingsKey, new ChatSettings())!;
         system.ActivatingCreated += OnActivityCreated;
@@ -61,6 +62,7 @@ public class ChatMessageService
     {
         if (messagesMap.ContainsKey(name) == false)
             messagesMap.Add(name, new List<ChatMessage>());
+        TrimMessages(name);
         return messagesMap[name];
     }
     public void ClearMessages(string name)
@@ -82,10 +84,13 @@ public class ChatMessageService
     readonly Dictionary<string, string> draftMap = new();
     readonly Dictionary<string, List<ChatMessage>> messagesMap = new();
     readonly Dictionary<string, ChatBot> chatbotMap = new();
+    readonly Dictionary<string, ChatBotEventSubscription> chatBotEventSubscriptionMap = new();
 
     const string SettingsKey = "ChatSettings";
+    readonly ChatActivitySystem system;
     readonly StorageSystem storage;
     readonly ChatSettings settings;
+    bool isDisposed;
 
     void SaveSettings()
     {
@@ -106,9 +111,11 @@ public class ChatMessageService
     void OnActivityCreated(ChatActivity activity)
     {
         string name = activity.Character.Name;
+        UnsubscribeChatBot(name);
         List<ChatMessage> messages = GetMessages(name);
-        chatbotMap.Add(name, activity.ChatBot);
-        activity.ChatBot.ChatSent += message => {
+        chatbotMap[name] = activity.ChatBot;
+
+        Action<string> chatSent = message => {
             lock (messages)
             {
                 messages.Add(new ChatMessage { Content = message, IsUser = true });
@@ -119,7 +126,7 @@ public class ChatMessageService
             OnMessageChanged?.Invoke(name);
             OnUserMessageSent?.Invoke(name);
         };
-        activity.ChatBot.ChatReceived += (obj) => {
+        Action<string> chatReceived = obj => {
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
@@ -127,7 +134,7 @@ public class ChatMessageService
                 OnMessageChanged?.Invoke(name);
             }
         };
-        activity.ChatBot.ReasoningReceived += (obj) => {
+        Action<string> reasoningReceived = obj => {
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
@@ -135,7 +142,7 @@ public class ChatMessageService
                 OnMessageChanged?.Invoke(name);
             }
         };
-        activity.ChatBot.ChatOver += () => {
+        Action chatOver = () => {
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
@@ -143,14 +150,75 @@ public class ChatMessageService
                 OnMessageChanged?.Invoke(name);
             }
         };
+
+        ChatBotEventSubscription subscription = new(
+            activity.ChatBot,
+            chatSent,
+            chatReceived,
+            reasoningReceived,
+            chatOver);
+        chatBotEventSubscriptionMap[name] = subscription;
+        subscription.Subscribe();
     }
     void OnActivationFailed(Character arg1, Exception arg2)
     {
+        UnsubscribeChatBot(arg1.Name);
         chatbotMap.Remove(arg1.Name);
     }
     void OnActivityDestroyed(ChatActivity activity)
     {
         string name = activity.Character.Name;
+        UnsubscribeChatBot(name);
         chatbotMap.Remove(name);
+    }
+
+    void UnsubscribeChatBot(string name)
+    {
+        if (chatBotEventSubscriptionMap.Remove(name, out ChatBotEventSubscription? subscription))
+        {
+            subscription.Unsubscribe();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (isDisposed)
+            return;
+
+        system.ActivatingCreated -= OnActivityCreated;
+        system.Destroyed -= OnActivityDestroyed;
+        system.ActivationFailed -= OnActivationFailed;
+
+        foreach (ChatBotEventSubscription subscription in chatBotEventSubscriptionMap.Values)
+        {
+            subscription.Unsubscribe();
+        }
+        chatBotEventSubscriptionMap.Clear();
+        chatbotMap.Clear();
+        isDisposed = true;
+    }
+
+    sealed class ChatBotEventSubscription(
+        ChatBot chatBot,
+        Action<string> chatSent,
+        Action<string> chatReceived,
+        Action<string> reasoningReceived,
+        Action chatOver)
+    {
+        public void Subscribe()
+        {
+            chatBot.ChatSent += chatSent;
+            chatBot.ChatReceived += chatReceived;
+            chatBot.ReasoningReceived += reasoningReceived;
+            chatBot.ChatOver += chatOver;
+        }
+
+        public void Unsubscribe()
+        {
+            chatBot.ChatSent -= chatSent;
+            chatBot.ChatReceived -= chatReceived;
+            chatBot.ReasoningReceived -= reasoningReceived;
+            chatBot.ChatOver -= chatOver;
+        }
     }
 }

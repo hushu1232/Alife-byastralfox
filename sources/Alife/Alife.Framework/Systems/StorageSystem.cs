@@ -32,7 +32,7 @@ public class StorageSystem
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
             return defaultValue;
         }
     }

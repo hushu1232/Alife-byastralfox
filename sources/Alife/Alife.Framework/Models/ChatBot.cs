@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Platform;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
@@ -111,7 +112,7 @@ public class ChatBot : IAsyncDisposable
                     }
                 }
 
-                var metaData = enumerator.Current.Message.Metadata;
+                IReadOnlyDictionary<string, object?>? metaData = enumerator.Current.Message.Metadata;
                 if (metaData != null)
                 {
                     // 尝试从元数据中提取思考过程 (支持原生支持此字段的 SDK)
@@ -129,7 +130,7 @@ public class ChatBot : IAsyncDisposable
                     {
                         if (usage is ChatTokenUsage chatTokenUsage)
                         {
-                            Console.WriteLine("[ChatBot]" + KernelPrinter.ToTokenLog(metaData));
+                            AlifeTerminal.LogInfo("[ChatBot]" + KernelPrinter.ToTokenLog(metaData));
                             TokenUsed?.Invoke(chatTokenUsage);
                         }
                     }
@@ -168,7 +169,12 @@ public class ChatBot : IAsyncDisposable
         return stringBuilder.ToString();
     }
 
-    public async void Chat(string content, AuthorRole? role = null)
+    public void Chat(string content, AuthorRole? role = null)
+    {
+        _ = ChatFireAndForgetAsync(content, role);
+    }
+
+    async Task ChatFireAndForgetAsync(string content, AuthorRole? role = null)
     {
         try
         {
@@ -176,7 +182,7 @@ public class ChatBot : IAsyncDisposable
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
         }
     }
 
@@ -209,7 +215,8 @@ public class ChatBot : IAsyncDisposable
     int lastContentIndex;
 
     //计时器
-    CancellationTokenSource? cancelTimerSource;
+    readonly CancellationTokenSource timerCancellationSource = new();
+    readonly Task updateTask;
     int currentTime;
     int lastAutoFlushTime;
     const int DeltaTime = 1;
@@ -222,40 +229,42 @@ public class ChatBot : IAsyncDisposable
         messageCache = new ConcurrentQueue<string>();
         chatSemaphore = new SemaphoreSlim(1, 1);
 
-        Update();
+        updateTask = UpdateAsync(timerCancellationSource.Token);
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (cancelTimerSource != null)
-            await cancelTimerSource.CancelAsync();
+        await timerCancellationSource.CancelAsync();
+        await updateTask;
 
-        while (IsChatting || !messageCache.IsEmpty)
+        using CancellationTokenSource timeoutSource = new(TimeSpan.FromSeconds(5));
+        while (!timeoutSource.IsCancellationRequested && (IsChatting || !messageCache.IsEmpty))
         {
-            await TryFlushMessageCache();
-
-            // 在WPF中awaiter的实现是推送给UI线程（主线程）执行任务，而不是线程池。
-            // 这导致很多继体需要在同一个线程中处理。如果其中一个卡死，那后面就无法执行，因此存在死锁的风险。
-            // 比如XmlFunctionCall在每次发消息都会申请锁，因此IsChatting始终为true，结果为ture时该代码成了死循环，卡死了主线程
-            // 结果XmlFunctionCall用于释放的续体正好也被推送到主线程的队尾，然而他永远等不到释放的机会。
-            // 互相等待对方，但永远等不到，于是构成了死锁。
-            // 利用 Task.Yield，则可以释放线程，将自己重新插入到队尾，于是 Xml 就可以释放他的信号量了。
-            await Task.Yield();
+            try
+            {
+                await TryFlushMessageCache(timeoutSource.Token);
+                await Task.Delay(100, timeoutSource.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
+
+        timerCancellationSource.Dispose();
     }
 
-    async void Update()
+    async Task UpdateAsync(CancellationToken cancellationToken)
     {
         try
         {
-            cancelTimerSource = new CancellationTokenSource();
-            PeriodicTimer periodicTimer = new(TimeSpan.FromSeconds(DeltaTime));
-            while (await periodicTimer.WaitForNextTickAsync(cancelTimerSource.Token))
+            using PeriodicTimer periodicTimer = new(TimeSpan.FromSeconds(DeltaTime));
+            while (await periodicTimer.WaitForNextTickAsync(cancellationToken))
             {
                 currentTime += DeltaTime;
                 if (currentTime - lastAutoFlushTime > 2)
                 {
-                    await TryFlushMessageCache(cancelTimerSource.Token);
+                    await TryFlushMessageCache(cancellationToken);
                     lastAutoFlushTime = currentTime;
                 }
             }
@@ -263,7 +272,7 @@ public class ChatBot : IAsyncDisposable
         catch (OperationCanceledException) {}
         catch (Exception e)
         {
-            Console.WriteLine(e);
+            AlifeTerminal.LogError(e.ToString());
         }
     }
 
