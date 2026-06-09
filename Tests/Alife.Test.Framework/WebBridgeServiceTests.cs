@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using Alife.Framework;
 using Alife.Function.WebBridge;
@@ -64,6 +65,78 @@ public class WebBridgeServiceTests
         Assert.That(handler.PostedJson, Does.Contain("\"name\":\"Mao\""));
     }
 
+    [Test]
+    public async Task WebBridgeServicePullsRemoteAvatarIntoCharacterStore()
+    {
+        RecordingHandler handler = new();
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        MemoryCharacterBridgeStore characterStore = new();
+        WebBridgeService service = new(client, characterStore);
+
+        Character character = await service.PullConfig(CancellationToken.None);
+
+        Assert.That(characterStore.SavedCharacters, Has.Count.EqualTo(1));
+        Assert.That(characterStore.SavedCharacters[0], Is.SameAs(character));
+        Assert.That(character.Name, Is.EqualTo("远端角色"));
+        Assert.That(character.Modules, Does.Contain("module.remote"));
+    }
+
+    [Test]
+    public async Task WebApiClientRequestsAvatarSwitchAndPullsAssets()
+    {
+        RecordingHandler handler = new();
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+
+        await client.SetAvatar("avatar-mao", CancellationToken.None);
+        WebAssetManifest manifest = await client.PullAssets(CancellationToken.None);
+
+        Assert.That(handler.Requests[0].RequestUri?.PathAndQuery, Is.EqualTo("/api/pet/set-avatar"));
+        Assert.That(handler.Requests[1].RequestUri?.PathAndQuery, Is.EqualTo("/api/pet/assets"));
+        Assert.That(handler.PostedJson, Does.Contain("\"avatarId\":\"avatar-mao\""));
+        Assert.That(manifest.Files, Has.Count.EqualTo(1));
+        Assert.That(manifest.Files[0].RelativePath, Is.EqualTo("model/Mao/texture.png"));
+    }
+
+    [Test]
+    public async Task WebAssetSyncWritesFilesInsideTargetDirectory()
+    {
+        string targetDirectory = Path.Combine(Path.GetTempPath(), "alife-webbridge-assets", Guid.NewGuid().ToString("N"));
+        WebAssetSync assetSync = new(targetDirectory);
+        WebAssetManifest manifest = new()
+        {
+            Files =
+            [
+                new WebAssetFile
+                {
+                    RelativePath = "model/Mao/texture.txt",
+                    ContentBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes("asset-data"))
+                }
+            ]
+        };
+
+        await assetSync.SyncAssets(manifest, CancellationToken.None);
+
+        string filePath = Path.Combine(targetDirectory, "model", "Mao", "texture.txt");
+        Assert.That(File.ReadAllText(filePath), Is.EqualTo("asset-data"));
+        Assert.ThrowsAsync<InvalidOperationException>(() => assetSync.SyncAssets(new WebAssetManifest
+        {
+            Files =
+            [
+                new WebAssetFile
+                {
+                    RelativePath = "../escape.txt",
+                    ContentBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes("bad"))
+                }
+            ]
+        }, CancellationToken.None));
+    }
+
     sealed class RecordingHandler : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = new();
@@ -75,19 +148,46 @@ public class WebBridgeServiceTests
             if (request.Content != null)
                 PostedJson = await request.Content.ReadAsStringAsync(cancellationToken);
 
-            string responseJson = JsonSerializer.Serialize(new WebAvatarConfig
+            object response = request.RequestUri?.AbsolutePath switch
             {
-                Id = "avatar-remote",
-                Name = "远端角色",
-                Description = "from web",
-                Prompt = "remote prompt",
-                Modules = ["module.remote"]
-            });
+                "/api/pet/assets" => new WebAssetManifest
+                {
+                    Files =
+                    [
+                        new WebAssetFile
+                        {
+                            RelativePath = "model/Mao/texture.png",
+                            ContentBase64 = Convert.ToBase64String([1, 2, 3])
+                        }
+                    ]
+                },
+                _ => new WebAvatarConfig
+                {
+                    Id = "avatar-remote",
+                    Name = "远端角色",
+                    Description = "from web",
+                    Prompt = "remote prompt",
+                    Modules = ["module.remote"]
+                }
+            };
+            string responseJson = JsonSerializer.Serialize(response);
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseJson)
             };
+        }
+    }
+
+    sealed class MemoryCharacterBridgeStore : ICharacterBridgeStore
+    {
+        public List<Character> SavedCharacters { get; } = new();
+
+        public Character UpsertCharacter(WebAvatarConfig avatarConfig)
+        {
+            Character character = CharacterSync.ToCharacter(avatarConfig);
+            SavedCharacters.Add(character);
+            return character;
         }
     }
 }

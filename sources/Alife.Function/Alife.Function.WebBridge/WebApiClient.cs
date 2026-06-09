@@ -39,6 +39,25 @@ public class WebApiClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task SetAvatar(string avatarId, CancellationToken cancellationToken = default)
+    {
+        string json = JsonSerializer.Serialize(new SetAvatarRequest(avatarId), jsonOptions);
+        using HttpRequestMessage request = CreateRequest(HttpMethod.Post, "api/pet/set-avatar");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<WebAssetManifest> PullAssets(CancellationToken cancellationToken = default)
+    {
+        using HttpRequestMessage request = CreateRequest(HttpMethod.Get, "api/pet/assets");
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        string json = await response.Content.ReadAsStringAsync(cancellationToken);
+        return JsonSerializer.Deserialize<WebAssetManifest>(json, jsonOptions) ?? new WebAssetManifest();
+    }
+
     HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         HttpRequestMessage request = new(method, path);
@@ -49,6 +68,7 @@ public class WebApiClient
 
     readonly HttpClient httpClient;
     readonly WebBridgeServiceConfig config;
+    readonly record struct SetAvatarRequest(string AvatarId);
     static readonly JsonSerializerOptions jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
