@@ -30,6 +30,24 @@ public class ChatBotLifecycleTests
     }
 
     [Test]
+    public void InteractiveModuleUpdateLoopIsTaskBased()
+    {
+        string[] asyncVoidMethods = typeof(InteractiveModule)
+            .GetMethods(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Where(method => method.ReturnType == typeof(void))
+            .Where(method => method.GetCustomAttribute<AsyncStateMachineAttribute>() != null)
+            .Select(method => method.Name)
+            .ToArray();
+        MethodInfo? startUpdate = typeof(InteractiveModule).GetMethod(
+            "StartUpdate",
+            BindingFlags.Static | BindingFlags.NonPublic);
+
+        Assert.That(asyncVoidMethods, Is.Empty, "InteractiveModule update loop should not use async void.");
+        Assert.That(startUpdate, Is.Not.Null);
+        Assert.That(typeof(Task).IsAssignableFrom(startUpdate!.ReturnType), Is.True);
+    }
+
+    [Test]
     public async Task DisposeAsyncCompletesWhenChatLockIsHeld()
     {
         ChatBot chatBot = new(null!, null!);

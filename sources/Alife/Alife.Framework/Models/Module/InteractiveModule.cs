@@ -29,22 +29,26 @@ public abstract class InteractiveModule : ISystemEvent
         if (this is ITimeIterative interactiveModule)
         {
             updateCancellation = new CancellationTokenSource();
-            StartUpdate(interactiveModule, updateCancellation.Token);
+            updateTask = StartUpdate(interactiveModule, updateCancellation.Token);
         }
 
         return Task.CompletedTask;
     }
-    public virtual Task DestroyAsync()
+    public virtual async Task DestroyAsync()
     {
         if (updateCancellation != null)
-            return updateCancellation.CancelAsync();
-
-        return Task.CompletedTask;
+            await updateCancellation.CancelAsync();
+        if (updateTask != null)
+            await updateTask;
+        updateCancellation?.Dispose();
+        updateCancellation = null;
+        updateTask = null;
     }
 
     CancellationTokenSource? updateCancellation;
+    Task? updateTask;
 
-    static async void StartUpdate(ITimeIterative handler, CancellationToken token)
+    static async Task StartUpdate(ITimeIterative handler, CancellationToken token)
     {
         try
         {
