@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DuckDB.NET.Data;
 
@@ -15,13 +16,15 @@ public record SearchResult(string Name, int Level, string Summary, string Conten
 /// 文本向量、检索标引等元数据则存放到 DuckDB 中。
 /// 利用 DuckDB 原生强大的单文件分析性能及 array_cosine_similarity()，无需插件即可执行数百万级的极速相似度搜索并与标量过滤联动。
 /// </summary>
-public class MemoryStorage
+public class MemoryStorage : IAsyncDisposable
 {
     public MemoryStorage(string rootPath, TextVectorizer vectorizer)
     {
         this.rootPath = rootPath;
         this.vectorizer = vectorizer;
         dbPath = Path.Combine(rootPath, "memory_index.duckdb");
+        connection = new DuckDBConnection($"Data Source={dbPath}");
+        connection.Open();
         InitializeDatabase();
 
         void InitializeDatabase()
@@ -29,8 +32,6 @@ public class MemoryStorage
             if (!Directory.Exists(rootPath))
                 Directory.CreateDirectory(rootPath);
 
-            using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
-            connection.Open();
             using DuckDBCommand command = connection.CreateCommand();
 
             // 1. 尝试以 Name 为唯一主键创建表
@@ -53,32 +54,37 @@ public class MemoryStorage
 
     public async Task SaveAsync(string name, int level, string summary, string content, DateTimeOffset startTime, DateTimeOffset endTime)
     {
-        await using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
-        connection.Open();
-
         //向量化概述，便于实现语义搜索
         float[] vector = await vectorizer.VectorizeAsync(summary);
         string vectorLiteral = "[" + string.Join(",", vector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
 
-        await using DuckDBCommand command = connection.CreateCommand();
-        command.CommandText = $@"
-            INSERT INTO MemoryStorage (Name, Level, Summary, Content, StartTime, EndTime, Vector)
-            VALUES ($1, $2, $3, $4, $5, $6, {vectorLiteral})
-            ON CONFLICT (Name) DO UPDATE SET 
-            Level = excluded.Level,
-            Summary = excluded.Summary,
-            Content = excluded.Content,
-            StartTime = excluded.StartTime, 
-            EndTime = excluded.EndTime, 
-            Vector = excluded.Vector;
-        ";//由于是先保存后压缩，且是异步执行，所以如果程序中断，第二次启动时可能重复压缩
-        command.Parameters.Add(new DuckDBParameter(name));
-        command.Parameters.Add(new DuckDBParameter(level));
-        command.Parameters.Add(new DuckDBParameter(summary));
-        command.Parameters.Add(new DuckDBParameter(content));
-        command.Parameters.Add(new DuckDBParameter(startTime.ToUnixTimeMilliseconds()));
-        command.Parameters.Add(new DuckDBParameter(endTime.ToUnixTimeMilliseconds()));
-        command.ExecuteNonQuery();
+        await databaseLock.WaitAsync();
+        try
+        {
+            using DuckDBCommand command = connection.CreateCommand();
+            command.CommandText = $@"
+                INSERT INTO MemoryStorage (Name, Level, Summary, Content, StartTime, EndTime, Vector)
+                VALUES ($1, $2, $3, $4, $5, $6, {vectorLiteral})
+                ON CONFLICT (Name) DO UPDATE SET
+                Level = excluded.Level,
+                Summary = excluded.Summary,
+                Content = excluded.Content,
+                StartTime = excluded.StartTime,
+                EndTime = excluded.EndTime,
+                Vector = excluded.Vector;
+            ";//由于是先保存后压缩，且是异步执行，所以如果程序中断，第二次启动时可能重复压缩
+            command.Parameters.Add(new DuckDBParameter(name));
+            command.Parameters.Add(new DuckDBParameter(level));
+            command.Parameters.Add(new DuckDBParameter(summary));
+            command.Parameters.Add(new DuckDBParameter(content));
+            command.Parameters.Add(new DuckDBParameter(startTime.ToUnixTimeMilliseconds()));
+            command.Parameters.Add(new DuckDBParameter(endTime.ToUnixTimeMilliseconds()));
+            command.ExecuteNonQuery();
+        }
+        finally
+        {
+            databaseLock.Release();
+        }
 
         //额外保存一份文本文件
         {
@@ -121,75 +127,98 @@ public class MemoryStorage
     /// </summary>
     public async Task<(List<SearchResult> Results, int Total)> SearchAsync(int level, string keyword, string? question, int topK = 5, int offset = 0, DateTimeOffset? minTime = null, DateTimeOffset? maxTime = null)
     {
-        await using DuckDBConnection connection = new DuckDBConnection($"Data Source={dbPath}");
-        connection.Open();
-
-        await using DuckDBCommand command = connection.CreateCommand();
-
         object minVal = minTime.HasValue ? minTime.Value.ToUnixTimeMilliseconds() : DBNull.Value;
         object maxVal = maxTime.HasValue ? maxTime.Value.ToUnixTimeMilliseconds() : DBNull.Value;
-        command.Parameters.Add(new DuckDBParameter(minVal));
-        command.Parameters.Add(new DuckDBParameter(maxVal));
-        command.Parameters.Add(new DuckDBParameter(level));
-        command.Parameters.Add(new DuckDBParameter($"%{keyword}%"));
-
+        float[]? queryVector = null;
         if (!string.IsNullOrEmpty(question))
-        {
-            float[] queryVector = await vectorizer.VectorizeAsync(question);
-            string vectorLiteral = "[" + string.Join(",", queryVector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
-            command.CommandText = $@"
-                SELECT Name, Level, Summary, Content, StartTime, EndTime, 
-                       (
-                         array_cosine_similarity(Vector, {vectorLiteral}::FLOAT[512]) 
-                         + (CASE WHEN Summary ILIKE $4 THEN 1.0 ELSE 0.0 END)
-                        )::REAL as Score,
-                       COUNT(*) OVER() as Total
-                FROM MemoryStorage 
-                WHERE ($1 IS NULL OR EndTime >= $1) 
-                  AND ($2 IS NULL OR StartTime <= $2)
-                  AND Level = $3
-                  AND Summary ILIKE $4
-                ORDER BY Score DESC
-                LIMIT {topK} OFFSET {offset}
-            ";
-        }
-        else
-        {
-            command.CommandText = $@"
-                SELECT Name, Level, Summary, Content, StartTime, EndTime, 
-                       0.0::REAL as Score,
-                       COUNT(*) OVER() as Total
-                FROM MemoryStorage 
-                WHERE ($1 IS NULL OR EndTime >= $1) 
-                  AND ($2 IS NULL OR StartTime <= $2)
-                  AND Level = $3
-                  AND Summary ILIKE $4
-                ORDER BY EndTime ASC
-                LIMIT {topK} OFFSET {offset}
-            ";
-        }
+            queryVector = await vectorizer.VectorizeAsync(question);
 
-        await using DuckDBDataReader reader = command.ExecuteReader();
-
-        List<SearchResult> results = new();
-        int total = 0;
-        while (reader.Read())
+        await databaseLock.WaitAsync();
+        try
         {
-            string name = reader.GetString(0);
-            string summary = reader.GetString(2);
-            string content = reader.GetString(3);
-            long startMs = reader.GetInt64(4);
-            long endMs = reader.GetInt64(5);
-            float score = reader.GetFloat(6);
-            total = reader.GetInt32(7);
-            results.Add(new SearchResult(name, level, summary, content,
-            DateTimeOffset.FromUnixTimeMilliseconds(startMs),
-            DateTimeOffset.FromUnixTimeMilliseconds(endMs), score));
+            using DuckDBCommand command = connection.CreateCommand();
+            command.Parameters.Add(new DuckDBParameter(minVal));
+            command.Parameters.Add(new DuckDBParameter(maxVal));
+            command.Parameters.Add(new DuckDBParameter(level));
+            command.Parameters.Add(new DuckDBParameter($"%{keyword}%"));
+
+            if (queryVector != null)
+            {
+                string vectorLiteral = "[" + string.Join(",", queryVector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
+                command.CommandText = $@"
+                    SELECT Name, Level, Summary, Content, StartTime, EndTime,
+                           (
+                             array_cosine_similarity(Vector, {vectorLiteral}::FLOAT[512])
+                             + (CASE WHEN Summary ILIKE $4 THEN 1.0 ELSE 0.0 END)
+                            )::REAL as Score,
+                           COUNT(*) OVER() as Total
+                    FROM MemoryStorage
+                    WHERE ($1 IS NULL OR EndTime >= $1)
+                      AND ($2 IS NULL OR StartTime <= $2)
+                      AND Level = $3
+                      AND Summary ILIKE $4
+                    ORDER BY Score DESC
+                    LIMIT {topK} OFFSET {offset}
+                ";
+            }
+            else
+            {
+                command.CommandText = $@"
+                    SELECT Name, Level, Summary, Content, StartTime, EndTime,
+                           0.0::REAL as Score,
+                           COUNT(*) OVER() as Total
+                    FROM MemoryStorage
+                    WHERE ($1 IS NULL OR EndTime >= $1)
+                      AND ($2 IS NULL OR StartTime <= $2)
+                      AND Level = $3
+                      AND Summary ILIKE $4
+                    ORDER BY EndTime ASC
+                    LIMIT {topK} OFFSET {offset}
+                ";
+            }
+
+            using DuckDBDataReader reader = command.ExecuteReader();
+
+            List<SearchResult> results = new();
+            int total = 0;
+            while (reader.Read())
+            {
+                string name = reader.GetString(0);
+                string summary = reader.GetString(2);
+                string content = reader.GetString(3);
+                long startMs = reader.GetInt64(4);
+                long endMs = reader.GetInt64(5);
+                float score = reader.GetFloat(6);
+                total = reader.GetInt32(7);
+                results.Add(new SearchResult(name, level, summary, content,
+                DateTimeOffset.FromUnixTimeMilliseconds(startMs),
+                DateTimeOffset.FromUnixTimeMilliseconds(endMs), score));
+            }
+            return (results, total);
         }
-        return (results, total);
+        finally
+        {
+            databaseLock.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await databaseLock.WaitAsync();
+        try
+        {
+            await connection.DisposeAsync();
+        }
+        finally
+        {
+            databaseLock.Release();
+            databaseLock.Dispose();
+        }
     }
 
     readonly string rootPath;
     readonly string dbPath;
     readonly TextVectorizer vectorizer;
+    readonly DuckDBConnection connection;
+    readonly SemaphoreSlim databaseLock = new(1, 1);
 }

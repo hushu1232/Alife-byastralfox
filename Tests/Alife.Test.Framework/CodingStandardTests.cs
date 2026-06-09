@@ -65,6 +65,23 @@ public class CodingStandardTests
         Assert.That(violations, Is.Empty, string.Join(Environment.NewLine, violations));
     }
 
+    [Test]
+    public void MemoryStorageShouldReuseDuckDbConnectionBehindDatabaseLock()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string memoryStorageFile = Path.Combine(
+            repositoryRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.Memory",
+            "MemoryStorage.cs");
+        string source = File.ReadAllText(memoryStorageFile);
+        int connectionCreations = Regex.Matches(source, @"new\s+DuckDBConnection\s*\(").Count;
+
+        Assert.That(connectionCreations, Is.EqualTo(1), "MemoryStorage should create one DuckDBConnection per instance.");
+        Assert.That(source, Does.Contain("SemaphoreSlim"), "Shared DuckDB access should be guarded by an async-compatible lock.");
+    }
+
     static string FindRepositoryRoot()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
