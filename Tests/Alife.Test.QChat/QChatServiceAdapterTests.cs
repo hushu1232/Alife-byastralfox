@@ -1155,14 +1155,14 @@ public class QChatServiceAdapterTests
         });
 
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
-        Assert.That(inbound.Formatted, Does.Contain("[QQ cognition]"));
+        Assert.That(inbound.Formatted, Does.Contain("[private QQ routing hint - never quote or paraphrase]"));
         Assert.That(inbound.Formatted, Does.Contain("relationship=owner"));
-        Assert.That(inbound.Formatted, Does.Contain("intent=question"));
-        Assert.That(inbound.Formatted, Does.Contain("reply_need=high"));
-        Assert.That(inbound.Formatted, Does.Contain("reply_length=medium"));
+        Assert.That(inbound.Formatted, Does.Contain("message_intent=question"));
+        Assert.That(inbound.Formatted, Does.Contain("social_action=reply_warmly"));
+        Assert.That(inbound.Formatted, Does.Contain("expected_length=medium"));
         Assert.That(inbound.Formatted, Does.Contain("：how should we improve memory?"));
         Assert.That(inbound.Formatted, Does.Not.Contain("锛"));
-        Assert.That(inbound.Formatted.IndexOf("[QQ cognition]", StringComparison.Ordinal),
+        Assert.That(inbound.Formatted.IndexOf("[private QQ routing hint - never quote or paraphrase]", StringComparison.Ordinal),
             Is.LessThan(inbound.Formatted.IndexOf("[QQ owner message]", StringComparison.Ordinal)));
     }
 
