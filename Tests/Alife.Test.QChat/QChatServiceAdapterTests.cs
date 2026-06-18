@@ -2601,6 +2601,33 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateSleepCommandUsesXiaYuCompatibleAcknowledgement()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        string acknowledgement = runtime.PrivateMessages.Single().Message;
+        AssertQuietAcknowledgementIsPersonaNeutral(acknowledgement);
+        Assert.That(acknowledgement, Does.Not.Contain("我是机器人"));
+        Assert.That(acknowledgement, Does.Not.Contain("模型"));
+    }
+
+    [Test]
     public async Task OwnerSleepCommandUsesVariedPersonaAcknowledgements()
     {
         FakeOneBotRuntime runtime = new();
@@ -3327,6 +3354,8 @@ public class QChatServiceAdapterTests
         Assert.That(message, Does.Not.Contain("咪绪"));
         Assert.That(message, Does.Not.Contain("喵"));
         Assert.That(message, Does.Not.Contain("猫娘"));
+        Assert.That(message, Does.Not.Contain("耳朵"));
+        Assert.That(message, Does.Not.Contain("尾巴"));
         Assert.That(message, Does.Not.Contain("主人真会使唤人"));
     }
 
