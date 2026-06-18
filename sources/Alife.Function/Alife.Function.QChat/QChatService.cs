@@ -3062,7 +3062,22 @@ public class QChatService(
             .Replace("\n", "", StringComparison.Ordinal)
             .ToLowerInvariant();
 
-        return compact.Contains("不回复", StringComparison.Ordinal)
+        bool containsToolOrRoutingMeta =
+            compact.Contains("我将调用工具", StringComparison.Ordinal)
+            || compact.Contains("调用qchat", StringComparison.Ordinal)
+            || compact.Contains("qchat_file", StringComparison.Ordinal)
+            || compact.Contains("根据系统提示", StringComparison.Ordinal)
+            || compact.Contains("根据权限策略", StringComparison.Ordinal)
+            || compact.Contains("reply_target", StringComparison.Ordinal)
+            || compact.Contains("trust=untrusted-chat", StringComparison.Ordinal)
+            || compact.Contains("source=qq", StringComparison.Ordinal)
+            || compact.Contains("managed_file_id", StringComparison.Ordinal)
+            || compact.Contains("pending-not-downloaded", StringComparison.Ordinal)
+            || compact.Contains("qqfile:", StringComparison.Ordinal)
+            || compact.Contains("[qqfile:", StringComparison.Ordinal);
+
+        return containsToolOrRoutingMeta
+               || compact.Contains("不回复", StringComparison.Ordinal)
                || compact.Contains("不回覆", StringComparison.Ordinal)
                || compact.Contains("无需回复", StringComparison.Ordinal)
                || compact.Contains("不用回复", StringComparison.Ordinal)

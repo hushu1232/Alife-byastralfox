@@ -1537,6 +1537,42 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
+    [TestCase("我将调用 qchat_file_read 工具读取文件。")]
+    [TestCase("根据系统提示，这条消息不需要回复。")]
+    [TestCase("根据权限策略，reply_target=current_session。")]
+    [TestCase("trust=untrusted-chat; source=qq; reply_target=current_session")]
+    [TestCase("[QQ file: report.docx, managed_file_id=abc123, status=pending-not-downloaded]")]
+    public async Task PlainFallbackSuppressesToolAndRoutingMetaText(string modelReply)
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, modelReply)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "小明" },
+            RawMessage = "[CQ:at,qq=999] 你在吗"
+        });
+
+        await service.WaitForDispatchAsync();
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
     [Test]
     public async Task PlainGroupFallbackSuppressesInternalListeningStatus()
     {
@@ -1574,6 +1610,8 @@ public class QChatServiceAdapterTests
     [TestCase("\uff1f")]
     [TestCase("\u7ef7")]
     [TestCase("\u5567")]
+    [TestCase("\u5567\u3002")]
+    [TestCase("\u5567\uff1f")]
     public async Task PlainGroupFallbackAllowsColdShortReplies(string modelReply)
     {
         FakeOneBotRuntime runtime = new();
@@ -1610,6 +1648,8 @@ public class QChatServiceAdapterTests
     [TestCase("\uff1f")]
     [TestCase("\u7ef7")]
     [TestCase("\u5567")]
+    [TestCase("\u5567\u3002")]
+    [TestCase("\u5567\uff1f")]
     public async Task XmlQChatAllowsColdShortReplies(string qchatContent)
     {
         FakeOneBotRuntime runtime = new();
