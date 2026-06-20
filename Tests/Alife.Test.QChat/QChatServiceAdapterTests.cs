@@ -9035,6 +9035,7 @@ public class QChatServiceAdapterTests
         IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
         QChatRiskScoreService? riskScoreService = null)
     {
+        riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
             functionCaller,
@@ -9425,7 +9426,11 @@ public class QChatServiceAdapterTests
     sealed class GeneratedAcknowledgementQChatService(
         XmlFunctionCaller functionCaller,
         IOneBotRuntime runtime,
-        IReadOnlyList<string> acknowledgements) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        IReadOnlyList<string> acknowledgements) : QChatService(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
     {
         int index;
 
@@ -9439,7 +9444,11 @@ public class QChatServiceAdapterTests
     sealed class PlainReplyQChatService(
         XmlFunctionCaller functionCaller,
         IOneBotRuntime runtime,
-        string reply) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        string reply) : QChatService(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
     {
         readonly TaskCompletionSource dispatchCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -9453,14 +9462,22 @@ public class QChatServiceAdapterTests
     }
 
     sealed class ExposedFilterQChatService(IOneBotRuntime runtime)
-        : QChatService(new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()), new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        : QChatService(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
     {
         public string FilterForTest(string text) => ChatTextFilter(text);
     }
 
     sealed class BlockingDispatchQChatService(
         XmlFunctionCaller functionCaller,
-        IOneBotRuntime runtime) : QChatService(functionCaller, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        IOneBotRuntime runtime) : QChatService(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
     {
         readonly Queue<TaskCompletionSource<string>> pendingReplies = new();
         readonly object gate = new();
@@ -9504,7 +9521,8 @@ public class QChatServiceAdapterTests
             oneBotRuntime: runtime,
             relationCacheService: relationCacheService,
             userProfileService: userProfileService,
-            profileLearningService: profileLearningService)
+            profileLearningService: profileLearningService,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
     {
         readonly Channel<QChatInboundMessage> inboundMessages = Channel.CreateUnbounded<QChatInboundMessage>(
             new UnboundedChannelOptions
