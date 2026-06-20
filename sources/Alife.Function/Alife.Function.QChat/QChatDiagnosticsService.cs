@@ -119,15 +119,15 @@ public static class QChatDiagnosticsService
     {
         return string.Join(Environment.NewLine,
             "Supported commands:",
-            "/qchat route",
-            "/qchat identity",
-            "/qchat profile",
-            "/qchat status",
-            "/qchat timing on|off|status",
-            "/qchat files",
-            "/qchat approvals",
-            "/qchat failures",
-            "/qchat recent private",
-            "/qchat recent group");
+            "/qchat route - show route/session ids",
+            "/qchat identity - show agent identity",
+            "/qchat profile - show model/persona/memory",
+            "/qchat status - show online and timing state",
+            "/qchat timing on|off|status - toggle humanlike reply timing",
+            "/qchat files - show file task summary",
+            "/qchat approvals - show pending approvals",
+            "/qchat failures - show failure count",
+            "/qchat recent private - show recent private context",
+            "/qchat recent group - show recent group context");
     }
 }

@@ -154,6 +154,16 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("/qchat failures"));
             Assert.That(result.Text, Does.Contain("/qchat recent private"));
             Assert.That(result.Text, Does.Contain("/qchat recent group"));
+            Assert.That(result.Text, Does.Contain("show route/session ids"));
+            Assert.That(result.Text, Does.Contain("show agent identity"));
+            Assert.That(result.Text, Does.Contain("show model/persona/memory"));
+            Assert.That(result.Text, Does.Contain("show online and timing state"));
+            Assert.That(result.Text, Does.Contain("toggle humanlike reply timing"));
+            Assert.That(result.Text, Does.Contain("show file task summary"));
+            Assert.That(result.Text, Does.Contain("show pending approvals"));
+            Assert.That(result.Text, Does.Contain("show failure count"));
+            Assert.That(result.Text, Does.Contain("show recent private context"));
+            Assert.That(result.Text, Does.Contain("show recent group context"));
         });
     }
 
