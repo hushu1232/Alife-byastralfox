@@ -12,7 +12,7 @@ public sealed class DesktopBusinessTaskQueueTests
         FakeDraftController draftController = new();
         DesktopBusinessTaskQueue queue = new(executor, draftController, path);
 
-        DesktopBusinessExecutionResult result = await queue.ExecuteAsync(CreateDraft("open calculator"));
+        DesktopBusinessExecutionResult result = await queue.ExecuteAsync(CreateDraft("open powershell"));
 
         Assert.Multiple(() =>
         {
@@ -88,6 +88,34 @@ public sealed class DesktopBusinessTaskQueueTests
             Assert.That(File.ReadAllText(path), Does.Contain("\"Status\":\"Succeeded\""));
             Assert.That(reloaded.GetJob(jobId), Is.Not.Null);
             Assert.That(reloaded.GetJob(jobId)!.Status, Is.EqualTo(DesktopBusinessJobStatus.Succeeded));
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_QueuesCalculatorDraftWhenWhitelisted()
+    {
+        string path = CreateJobPath();
+        FakeDesktopApprovedDraftExecutor executor = new()
+        {
+            Result = new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_calculator")
+        };
+        FakeDraftController draftController = new();
+        DesktopBusinessTaskQueue queue = new(executor, draftController, path);
+
+        DesktopBusinessExecutionResult queued = await queue.ExecuteAsync(CreateDraft("open calculator"));
+        string jobId = ExtractJobId(queued.Message);
+
+        await WaitUntilAsync(() => queue.GetJob(jobId)?.Status == DesktopBusinessJobStatus.Succeeded);
+        DesktopBusinessJobEntry? job = queue.GetJob(jobId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(queued.Success, Is.True);
+            Assert.That(job, Is.Not.Null);
+            Assert.That(job!.RequestedAction, Is.EqualTo("open calculator"));
+            Assert.That(job.Message, Does.Contain("action=open_calculator"));
+            Assert.That(executor.Calls, Is.EqualTo(1));
+            Assert.That(draftController.Updates, Is.EqualTo(new[] { DesktopActionDraftStatus.Executed }));
         });
     }
 

@@ -1562,6 +1562,91 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerXiayuQChatDesktopDraftExecuteQueuesCalculatorWhenWhitelisted()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-draft-calculator-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            FakeDesktopBusinessExecutor executor = new()
+            {
+                Result = new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_calculator")
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))),
+                desktopBusinessExecutor: executor);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open calculator"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string draftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft execute {draftId}"
+            });
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+            string executeReply = FirstPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-");
+            string jobId = ExtractDesktopJobId(executeReply);
+            await WaitUntilAsync(() => runtime.PrivateMessages.Any(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("status=Succeeded", StringComparison.Ordinal)));
+            string notification = runtime.PrivateMessages.First(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("status=Succeeded", StringComparison.Ordinal)).Message;
+            string draftPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl");
+            string draftLog = ReadAllTextWithSharing(draftPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
+                Assert.That(executor.ExecutedDrafts.Single().RequestedAction, Is.EqualTo("open calculator"));
+                Assert.That(executeReply, Does.Contain($"draft={draftId}"));
+                Assert.That(notification, Does.Contain("action=open calculator"));
+                Assert.That(notification, Does.Not.Contain("calc.exe"));
+                Assert.That(draftLog, Does.Contain("\"Status\":\"Executed\""));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task OwnerXiayuQChatDesktopDraftExecuteDeniesUnsupportedActionWithoutMarkingExecuted()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
@@ -1593,7 +1678,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "/qchat desktop request open calculator"
+                RawMessage = "/qchat desktop request open powershell"
             });
             await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
             string draftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
@@ -6796,8 +6881,8 @@ public class QChatServiceAdapterTests
             string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
             await WaitUntilAsync(() =>
                 File.Exists(diagnosticsPath) &&
-                File.ReadAllText(diagnosticsPath).Contains("\"eventName\":\"qchat-message-recalled\"", StringComparison.Ordinal));
-            string diagnostics = File.ReadAllText(diagnosticsPath);
+                ReadAllTextWithSharing(diagnosticsPath).Contains("\"eventName\":\"qchat-message-recalled\"", StringComparison.Ordinal));
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
 
             Assert.Multiple(() =>
             {

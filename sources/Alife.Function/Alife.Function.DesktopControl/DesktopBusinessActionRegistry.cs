@@ -19,6 +19,11 @@ public sealed class DesktopBusinessActionRegistry(IReadOnlyList<DesktopBusinessA
                 "open_notepad",
                 "open notepad",
                 "notepad.exe",
+                ""),
+            new DesktopBusinessActionDescriptor(
+                "open_calculator",
+                "open calculator",
+                "calc.exe",
                 "")
         ]);
     }
