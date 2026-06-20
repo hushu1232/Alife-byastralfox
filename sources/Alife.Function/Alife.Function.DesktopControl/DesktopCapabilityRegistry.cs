@@ -1,0 +1,50 @@
+namespace Alife.Function.DesktopControl;
+
+public enum DesktopCapabilityRisk
+{
+    ReadOnly,
+    Low,
+    Medium,
+    High,
+    Critical
+}
+
+public sealed record DesktopCapabilityDescriptor(
+    string Name,
+    DesktopCapabilityRisk Risk,
+    bool Enabled,
+    string Summary);
+
+public sealed class DesktopCapabilityRegistry(IReadOnlyList<DesktopCapabilityDescriptor> capabilities)
+{
+    readonly IReadOnlyList<DesktopCapabilityDescriptor> capabilities = capabilities;
+
+    public bool IsShellExecutionEnabled { get; init; }
+    public bool IsMutationEnabled { get; init; }
+
+    public static DesktopCapabilityRegistry CreateDefault()
+    {
+        return new DesktopCapabilityRegistry([
+            new DesktopCapabilityDescriptor("/qchat desktop status", DesktopCapabilityRisk.ReadOnly, true, "read-only desktop status"),
+            new DesktopCapabilityDescriptor("/qchat desktop health", DesktopCapabilityRisk.ReadOnly, true, "read-only desktop health"),
+            new DesktopCapabilityDescriptor("/qchat desktop processes", DesktopCapabilityRisk.ReadOnly, true, "read-only process summary"),
+            new DesktopCapabilityDescriptor("/qchat desktop windows", DesktopCapabilityRisk.ReadOnly, true, "read-only window summary")
+        ]);
+    }
+
+    public IReadOnlyList<DesktopCapabilityDescriptor> GetAll() => capabilities;
+
+    public string FormatForOwner()
+    {
+        List<string> lines = [$"desktop_capabilities={capabilities.Count}"];
+        lines.AddRange(capabilities.Select(capability =>
+            $"{capability.Name} risk={capability.Risk} enabled={FormatBool(capability.Enabled)} summary={capability.Summary}"));
+        lines.Add($"desktop_mutation={FormatEnabled(IsMutationEnabled)}");
+        lines.Add($"shell_execution={FormatEnabled(IsShellExecutionEnabled)}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatBool(bool value) => value ? "true" : "false";
+
+    static string FormatEnabled(bool value) => value ? "enabled" : "disabled";
+}

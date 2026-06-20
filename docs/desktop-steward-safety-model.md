@@ -15,6 +15,7 @@ Enabled commands:
 /qchat desktop health
 /qchat desktop processes
 /qchat desktop windows
+/qchat desktop capabilities
 ```
 
 Current hard limits:
@@ -29,6 +30,8 @@ Current hard limits:
 - The feature is read-only. It does not execute shell commands, close
   processes, modify files, install software, edit registry state, or send
   network data.
+- The capability list is informational. Listing a capability does not grant
+  permission to mutate the computer or bypass the owner and XiaYu gates.
 
 ## Identity Rules
 
@@ -48,6 +51,25 @@ The MiXu account is intentionally excluded:
 agent=mixu
 bot=3340947887
 ```
+
+## Capability Inventory
+
+The owner can ask XiaYu for the active read-only desktop capability inventory:
+
+```text
+/qchat desktop capabilities
+```
+
+The response must include:
+
+```text
+desktop_mutation=disabled
+shell_execution=disabled
+```
+
+Those lines are part of the safety contract. If either value changes, the
+change must be covered by tests, approval policy, audit logging, and an updated
+implementation plan.
 
 ## Risk Rules
 

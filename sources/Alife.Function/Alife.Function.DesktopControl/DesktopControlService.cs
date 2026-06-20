@@ -1,7 +1,16 @@
 namespace Alife.Function.DesktopControl;
 
-public sealed class DesktopControlService(IDesktopRuntimeReader reader)
+public sealed class DesktopControlService(
+    IDesktopRuntimeReader reader,
+    DesktopCapabilityRegistry? capabilityRegistry = null)
 {
+    readonly DesktopCapabilityRegistry capabilityRegistry = capabilityRegistry ?? DesktopCapabilityRegistry.CreateDefault();
+
+    public string GetCapabilitySummary()
+    {
+        return capabilityRegistry.FormatForOwner();
+    }
+
     public async Task<string> GetStatusAsync(CancellationToken cancellationToken = default)
     {
         DesktopSnapshot snapshot = await reader.CaptureAsync(cancellationToken);

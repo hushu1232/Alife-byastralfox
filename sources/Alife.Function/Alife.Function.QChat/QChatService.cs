@@ -3315,7 +3315,8 @@ public partial class QChatService(
             "health" => await desktopControlService.GetStatusAsync(),
             "processes" => await desktopControlService.GetProcessListAsync(),
             "windows" => await desktopControlService.GetWindowListAsync(),
-            _ => "usage=/qchat desktop status|health|processes|windows"
+            "capabilities" => desktopControlService.GetCapabilitySummary(),
+            _ => "usage=/qchat desktop status|health|processes|windows|capabilities"
         };
 
         await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);

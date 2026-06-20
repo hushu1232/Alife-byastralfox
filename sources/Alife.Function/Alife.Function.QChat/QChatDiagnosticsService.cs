@@ -129,6 +129,7 @@ public static class QChatDiagnosticsService
             "/qchat memory forget <id> - remove a memory from current context",
             "/qchat memory purge <id> confirm - move a memory archive to trash",
             "/qchat desktop status - read-only desktop status",
+            "/qchat desktop capabilities - show enabled read-only desktop capabilities",
             "/qchat desktop processes - read-only process summary",
             "/qchat desktop windows - read-only window summary",
             "/qchat files - show file task summary",
