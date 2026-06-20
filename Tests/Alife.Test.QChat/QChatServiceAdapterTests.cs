@@ -706,8 +706,131 @@ public class QChatServiceAdapterTests
         {
             Assert.That(dispatchCount, Is.Zero);
             Assert.That(status, Does.Contain("long_term_memory=available"));
+            Assert.That(status, Does.Contain("memory_health=healthy"));
+            Assert.That(status, Does.Contain("memory_summary=Memory test health."));
             Assert.That(status, Does.Contain("autobiographical_memory=available"));
             Assert.That(status, Does.Contain("memory_consistency_issues=0"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryStatusReportsMemoryConsistencyIssueBreakdown()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeMemoryConsistencyReporter memoryReporter = new(new MemoryConsistencySnapshot(
+            MissingArchiveFiles: 2,
+            MissingIndexRecords: 1,
+            ContentMismatches: 3,
+            RepairedArchiveFiles: 0,
+            RepairedIndexRecords: 0,
+            RepairedContentMismatches: 0));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            memoryConsistencyReporter: memoryReporter);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string status = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(status, Does.Contain("long_term_memory=degraded"));
+            Assert.That(status, Does.Contain("memory_consistency_issues=6"));
+            Assert.That(status, Does.Contain("memory_missing_archive_files=2"));
+            Assert.That(status, Does.Contain("memory_missing_index_records=1"));
+            Assert.That(status, Does.Contain("memory_content_mismatches=3"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryStatusReportsLifeEventHealthWhenPublisherSupportsHealth()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeHealthyLifeEventPublisher publisher = new(new ModuleHealth(
+            "LifeEventStream",
+            ModuleHealthStatus.Degraded,
+            "In-memory life event stream is available; retained events: 5."));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            lifeEventPublisher: publisher);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string status = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(status, Does.Contain("life_events=publisher_connected"));
+            Assert.That(status, Does.Contain("life_event_health=degraded"));
+            Assert.That(status, Does.Contain("life_event_summary=In-memory life event stream is available; retained events: 5."));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryStatusReportsUnavailableHealthWhenReporterThrows()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            memoryConsistencyReporter: new FakeThrowingMemoryConsistencyReporter());
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string status = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(status, Does.Contain("long_term_memory=available"));
+            Assert.That(status, Does.Contain("memory_health=unavailable"));
+            Assert.That(status, Does.Contain("memory_summary=Health reporter FakeThrowingMemoryConsistencyReporter failed: health boom"));
         });
     }
 
@@ -6855,6 +6978,7 @@ public class QChatServiceAdapterTests
         AgentApprovalService? approvalService = null,
         AgentEditCheckpointService? checkpointService = null,
         AgentTaskService? taskService = null,
+        ILifeEventPublisher? lifeEventPublisher = null,
         IMemoryConsistencyReporter? memoryConsistencyReporter = null,
         IAutobiographicalMemorySink? autobiographicalMemorySink = null)
     {
@@ -6868,6 +6992,7 @@ public class QChatServiceAdapterTests
             approvalService: approvalService,
             checkpointService: checkpointService,
             taskService: taskService,
+            lifeEventPublisher: lifeEventPublisher,
             memoryConsistencyReporter: memoryConsistencyReporter,
             autobiographicalMemorySink: autobiographicalMemorySink)
         {
@@ -6952,7 +7077,7 @@ public class QChatServiceAdapterTests
         eventDelegate?.DynamicInvoke(arguments);
     }
 
-    sealed class FakeMemoryConsistencyReporter(MemoryConsistencySnapshot snapshot) : IMemoryConsistencyReporter
+    sealed class FakeMemoryConsistencyReporter(MemoryConsistencySnapshot snapshot) : IMemoryConsistencyReporter, IModuleHealthReporter
     {
         public MemoryConsistencySnapshot GetMemoryConsistencySnapshot() => snapshot;
 
@@ -6960,6 +7085,8 @@ public class QChatServiceAdapterTests
         {
             return Task.FromResult(snapshot);
         }
+
+        public ModuleHealth GetHealth() => new("Memory", ModuleHealthStatus.Healthy, "Memory test health.");
     }
 
     sealed class FakeAutobiographicalMemorySink : IAutobiographicalMemorySink
@@ -6973,6 +7100,18 @@ public class QChatServiceAdapterTests
         {
             return Task.FromResult("memory-test");
         }
+    }
+
+    sealed class FakeThrowingMemoryConsistencyReporter : IMemoryConsistencyReporter, IModuleHealthReporter
+    {
+        public MemoryConsistencySnapshot GetMemoryConsistencySnapshot() => MemoryConsistencySnapshot.Empty;
+
+        public Task<MemoryConsistencySnapshot> RepairMemoryConsistencyAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(MemoryConsistencySnapshot.Empty);
+        }
+
+        public ModuleHealth GetHealth() => throw new InvalidOperationException("health boom");
     }
 
     sealed class FakeOneBotRuntime : IOneBotRuntime
@@ -7221,5 +7360,12 @@ public class QChatServiceAdapterTests
     {
         public List<LifeEvent> Events { get; } = new();
         public void Publish(LifeEvent lifeEvent) => Events.Add(lifeEvent);
+    }
+
+    sealed class FakeHealthyLifeEventPublisher(ModuleHealth health) : ILifeEventPublisher, IModuleHealthReporter
+    {
+        public List<LifeEvent> Events { get; } = new();
+        public void Publish(LifeEvent lifeEvent) => Events.Add(lifeEvent);
+        public ModuleHealth GetHealth() => health;
     }
 }

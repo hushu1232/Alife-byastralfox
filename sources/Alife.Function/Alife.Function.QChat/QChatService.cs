@@ -3109,8 +3109,10 @@ public partial class QChatService(
         string autobiographicalMemory = autobiographicalMemorySink == null ? "not_connected" : "available";
         string lifeEvents = lifeEventPublisher == null ? "not_connected" : "publisher_connected";
         string relationMemory = injectedRelationCache == null ? "cache_only" : "cache_injected";
+        ModuleHealth? memoryHealth = GetOptionalHealth(memoryConsistencyReporter);
+        ModuleHealth? lifeEventHealth = GetOptionalHealth(lifeEventPublisher);
 
-        return string.Join(Environment.NewLine,
+        List<string> lines = [
             $"agent={route.AgentId}",
             $"bot={route.BotAccountId}",
             $"memory_scope={profile.MemoryScope}",
@@ -3119,7 +3121,47 @@ public partial class QChatService(
             $"long_term_memory={longTermMemory}",
             $"autobiographical_memory={autobiographicalMemory}",
             $"relation_memory={relationMemory}",
-            $"memory_consistency_issues={memoryConsistency.TotalIssues}");
+            $"memory_consistency_issues={memoryConsistency.TotalIssues}",
+            $"memory_missing_archive_files={memoryConsistency.MissingArchiveFiles}",
+            $"memory_missing_index_records={memoryConsistency.MissingIndexRecords}",
+            $"memory_content_mismatches={memoryConsistency.ContentMismatches}"
+        ];
+        AppendHealth(lines, "memory", memoryHealth);
+        AppendHealth(lines, "life_event", lifeEventHealth);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static ModuleHealth? GetOptionalHealth(object? value)
+    {
+        if (value is not IModuleHealthReporter healthReporter)
+            return null;
+
+        try
+        {
+            return healthReporter.GetHealth();
+        }
+        catch (Exception ex)
+        {
+            return new ModuleHealth(
+                healthReporter.GetType().Name,
+                ModuleHealthStatus.Unavailable,
+                $"Health reporter {healthReporter.GetType().Name} failed: {ex.Message}");
+        }
+    }
+
+    static void AppendHealth(List<string> lines, string prefix, ModuleHealth? health)
+    {
+        if (health == null)
+            return;
+
+        lines.Add($"{prefix}_health={health.Status.ToString().ToLowerInvariant()}");
+        lines.Add($"{prefix}_summary={NormalizeStatusLine(health.Summary)}");
+    }
+
+    static string NormalizeStatusLine(string value)
+    {
+        string[] parts = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(' ', parts);
     }
 
     static QChatAgentRoute BuildQChatMemoryStatusRoute(OneBotMessageEvent messageEvent, QChatConfig config)
