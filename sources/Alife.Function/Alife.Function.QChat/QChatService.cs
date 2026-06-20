@@ -2072,23 +2072,10 @@ public partial class QChatService(
                     return;
                 }
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
-                if (await TryHandleApprovalCommandAsync(messageEvent, senderRole, content))
-                    return;
-                if (await TryHandleQChatDiagnosticsCommandAsync(messageEvent, senderRole))
-                    return;
-                if (await TryHandleRollbackCommandAsync(messageEvent, senderRole))
-                    return;
-                if (await TryHandleStatusCommandAsync(messageEvent, senderRole))
-                    return;
-                if (await TryHandleOwnerRecallCommandAsync(messageEvent, senderRole, content))
-                    return;
-                if (await TryHandleOwnerPokeCommandAsync(messageEvent, senderRole, content))
-                    return;
-                if (await TryApplyOwnerQuietCommandAsync(messageEvent, senderRole, content))
-                    return;
-                if (await TryApplyQuietModeWakeUserCommandAsync(messageEvent, content))
-                    return;
-                if (await TryHandleOwnerDeterministicFileCommandAsync(messageEvent, senderRole, content))
+                if (await BuildOwnerCommandService().TryHandleAsync(new QChatOwnerCommandContext(
+                        messageEvent,
+                        senderRole,
+                        content)))
                     return;
 
                 string formatted = $"{speaker}：{content}";
@@ -3010,6 +2997,21 @@ public partial class QChatService(
         return Math.Max(configuredSeconds, controlFloor);
     }
 
+    QChatOwnerCommandService BuildOwnerCommandService()
+    {
+        return new QChatOwnerCommandService([
+            context => TryHandleApprovalCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
+            context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerRecallCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
+            context => TryHandleOwnerPokeCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
+            context => TryApplyOwnerQuietCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
+            context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
+            context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
+        ]);
+    }
+
     async Task<bool> TryApplyOwnerQuietCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
     {
         if (senderRole != QChatSenderRole.Owner)
@@ -3089,7 +3091,7 @@ public partial class QChatService(
         string readable)
     {
         string text = OneBotSegment.GetPlainText(readable);
-        if (TryParseApprovalCommand(text, out string command, out long approvalId) == false)
+        if (QChatOwnerCommandService.TryParseApprovalCommand(text, out string command, out long approvalId) == false)
             return false;
 
         OneBotMessageType targetType = messageEvent.MessageType;
@@ -3132,117 +3134,16 @@ public partial class QChatService(
         return true;
     }
 
-    static bool TryParseApprovalCommand(string? text, out string command, out long approvalId)
-    {
-        command = "";
-        approvalId = 0;
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-
-        Match match = Regex.Match(
-            text.Trim(),
-            @"^/(approve|deny)\s+(\d+)$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (match.Success == false)
-            return false;
-
-        if (long.TryParse(match.Groups[2].Value, out approvalId) == false)
-            return false;
-
-        command = match.Groups[1].Value.ToLowerInvariant();
-        return true;
-    }
-
     async Task<bool> TryHandleQChatDiagnosticsCommandAsync(
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole)
     {
-        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (IsQChatDiagnosticsCommandText(text) == false)
-            return false;
-
-        OneBotMessageType targetType = messageEvent.MessageType;
-        long targetId = targetType == OneBotMessageType.Group
-            ? messageEvent.GroupId
-            : messageEvent.UserId;
-        if (targetId <= 0)
-            return true;
-
-        if (senderRole != QChatSenderRole.Owner)
-        {
-            await SendTextOrMediaMessageAsync(
-                targetType,
-                targetId,
-                "Only the owner can use QChat diagnostics.",
-                streamText: false);
-            WriteQChatDiagnostic("qchat-diagnostics-denied", "QChat diagnostics command denied for non-owner sender.", new {
-                messageEvent.UserId,
-                messageEvent.GroupId,
-                command = text
-            });
-            return true;
-        }
-
-        QChatAgentRoute route = BuildQChatDiagnosticsRoute(messageEvent);
-        QChatAgentProfile profile = ResolveQChatDiagnosticsProfile(route);
-        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(text, route, profile);
-        if (result.Handled)
-        {
-            await SendTextOrMediaMessageAsync(targetType, targetId, result.Text, streamText: false);
-            WriteQChatDiagnostic("qchat-diagnostics-command-handled", "QChat diagnostics command handled.", new {
-                messageEvent.UserId,
-                messageEvent.GroupId,
-                command = text,
-                route.AgentId,
-                route.SessionKey
-            });
-        }
-
-        return result.Handled;
-    }
-
-    QChatAgentRoute BuildQChatDiagnosticsRoute(OneBotMessageEvent messageEvent)
-    {
-        long botAccountId = messageEvent.SelfId > 0
-            ? messageEvent.SelfId
-            : Configuration?.BotId ?? 0;
-        QChatAgentRouteService routeService = new(new QChatAgentRouteConfig
-        {
-            OwnerUserId = Configuration?.OwnerId ?? 0,
-        });
-
-        return routeService.Resolve(botAccountId, messageEvent);
-    }
-
-    static QChatAgentProfile ResolveQChatDiagnosticsProfile(QChatAgentRoute route)
-    {
-        try
-        {
-            return QChatProfileService.CreateDefault().Get(route);
-        }
-        catch (InvalidOperationException)
-        {
-            return new QChatAgentProfile(
-                route.AgentId,
-                route.AgentId,
-                string.Empty,
-                $"qchat/{route.AgentId}",
-                "unknown",
-                string.Empty,
-                [],
-                new QChatAgentCapabilities(
-                    AllowComputerFileTools: false,
-                    AllowProjectModification: false,
-                    AllowRecall: false,
-                    AllowPoke: false));
-        }
-    }
-
-    static bool IsQChatDiagnosticsCommandText(string text)
-    {
-        const string prefix = "/qchat";
-        return text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-               && (text.Length == prefix.Length || char.IsWhiteSpace(text[prefix.Length]));
+        return await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            senderRole,
+            Configuration ?? new QChatConfig(),
+            (type, targetId, message) => SendTextOrMediaMessageAsync(type, targetId, message, streamText: false),
+            WriteQChatDiagnostic);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -3282,34 +3183,12 @@ public partial class QChatService(
 
     async Task<bool> TryHandleStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
     {
-        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (text.Equals("/status", StringComparison.OrdinalIgnoreCase) == false
-            && text.Equals("/tasks", StringComparison.OrdinalIgnoreCase) == false)
-        {
-            return false;
-        }
-
-        OneBotMessageType targetType = messageEvent.MessageType;
-        long targetId = targetType == OneBotMessageType.Group
-            ? messageEvent.GroupId
-            : messageEvent.UserId;
-        if (targetId <= 0)
-            return true;
-
-        if (senderRole != QChatSenderRole.Owner)
-        {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can view agent task status.", streamText: false);
-            return true;
-        }
-
-        string status = agentTasks.FormatStatus();
-        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
-        WriteQChatDiagnostic("agent-status-command", "QQ task status command handled.", new {
-            messageEvent.UserId,
-            messageEvent.GroupId,
-            command = text
-        });
-        return true;
+        return await QChatOwnerCommandService.TryHandleStatusCommandAsync(
+            messageEvent,
+            senderRole,
+            agentTasks.FormatStatus,
+            (type, targetId, message) => SendTextOrMediaMessageAsync(type, targetId, message, streamText: false),
+            WriteQChatDiagnostic);
     }
 
     async Task<bool> TryHandleOwnerRecallCommandAsync(
@@ -3321,7 +3200,7 @@ public partial class QChatService(
             return false;
 
         string text = $"{OneBotSegment.GetPlainText(messageEvent.RawMessage)}\n{readable}";
-        if (IsRecallCommand(text) == false)
+        if (QChatOwnerCommandService.IsRecallCommand(text) == false)
             return false;
 
         if (TryExtractReplyMessageId(messageEvent.RawMessage, out long replyMessageId))
@@ -3480,11 +3359,6 @@ public partial class QChatService(
         }, result.Exception);
 
         return true;
-    }
-
-    static bool IsRecallCommand(string text)
-    {
-        return ContainsAny(text, "\u64a4\u56de", "\u6536\u56de", "\u5220\u6389", "\u5220\u9664");
     }
 
     static bool IsPokeCommand(string text)
