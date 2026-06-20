@@ -134,6 +134,8 @@ public static class DesktopReadOnlyActions
         DesktopActionDraftEntry? draft = draftReader.GetDraft(request.Detail);
         if (draft == null)
             return "desktop_execution=not_found";
+        if (draft.Status == DesktopActionDraftStatus.Executed)
+            return "desktop_execution=denied reason=already_executed";
         if (draft.Status != DesktopActionDraftStatus.Approved)
             return $"desktop_execution=denied reason=draft_not_approved status={draft.Status}";
 
