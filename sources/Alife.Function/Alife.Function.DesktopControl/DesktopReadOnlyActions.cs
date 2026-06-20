@@ -20,6 +20,7 @@ public static class DesktopReadOnlyActions
     public const string DraftExecute = "qchat.desktop.draft.execute";
     public const string JobsRecent = "qchat.desktop.jobs.recent";
     public const string JobDetail = "qchat.desktop.job.detail";
+    public const string FilePolicy = "qchat.desktop.file.policy";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
@@ -46,7 +47,8 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(DraftApprove, "approve a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Approved))),
             new DelegateDesktopAction(DraftExecute, "queue an approved whitelisted desktop action draft for execution", (request, token) => ExecuteApprovedDraftAsync(request, draftReader, draftController, businessExecutor, token), DesktopCapabilityRisk.Low),
             new DelegateDesktopAction(JobsRecent, "recent desktop business jobs summary", (_, _) => Task.FromResult(FormatRecentJobs(jobReader))),
-            new DelegateDesktopAction(JobDetail, "desktop business job detail", (request, _) => Task.FromResult(FormatJobDetail(request, jobReader)))
+            new DelegateDesktopAction(JobDetail, "desktop business job detail", (request, _) => Task.FromResult(FormatJobDetail(request, jobReader))),
+            new DelegateDesktopAction(FilePolicy, "desktop file access policy summary", (_, _) => Task.FromResult(DesktopFileAccessPolicy.CreateDefault().FormatForOwner()))
         ];
     }
 

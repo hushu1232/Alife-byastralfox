@@ -599,6 +599,7 @@ public class QChatServiceAdapterTests
         {
             BotId = 2905391496,
             OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
             EnableBalancedTextStreaming = false
         });
         int dispatchCount = 0;
@@ -2217,7 +2218,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(dispatchCount, Is.Zero);
-            Assert.That(reply, Does.Contain("desktop_capabilities=13"));
+            Assert.That(reply, Does.Contain("desktop_capabilities=14"));
             Assert.That(reply, Does.Contain("/qchat desktop status risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit recent risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit health risk=ReadOnly enabled=true"));
@@ -2228,10 +2229,125 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("/qchat desktop draft execute <draft_id> risk=Low enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop jobs recent risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop job <job_id> risk=ReadOnly enabled=true"));
+            Assert.That(reply, Does.Contain("/qchat desktop file policy risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("desktop_mutation=enabled"));
             Assert.That(reply, Does.Contain("shell_execution=disabled"));
             Assert.That(reply, Does.Not.Contain("delete"));
             Assert.That(reply, Does.Not.Contain("kill"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerXiayuQChatDesktopFilePolicyReportsBlacklistSummaryWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+            DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+            new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+            [],
+            [],
+            []))));
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat desktop file policy"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("file_policy=enabled"));
+            Assert.That(reply, Does.Contain("read_blacklist_entries="));
+            Assert.That(reply, Does.Contain("write_deny_entries="));
+            Assert.That(reply, Does.Contain("default_file_mutation=denied"));
+            Assert.That(reply, Does.Not.Contain(".ssh"));
+            Assert.That(reply, Does.Not.Contain(".codex"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatDesktopFilePolicyIsDeniedWithoutPolicyLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat desktop file policy"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Only the owner"));
+            Assert.That(reply, Does.Not.Contain("file_policy=enabled"));
+            Assert.That(reply, Does.Not.Contain("read_blacklist_entries="));
+        });
+    }
+
+    [Test]
+    public async Task OwnerMixuQChatDesktopFilePolicyIsDeniedWithoutPolicyLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 3340947887,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 3045846738,
+            RawMessage = "/qchat desktop file policy"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("only enabled for xiayu"));
+            Assert.That(reply, Does.Not.Contain("file_policy=enabled"));
+            Assert.That(reply, Does.Not.Contain("read_blacklist_entries="));
         });
     }
 

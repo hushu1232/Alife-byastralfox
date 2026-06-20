@@ -3465,6 +3465,17 @@ public partial class QChatService(
             actionKey = "job";
             actionDetail = parts[3];
         }
+        else if (mode.Equals("file", StringComparison.OrdinalIgnoreCase) &&
+                 parts.Length >= 4)
+        {
+            string fileMode = parts[3].ToLowerInvariant();
+            actionKey = fileMode switch
+            {
+                "policy" => "file policy",
+                _ => actionKey
+            };
+            actionDetail = actionKey;
+        }
         else if (mode.Equals("draft", StringComparison.OrdinalIgnoreCase) &&
                  parts.Length >= 5)
         {
@@ -3495,12 +3506,13 @@ public partial class QChatService(
             "draft execute" => DesktopReadOnlyActions.DraftExecute,
             "jobs recent" => DesktopReadOnlyActions.JobsRecent,
             "job" => DesktopReadOnlyActions.JobDetail,
+            "file policy" => DesktopReadOnlyActions.FilePolicy,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>|drafts recent|draft reject <draft_id>|draft approve <draft_id>|draft execute <draft_id>|jobs recent|job <job_id>";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>|drafts recent|draft reject <draft_id>|draft approve <draft_id>|draft execute <draft_id>|jobs recent|job <job_id>|file policy";
         }
         else
         {

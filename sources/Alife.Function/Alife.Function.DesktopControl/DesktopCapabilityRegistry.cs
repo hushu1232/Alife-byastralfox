@@ -37,7 +37,8 @@ public sealed class DesktopCapabilityRegistry(IReadOnlyList<DesktopCapabilityDes
             new DesktopCapabilityDescriptor("/qchat desktop draft approve <draft_id>", DesktopCapabilityRisk.ReadOnly, true, "approve a pending desktop action draft without execution"),
             new DesktopCapabilityDescriptor("/qchat desktop draft execute <draft_id>", DesktopCapabilityRisk.Low, true, "queue an approved whitelisted desktop action draft for execution"),
             new DesktopCapabilityDescriptor("/qchat desktop jobs recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop business jobs summary"),
-            new DesktopCapabilityDescriptor("/qchat desktop job <job_id>", DesktopCapabilityRisk.ReadOnly, true, "desktop business job detail")
+            new DesktopCapabilityDescriptor("/qchat desktop job <job_id>", DesktopCapabilityRisk.ReadOnly, true, "desktop business job detail"),
+            new DesktopCapabilityDescriptor("/qchat desktop file policy", DesktopCapabilityRisk.ReadOnly, true, "desktop file access policy summary")
         ])
         {
             IsMutationEnabled = true
