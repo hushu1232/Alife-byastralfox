@@ -205,4 +205,90 @@ public class QChatRecentEventMemoryTests
         Assert.That(context, Does.Not.Contain("secret"));
         Assert.That(context, Does.Contain("visible"));
     }
+
+    [Test]
+    public void BuildRecentContextBlockHonorsCharacterBudgetAndKeepsNewestMessages()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 100,
+            GroupId = 925402131,
+            RawMessage = "old"
+        }, $"old {new string('a', 220)}", now);
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 2,
+            UserId = 100,
+            GroupId = 925402131,
+            RawMessage = "middle"
+        }, $"middle {new string('b', 220)}", now.AddMinutes(1));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 3,
+            UserId = 100,
+            GroupId = 925402131,
+            RawMessage = "latest"
+        }, $"latest {new string('c', 40)}", now.AddMinutes(2));
+
+        string context = memory.BuildRecentContextBlock(
+            2905391496,
+            OneBotMessageType.Group,
+            925402131,
+            limit: 6,
+            now.AddMinutes(2),
+            includeRecalledMessages: true,
+            maxCharacters: 180);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.Length, Is.LessThanOrEqualTo(180));
+            Assert.That(context, Does.Contain("latest"));
+            Assert.That(context, Does.Not.Contain("old"));
+            Assert.That(context, Does.Not.Contain("middle"));
+        });
+    }
+
+    [Test]
+    public void BuildRecentRecallContextBlockDescribesRecallWithoutLeakingOriginalText()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 3045846738,
+            RawMessage = "private secret"
+        }, "private secret", now);
+
+        memory.RememberRecall(new OneBotNoticeEvent
+        {
+            SelfId = 2905391496,
+            NoticeType = "friend_recall",
+            MessageId = 1,
+            UserId = 3045846738,
+            OperatorId = 3045846738
+        }, now.AddMinutes(1));
+
+        string context = memory.BuildRecentRecallContextBlock(
+            2905391496,
+            OneBotMessageType.Private,
+            3045846738,
+            limit: 3,
+            now.AddMinutes(2));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.StartWith("[Recent QQ events]"));
+            Assert.That(context, Does.Contain("user 3045846738 recalled a recent private message"));
+            Assert.That(context, Does.Contain("message_id=1"));
+            Assert.That(context, Does.Not.Contain("private secret"));
+        });
+    }
 }

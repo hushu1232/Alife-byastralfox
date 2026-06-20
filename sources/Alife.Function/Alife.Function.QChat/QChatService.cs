@@ -2212,13 +2212,23 @@ public partial class QChatService(
             GetQChatConversationTargetId(messageEvent),
             limit: 6,
             DateTimeOffset.Now,
-            includeRecalledMessages: false);
+            includeRecalledMessages: false,
+            maxCharacters: 1200);
+        string recentRecallContext = recentEventMemory.BuildRecentRecallContextBlock(
+            messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
+            messageEvent.MessageType,
+            GetQChatConversationTargetId(messageEvent),
+            limit: 3,
+            DateTimeOffset.Now);
         string address = BuildAddressPrompt(config, messageEvent);
         string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
-        if (string.IsNullOrWhiteSpace(recentContext))
+        string recentBlocks = string.Join(
+            Environment.NewLine,
+            new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
+        if (string.IsNullOrWhiteSpace(recentBlocks))
             return $"{cognition}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
 
-        return $"{cognition}{Environment.NewLine}{recentContext}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+        return $"{cognition}{Environment.NewLine}{recentBlocks}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
     }
 
     static long GetQChatConversationTargetId(OneBotBasicMessageEvent messageEvent)

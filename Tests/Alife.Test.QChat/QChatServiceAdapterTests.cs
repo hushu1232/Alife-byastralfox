@@ -4544,6 +4544,59 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task RecalledPrivateMessageAddsSafeRecallFactToNextModelInput()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        CapturingQChatService service = new(functionCaller, runtime)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 41,
+            UserId = 1001,
+            RawMessage = "private secret"
+        });
+        _ = await service.WaitForInboundAsync();
+
+        runtime.Raise(new OneBotNoticeEvent
+        {
+            SelfId = 999,
+            NoticeType = "friend_recall",
+            MessageId = 41,
+            UserId = 1001,
+            OperatorId = 1001
+        });
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 42,
+            UserId = 1001,
+            RawMessage = "next message"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("[Recent QQ events]"));
+            Assert.That(inbound.Formatted, Does.Contain("user 1001 recalled a recent private message"));
+            Assert.That(inbound.Formatted, Does.Contain("message_id=41"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("private secret"));
+            Assert.That(inbound.Formatted, Does.Contain("next message"));
+        });
+    }
+
+    [Test]
     public async Task ConversationSettleWindowCoalescesConsecutivePrivateMessages()
     {
         FakeOneBotRuntime runtime = new();

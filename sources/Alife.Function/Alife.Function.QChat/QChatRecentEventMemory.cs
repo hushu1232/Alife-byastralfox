@@ -25,11 +25,22 @@ public sealed record QChatRecallSnapshot(
     long OperatorId,
     QChatRecentMessageSnapshot? Message);
 
+public sealed record QChatRecentRecallEventSnapshot(
+    long SelfId,
+    OneBotMessageType MessageType,
+    long TargetId,
+    long MessageId,
+    long UserId,
+    long OperatorId,
+    DateTimeOffset RecalledAt,
+    bool MatchedMessage);
+
 public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? retention = null)
 {
     readonly int maxMessages = Math.Max(1, maxMessages);
     readonly TimeSpan retention = retention ?? TimeSpan.FromMinutes(60);
     readonly LinkedList<QChatRecentMessageSnapshot> messages = new();
+    readonly LinkedList<QChatRecentRecallEventSnapshot> recalls = new();
     readonly Dictionary<(long SelfId, long MessageId), LinkedListNode<QChatRecentMessageSnapshot>> byMessageId = new();
 
     public void Remember(OneBotMessageEvent messageEvent, string readable, DateTimeOffset now)
@@ -79,7 +90,21 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         if (byMessageId.TryGetValue(key, out LinkedListNode<QChatRecentMessageSnapshot>? messageNode))
             messageNode.Value = messageNode.Value with { IsRecalled = true };
 
-        return BuildRecall(noticeEvent);
+        QChatRecallSnapshot recall = BuildRecall(noticeEvent);
+        QChatRecentMessageSnapshot? message = recall.Message;
+        OneBotMessageType messageType = message?.MessageType ?? noticeEvent.MessageType;
+        long targetId = message == null ? GetTargetId(noticeEvent) : GetTargetId(message);
+        recalls.AddLast(new QChatRecentRecallEventSnapshot(
+            recall.SelfId,
+            messageType,
+            targetId,
+            recall.MessageId,
+            recall.UserId,
+            recall.OperatorId,
+            now,
+            message != null));
+        TrimToMaxMessages();
+        return recall;
     }
 
     public IReadOnlyList<QChatRecentMessageSnapshot> GetRecentConversation(
@@ -109,7 +134,8 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         long targetId,
         int limit,
         DateTimeOffset now,
-        bool includeRecalledMessages = true)
+        bool includeRecalledMessages = true,
+        int maxCharacters = 1200)
     {
         IReadOnlyList<QChatRecentMessageSnapshot> recent = GetRecentConversation(selfId, type, targetId, limit, now)
             .Where(message => includeRecalledMessages || message.IsRecalled == false)
@@ -117,23 +143,94 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         if (recent.Count == 0)
             return "";
 
-        StringBuilder builder = new();
-        builder.AppendLine("[Recent QQ context]");
-        foreach (QChatRecentMessageSnapshot message in recent)
+        maxCharacters = Math.Max(80, maxCharacters);
+        const string header = "[Recent QQ context]";
+        const string footer = "[/Recent QQ context]";
+        int remaining = maxCharacters - header.Length - footer.Length - Environment.NewLine.Length;
+        if (remaining <= 0)
+            return "";
+
+        List<string> selectedLines = [];
+        foreach (QChatRecentMessageSnapshot message in recent.Reverse())
         {
-            string recalled = message.IsRecalled ? " recalled" : "";
-            string readable = Truncate(CollapseWhitespace(message.ReadableMessage), 180);
-            builder
-                .Append("- ")
-                .Append(message.ReceivedAt.ToString("HH:mm"))
-                .Append(" user ")
-                .Append(message.UserId)
-                .Append(recalled)
-                .Append(": ")
-                .AppendLine(readable);
+            string line = BuildRecentContextLine(message, Math.Min(180, remaining));
+            int lineCost = line.Length + Environment.NewLine.Length;
+            if (selectedLines.Count > 0 && lineCost > remaining)
+                break;
+
+            if (selectedLines.Count == 0 && lineCost > remaining)
+            {
+                line = Truncate(line, remaining);
+                lineCost = line.Length + Environment.NewLine.Length;
+            }
+
+            selectedLines.Insert(0, line);
+            remaining -= lineCost;
+            if (remaining <= 0)
+                break;
         }
 
-        builder.Append("[/Recent QQ context]");
+        if (selectedLines.Count == 0)
+            return "";
+
+        StringBuilder builder = new();
+        builder.AppendLine(header);
+        foreach (string line in selectedLines)
+            builder.AppendLine(line);
+
+        builder.Append(footer);
+        return builder.ToString();
+    }
+
+    public string BuildRecentRecallContextBlock(
+        long selfId,
+        OneBotMessageType type,
+        long targetId,
+        int limit,
+        DateTimeOffset now)
+    {
+        if (limit <= 0)
+            return "";
+
+        Prune(now);
+        QChatRecentRecallEventSnapshot[] recent = recalls
+            .Reverse()
+            .Where(recall => recall.SelfId == selfId &&
+                             recall.MessageType == type &&
+                             recall.TargetId == targetId)
+            .Take(limit)
+            .Reverse()
+            .ToArray();
+        if (recent.Length == 0)
+            return "";
+
+        string conversation = type == OneBotMessageType.Group ? "group" : "private";
+        StringBuilder builder = new();
+        builder.AppendLine("[Recent QQ events]");
+        foreach (QChatRecentRecallEventSnapshot recall in recent)
+        {
+            builder
+                .Append("- ")
+                .Append(recall.RecalledAt.ToString("HH:mm"))
+                .Append(" user ")
+                .Append(recall.UserId)
+                .Append(" recalled a recent ")
+                .Append(conversation)
+                .Append(" message")
+                .Append(" message_id=")
+                .Append(recall.MessageId);
+            if (recall.OperatorId > 0 && recall.OperatorId != recall.UserId)
+            {
+                builder
+                    .Append(" operator=")
+                    .Append(recall.OperatorId);
+            }
+            if (recall.MatchedMessage == false)
+                builder.Append(" unmatched");
+            builder.AppendLine();
+        }
+
+        builder.Append("[/Recent QQ events]");
         return builder.ToString();
     }
 
@@ -145,6 +242,12 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
             messages.RemoveFirst();
             byMessageId.Remove((first.Value.SelfId, first.Value.MessageId));
         }
+
+        while (recalls.First is { } first &&
+               now - first.Value.RecalledAt > retention)
+        {
+            recalls.RemoveFirst();
+        }
     }
 
     static long GetTargetId(QChatRecentMessageSnapshot message)
@@ -152,6 +255,21 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         return message.MessageType == OneBotMessageType.Group
             ? message.GroupId
             : message.UserId;
+    }
+
+    static long GetTargetId(OneBotBasicMessageEvent message)
+    {
+        return message.MessageType == OneBotMessageType.Group
+            ? message.GroupId
+            : message.UserId;
+    }
+
+    static string BuildRecentContextLine(QChatRecentMessageSnapshot message, int maxLength)
+    {
+        string recalled = message.IsRecalled ? " recalled" : "";
+        string prefix = $"- {message.ReceivedAt:HH:mm} user {message.UserId}{recalled}: ";
+        string readable = Truncate(CollapseWhitespace(message.ReadableMessage), Math.Max(0, maxLength - prefix.Length));
+        return prefix + readable;
     }
 
     static string CollapseWhitespace(string text)
@@ -176,6 +294,11 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         {
             messages.RemoveFirst();
             byMessageId.Remove((first.Value.SelfId, first.Value.MessageId));
+        }
+
+        while (recalls.Count > maxMessages)
+        {
+            recalls.RemoveFirst();
         }
     }
 }
