@@ -24,7 +24,12 @@ public interface IDesktopActionDraftSink
     DesktopActionDraftEntry CreateDraft(DesktopActionRequest request);
 }
 
-public sealed class DesktopActionDraftLogService(string draftFilePath) : IDesktopActionDraftSink
+public interface IDesktopActionDraftReader
+{
+    IReadOnlyList<DesktopActionDraftEntry> GetRecentDrafts(int maxCount);
+}
+
+public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDesktopActionDraftReader
 {
     const int MaxRequestedActionLength = 300;
     static readonly JsonSerializerOptions JsonOptions = new()
@@ -32,8 +37,22 @@ public sealed class DesktopActionDraftLogService(string draftFilePath) : IDeskto
         Converters = { new JsonStringEnumConverter() }
     };
 
-    readonly string draftFilePath = Path.GetFullPath(draftFilePath);
+    readonly object syncRoot = new();
+    readonly List<DesktopActionDraftEntry> entries = new();
+    readonly string draftFilePath;
+    readonly int maxRetainedDrafts;
     int sequence;
+
+    public DesktopActionDraftLogService(string draftFilePath, int maxRetainedDrafts = 256)
+    {
+        if (string.IsNullOrWhiteSpace(draftFilePath))
+            throw new ArgumentException("Draft file path cannot be empty.", nameof(draftFilePath));
+
+        this.draftFilePath = Path.GetFullPath(draftFilePath);
+        this.maxRetainedDrafts = Math.Max(1, maxRetainedDrafts);
+        Directory.CreateDirectory(Path.GetDirectoryName(this.draftFilePath)!);
+        LoadExistingEntries();
+    }
 
     public DesktopActionDraftEntry CreateDraft(DesktopActionRequest request)
     {
@@ -46,9 +65,25 @@ public sealed class DesktopActionDraftLogService(string draftFilePath) : IDeskto
             requestedAction,
             DesktopActionDraftStatus.PendingApproval);
 
-        Directory.CreateDirectory(Path.GetDirectoryName(draftFilePath)!);
-        AppendLineWithSharing(draftFilePath, JsonSerializer.Serialize(entry, JsonOptions));
+        lock (syncRoot)
+        {
+            entries.Add(entry);
+            TrimOverflow();
+            AppendLineWithSharing(draftFilePath, JsonSerializer.Serialize(entry, JsonOptions));
+        }
+
         return entry;
+    }
+
+    public IReadOnlyList<DesktopActionDraftEntry> GetRecentDrafts(int maxCount)
+    {
+        if (maxCount <= 0)
+            return [];
+
+        lock (syncRoot)
+        {
+            return entries.TakeLast(maxCount).ToArray();
+        }
     }
 
     string CreateDraftId()
@@ -80,6 +115,45 @@ public sealed class DesktopActionDraftLogService(string draftFilePath) : IDeskto
         return value.Trim();
     }
 
+    void LoadExistingEntries()
+    {
+        if (File.Exists(draftFilePath) == false)
+            return;
+
+        foreach (string line in ReadLinesWithSharing(draftFilePath))
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            DesktopActionDraftEntry? entry;
+            try
+            {
+                entry = JsonSerializer.Deserialize<DesktopActionDraftEntry>(line, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (entry == null)
+                continue;
+
+            entries.Add(entry with
+            {
+                AgentId = NormalizeRequired(entry.AgentId, nameof(entry.AgentId)),
+                RequestedAction = SanitizeRequestedAction(entry.RequestedAction)
+            });
+            TrimOverflow();
+        }
+    }
+
+    void TrimOverflow()
+    {
+        int overflow = entries.Count - maxRetainedDrafts;
+        if (overflow > 0)
+            entries.RemoveRange(0, overflow);
+    }
+
     static void AppendLineWithSharing(string path, string line)
     {
         using FileStream stream = new(
@@ -89,5 +163,17 @@ public sealed class DesktopActionDraftLogService(string draftFilePath) : IDeskto
             FileShare.ReadWrite);
         using StreamWriter writer = new(stream);
         writer.WriteLine(line);
+    }
+
+    static IEnumerable<string> ReadLinesWithSharing(string path)
+    {
+        using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite);
+        using StreamReader reader = new(stream);
+        while (reader.ReadLine() is { } line)
+            yield return line;
     }
 }

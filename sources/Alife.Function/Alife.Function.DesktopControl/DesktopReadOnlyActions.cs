@@ -3,6 +3,8 @@ namespace Alife.Function.DesktopControl;
 public static class DesktopReadOnlyActions
 {
     const int MaxRecentAuditEntries = 8;
+    const int MaxRecentDraftEntries = 8;
+    const int MaxDraftPreviewLength = 80;
 
     public const string Status = "qchat.desktop.status";
     public const string Health = "qchat.desktop.health";
@@ -12,11 +14,13 @@ public static class DesktopReadOnlyActions
     public const string AuditRecent = "qchat.desktop.audit.recent";
     public const string AuditHealth = "qchat.desktop.audit.health";
     public const string RequestDraft = "qchat.desktop.request.draft";
+    public const string DraftsRecent = "qchat.desktop.drafts.recent";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
         IDesktopActionAuditReader? auditReader = null,
-        IDesktopActionDraftSink? draftSink = null)
+        IDesktopActionDraftSink? draftSink = null,
+        IDesktopActionDraftReader? draftReader = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
@@ -28,7 +32,8 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", (_, _) => Task.FromResult(desktopControl.GetCapabilitySummary())),
             new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", (_, _) => Task.FromResult(FormatRecentAudit(auditReader))),
             new DelegateDesktopAction(AuditHealth, "desktop action audit health summary", (_, _) => Task.FromResult(FormatAuditHealth(auditReader))),
-            new DelegateDesktopAction(RequestDraft, "create a pending desktop action draft without execution", (request, _) => Task.FromResult(CreateRequestDraft(request, draftSink)))
+            new DelegateDesktopAction(RequestDraft, "create a pending desktop action draft without execution", (request, _) => Task.FromResult(CreateRequestDraft(request, draftSink))),
+            new DelegateDesktopAction(DraftsRecent, "recent desktop action draft summary", (_, _) => Task.FromResult(FormatRecentDrafts(draftReader)))
         ];
     }
 
@@ -36,9 +41,10 @@ public static class DesktopReadOnlyActions
         DesktopControlService desktopControl,
         IDesktopActionAuditSink? auditSink = null,
         IDesktopActionAuditReader? auditReader = null,
-        IDesktopActionDraftSink? draftSink = null)
+        IDesktopActionDraftSink? draftSink = null,
+        IDesktopActionDraftReader? draftReader = null)
     {
-        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink), auditSink);
+        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader), auditSink);
     }
 
     static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
@@ -76,6 +82,33 @@ public static class DesktopReadOnlyActions
 
         DesktopActionDraftEntry entry = draftSink.CreateDraft(request);
         return $"desktop_request=draft_created id={entry.DraftId} approval_required=true execution=disabled risk=pending_review";
+    }
+
+    static string FormatRecentDrafts(IDesktopActionDraftReader? draftReader)
+    {
+        IReadOnlyList<DesktopActionDraftEntry> drafts = draftReader?.GetRecentDrafts(MaxRecentDraftEntries) ?? [];
+        if (drafts.Count == 0)
+            return string.Join(Environment.NewLine, "Recent desktop drafts:", "none");
+
+        List<string> lines = ["Recent desktop drafts:"];
+        lines.AddRange(drafts.Select(draft =>
+            $"{draft.Timestamp:O} {draft.DraftId} status={draft.Status} agent={draft.AgentId} actor={draft.ActorUserId} preview={FormatDraftPreview(draft.RequestedAction)}"));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatDraftPreview(string value)
+    {
+        string normalized = (value ?? string.Empty)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Replace('\t', ' ')
+            .Trim();
+        while (normalized.Contains("  ", StringComparison.Ordinal))
+            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+
+        return normalized.Length <= MaxDraftPreviewLength
+            ? normalized
+            : normalized[..MaxDraftPreviewLength].TrimEnd() + "...";
     }
 
     static string FormatBool(bool value) => value ? "true" : "false";

@@ -191,7 +191,8 @@ public partial class QChatService(
     IDesktopActionAuditSink? desktopActionAuditSink = null,
     DesktopActionAuditLogService? desktopActionAuditLog = null,
     DesktopActionGateway? desktopActionGateway = null,
-    IDesktopActionDraftSink? desktopActionDraftSink = null) :
+    IDesktopActionDraftSink? desktopActionDraftSink = null,
+    IDesktopActionDraftReader? desktopActionDraftReader = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -203,7 +204,7 @@ public partial class QChatService(
 {
     const string DesktopControlAgentId = "xiayu";
     readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
-        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog, desktopActionDraftSink);
+        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog, desktopActionDraftSink, desktopActionDraftReader);
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -212,7 +213,8 @@ public partial class QChatService(
         DesktopControlService? desktopControl,
         IDesktopActionAuditSink? desktopActionAuditSink,
         DesktopActionAuditLogService? desktopActionAuditLog,
-        IDesktopActionDraftSink? desktopActionDraftSink)
+        IDesktopActionDraftSink? desktopActionDraftSink,
+        IDesktopActionDraftReader? desktopActionDraftReader)
     {
         DesktopControlService control = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
         DesktopActionAuditLogService? defaultAuditLog = desktopActionAuditLog;
@@ -228,11 +230,20 @@ public partial class QChatService(
         IDesktopActionAuditReader? auditReader = desktopActionAuditLog
                                                    ?? defaultAuditLog
                                                    ?? (desktopActionAuditSink as IDesktopActionAuditReader);
-        IDesktopActionDraftSink draftSink = desktopActionDraftSink ?? new DesktopActionDraftLogService(Path.Combine(
-            AlifePath.StorageFolderPath,
-            "AgentWorkspace",
-            "desktop-action-drafts.jsonl"));
-        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink);
+        DesktopActionDraftLogService? defaultDraftLog = null;
+        if (desktopActionDraftSink == null && desktopActionDraftReader == null)
+        {
+            defaultDraftLog = new DesktopActionDraftLogService(Path.Combine(
+                AlifePath.StorageFolderPath,
+                "AgentWorkspace",
+                "desktop-action-drafts.jsonl"));
+        }
+
+        IDesktopActionDraftSink? draftSink = desktopActionDraftSink ?? defaultDraftLog;
+        IDesktopActionDraftReader? draftReader = desktopActionDraftReader
+                                                 ?? defaultDraftLog
+                                                 ?? (desktopActionDraftSink as IDesktopActionDraftReader);
+        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink, draftReader);
     }
 
     readonly PromptStablePrefixService stablePrefixService = new();
@@ -3361,6 +3372,17 @@ public partial class QChatService(
             actionKey = "request";
             actionDetail = string.Join(' ', parts.Skip(3));
         }
+        else if (mode.Equals("drafts", StringComparison.OrdinalIgnoreCase) &&
+                 parts.Length >= 4)
+        {
+            string draftsMode = parts[3].ToLowerInvariant();
+            actionKey = draftsMode switch
+            {
+                "recent" => "drafts recent",
+                _ => actionKey
+            };
+            actionDetail = actionKey;
+        }
 
         string? actionName = actionKey.ToLowerInvariant() switch
         {
@@ -3372,12 +3394,13 @@ public partial class QChatService(
             "audit recent" => DesktopReadOnlyActions.AuditRecent,
             "audit health" => DesktopReadOnlyActions.AuditHealth,
             "request" => DesktopReadOnlyActions.RequestDraft,
+            "drafts recent" => DesktopReadOnlyActions.DraftsRecent,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>|drafts recent";
         }
         else
         {
