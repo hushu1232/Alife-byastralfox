@@ -960,6 +960,55 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerXiayuQChatDesktopStatusPersistsDefaultDesktopActionAudit()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-audit-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop status"
+            });
+
+            string auditPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-audit.jsonl");
+            await WaitUntilAsync(() => File.Exists(auditPath) && File.ReadAllText(auditPath).Contains("qchat.desktop.status", StringComparison.Ordinal));
+            string audit = File.ReadAllText(auditPath);
+            Assert.Multiple(() =>
+            {
+                Assert.That(audit, Does.Contain("\"ActionName\":\"qchat.desktop.status\""));
+                Assert.That(audit, Does.Contain("\"AgentId\":\"xiayu\""));
+                Assert.That(audit, Does.Contain("\"ActorUserId\":3045846738"));
+                Assert.That(audit, Does.Contain("\"Risk\":\"ReadOnly\""));
+                Assert.That(audit, Does.Contain("\"Succeeded\":true"));
+                Assert.That(audit, Does.Not.Contain("Alife.Client"));
+                Assert.That(audit, Does.Not.Contain("Secret Window"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();

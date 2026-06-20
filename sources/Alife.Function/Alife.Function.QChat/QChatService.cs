@@ -203,7 +203,10 @@ public partial class QChatService(
     readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
         ?? DesktopReadOnlyActions.CreateGateway(
             desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader()),
-            desktopActionAuditSink);
+            desktopActionAuditSink ?? new DesktopActionAuditLogService(Path.Combine(
+                AlifePath.StorageFolderPath,
+                "AgentWorkspace",
+                "desktop-action-audit.jsonl")));
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";

@@ -71,6 +71,28 @@ Those lines are part of the safety contract. If either value changes, the
 change must be covered by tests, approval policy, audit logging, and an updated
 implementation plan.
 
+## Audit Log
+
+Desktop gateway attempts are persisted to:
+
+```text
+Storage/AgentWorkspace/desktop-action-audit.jsonl
+```
+
+The audit log records action metadata only:
+
+- timestamp
+- action name
+- actor user id
+- agent id
+- risk
+- success flag
+- sanitized message
+
+The audit log must not persist process lists, window titles, file contents,
+credential material, stack traces, cookies, tokens, or arbitrary paths. Messages
+are normalized to a single line and capped at 200 characters.
+
 ## Risk Rules
 
 Desktop capabilities must be classified before they are exposed:
