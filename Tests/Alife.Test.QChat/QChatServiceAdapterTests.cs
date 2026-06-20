@@ -921,6 +921,45 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerXiayuQChatDesktopStatusRunsThroughDesktopActionGateway()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeDesktopActionAuditSink audit = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                [],
+                [],
+                []))),
+            desktopActionAuditSink: audit);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat desktop status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("desktop_status=ok"));
+            Assert.That(audit.Entries, Has.Count.EqualTo(1));
+            Assert.That(audit.Entries.Single().ActionName, Is.EqualTo("qchat.desktop.status"));
+            Assert.That(audit.Entries.Single().AgentId, Is.EqualTo("xiayu"));
+            Assert.That(audit.Entries.Single().ActorUserId, Is.EqualTo(3045846738));
+            Assert.That(audit.Entries.Single().Risk, Is.EqualTo(DesktopCapabilityRisk.ReadOnly));
+            Assert.That(audit.Entries.Single().Succeeded, Is.True);
+        });
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();
@@ -7525,7 +7564,8 @@ public class QChatServiceAdapterTests
         IMemoryConsistencyReporter? memoryConsistencyReporter = null,
         IAutobiographicalMemorySink? autobiographicalMemorySink = null,
         IAutobiographicalMemoryController? autobiographicalMemoryController = null,
-        DesktopControlService? desktopControl = null)
+        DesktopControlService? desktopControl = null,
+        IDesktopActionAuditSink? desktopActionAuditSink = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
@@ -7541,7 +7581,8 @@ public class QChatServiceAdapterTests
             memoryConsistencyReporter: memoryConsistencyReporter,
             autobiographicalMemorySink: autobiographicalMemorySink,
             autobiographicalMemoryController: autobiographicalMemoryController,
-            desktopControl: desktopControl)
+            desktopControl: desktopControl,
+            desktopActionAuditSink: desktopActionAuditSink)
         {
             Configuration = config
         };
@@ -7678,6 +7719,16 @@ public class QChatServiceAdapterTests
         public Task<DesktopSnapshot> CaptureAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult(snapshot);
+        }
+    }
+
+    sealed class FakeDesktopActionAuditSink : IDesktopActionAuditSink
+    {
+        public List<DesktopActionAuditEntry> Entries { get; } = new();
+
+        public void Record(DesktopActionAuditEntry entry)
+        {
+            Entries.Add(entry);
         }
     }
 

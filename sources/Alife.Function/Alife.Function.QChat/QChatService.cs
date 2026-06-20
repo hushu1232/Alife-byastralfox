@@ -187,7 +187,9 @@ public partial class QChatService(
     IMemoryConsistencyReporter? memoryConsistencyReporter = null,
     IAutobiographicalMemorySink? autobiographicalMemorySink = null,
     IAutobiographicalMemoryController? autobiographicalMemoryController = null,
-    DesktopControlService? desktopControl = null) :
+    DesktopControlService? desktopControl = null,
+    IDesktopActionAuditSink? desktopActionAuditSink = null,
+    DesktopActionGateway? desktopActionGateway = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -198,7 +200,10 @@ public partial class QChatService(
     IAgentQChatJoinedGroupProvider
 {
     const string DesktopControlAgentId = "xiayu";
-    readonly DesktopControlService desktopControlService = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
+    readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
+        ?? DesktopReadOnlyActions.CreateGateway(
+            desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader()),
+            desktopActionAuditSink);
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -3309,15 +3314,30 @@ public partial class QChatService(
         }
 
         string mode = parts.Length >= 3 ? parts[2] : "status";
-        string reply = mode.ToLowerInvariant() switch
+        string? actionName = mode.ToLowerInvariant() switch
         {
-            "status" => await desktopControlService.GetStatusAsync(),
-            "health" => await desktopControlService.GetStatusAsync(),
-            "processes" => await desktopControlService.GetProcessListAsync(),
-            "windows" => await desktopControlService.GetWindowListAsync(),
-            "capabilities" => desktopControlService.GetCapabilitySummary(),
-            _ => "usage=/qchat desktop status|health|processes|windows|capabilities"
+            "status" => DesktopReadOnlyActions.Status,
+            "health" => DesktopReadOnlyActions.Health,
+            "processes" => DesktopReadOnlyActions.Processes,
+            "windows" => DesktopReadOnlyActions.Windows,
+            "capabilities" => DesktopReadOnlyActions.Capabilities,
+            _ => null
         };
+        string reply;
+        if (actionName == null)
+        {
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities";
+        }
+        else
+        {
+            DesktopActionResult result = await desktopActionGateway.ExecuteAsync(new DesktopActionRequest(
+                actionName,
+                messageEvent.UserId,
+                route.AgentId,
+                IsOwner: true,
+                Detail: mode));
+            reply = result.Message;
+        }
 
         await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
         WriteQChatDiagnostic("qchat-desktop-command", "QChat desktop command handled.", new {

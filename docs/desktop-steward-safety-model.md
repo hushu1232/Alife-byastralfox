@@ -97,6 +97,8 @@ Desktop action routing now has a gateway shell. It performs:
 
 Current gateway limits:
 
+- Current QChat desktop diagnostics route through the gateway as registered
+  `ReadOnly` actions.
 - Only registered `ReadOnly` actions can execute.
 - `Low`, `Medium`, `High`, and `Critical` actions are denied while desktop
   mutation is disabled.
