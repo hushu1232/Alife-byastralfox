@@ -13,3 +13,15 @@ public interface IAutobiographicalMemorySink
         DateTime endTime,
         CancellationToken cancellationToken = default);
 }
+
+public sealed record AutobiographicalMemoryForgetResult(
+    bool Success,
+    string Message,
+    string? MemoryName);
+
+public interface IAutobiographicalMemoryController
+{
+    Task<AutobiographicalMemoryForgetResult> ForgetAutobiographicalMemoryAsync(
+        string memoryName,
+        CancellationToken cancellationToken = default);
+}

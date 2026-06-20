@@ -150,6 +150,8 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("/qchat status"));
             Assert.That(result.Text, Does.Contain("/qchat timing on|off|status"));
             Assert.That(result.Text, Does.Contain("/qchat memory status"));
+            Assert.That(result.Text, Does.Contain("/qchat memory recent"));
+            Assert.That(result.Text, Does.Contain("/qchat memory forget"));
             Assert.That(result.Text, Does.Contain("/qchat files"));
             Assert.That(result.Text, Does.Contain("/qchat approvals"));
             Assert.That(result.Text, Does.Contain("/qchat failures"));
@@ -161,6 +163,8 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("show online and timing state"));
             Assert.That(result.Text, Does.Contain("toggle humanlike reply timing"));
             Assert.That(result.Text, Does.Contain("show QChat memory layer wiring"));
+            Assert.That(result.Text, Does.Contain("show recent memory events"));
+            Assert.That(result.Text, Does.Contain("remove a memory from current context"));
             Assert.That(result.Text, Does.Contain("show file task summary"));
             Assert.That(result.Text, Does.Contain("show pending approvals"));
             Assert.That(result.Text, Does.Contain("show failure count"));

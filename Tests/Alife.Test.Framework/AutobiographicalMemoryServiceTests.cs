@@ -6,6 +6,12 @@ namespace Alife.Test.Framework;
 public class AutobiographicalMemoryServiceTests
 {
     [Test]
+    public void MemoryServiceExposesAutobiographicalMemoryController()
+    {
+        Assert.That(typeof(IAutobiographicalMemoryController).IsAssignableFrom(typeof(MemoryService)), Is.True);
+    }
+
+    [Test]
     public async Task RememberRecentLife_NoEventsDoesNotWriteMemory()
     {
         FakeLifeEventStream stream = new();

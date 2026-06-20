@@ -86,9 +86,14 @@ public partial class MemoryService
 [Module("持久记忆", "自动管理和分层压缩对话记忆，提供长期记忆检索能力。",
     defaultCategory: "Alife 官方/生活环境",
     LaunchOrder = -100, EditorUI = typeof(MemoryServiceUI))]
-public partial class MemoryService(XmlFunctionCaller functionService)
-    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>, IEmbodiedCapability, IAutobiographicalMemorySink, IModuleHealthReporter, IMemoryConsistencyReporter
+public partial class MemoryService(
+    XmlFunctionCaller functionService,
+    MemoryAuditLogService? auditLogService = null)
+    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>, IEmbodiedCapability, IAutobiographicalMemorySink, IAutobiographicalMemoryController, IModuleHealthReporter, IMemoryConsistencyReporter
 {
+    readonly MemoryAuditLogService memoryAuditLog = auditLogService
+        ?? new MemoryAuditLogService(Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "memory-audit.jsonl"));
+
     [XmlFunction(FunctionMode.OneShot)]
     public void GetMemoryGuide()
     {
@@ -224,6 +229,12 @@ public partial class MemoryService(XmlFunctionCaller functionService)
     {
         string name = await memoryManager.InsertMemory(ChatHistory, level, summary, content, startTime, endTime);
         ChatBot.UpdateHistoryEndIndex();
+        memoryAuditLog.Record(
+            "insert",
+            nameof(MemoryService),
+            name,
+            $"level={level}; start={startTime:O}; end={endTime:O}; summary={summary.Trim()}",
+            succeeded: true);
         return name;
     }
 
@@ -236,6 +247,36 @@ public partial class MemoryService(XmlFunctionCaller functionService)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return InsertMemory(100, summary, content, startTime, endTime);
+    }
+
+    public Task<AutobiographicalMemoryForgetResult> ForgetAutobiographicalMemoryAsync(
+        string memoryName,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string index = memoryName.Trim();
+        ChatMessageContent? target = ChatHistory.FirstOrDefault(c => memoryManager.GetMemoryMetaData(c).Name == index);
+        if (target == null)
+        {
+            string message = $"Could not find memory '{index}' in current context.";
+            memoryAuditLog.Record("forget", nameof(MemoryService), index, message, succeeded: false, error: "not_found");
+            return Task.FromResult(new AutobiographicalMemoryForgetResult(false, message, index));
+        }
+
+        MemoryMeta memoryMeta = memoryManager.GetMemoryMetaData(target);
+        if (memoryMeta.Level < Configuration!.MaxCompressionLevel)
+        {
+            string message = $"Only memories with level >= {Configuration!.MaxCompressionLevel} can be removed from current context.";
+            memoryAuditLog.Record("forget", nameof(MemoryService), index, message, succeeded: false, error: "level_too_low");
+            return Task.FromResult(new AutobiographicalMemoryForgetResult(false, message, index));
+        }
+
+        memoryManager.RemoveMemory(ChatHistory, target);
+        ChatBot.UpdateHistoryEndIndex();
+        string success = $"Removed memory from current context: {index}. Archived content remains recoverable through {nameof(Recall)}.";
+        memoryAuditLog.Record("forget", nameof(MemoryService), index, success, succeeded: true);
+        return Task.FromResult(new AutobiographicalMemoryForgetResult(true, success, index));
     }
 
     /// <summary>

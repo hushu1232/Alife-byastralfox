@@ -623,6 +623,8 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("/qchat status"));
             Assert.That(reply, Does.Contain("/qchat timing on|off|status"));
             Assert.That(reply, Does.Contain("/qchat memory status"));
+            Assert.That(reply, Does.Contain("/qchat memory recent"));
+            Assert.That(reply, Does.Contain("/qchat memory forget"));
             Assert.That(reply, Does.Contain("/qchat route"));
         });
     }
@@ -868,6 +870,251 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Not.Contain("memory_scope="));
             Assert.That(reply, Does.Not.Contain("long_term_memory="));
             Assert.That(reply, Does.Not.Contain("agent=xiayu"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryRecentReportsRecentLifeEventsWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeLifeEventStream lifeEvents = new();
+        lifeEvents.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 20, 1, 2, 3, TimeSpan.FromHours(8)),
+            LifeEventKind.Communication,
+            "QChat",
+            "Owner asked about memory maintainability."));
+        lifeEvents.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 20, 1, 3, 4, TimeSpan.FromHours(8)),
+            LifeEventKind.Memory,
+            "AutobiographicalMemory",
+            "Autobiographical memory consolidation wrote memory-1.")
+        {
+            IsPersisted = true
+        });
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            lifeEventPublisher: lifeEvents);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Recent memory events:"));
+            Assert.That(reply, Does.Contain("2026-06-20T01:02:03.0000000+08:00"));
+            Assert.That(reply, Does.Contain("Communication/QChat"));
+            Assert.That(reply, Does.Contain("Owner asked about memory maintainability."));
+            Assert.That(reply, Does.Contain("Memory/AutobiographicalMemory"));
+            Assert.That(reply, Does.Contain("persisted=true"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryRecentReportsDisconnectedLifeEventStreamWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("life_event_stream=not_connected"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatMemoryRecentIsRejectedWithoutInternalMemoryLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeLifeEventStream lifeEvents = new();
+        lifeEvents.Publish(new LifeEvent(
+            new DateTimeOffset(2026, 6, 20, 1, 2, 3, TimeSpan.FromHours(8)),
+            LifeEventKind.Memory,
+            "AutobiographicalMemory",
+            "Secret owner memory."));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        },
+            lifeEventPublisher: lifeEvents);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat memory recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Only the owner"));
+            Assert.That(reply, Does.Not.Contain("Secret owner memory"));
+            Assert.That(reply, Does.Not.Contain("Recent memory events:"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryForgetUsesMemoryControllerWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeAutobiographicalMemoryController memoryController = new(new AutobiographicalMemoryForgetResult(
+            true,
+            "Removed memory from current context: 100-memory-1. Archived content remains recoverable.",
+            "100-memory-1"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            autobiographicalMemoryController: memoryController);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory forget 100-memory-1"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(memoryController.Requests, Is.EqualTo(new[] { "100-memory-1" }));
+            Assert.That(reply, Does.Contain("memory_forget=succeeded"));
+            Assert.That(reply, Does.Contain("memory=100-memory-1"));
+            Assert.That(reply, Does.Contain("Archived content remains recoverable."));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryForgetReportsDisconnectedControllerWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory forget 100-memory-1"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("memory_controller=not_connected"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatMemoryForgetIsRejectedWithoutMemoryNameLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeAutobiographicalMemoryController memoryController = new(new AutobiographicalMemoryForgetResult(
+            true,
+            "Removed memory from current context: 100-secret.",
+            "100-secret"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        },
+            autobiographicalMemoryController: memoryController);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat memory forget 100-secret"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(memoryController.Requests, Is.Empty);
+            Assert.That(reply, Does.Contain("Only the owner"));
+            Assert.That(reply, Does.Not.Contain("100-secret"));
+            Assert.That(reply, Does.Not.Contain("memory_forget=succeeded"));
         });
     }
 
@@ -6980,7 +7227,8 @@ public class QChatServiceAdapterTests
         AgentTaskService? taskService = null,
         ILifeEventPublisher? lifeEventPublisher = null,
         IMemoryConsistencyReporter? memoryConsistencyReporter = null,
-        IAutobiographicalMemorySink? autobiographicalMemorySink = null)
+        IAutobiographicalMemorySink? autobiographicalMemorySink = null,
+        IAutobiographicalMemoryController? autobiographicalMemoryController = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
@@ -6994,7 +7242,8 @@ public class QChatServiceAdapterTests
             taskService: taskService,
             lifeEventPublisher: lifeEventPublisher,
             memoryConsistencyReporter: memoryConsistencyReporter,
-            autobiographicalMemorySink: autobiographicalMemorySink)
+            autobiographicalMemorySink: autobiographicalMemorySink,
+            autobiographicalMemoryController: autobiographicalMemoryController)
         {
             Configuration = config
         };
@@ -7099,6 +7348,19 @@ public class QChatServiceAdapterTests
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult("memory-test");
+        }
+    }
+
+    sealed class FakeAutobiographicalMemoryController(AutobiographicalMemoryForgetResult result) : IAutobiographicalMemoryController
+    {
+        public List<string> Requests { get; } = new();
+
+        public Task<AutobiographicalMemoryForgetResult> ForgetAutobiographicalMemoryAsync(
+            string memoryName,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(memoryName);
+            return Task.FromResult(result);
         }
     }
 
@@ -7367,5 +7629,31 @@ public class QChatServiceAdapterTests
         public List<LifeEvent> Events { get; } = new();
         public void Publish(LifeEvent lifeEvent) => Events.Add(lifeEvent);
         public ModuleHealth GetHealth() => health;
+    }
+
+    sealed class FakeLifeEventStream : ILifeEventStream, IModuleHealthReporter
+    {
+        readonly List<LifeEvent> events = new();
+
+        public void Publish(LifeEvent lifeEvent)
+        {
+            events.Add(lifeEvent);
+        }
+
+        public IReadOnlyList<LifeEvent> GetRecentEvents(int maxCount)
+        {
+            if (maxCount <= 0)
+                return [];
+
+            return events
+                .OrderBy(lifeEvent => lifeEvent.Timestamp)
+                .TakeLast(maxCount)
+                .ToArray();
+        }
+
+        public ModuleHealth GetHealth() => new(
+            "LifeEventStream",
+            ModuleHealthStatus.Healthy,
+            $"In-memory life event stream is available; retained events: {events.Count}.");
     }
 }

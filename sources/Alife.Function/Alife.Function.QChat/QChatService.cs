@@ -184,7 +184,8 @@ public partial class QChatService(
     AgentEditCheckpointService? checkpointService = null,
     AgentTaskService? taskService = null,
     IMemoryConsistencyReporter? memoryConsistencyReporter = null,
-    IAutobiographicalMemorySink? autobiographicalMemorySink = null) :
+    IAutobiographicalMemorySink? autobiographicalMemorySink = null,
+    IAutobiographicalMemoryController? autobiographicalMemoryController = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -3056,6 +3057,8 @@ public partial class QChatService(
             context => TryHandleApprovalCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryHandleOwnerTimingCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryStatusCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerMemoryRecentCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerMemoryForgetCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3095,6 +3098,110 @@ public partial class QChatService(
             messageEvent.GroupId,
             route.AgentId,
             profile.MemoryScope
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerMemoryRecentCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (text.Equals("/qchat memory recent", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory recent.", streamText: false);
+            return true;
+        }
+
+        string reply = FormatQChatMemoryRecent();
+        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        WriteQChatDiagnostic("qchat-memory-recent-command", "QChat recent memory command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            HasLifeEventStream = lifeEventPublisher is ILifeEventStream
+        });
+        return true;
+    }
+
+    string FormatQChatMemoryRecent()
+    {
+        if (lifeEventPublisher is not ILifeEventStream lifeEventStream)
+            return "life_event_stream=not_connected";
+
+        IReadOnlyList<LifeEvent> recentEvents = lifeEventStream.GetRecentEvents(8);
+        if (recentEvents.Count == 0)
+            return "Recent memory events:\nnone";
+
+        StringBuilder builder = new();
+        builder.AppendLine("Recent memory events:");
+        foreach (LifeEvent lifeEvent in recentEvents)
+        {
+            builder.AppendLine(
+                $"{lifeEvent.Timestamp:O} [{lifeEvent.Kind}/{lifeEvent.Source}] persisted={FormatBool(lifeEvent.IsPersisted)} importance={lifeEvent.Importance} {NormalizeStatusLine(lifeEvent.Summary)}");
+        }
+
+        return builder.ToString().TrimEnd();
+    }
+
+    static string FormatBool(bool value) => value ? "true" : "false";
+
+    async Task<bool> TryHandleOwnerMemoryForgetCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3 ||
+            parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[1].Equals("memory", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[2].Equals("forget", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory forget.", streamText: false);
+            return true;
+        }
+
+        if (parts.Length < 4)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "usage=/qchat memory forget <memory_id>", streamText: false);
+            return true;
+        }
+
+        string memoryName = parts[3];
+        if (autobiographicalMemoryController == null)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "memory_controller=not_connected", streamText: false);
+            return true;
+        }
+
+        AutobiographicalMemoryForgetResult result = await autobiographicalMemoryController.ForgetAutobiographicalMemoryAsync(memoryName);
+        string reply = string.Join(Environment.NewLine,
+            $"memory_forget={(result.Success ? "succeeded" : "failed")}",
+            $"memory={result.MemoryName ?? memoryName}",
+            $"message={NormalizeStatusLine(result.Message)}");
+        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        WriteQChatDiagnostic("qchat-memory-forget-command", "QChat memory forget command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            MemoryName = memoryName,
+            result.Success
         });
         return true;
     }
