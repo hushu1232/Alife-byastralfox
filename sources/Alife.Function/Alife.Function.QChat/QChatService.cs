@@ -44,6 +44,7 @@ public record QChatConfig
     public int GroupSettleMilliseconds { get; set; } = 1500;
     public int RecallGraceMilliseconds { get; set; } = 2000;
     public int MaxSettleMilliseconds { get; set; } = 3500;
+    public bool EnableReplyTimingDelay { get; set; }
     public bool EnableTaskProgressFeedback { get; set; } = true;
     public int TaskProgressFeedbackMilliseconds { get; set; } = 2000;
     public bool EnableContinuationGate { get; set; } = true;
@@ -577,6 +578,16 @@ public partial class QChatService(
         if (bypassQuietMode == false && ShouldSuppressOutgoingForQuietMode(type, targetId, "direct-qchat"))
             return;
 
+        bool delayed = await TryApplyReplyTimingDelayAsync(type, targetId);
+        if (delayed)
+        {
+            if (TryEnsureQChatReplyTargetAllowed(type, targetId, "direct-qchat") == false)
+                return;
+
+            if (bypassQuietMode == false && ShouldSuppressOutgoingForQuietMode(type, targetId, "direct-qchat-after-delay"))
+                return;
+        }
+
         if (voice)
         {
             if (speechModel == null)
@@ -607,6 +618,36 @@ public partial class QChatService(
             type,
             targetId
         }, result.Exception);
+    }
+
+    async Task<bool> TryApplyReplyTimingDelayAsync(OneBotMessageType type, long targetId)
+    {
+        if (Configuration?.EnableReplyTimingDelay != true)
+            return false;
+
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        if (replySession == null)
+            return false;
+
+        if (replySession.MessageType != type || replySession.TargetId != targetId)
+            return false;
+
+        TimeSpan delay = new QChatReplyTimingPolicy().SelectDelay(new QChatReplyTimingContext(
+            type,
+            replySession.SenderRole,
+            QChatReplyAction.ReplyNormally,
+            IsToolConfirmation: false));
+        if (delay <= TimeSpan.Zero)
+            return false;
+
+        WriteQChatDiagnostic("qchat-reply-timing-delay", "Delayed QQ model reply to make the response timing less mechanical.", new {
+            type,
+            targetId,
+            replySession.SenderRole,
+            delayMs = (int)delay.TotalMilliseconds
+        });
+        await Task.Delay(delay);
+        return true;
     }
 
     [XmlFunction(FunctionMode.OneShot, "qchat_quiet_mode", budgetCost: 1)]
@@ -4756,6 +4797,10 @@ public partial class QChatService(
             if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
                 TryBuildPlainTextFallbackResponse(modelResponse, message.MessageType, out string fallbackMessage))
             {
+                bool delayed = await TryApplyReplyTimingDelayAsync(message.MessageType, message.TargetId);
+                if (delayed && ShouldSuppressOutgoingForQuietMode(message.MessageType, message.TargetId, "plain-fallback-after-delay"))
+                    return;
+
                 await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
                 WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
                     message.MessageType,

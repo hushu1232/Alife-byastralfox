@@ -3181,6 +3181,38 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ReplyTimingDelayDefersPlainFallbackWhenEnabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        PlainReplyQChatService service = new(functionCaller, runtime, "plain timed reply")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableReplyTimingDelay = true
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "hello"
+        });
+
+        await service.WaitForDispatchAsync();
+        await Task.Delay(100);
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1, TimeSpan.FromSeconds(3));
+        Assert.That(runtime.PrivateMessages.Single(), Is.EqualTo((1001L, "plain timed reply")));
+    }
+
+    [Test]
     public async Task PlainGroupFallbackCanUseNaturalAddressWithoutAt()
     {
         FakeOneBotRuntime runtime = new();
@@ -5623,6 +5655,74 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
         Assert.That(runtime.GroupMessages[0].Target, Is.EqualTo(3001));
         AssertQuietAcknowledgementIsPersonaNeutral(runtime.GroupMessages[0].Message);
+    }
+
+    [Test]
+    public async Task ReplyTimingDelayDefersOwnerPrivateModelSendWhenEnabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            EnableReplyTimingDelay = true
+        });
+        service.InboundChatDispatcher = inbound => service.SendChatAsync("private", inbound.TargetId, "timed-reply");
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "hello"
+        });
+
+        await Task.Delay(100);
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1, TimeSpan.FromSeconds(3));
+        Assert.That(runtime.PrivateMessages.Single(), Is.EqualTo((1001L, "timed-reply")));
+    }
+
+    [Test]
+    public async Task QuietModeBlocksReplyTimingDelayedModelSend()
+    {
+        FakeOneBotRuntime runtime = new();
+        TaskCompletionSource dispatchStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            EnableReplyTimingDelay = true
+        });
+        service.InboundChatDispatcher = async inbound =>
+        {
+            dispatchStarted.SetResult();
+            await service.SendChatAsync("private", inbound.TargetId, "should-not-send");
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "hello"
+        });
+        await dispatchStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(100);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        await Task.Delay(2200);
+        Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+        AssertQuietAcknowledgementIsPersonaNeutral(runtime.PrivateMessages[0].Message);
     }
 
     [Test]
