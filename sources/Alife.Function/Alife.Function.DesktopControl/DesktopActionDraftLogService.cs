@@ -8,7 +8,8 @@ public enum DesktopActionDraftStatus
     PendingApproval,
     Approved,
     Rejected,
-    Cancelled
+    Cancelled,
+    Executed
 }
 
 public sealed record DesktopActionDraftEntry(
@@ -27,6 +28,7 @@ public interface IDesktopActionDraftSink
 public interface IDesktopActionDraftReader
 {
     IReadOnlyList<DesktopActionDraftEntry> GetRecentDrafts(int maxCount);
+    DesktopActionDraftEntry? GetDraft(string draftId);
 }
 
 public sealed record DesktopActionDraftUpdateResult(
@@ -108,6 +110,18 @@ public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDes
         }
     }
 
+    public DesktopActionDraftEntry? GetDraft(string draftId)
+    {
+        if (string.IsNullOrWhiteSpace(draftId))
+            return null;
+
+        lock (syncRoot)
+        {
+            return entries.LastOrDefault(entry =>
+                entry.DraftId.Equals(draftId.Trim(), StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     public DesktopActionDraftUpdateResult UpdateStatus(
         DesktopActionRequest request,
         DesktopActionDraftStatus status)
@@ -120,12 +134,18 @@ public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDes
             if (current == null)
                 return new DesktopActionDraftUpdateResult(false, null, "desktop_draft=not_found");
 
-            if (current.Status != DesktopActionDraftStatus.PendingApproval)
+            bool transitionAllowed = status switch
+            {
+                DesktopActionDraftStatus.Approved or DesktopActionDraftStatus.Rejected => current.Status == DesktopActionDraftStatus.PendingApproval,
+                DesktopActionDraftStatus.Executed => current.Status == DesktopActionDraftStatus.Approved,
+                _ => false
+            };
+            if (transitionAllowed == false)
             {
                 return new DesktopActionDraftUpdateResult(
                     false,
                     current,
-                    $"desktop_draft=not_pending id={current.DraftId} status={current.Status} execution=disabled");
+                    $"desktop_draft=invalid_transition id={current.DraftId} status={current.Status} target={status} execution=disabled");
             }
 
             DesktopActionDraftEntry updated = current with

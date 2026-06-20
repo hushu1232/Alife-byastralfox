@@ -73,7 +73,10 @@ public sealed class DesktopActionGatewayTests
     public async Task ExecuteAsync_DeniesMutatingActionWhenMutationDisabled()
     {
         FakeDesktopAction action = new("desktop.open", DesktopCapabilityRisk.Low);
-        DesktopActionGateway gateway = new([action], new FakeAuditSink());
+        DesktopActionGateway gateway = new(
+            [action],
+            new FakeAuditSink(),
+            new DesktopCapabilityRegistry([]));
 
         DesktopActionResult result = await gateway.ExecuteAsync(new DesktopActionRequest(
             "desktop.open",

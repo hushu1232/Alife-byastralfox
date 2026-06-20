@@ -17,13 +17,15 @@ public static class DesktopReadOnlyActions
     public const string DraftsRecent = "qchat.desktop.drafts.recent";
     public const string DraftReject = "qchat.desktop.draft.reject";
     public const string DraftApprove = "qchat.desktop.draft.approve";
+    public const string DraftExecute = "qchat.desktop.draft.execute";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
         IDesktopActionAuditReader? auditReader = null,
         IDesktopActionDraftSink? draftSink = null,
         IDesktopActionDraftReader? draftReader = null,
-        IDesktopActionDraftController? draftController = null)
+        IDesktopActionDraftController? draftController = null,
+        IDesktopApprovedDraftExecutor? businessExecutor = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
@@ -38,7 +40,8 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(RequestDraft, "create a pending desktop action draft without execution", (request, _) => Task.FromResult(CreateRequestDraft(request, draftSink))),
             new DelegateDesktopAction(DraftsRecent, "recent desktop action draft summary", (_, _) => Task.FromResult(FormatRecentDrafts(draftReader))),
             new DelegateDesktopAction(DraftReject, "reject a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Rejected))),
-            new DelegateDesktopAction(DraftApprove, "approve a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Approved)))
+            new DelegateDesktopAction(DraftApprove, "approve a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Approved))),
+            new DelegateDesktopAction(DraftExecute, "execute an approved whitelisted desktop action draft", (request, token) => ExecuteApprovedDraftAsync(request, draftReader, draftController, businessExecutor, token), DesktopCapabilityRisk.Low)
         ];
     }
 
@@ -48,9 +51,11 @@ public static class DesktopReadOnlyActions
         IDesktopActionAuditReader? auditReader = null,
         IDesktopActionDraftSink? draftSink = null,
         IDesktopActionDraftReader? draftReader = null,
-        IDesktopActionDraftController? draftController = null)
+        IDesktopActionDraftController? draftController = null,
+        IDesktopApprovedDraftExecutor? businessExecutor = null,
+        DesktopCapabilityRegistry? capabilityRegistry = null)
     {
-        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader, draftController), auditSink);
+        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader, draftController, businessExecutor), auditSink, capabilityRegistry);
     }
 
     static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
@@ -73,7 +78,7 @@ public static class DesktopReadOnlyActions
             $"desktop_audit={(auditReader == null ? "unavailable" : "available")}",
             "owner_gate=enabled",
             "agent_gate=xiayu_only",
-            "desktop_mutation=disabled",
+            "desktop_mutation=enabled",
             "shell_execution=disabled",
             $"recent_entries={entries.Count}",
             $"recent_failures={recentFailures}");
@@ -114,6 +119,35 @@ public static class DesktopReadOnlyActions
         return result.Message;
     }
 
+    static async Task<string> ExecuteApprovedDraftAsync(
+        DesktopActionRequest request,
+        IDesktopActionDraftReader? draftReader,
+        IDesktopActionDraftController? draftController,
+        IDesktopApprovedDraftExecutor? businessExecutor,
+        CancellationToken cancellationToken)
+    {
+        if (draftReader == null || draftController == null)
+            return "desktop_execution=unavailable reason=draft_store_missing";
+        if (businessExecutor == null)
+            return "desktop_execution=unavailable reason=executor_missing";
+
+        DesktopActionDraftEntry? draft = draftReader.GetDraft(request.Detail);
+        if (draft == null)
+            return "desktop_execution=not_found";
+        if (draft.Status != DesktopActionDraftStatus.Approved)
+            return $"desktop_execution=denied reason=draft_not_approved status={draft.Status}";
+
+        DesktopBusinessExecutionResult execution = await businessExecutor.ExecuteAsync(draft, cancellationToken);
+        if (execution.Success == false)
+            return execution.Message;
+
+        DesktopActionDraftUpdateResult update = draftController.UpdateStatus(request, DesktopActionDraftStatus.Executed);
+        if (update.Success == false)
+            return update.Message;
+
+        return execution.Message;
+    }
+
     static string FormatDraftPreview(string value)
     {
         string normalized = (value ?? string.Empty)
@@ -134,10 +168,11 @@ public static class DesktopReadOnlyActions
     sealed class DelegateDesktopAction(
         string name,
         string summary,
-        Func<DesktopActionRequest, CancellationToken, Task<string>> execute) : IDesktopAction
+        Func<DesktopActionRequest, CancellationToken, Task<string>> execute,
+        DesktopCapabilityRisk risk = DesktopCapabilityRisk.ReadOnly) : IDesktopAction
     {
         public string Name { get; } = name;
-        public DesktopCapabilityRisk Risk => DesktopCapabilityRisk.ReadOnly;
+        public DesktopCapabilityRisk Risk { get; } = risk;
         public bool Enabled => true;
         public string Summary { get; } = summary;
 
