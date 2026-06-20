@@ -3052,6 +3052,7 @@ public partial class QChatService(
     {
         return new QChatOwnerCommandService([
             context => TryHandleApprovalCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
+            context => TryHandleOwnerTimingCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3061,6 +3062,71 @@ public partial class QChatService(
             context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
             context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
         ]);
+    }
+
+    async Task<bool> TryHandleOwnerTimingCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2 ||
+            parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[1].Equals("timing", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can change QChat timing.", streamText: false);
+            return true;
+        }
+
+        string mode = parts.Length >= 3 ? parts[2] : "status";
+        if (mode.Equals("on", StringComparison.OrdinalIgnoreCase))
+        {
+            Configuration!.EnableReplyTimingDelay = true;
+            Configuration.EnableConversationSettleWindow = true;
+        }
+        else if (mode.Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            Configuration!.EnableReplyTimingDelay = false;
+            Configuration.EnableConversationSettleWindow = false;
+        }
+        else if (mode.Equals("status", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Usage: /qchat timing on|off|status", streamText: false);
+            return true;
+        }
+
+        string status = FormatQChatTimingStatus();
+        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
+        WriteQChatDiagnostic("qchat-timing-command", "QChat timing mode command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            mode,
+            Configuration!.EnableReplyTimingDelay,
+            Configuration.EnableConversationSettleWindow
+        });
+        return true;
+    }
+
+    string FormatQChatTimingStatus()
+    {
+        return string.Join(Environment.NewLine,
+            $"reply_timing_delay={FormatEnabled(Configuration?.EnableReplyTimingDelay == true)}",
+            $"conversation_settle_window={FormatEnabled(Configuration?.EnableConversationSettleWindow == true)}");
+    }
+
+    static string FormatEnabled(bool value)
+    {
+        return value ? "enabled" : "disabled";
     }
 
     async Task<bool> TryApplyOwnerQuietCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole, string readable)
