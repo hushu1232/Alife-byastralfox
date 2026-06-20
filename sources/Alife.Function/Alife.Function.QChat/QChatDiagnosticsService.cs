@@ -133,6 +133,7 @@ public static class QChatDiagnosticsService
             "/qchat desktop processes - read-only process summary",
             "/qchat desktop windows - read-only window summary",
             "/qchat desktop audit recent - show recent desktop action audit entries",
+            "/qchat desktop audit health - show desktop action audit safety state",
             "/qchat files - show file task summary",
             "/qchat approvals - show pending approvals",
             "/qchat failures - show failure count",

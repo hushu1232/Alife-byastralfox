@@ -3337,10 +3337,15 @@ public partial class QChatService(
         string mode = parts.Length >= 3 ? parts[2] : "status";
         string actionKey = mode;
         if (mode.Equals("audit", StringComparison.OrdinalIgnoreCase) &&
-            parts.Length >= 4 &&
-            parts[3].Equals("recent", StringComparison.OrdinalIgnoreCase))
+            parts.Length >= 4)
         {
-            actionKey = "audit recent";
+            string auditMode = parts[3].ToLowerInvariant();
+            actionKey = auditMode switch
+            {
+                "recent" => "audit recent",
+                "health" => "audit health",
+                _ => actionKey
+            };
         }
 
         string? actionName = actionKey.ToLowerInvariant() switch
@@ -3351,12 +3356,13 @@ public partial class QChatService(
             "windows" => DesktopReadOnlyActions.Windows,
             "capabilities" => DesktopReadOnlyActions.Capabilities,
             "audit recent" => DesktopReadOnlyActions.AuditRecent,
+            "audit health" => DesktopReadOnlyActions.AuditHealth,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health";
         }
         else
         {

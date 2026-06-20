@@ -10,6 +10,7 @@ public static class DesktopReadOnlyActions
     public const string Windows = "qchat.desktop.windows";
     public const string Capabilities = "qchat.desktop.capabilities";
     public const string AuditRecent = "qchat.desktop.audit.recent";
+    public const string AuditHealth = "qchat.desktop.audit.health";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
@@ -23,7 +24,8 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(Processes, "read-only process summary", token => desktopControl.GetProcessListAsync(cancellationToken: token)),
             new DelegateDesktopAction(Windows, "read-only window summary", token => desktopControl.GetWindowListAsync(cancellationToken: token)),
             new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", _ => Task.FromResult(desktopControl.GetCapabilitySummary())),
-            new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", _ => Task.FromResult(FormatRecentAudit(auditReader)))
+            new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", _ => Task.FromResult(FormatRecentAudit(auditReader))),
+            new DelegateDesktopAction(AuditHealth, "desktop action audit health summary", _ => Task.FromResult(FormatAuditHealth(auditReader)))
         ];
     }
 
@@ -45,6 +47,20 @@ public static class DesktopReadOnlyActions
         lines.AddRange(entries.Select(entry =>
             $"{entry.Timestamp:O} {entry.ActionName} risk={entry.Risk} succeeded={FormatBool(entry.Succeeded)} agent={entry.AgentId} actor={entry.ActorUserId}"));
         return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatAuditHealth(IDesktopActionAuditReader? auditReader)
+    {
+        IReadOnlyList<DesktopActionAuditEntry> entries = auditReader?.GetRecentEntries(MaxRecentAuditEntries) ?? [];
+        int recentFailures = entries.Count(entry => entry.Succeeded == false);
+        return string.Join(Environment.NewLine,
+            $"desktop_audit={(auditReader == null ? "unavailable" : "available")}",
+            "owner_gate=enabled",
+            "agent_gate=xiayu_only",
+            "desktop_mutation=disabled",
+            "shell_execution=disabled",
+            $"recent_entries={entries.Count}",
+            $"recent_failures={recentFailures}");
     }
 
     static string FormatBool(bool value) => value ? "true" : "false";

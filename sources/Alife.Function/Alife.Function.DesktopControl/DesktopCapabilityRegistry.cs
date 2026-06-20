@@ -29,7 +29,8 @@ public sealed class DesktopCapabilityRegistry(IReadOnlyList<DesktopCapabilityDes
             new DesktopCapabilityDescriptor("/qchat desktop health", DesktopCapabilityRisk.ReadOnly, true, "read-only desktop health"),
             new DesktopCapabilityDescriptor("/qchat desktop processes", DesktopCapabilityRisk.ReadOnly, true, "read-only process summary"),
             new DesktopCapabilityDescriptor("/qchat desktop windows", DesktopCapabilityRisk.ReadOnly, true, "read-only window summary"),
-            new DesktopCapabilityDescriptor("/qchat desktop audit recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop action audit summary")
+            new DesktopCapabilityDescriptor("/qchat desktop audit recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop action audit summary"),
+            new DesktopCapabilityDescriptor("/qchat desktop audit health", DesktopCapabilityRisk.ReadOnly, true, "desktop action audit health summary")
         ]);
     }
 
