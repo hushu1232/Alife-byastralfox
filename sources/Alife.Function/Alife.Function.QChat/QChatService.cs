@@ -3059,6 +3059,7 @@ public partial class QChatService(
             context => TryHandleOwnerMemoryStatusCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryRecentCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryForgetCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerMemoryPurgeCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3198,6 +3199,70 @@ public partial class QChatService(
             $"message={NormalizeStatusLine(result.Message)}");
         await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
         WriteQChatDiagnostic("qchat-memory-forget-command", "QChat memory forget command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            MemoryName = memoryName,
+            result.Success
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerMemoryPurgeCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3 ||
+            parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[1].Equals("memory", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[2].Equals("purge", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory purge.", streamText: false);
+            return true;
+        }
+
+        if (parts.Length < 4)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "usage=/qchat memory purge <memory_id> confirm", streamText: false);
+            return true;
+        }
+
+        string memoryName = parts[3];
+        bool confirmed = parts.Length >= 5 && parts[4].Equals("confirm", StringComparison.OrdinalIgnoreCase);
+        if (confirmed == false)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, $"confirmation_required=/qchat memory purge {memoryName} confirm", streamText: false);
+            return true;
+        }
+
+        if (autobiographicalMemoryController == null)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "memory_controller=not_connected", streamText: false);
+            return true;
+        }
+
+        AutobiographicalMemoryPurgeResult result = await autobiographicalMemoryController.PurgeAutobiographicalMemoryAsync(memoryName);
+        List<string> lines = [
+            $"memory_purge={(result.Success ? "succeeded" : "failed")}",
+            $"memory={result.MemoryName ?? memoryName}",
+            $"message={NormalizeStatusLine(result.Message)}"
+        ];
+        if (string.IsNullOrWhiteSpace(result.TrashPath) == false)
+            lines.Add($"trash_path={result.TrashPath}");
+
+        await SendTextOrMediaMessageAsync(targetType, targetId, string.Join(Environment.NewLine, lines), streamText: false);
+        WriteQChatDiagnostic("qchat-memory-purge-command", "QChat memory purge command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
             MemoryName = memoryName,

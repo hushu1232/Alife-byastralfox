@@ -127,6 +127,7 @@ public static class QChatDiagnosticsService
             "/qchat memory status - show QChat memory layer wiring",
             "/qchat memory recent - show recent memory events",
             "/qchat memory forget <id> - remove a memory from current context",
+            "/qchat memory purge <id> confirm - move a memory archive to trash",
             "/qchat files - show file task summary",
             "/qchat approvals - show pending approvals",
             "/qchat failures - show failure count",

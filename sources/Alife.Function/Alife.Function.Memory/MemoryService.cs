@@ -279,6 +279,42 @@ public partial class MemoryService(
         return Task.FromResult(new AutobiographicalMemoryForgetResult(true, success, index));
     }
 
+    public async Task<AutobiographicalMemoryPurgeResult> PurgeAutobiographicalMemoryAsync(
+        string memoryName,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string index = memoryName.Trim();
+        MemoryPurgeResult purge = await memoryManager.PurgeMemoryAsync(index);
+        if (purge.Success)
+        {
+            ChatMessageContent? target = ChatHistory.FirstOrDefault(c => memoryManager.GetMemoryMetaData(c).Name == index);
+            if (target != null)
+            {
+                memoryManager.RemoveMemory(ChatHistory, target);
+                ChatBot.UpdateHistoryEndIndex();
+            }
+        }
+
+        string detail = purge.TrashPath == null
+            ? purge.Message
+            : $"{purge.Message} trash={purge.TrashPath}";
+        memoryAuditLog.Record(
+            "purge",
+            nameof(MemoryService),
+            index,
+            detail,
+            purge.Success,
+            purge.Success ? null : "purge_failed");
+
+        return new AutobiographicalMemoryPurgeResult(
+            purge.Success,
+            purge.Message,
+            purge.MemoryName,
+            purge.TrashPath);
+    }
+
     /// <summary>
     /// 感知上下文的人设化压缩器
     /// </summary>

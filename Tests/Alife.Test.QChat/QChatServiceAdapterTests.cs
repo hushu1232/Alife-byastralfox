@@ -625,6 +625,7 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("/qchat memory status"));
             Assert.That(reply, Does.Contain("/qchat memory recent"));
             Assert.That(reply, Does.Contain("/qchat memory forget"));
+            Assert.That(reply, Does.Contain("/qchat memory purge"));
             Assert.That(reply, Does.Contain("/qchat route"));
         });
     }
@@ -1115,6 +1116,126 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("Only the owner"));
             Assert.That(reply, Does.Not.Contain("100-secret"));
             Assert.That(reply, Does.Not.Contain("memory_forget=succeeded"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryPurgeRequiresConfirmWithoutCallingController()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeAutobiographicalMemoryController memoryController = new(
+            purgeResult: new AutobiographicalMemoryPurgeResult(true, "purged", "100-secret", "trash-path"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            autobiographicalMemoryController: memoryController);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory purge 100-secret"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(memoryController.PurgeRequests, Is.Empty);
+            Assert.That(reply, Does.Contain("confirmation_required=/qchat memory purge 100-secret confirm"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerQChatMemoryPurgeUsesControllerWithConfirmWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeAutobiographicalMemoryController memoryController = new(
+            purgeResult: new AutobiographicalMemoryPurgeResult(
+                true,
+                "Memory archive moved to trash and removed from search index.",
+                "100-secret",
+                "D:\\Alife\\Storage\\Memory\\Trash\\L100\\100-secret.txt"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            autobiographicalMemoryController: memoryController);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat memory purge 100-secret confirm"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(memoryController.PurgeRequests, Is.EqualTo(new[] { "100-secret" }));
+            Assert.That(reply, Does.Contain("memory_purge=succeeded"));
+            Assert.That(reply, Does.Contain("memory=100-secret"));
+            Assert.That(reply, Does.Contain("trash_path=D:\\Alife\\Storage\\Memory\\Trash\\L100\\100-secret.txt"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatMemoryPurgeIsRejectedWithoutMemoryNameLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeAutobiographicalMemoryController memoryController = new(
+            purgeResult: new AutobiographicalMemoryPurgeResult(true, "purged", "100-secret", "trash-path"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        },
+            autobiographicalMemoryController: memoryController);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat memory purge 100-secret confirm"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(memoryController.PurgeRequests, Is.Empty);
+            Assert.That(reply, Does.Contain("Only the owner"));
+            Assert.That(reply, Does.Not.Contain("100-secret"));
+            Assert.That(reply, Does.Not.Contain("memory_purge=succeeded"));
         });
     }
 
@@ -7351,16 +7472,27 @@ public class QChatServiceAdapterTests
         }
     }
 
-    sealed class FakeAutobiographicalMemoryController(AutobiographicalMemoryForgetResult result) : IAutobiographicalMemoryController
+    sealed class FakeAutobiographicalMemoryController(
+        AutobiographicalMemoryForgetResult? forgetResult = null,
+        AutobiographicalMemoryPurgeResult? purgeResult = null) : IAutobiographicalMemoryController
     {
         public List<string> Requests { get; } = new();
+        public List<string> PurgeRequests { get; } = new();
 
         public Task<AutobiographicalMemoryForgetResult> ForgetAutobiographicalMemoryAsync(
             string memoryName,
             CancellationToken cancellationToken = default)
         {
             Requests.Add(memoryName);
-            return Task.FromResult(result);
+            return Task.FromResult(forgetResult ?? new AutobiographicalMemoryForgetResult(false, "not configured", memoryName));
+        }
+
+        public Task<AutobiographicalMemoryPurgeResult> PurgeAutobiographicalMemoryAsync(
+            string memoryName,
+            CancellationToken cancellationToken = default)
+        {
+            PurgeRequests.Add(memoryName);
+            return Task.FromResult(purgeResult ?? new AutobiographicalMemoryPurgeResult(false, "not configured", memoryName, null));
         }
     }
 

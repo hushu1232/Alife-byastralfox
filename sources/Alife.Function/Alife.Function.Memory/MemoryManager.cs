@@ -209,6 +209,21 @@ public class MemoryManager
         return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime, searchMode, includePermanent);
     }
 
+    public Task<MemoryPurgeResult> PurgeMemoryAsync(string name)
+    {
+        string memoryName = name.Trim();
+        if (TryParseMemoryLevel(memoryName, out int level) == false)
+        {
+            return Task.FromResult(new MemoryPurgeResult(
+                false,
+                memoryName,
+                null,
+                "Memory id must start with a numeric level, for example 100-20260620010203-20260620010304."));
+        }
+
+        return memoryStorage.PurgeAsync(level, memoryName);
+    }
+
     public MemoryConsistencySnapshot GetConsistencySnapshot()
     {
         return ToConsistencySnapshot(memoryStorage.LastConsistencyReport);
@@ -239,6 +254,16 @@ public class MemoryManager
             report.RepairedArchiveFiles,
             report.RepairedIndexRecords,
             report.RepairedContentMismatches);
+    }
+
+    static bool TryParseMemoryLevel(string name, out int level)
+    {
+        level = 0;
+        int separatorIndex = name.IndexOf('-');
+        if (separatorIndex <= 0)
+            return false;
+
+        return int.TryParse(name[..separatorIndex], out level);
     }
 
     record HistoryRecord(AuthorRole Role, string Content, MemoryMeta MemoryMeta);

@@ -19,9 +19,19 @@ public sealed record AutobiographicalMemoryForgetResult(
     string Message,
     string? MemoryName);
 
+public sealed record AutobiographicalMemoryPurgeResult(
+    bool Success,
+    string Message,
+    string? MemoryName,
+    string? TrashPath);
+
 public interface IAutobiographicalMemoryController
 {
     Task<AutobiographicalMemoryForgetResult> ForgetAutobiographicalMemoryAsync(
+        string memoryName,
+        CancellationToken cancellationToken = default);
+
+    Task<AutobiographicalMemoryPurgeResult> PurgeAutobiographicalMemoryAsync(
         string memoryName,
         CancellationToken cancellationToken = default);
 }

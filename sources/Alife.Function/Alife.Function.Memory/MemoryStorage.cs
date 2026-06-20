@@ -11,6 +11,12 @@ namespace Alife.Function.Memory;
 
 public record SearchResult(string Name, int Level, string Summary, string Content, DateTimeOffset StartTime, DateTimeOffset EndTime, float Score);
 
+public record MemoryPurgeResult(
+    bool Success,
+    string MemoryName,
+    string? TrashPath,
+    string Message);
+
 public enum MemoryStorageConsistencyIssueKind
 {
     MissingArchiveFile,
@@ -400,6 +406,54 @@ public class MemoryStorage : IAsyncDisposable
         }
     }
 
+    public async Task<MemoryPurgeResult> PurgeAsync(int level, string name)
+    {
+        string memoryName = name.Trim();
+        if (string.IsNullOrWhiteSpace(memoryName))
+            return new MemoryPurgeResult(false, memoryName, null, "Memory name is empty.");
+
+        string archivePath = GetArchivePath(level, memoryName);
+        bool archiveExists = File.Exists(archivePath);
+        bool indexExists;
+        await databaseLock.WaitAsync();
+        try
+        {
+            indexExists = IndexRecordExistsNoLock(level, memoryName);
+        }
+        finally
+        {
+            databaseLock.Release();
+        }
+
+        if (archiveExists == false && indexExists == false)
+            return new MemoryPurgeResult(false, memoryName, null, $"Memory '{memoryName}' was not found.");
+
+        string? trashPath = null;
+        if (archiveExists)
+        {
+            trashPath = BuildTrashPath(level, memoryName);
+            Directory.CreateDirectory(Path.GetDirectoryName(trashPath)!);
+            File.Move(archivePath, trashPath, overwrite: true);
+        }
+
+        await databaseLock.WaitAsync();
+        try
+        {
+            using DuckDBCommand command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM MemoryStorage WHERE Name = $1 AND Level = $2;";
+            command.Parameters.Add(new DuckDBParameter(memoryName));
+            command.Parameters.Add(new DuckDBParameter(level));
+            command.ExecuteNonQuery();
+            LastConsistencyReport = ScanConsistencyNoLock();
+        }
+        finally
+        {
+            databaseLock.Release();
+        }
+
+        return new MemoryPurgeResult(true, memoryName, trashPath, "Memory archive moved to trash and removed from search index.");
+    }
+
     public async ValueTask DisposeAsync()
     {
         await databaseLock.WaitAsync();
@@ -461,6 +515,16 @@ public class MemoryStorage : IAsyncDisposable
         command.Parameters.Add(new DuckDBParameter(name));
         command.Parameters.Add(new DuckDBParameter(level));
         command.ExecuteNonQuery();
+    }
+
+    bool IndexRecordExistsNoLock(int level, string name)
+    {
+        using DuckDBCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM MemoryStorage WHERE Name = $1 AND Level = $2;";
+        command.Parameters.Add(new DuckDBParameter(name));
+        command.Parameters.Add(new DuckDBParameter(level));
+        object? value = command.ExecuteScalar();
+        return Convert.ToInt64(value) > 0;
     }
 
     MemoryStorageConsistencyReport ScanConsistencyNoLock()
@@ -623,6 +687,14 @@ public class MemoryStorage : IAsyncDisposable
     }
 
     string GetArchivePath(int level, string name) => Path.Combine(rootPath, $"L{level}", $"{name}.txt");
+    string BuildTrashPath(int level, string name)
+    {
+        string safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries));
+        if (string.IsNullOrWhiteSpace(safeName))
+            safeName = "memory";
+
+        return Path.Combine(rootPath, "Trash", $"L{level}", $"{safeName}.{DateTimeOffset.Now:yyyyMMddHHmmssfff}.txt");
+    }
     static string MemoryKey(int level, string name) => $"{level}:{name}";
     static string ToVectorLiteral(float[] vector) => "[" + string.Join(",", vector.Select(f => f.ToString("R", System.Globalization.CultureInfo.InvariantCulture))) + "]";
 

@@ -63,6 +63,57 @@ public class MemoryStorageSearchTests
         Assert.That(results.Single().Level, Is.EqualTo(100));
     }
 
+    [Test]
+    public async Task PurgeAsync_RemovesSearchIndexAndMovesArchiveToTrash()
+    {
+        string rootPath = CreateTempRoot();
+        await using MemoryStorage storage = new(rootPath, new FakeVectorizer());
+        DateTimeOffset now = DateTimeOffset.Parse("2026-06-14T10:00:00+08:00");
+
+        await storage.SaveAsync("100-life", 100, "autobiographical purge target", "content", now, now);
+
+        MemoryPurgeResult result = await storage.PurgeAsync(100, "100-life");
+
+        (List<SearchResult> results, int total) = await storage.SearchAsync(
+            3,
+            "autobiographical",
+            null,
+            topK: 5,
+            offset: 0,
+            searchMode: MemorySearchMode.Keyword,
+            includePermanent: true);
+
+        string originalArchivePath = Path.Combine(rootPath, "L100", "100-life.txt");
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.MemoryName, Is.EqualTo("100-life"));
+            Assert.That(File.Exists(originalArchivePath), Is.False);
+            Assert.That(result.TrashPath, Is.Not.Null);
+            Assert.That(File.Exists(result.TrashPath!), Is.True);
+            Assert.That(result.TrashPath!, Does.Contain(Path.Combine("Trash", "L100")));
+            Assert.That(total, Is.Zero);
+            Assert.That(results, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task PurgeAsync_ReturnsFailureWhenMemoryDoesNotExist()
+    {
+        string rootPath = CreateTempRoot();
+        await using MemoryStorage storage = new(rootPath, new FakeVectorizer());
+
+        MemoryPurgeResult result = await storage.PurgeAsync(100, "100-missing");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.False);
+            Assert.That(result.MemoryName, Is.EqualTo("100-missing"));
+            Assert.That(result.TrashPath, Is.Null);
+            Assert.That(result.Message, Does.Contain("not found"));
+        });
+    }
+
     static string CreateTempRoot()
     {
         string rootPath = Path.Combine(Path.GetTempPath(), "alife-memory-search-tests", Guid.NewGuid().ToString("N"));
