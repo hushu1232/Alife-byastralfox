@@ -1447,6 +1447,9 @@ public class QChatServiceAdapterTests
             });
             await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
             string executeReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() =>
+                File.Exists(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")) &&
+                ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")).Contains("\"Status\":\"Executed\"", StringComparison.Ordinal));
             string draftPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl");
             string auditPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-audit.jsonl");
             string draftLog = File.ReadAllText(draftPath);
@@ -1458,8 +1461,9 @@ public class QChatServiceAdapterTests
                 Assert.That(deniedReply, Does.Contain("reason=draft_not_approved"));
                 Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
                 Assert.That(executor.ExecutedDrafts.Single().DraftId, Is.EqualTo(draftId));
-                Assert.That(executeReply, Does.Contain("desktop_execution=started"));
-                Assert.That(executeReply, Does.Contain("action=open_notepad"));
+                Assert.That(executeReply, Does.Contain("desktop_execution=queued"));
+                Assert.That(executeReply, Does.Contain("job=desktop-job-"));
+                Assert.That(executeReply, Does.Contain($"draft={draftId}"));
                 Assert.That(executeReply, Does.Not.Contain("notepad.exe"));
                 Assert.That(draftLog, Does.Contain("\"Status\":\"Executed\""));
                 Assert.That(audit, Does.Contain("\"ActionName\":\"qchat.desktop.draft.execute\""));
@@ -1481,7 +1485,11 @@ public class QChatServiceAdapterTests
         {
             Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
             FakeOneBotRuntime runtime = new();
-            FakeDesktopBusinessExecutor executor = new();
+            TaskCompletionSource<DesktopBusinessExecutionResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeDesktopBusinessExecutor executor = new()
+            {
+                ExecuteOverride = _ => completion.Task
+            };
             QChatService service = CreateStartedService(runtime, new QChatConfig
             {
                 BotId = 2905391496,
@@ -1535,13 +1543,16 @@ public class QChatServiceAdapterTests
             });
             await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
             string duplicateReply = runtime.PrivateMessages[3].Message;
+            completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_notepad"));
+            await WaitUntilAsync(() =>
+                ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")).Contains("\"Status\":\"Executed\"", StringComparison.Ordinal));
 
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
                 Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
-                Assert.That(duplicateReply, Does.Contain("desktop_execution=denied"));
-                Assert.That(duplicateReply, Does.Contain("reason=already_executed"));
+                Assert.That(duplicateReply, Does.Contain("desktop_execution=queued"));
+                Assert.That(duplicateReply, Does.Contain("existing=true"));
             });
         }
         finally
@@ -1702,20 +1713,207 @@ public class QChatServiceAdapterTests
             await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
             string executeReply = runtime.PrivateMessages[2].Message;
             string recentReply = runtime.PrivateMessages[3].Message;
+            string jobId = ExtractDesktopJobId(executeReply);
+            await WaitUntilAsync(() =>
+                ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-business-jobs.jsonl")).Contains("\"Status\":\"Failed\"", StringComparison.Ordinal));
             string draftPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl");
             string[] executedLines = File.ReadAllLines(draftPath)
                 .Where(line => line.Contains($"\"DraftId\":\"{draftId}\"", StringComparison.Ordinal)
                                && line.Contains("\"Status\":\"Executed\"", StringComparison.Ordinal))
                 .ToArray();
+            string jobLog = ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-business-jobs.jsonl"));
 
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
                 Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
-                Assert.That(executeReply, Does.Contain("desktop_execution=failed"));
-                Assert.That(executeReply, Does.Contain("reason=test_failure"));
+                Assert.That(executeReply, Does.Contain("desktop_execution=queued"));
+                Assert.That(executeReply, Does.Contain($"job={jobId}"));
                 Assert.That(recentReply, Does.Contain($"{draftId} status=Approved"));
                 Assert.That(executedLines, Is.Empty);
+                Assert.That(jobLog, Does.Contain("\"Status\":\"Failed\""));
+                Assert.That(jobLog, Does.Contain("reason=test_failure"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public async Task OwnerXiayuQChatDesktopJobsCommandsReportQueuedJobWithoutModelDispatch()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-job-command-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            FakeDesktopBusinessExecutor executor = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))),
+                desktopBusinessExecutor: executor);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string draftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft execute {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+            string jobId = ExtractDesktopJobId(runtime.PrivateMessages[2].Message);
+            await WaitUntilAsync(() =>
+                ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-business-jobs.jsonl")).Contains("\"Status\":\"Succeeded\"", StringComparison.Ordinal));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop jobs recent"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop job {jobId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 5);
+            string recentReply = runtime.PrivateMessages[3].Message;
+            string detailReply = runtime.PrivateMessages[4].Message;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(recentReply, Does.Contain("Recent desktop jobs:"));
+                Assert.That(recentReply, Does.Contain(jobId));
+                Assert.That(recentReply, Does.Contain("status=Succeeded"));
+                Assert.That(detailReply, Does.Contain($"desktop_job={jobId}"));
+                Assert.That(detailReply, Does.Contain("status=Succeeded"));
+                Assert.That(detailReply, Does.Contain($"draft={draftId}"));
+                Assert.That(detailReply, Does.Not.Contain("notepad.exe"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public async Task OwnerXiayuQChatDesktopSlowQueuedJobDoesNotBlockLaterOwnerCommand()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-job-nonblocking-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            TaskCompletionSource<DesktopBusinessExecutionResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeDesktopBusinessExecutor executor = new()
+            {
+                ExecuteOverride = _ => completion.Task
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))),
+                desktopBusinessExecutor: executor);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string draftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft execute {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+            await WaitUntilAsync(() => executor.ExecutedDrafts.Count == 1);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop jobs recent"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
+            string jobsReply = runtime.PrivateMessages[3].Message;
+
+            completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_notepad"));
+            await WaitUntilAsync(() =>
+                ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")).Contains("\"Status\":\"Executed\"", StringComparison.Ordinal));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(jobsReply, Does.Contain("Recent desktop jobs:"));
+                Assert.That(jobsReply, Does.Contain("status=Running"));
+                Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
             });
         }
         finally
@@ -1844,7 +2042,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(dispatchCount, Is.Zero);
-            Assert.That(reply, Does.Contain("desktop_capabilities=11"));
+            Assert.That(reply, Does.Contain("desktop_capabilities=13"));
             Assert.That(reply, Does.Contain("/qchat desktop status risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit recent risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit health risk=ReadOnly enabled=true"));
@@ -1853,6 +2051,8 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("/qchat desktop draft reject <draft_id> risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop draft approve <draft_id> risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop draft execute <draft_id> risk=Low enabled=true"));
+            Assert.That(reply, Does.Contain("/qchat desktop jobs recent risk=ReadOnly enabled=true"));
+            Assert.That(reply, Does.Contain("/qchat desktop job <job_id> risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("desktop_mutation=enabled"));
             Assert.That(reply, Does.Contain("shell_execution=disabled"));
             Assert.That(reply, Does.Not.Contain("delete"));
@@ -8428,6 +8628,26 @@ public class QChatServiceAdapterTests
         return token!["id=".Length..];
     }
 
+    static string ExtractDesktopJobId(string message)
+    {
+        string? token = message
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(part => part.StartsWith("job=desktop-job-", StringComparison.Ordinal));
+        Assert.That(token, Is.Not.Null);
+        return token!["job=".Length..];
+    }
+
+    static string ReadAllTextWithSharing(string path)
+    {
+        using FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite);
+        using StreamReader reader = new(stream);
+        return reader.ReadToEnd();
+    }
+
     static System.Text.Json.JsonElement CreateForwardTextContent(string text)
     {
         string json = "[{\"type\":\"text\",\"data\":{\"text\":"
@@ -8520,13 +8740,14 @@ public class QChatServiceAdapterTests
         public List<DesktopActionDraftEntry> ExecutedDrafts { get; } = new();
         public DesktopBusinessExecutionResult Result { get; init; } =
             new(true, "desktop_execution=started action=open_notepad");
+        public Func<DesktopActionDraftEntry, Task<DesktopBusinessExecutionResult>>? ExecuteOverride { get; init; }
 
         public Task<DesktopBusinessExecutionResult> ExecuteAsync(
             DesktopActionDraftEntry draft,
             CancellationToken cancellationToken = default)
         {
             ExecutedDrafts.Add(draft);
-            return Task.FromResult(Result);
+            return ExecuteOverride?.Invoke(draft) ?? Task.FromResult(Result);
         }
     }
 

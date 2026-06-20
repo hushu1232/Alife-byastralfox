@@ -251,8 +251,22 @@ public partial class QChatService(
                                                         ?? defaultDraftLog
                                                         ?? (desktopActionDraftSink as IDesktopActionDraftController);
         IDesktopApprovedDraftExecutor businessExecutor = desktopBusinessExecutor ?? new WindowsDesktopBusinessExecutor();
+        IDesktopBusinessJobReader? jobReader = businessExecutor as IDesktopBusinessJobReader;
+        if (draftController != null && jobReader == null)
+        {
+            DesktopBusinessTaskQueue taskQueue = new(
+                businessExecutor,
+                draftController,
+                Path.Combine(
+                    AlifePath.StorageFolderPath,
+                    "AgentWorkspace",
+                    "desktop-business-jobs.jsonl"));
+            businessExecutor = taskQueue;
+            jobReader = taskQueue;
+        }
+
         DesktopCapabilityRegistry capabilityRegistry = DesktopCapabilityRegistry.CreateDefault();
-        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink, draftReader, draftController, businessExecutor, capabilityRegistry);
+        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink, draftReader, draftController, businessExecutor, jobReader, capabilityRegistry);
     }
 
     readonly PromptStablePrefixService stablePrefixService = new();
@@ -3392,6 +3406,23 @@ public partial class QChatService(
             };
             actionDetail = actionKey;
         }
+        else if (mode.Equals("jobs", StringComparison.OrdinalIgnoreCase) &&
+                 parts.Length >= 4)
+        {
+            string jobsMode = parts[3].ToLowerInvariant();
+            actionKey = jobsMode switch
+            {
+                "recent" => "jobs recent",
+                _ => actionKey
+            };
+            actionDetail = actionKey;
+        }
+        else if (mode.Equals("job", StringComparison.OrdinalIgnoreCase) &&
+                 parts.Length >= 4)
+        {
+            actionKey = "job";
+            actionDetail = parts[3];
+        }
         else if (mode.Equals("draft", StringComparison.OrdinalIgnoreCase) &&
                  parts.Length >= 5)
         {
@@ -3420,12 +3451,14 @@ public partial class QChatService(
             "draft reject" => DesktopReadOnlyActions.DraftReject,
             "draft approve" => DesktopReadOnlyActions.DraftApprove,
             "draft execute" => DesktopReadOnlyActions.DraftExecute,
+            "jobs recent" => DesktopReadOnlyActions.JobsRecent,
+            "job" => DesktopReadOnlyActions.JobDetail,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>|drafts recent|draft reject <draft_id>|draft approve <draft_id>|draft execute <draft_id>";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>|drafts recent|draft reject <draft_id>|draft approve <draft_id>|draft execute <draft_id>|jobs recent|job <job_id>";
         }
         else
         {

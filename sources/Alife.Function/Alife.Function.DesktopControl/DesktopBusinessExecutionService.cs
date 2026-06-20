@@ -4,7 +4,10 @@ namespace Alife.Function.DesktopControl;
 
 public sealed record DesktopBusinessExecutionResult(
     bool Success,
-    string Message);
+    string Message)
+{
+    public bool MarksDraftExecuted { get; init; } = Success;
+}
 
 public interface IDesktopApprovedDraftExecutor
 {
@@ -13,35 +16,33 @@ public interface IDesktopApprovedDraftExecutor
         CancellationToken cancellationToken = default);
 }
 
-public sealed class WindowsDesktopBusinessExecutor : IDesktopApprovedDraftExecutor
+public sealed class WindowsDesktopBusinessExecutor(
+    DesktopBusinessActionRegistry? actionRegistry = null) : IDesktopApprovedDraftExecutor
 {
+    readonly DesktopBusinessActionRegistry actionRegistry = actionRegistry ?? DesktopBusinessActionRegistry.CreateDefault();
+
     public Task<DesktopBusinessExecutionResult> ExecuteAsync(
         DesktopActionDraftEntry draft,
         CancellationToken cancellationToken = default)
     {
-        string action = NormalizeAction(draft.RequestedAction);
-        if (action != "open notepad")
+        if (actionRegistry.TryResolve(draft.RequestedAction, out DesktopBusinessActionDescriptor? action) == false)
         {
             return Task.FromResult(new DesktopBusinessExecutionResult(
                 false,
-                "desktop_execution=denied reason=unsupported_action"));
+                "desktop_execution=denied reason=unsupported_action")
+            {
+                MarksDraftExecuted = false
+            });
         }
 
         using Process? _ = Process.Start(new ProcessStartInfo
         {
-            FileName = "notepad.exe",
+            FileName = action!.ExecutableName,
+            Arguments = action.Arguments,
             UseShellExecute = false
         });
         return Task.FromResult(new DesktopBusinessExecutionResult(
             true,
-            "desktop_execution=started action=open_notepad"));
-    }
-
-    static string NormalizeAction(string value)
-    {
-        string normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
-        while (normalized.Contains("  ", StringComparison.Ordinal))
-            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
-        return normalized;
+            $"desktop_execution=started action={action.ActionKey}"));
     }
 }

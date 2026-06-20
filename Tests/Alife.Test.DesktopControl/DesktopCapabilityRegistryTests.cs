@@ -11,7 +11,7 @@ public sealed class DesktopCapabilityRegistryTests
 
         IReadOnlyList<DesktopCapabilityDescriptor> capabilities = registry.GetAll();
 
-        Assert.That(capabilities, Has.Count.EqualTo(11));
+        Assert.That(capabilities, Has.Count.EqualTo(13));
         Assert.That(capabilities.Select(capability => capability.Name), Is.EqualTo(new[]
         {
             "/qchat desktop status",
@@ -24,7 +24,9 @@ public sealed class DesktopCapabilityRegistryTests
             "/qchat desktop drafts recent",
             "/qchat desktop draft reject <draft_id>",
             "/qchat desktop draft approve <draft_id>",
-            "/qchat desktop draft execute <draft_id>"
+            "/qchat desktop draft execute <draft_id>",
+            "/qchat desktop jobs recent",
+            "/qchat desktop job <job_id>"
         }));
         Assert.That(capabilities.Count(capability => capability.Risk == DesktopCapabilityRisk.Low), Is.EqualTo(1));
         Assert.That(capabilities.Single(capability => capability.Risk == DesktopCapabilityRisk.Low).Name, Is.EqualTo("/qchat desktop draft execute <draft_id>"));
@@ -41,7 +43,7 @@ public sealed class DesktopCapabilityRegistryTests
 
         string text = registry.FormatForOwner();
 
-        Assert.That(text, Does.Contain("desktop_capabilities=11"));
+        Assert.That(text, Does.Contain("desktop_capabilities=13"));
         Assert.That(text, Does.Contain("/qchat desktop status risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop processes risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop audit recent risk=ReadOnly enabled=true"));
@@ -51,6 +53,8 @@ public sealed class DesktopCapabilityRegistryTests
         Assert.That(text, Does.Contain("/qchat desktop draft reject <draft_id> risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop draft approve <draft_id> risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop draft execute <draft_id> risk=Low enabled=true"));
+        Assert.That(text, Does.Contain("/qchat desktop jobs recent risk=ReadOnly enabled=true"));
+        Assert.That(text, Does.Contain("/qchat desktop job <job_id> risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("desktop_mutation=enabled"));
         Assert.That(text, Does.Contain("shell_execution=disabled"));
         Assert.That(text, Does.Not.Contain("delete"));

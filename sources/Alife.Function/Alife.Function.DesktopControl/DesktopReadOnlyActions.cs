@@ -18,6 +18,8 @@ public static class DesktopReadOnlyActions
     public const string DraftReject = "qchat.desktop.draft.reject";
     public const string DraftApprove = "qchat.desktop.draft.approve";
     public const string DraftExecute = "qchat.desktop.draft.execute";
+    public const string JobsRecent = "qchat.desktop.jobs.recent";
+    public const string JobDetail = "qchat.desktop.job.detail";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
@@ -25,7 +27,8 @@ public static class DesktopReadOnlyActions
         IDesktopActionDraftSink? draftSink = null,
         IDesktopActionDraftReader? draftReader = null,
         IDesktopActionDraftController? draftController = null,
-        IDesktopApprovedDraftExecutor? businessExecutor = null)
+        IDesktopApprovedDraftExecutor? businessExecutor = null,
+        IDesktopBusinessJobReader? jobReader = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
@@ -41,7 +44,9 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(DraftsRecent, "recent desktop action draft summary", (_, _) => Task.FromResult(FormatRecentDrafts(draftReader))),
             new DelegateDesktopAction(DraftReject, "reject a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Rejected))),
             new DelegateDesktopAction(DraftApprove, "approve a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Approved))),
-            new DelegateDesktopAction(DraftExecute, "execute an approved whitelisted desktop action draft", (request, token) => ExecuteApprovedDraftAsync(request, draftReader, draftController, businessExecutor, token), DesktopCapabilityRisk.Low)
+            new DelegateDesktopAction(DraftExecute, "queue an approved whitelisted desktop action draft for execution", (request, token) => ExecuteApprovedDraftAsync(request, draftReader, draftController, businessExecutor, token), DesktopCapabilityRisk.Low),
+            new DelegateDesktopAction(JobsRecent, "recent desktop business jobs summary", (_, _) => Task.FromResult(FormatRecentJobs(jobReader))),
+            new DelegateDesktopAction(JobDetail, "desktop business job detail", (request, _) => Task.FromResult(FormatJobDetail(request, jobReader)))
         ];
     }
 
@@ -53,9 +58,10 @@ public static class DesktopReadOnlyActions
         IDesktopActionDraftReader? draftReader = null,
         IDesktopActionDraftController? draftController = null,
         IDesktopApprovedDraftExecutor? businessExecutor = null,
+        IDesktopBusinessJobReader? jobReader = null,
         DesktopCapabilityRegistry? capabilityRegistry = null)
     {
-        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader, draftController, businessExecutor), auditSink, capabilityRegistry);
+        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader, draftController, businessExecutor, jobReader), auditSink, capabilityRegistry);
     }
 
     static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
@@ -107,6 +113,39 @@ public static class DesktopReadOnlyActions
         return string.Join(Environment.NewLine, lines);
     }
 
+    static string FormatRecentJobs(IDesktopBusinessJobReader? jobReader)
+    {
+        IReadOnlyList<DesktopBusinessJobEntry> jobs = jobReader?.GetRecentJobs(MaxRecentDraftEntries) ?? [];
+        if (jobs.Count == 0)
+            return string.Join(Environment.NewLine, "Recent desktop jobs:", "none");
+
+        List<string> lines = ["Recent desktop jobs:"];
+        lines.AddRange(jobs.Select(job =>
+            $"{job.Timestamp:O} {job.JobId} status={job.Status} draft={job.DraftId} agent={job.AgentId} actor={job.ActorUserId} action={FormatDraftPreview(job.RequestedAction)}"));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatJobDetail(
+        DesktopActionRequest request,
+        IDesktopBusinessJobReader? jobReader)
+    {
+        if (jobReader == null)
+            return "desktop_job=unavailable reason=job_reader_missing";
+
+        DesktopBusinessJobEntry? job = jobReader.GetJob(request.Detail);
+        if (job == null)
+            return "desktop_job=not_found";
+
+        return string.Join(Environment.NewLine,
+            $"desktop_job={job.JobId}",
+            $"status={job.Status}",
+            $"draft={job.DraftId}",
+            $"agent={job.AgentId}",
+            $"actor={job.ActorUserId}",
+            $"action={FormatDraftPreview(job.RequestedAction)}",
+            $"message={FormatDraftPreview(job.Message)}");
+    }
+
     static string UpdateDraftStatus(
         DesktopActionRequest request,
         IDesktopActionDraftController? draftController,
@@ -141,6 +180,8 @@ public static class DesktopReadOnlyActions
 
         DesktopBusinessExecutionResult execution = await businessExecutor.ExecuteAsync(draft, cancellationToken);
         if (execution.Success == false)
+            return execution.Message;
+        if (execution.MarksDraftExecuted == false)
             return execution.Message;
 
         DesktopActionDraftUpdateResult update = draftController.UpdateStatus(request, DesktopActionDraftStatus.Executed);
