@@ -558,6 +558,45 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task RiskThresholdAutoBlocksUserAndReportsOwner()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            LocalBlockThreshold = 25,
+            EnableBalancedTextStreaming = false
+        },
+        riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()));
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "jailbreak"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Any(message => message.Target == 1001));
+
+        string report = runtime.PrivateMessages.Single(message => message.Target == 1001).Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(report, Does.Contain("action=local_block"));
+            Assert.That(report, Does.Contain("user_id=2001"));
+            Assert.That(report, Does.Contain("risk_score=25"));
+        });
+    }
+
+    [Test]
     public async Task NonOwnerNaturalHelpAliasFallsThroughWithoutCommandMenuOrInternalLeak()
     {
         FakeOneBotRuntime runtime = new();
@@ -8993,7 +9032,8 @@ public class QChatServiceAdapterTests
         IAutobiographicalMemoryController? autobiographicalMemoryController = null,
         DesktopControlService? desktopControl = null,
         IDesktopActionAuditSink? desktopActionAuditSink = null,
-        IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null)
+        IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
+        QChatRiskScoreService? riskScoreService = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
@@ -9011,12 +9051,18 @@ public class QChatServiceAdapterTests
             autobiographicalMemoryController: autobiographicalMemoryController,
             desktopControl: desktopControl,
             desktopActionAuditSink: desktopActionAuditSink,
-            desktopBusinessExecutor: desktopBusinessExecutor)
+            desktopBusinessExecutor: desktopBusinessExecutor,
+            riskScoreService: riskScoreService)
         {
             Configuration = config
         };
         StartService(service);
         return service;
+    }
+
+    static string CreateTempRiskRoot()
+    {
+        return Path.Combine(Path.GetTempPath(), "alife-qchat-risk-service-tests", Guid.NewGuid().ToString("N"));
     }
 
     static void StartService(QChatService service, string characterName = "QChatTest")

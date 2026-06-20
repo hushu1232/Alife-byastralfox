@@ -212,7 +212,8 @@ public partial class QChatService(
     IDesktopActionDraftSink? desktopActionDraftSink = null,
     IDesktopActionDraftReader? desktopActionDraftReader = null,
     IDesktopActionDraftController? desktopActionDraftController = null,
-    IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null) :
+    IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
+    QChatRiskScoreService? riskScoreService = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -1853,7 +1854,8 @@ public partial class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
-    readonly QChatRiskScoreService riskScores = new();
+    readonly QChatRiskEventDetector riskEventDetector = new();
+    readonly QChatRiskScoreService riskScores = riskScoreService ?? new QChatRiskScoreService();
     readonly object pendingDispatchGate = new();
     readonly Dictionary<string, QChatPendingDispatchSession> pendingDispatchSessions = new();
     readonly object groupDecisionGate = new();
@@ -2308,6 +2310,8 @@ public partial class QChatService(
                 }
                 if (ShouldBlockQChatMessage(config, messageEvent))
                     return;
+                if (await TryApplyQChatRiskScoringAsync(config, messageEvent, senderRole, content))
+                    return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 if (await BuildOwnerCommandService().TryHandleAsync(new QChatOwnerCommandContext(
                         messageEvent,
@@ -2361,12 +2365,67 @@ public partial class QChatService(
         }
     }
 
+    async Task<bool> TryApplyQChatRiskScoringAsync(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string content)
+    {
+        if (config.EnableQChatRiskScoring == false)
+            return false;
+
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = ResolveCurrentBotId(config, messageEvent);
+        IReadOnlyList<QChatRiskEvent> riskEvents = riskEventDetector.Detect(new QChatRiskDetectionContext(
+            UserId: messageEvent.UserId,
+            OwnerId: config.OwnerId,
+            IsOwner: senderRole == QChatSenderRole.Owner,
+            Text: content,
+            MessageCountInLastMinute: 1,
+            HasFile: content.Contains("[managed_file:", StringComparison.OrdinalIgnoreCase),
+            HasLink: content.Contains("http://", StringComparison.OrdinalIgnoreCase) ||
+                     content.Contains("https://", StringComparison.OrdinalIgnoreCase)));
+        if (riskEvents.Count == 0)
+            return false;
+
+        QChatRiskScoreUpdate update = riskScores.AddEvents(
+            agentId,
+            botId,
+            messageEvent.UserId,
+            riskEvents,
+            new QChatRiskThresholds(
+                LocalBlockThreshold: config.EnableAutoLocalBlock ? config.LocalBlockThreshold : int.MaxValue,
+                AutoDeleteFriendThreshold: config.AutoDeleteFriendThreshold,
+                CriticalAutoDeleteFriendThreshold: config.CriticalAutoDeleteFriendThreshold));
+        if (config.EnableAutoLocalBlock == false || update.CrossedLocalBlockThreshold == false)
+            return false;
+
+        WriteQChatDiagnostic("qchat-risk-local-block", "QChat risk score crossed local block threshold.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            botId,
+            agentId,
+            update.State.Score,
+            update.State.EventCount,
+            reasons = update.State.Reasons
+        });
+        if (config.OwnerId != 0)
+        {
+            string report = QChatRiskOwnerNotifier.FormatLocalBlockReport(update.State);
+            string formattedReport = QChatCommandPersonaFormatter.Format(agentId, QChatSenderRole.Owner, report);
+            await SendTextOrMediaMessageAsync(OneBotMessageType.Private, config.OwnerId, formattedReport, streamText: false);
+        }
+
+        return true;
+    }
+
     bool ShouldBlockQChatMessage(QChatConfig config, OneBotMessageEvent messageEvent)
     {
         string agentId = ResolveCurrentAgentId(config);
         long botId = ResolveCurrentBotId(config, messageEvent);
-        bool isLocallyBlocked = riskScores.TryGetState(agentId, botId, messageEvent.UserId, out QChatRiskUserState? riskState) &&
-                                riskState?.IsLocallyBlocked == true;
+        QChatRiskUserState? riskState = null;
+        bool hasRiskState = riskScores.TryGetState(agentId, botId, messageEvent.UserId, out riskState);
+        bool isLocallyBlocked = config.EnableAutoLocalBlock && hasRiskState && riskState?.IsLocallyBlocked == true;
         QChatBlockDecision decision = QChatBlocklistPolicy.Evaluate(new QChatBlockContext(
             UserId: messageEvent.UserId,
             BotId: botId,
