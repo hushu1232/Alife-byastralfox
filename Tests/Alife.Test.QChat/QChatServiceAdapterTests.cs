@@ -201,6 +201,72 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task DualBotQChatStatusReportsSeparateTimingConfiguration()
+    {
+        FakeOneBotRuntime xiaYuRuntime = new();
+        FakeOneBotRuntime mixuRuntime = new();
+        QChatService xiaYu = CreateStartedService(xiaYuRuntime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = true,
+            EnableBalancedTextStreaming = false
+        });
+        QChatService mixu = CreateStartedService(mixuRuntime, new QChatConfig
+        {
+            BotId = 3340947887,
+            OwnerId = 3045846738,
+            EnableReplyTimingDelay = true,
+            EnableBalancedTextStreaming = false
+        });
+        int xiaYuDispatchCount = 0;
+        int mixuDispatchCount = 0;
+        xiaYu.InboundChatDispatcher = _ =>
+        {
+            xiaYuDispatchCount++;
+            return Task.CompletedTask;
+        };
+        mixu.InboundChatDispatcher = _ =>
+        {
+            mixuDispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        xiaYuRuntime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat status"
+        });
+        mixuRuntime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 3045846738,
+            RawMessage = "/qchat status"
+        });
+
+        await WaitUntilAsync(() => xiaYuRuntime.PrivateMessages.Count == 1);
+        await WaitUntilAsync(() => mixuRuntime.PrivateMessages.Count == 1);
+
+        string xiaYuStatus = xiaYuRuntime.PrivateMessages.Single().Message;
+        string mixuStatus = mixuRuntime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiaYuDispatchCount, Is.Zero);
+            Assert.That(mixuDispatchCount, Is.Zero);
+            Assert.That(xiaYuStatus, Does.Contain("agent=xiayu"));
+            Assert.That(xiaYuStatus, Does.Contain("bot=2905391496"));
+            Assert.That(xiaYuStatus, Does.Contain("reply_timing_delay=enabled"));
+            Assert.That(xiaYuStatus, Does.Not.Contain("agent=mixu"));
+
+            Assert.That(mixuStatus, Does.Contain("agent=mixu"));
+            Assert.That(mixuStatus, Does.Contain("bot=3340947887"));
+            Assert.That(mixuStatus, Does.Contain("reply_timing_delay=enabled"));
+            Assert.That(mixuStatus, Does.Not.Contain("agent=xiayu"));
+        });
+    }
+
+    [Test]
     public async Task NonOwnerQChatDiagnosticsCommandDoesNotReachModelOrLeakRoute()
     {
         FakeOneBotRuntime runtime = new();

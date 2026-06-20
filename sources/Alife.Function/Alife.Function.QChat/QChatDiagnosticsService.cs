@@ -4,11 +4,24 @@ namespace Alife.Function.QChat;
 
 public sealed record QChatDiagnosticsResult(bool Handled, string Text);
 
+public sealed record QChatDiagnosticsRuntimeState(
+    bool ReplyTimingDelayEnabled = false,
+    bool ConversationSettleWindowEnabled = false);
+
 public static class QChatDiagnosticsService
 {
     const string CommandPrefix = "/qchat";
 
     public static QChatDiagnosticsResult TryHandle(string? text, QChatAgentRoute route, QChatAgentProfile profile)
+    {
+        return TryHandle(text, route, profile, new QChatDiagnosticsRuntimeState());
+    }
+
+    public static QChatDiagnosticsResult TryHandle(
+        string? text,
+        QChatAgentRoute route,
+        QChatAgentProfile profile,
+        QChatDiagnosticsRuntimeState runtimeState)
     {
         string commandText = text?.Trim() ?? string.Empty;
         if (!IsQChatCommand(commandText))
@@ -16,6 +29,7 @@ public static class QChatDiagnosticsService
 
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(runtimeState);
 
         string command = commandText.Length == CommandPrefix.Length
             ? string.Empty
@@ -26,7 +40,7 @@ public static class QChatDiagnosticsService
             "route" => Handled(BuildRouteText(route)),
             "identity" => Handled(BuildIdentityText(route, profile)),
             "profile" => Handled(BuildProfileText(profile)),
-            "status" => Handled(BuildStatusText(route, profile)),
+            "status" => Handled(BuildStatusText(route, profile, runtimeState)),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
             "failures" => Handled("failures=0"),
@@ -81,13 +95,24 @@ public static class QChatDiagnosticsService
             $"session={route.SessionKey}");
     }
 
-    static string BuildStatusText(QChatAgentRoute route, QChatAgentProfile profile)
+    static string BuildStatusText(
+        QChatAgentRoute route,
+        QChatAgentProfile profile,
+        QChatDiagnosticsRuntimeState runtimeState)
     {
         return string.Join(Environment.NewLine,
             $"agent={route.AgentId}",
+            $"bot={route.BotAccountId}",
             $"session={route.SessionKey}",
             $"model={profile.Model}",
+            $"reply_timing_delay={FormatEnabled(runtimeState.ReplyTimingDelayEnabled)}",
+            $"conversation_settle_window={FormatEnabled(runtimeState.ConversationSettleWindowEnabled)}",
             "status=online");
+    }
+
+    static string FormatEnabled(bool value)
+    {
+        return value ? "enabled" : "disabled";
     }
 
     static string BuildHelpText()

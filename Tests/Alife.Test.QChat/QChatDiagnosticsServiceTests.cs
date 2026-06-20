@@ -80,6 +80,26 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleStatusReturnsRuntimeTimingState()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat status",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState(
+                ReplyTimingDelayEnabled: true,
+                ConversationSettleWindowEnabled: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("bot=2905391496"));
+            Assert.That(result.Text, Does.Contain("reply_timing_delay=enabled"));
+            Assert.That(result.Text, Does.Contain("conversation_settle_window=enabled"));
+        });
+    }
+
+    [Test]
     public void TryHandleIdentityReturnsUnifiedRouteAndProfileSnapshot()
     {
         QChatAgentRoute route = CreateRoute();

@@ -93,7 +93,13 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         QChatAgentRoute route = BuildQChatDiagnosticsRoute(messageEvent, config);
         QChatAgentProfile profile = ResolveQChatDiagnosticsProfile(route);
-        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(text, route, profile);
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            text,
+            route,
+            profile,
+            new QChatDiagnosticsRuntimeState(
+                ReplyTimingDelayEnabled: config.EnableReplyTimingDelay,
+                ConversationSettleWindowEnabled: config.EnableConversationSettleWindow));
         if (result.Handled)
         {
             await sendAsync(targetType, targetId, result.Text);
