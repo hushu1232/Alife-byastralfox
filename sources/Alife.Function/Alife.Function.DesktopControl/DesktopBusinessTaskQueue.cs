@@ -28,6 +28,13 @@ public interface IDesktopBusinessJobReader
     DesktopBusinessJobEntry? GetJob(string jobId);
 }
 
+public interface IDesktopBusinessJobCompletionSink
+{
+    Task NotifyCompletionAsync(
+        DesktopBusinessJobEntry job,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, IDesktopBusinessJobReader
 {
     static readonly JsonSerializerOptions JsonOptions = new()
@@ -41,6 +48,7 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
     readonly IDesktopApprovedDraftExecutor executor;
     readonly IDesktopActionDraftController draftController;
     readonly DesktopBusinessActionRegistry actionRegistry;
+    readonly IDesktopBusinessJobCompletionSink? completionSink;
     readonly string jobFilePath;
     readonly int maxRetainedJobs;
     int sequence;
@@ -50,6 +58,7 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
         IDesktopActionDraftController draftController,
         string jobFilePath,
         DesktopBusinessActionRegistry? actionRegistry = null,
+        IDesktopBusinessJobCompletionSink? completionSink = null,
         int maxRetainedJobs = 256)
     {
         this.executor = executor ?? throw new ArgumentNullException(nameof(executor));
@@ -59,6 +68,7 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
 
         this.jobFilePath = Path.GetFullPath(jobFilePath);
         this.actionRegistry = actionRegistry ?? DesktopBusinessActionRegistry.CreateDefault();
+        this.completionSink = completionSink;
         this.maxRetainedJobs = Math.Max(1, maxRetainedJobs);
         Directory.CreateDirectory(Path.GetDirectoryName(this.jobFilePath)!);
         LoadExistingEntries();
@@ -162,7 +172,8 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
             DesktopBusinessExecutionResult execution = await executor.ExecuteAsync(draft);
             if (execution.Success == false)
             {
-                RecordFailed(queued, execution.Message);
+                DesktopBusinessJobEntry failed = RecordFailed(queued, execution.Message);
+                await NotifyCompletionAsync(failed);
                 return;
             }
 
@@ -176,20 +187,24 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
                 DesktopActionDraftStatus.Executed);
             if (update.Success == false)
             {
-                RecordFailed(queued, update.Message);
+                DesktopBusinessJobEntry failed = RecordFailed(queued, update.Message);
+                await NotifyCompletionAsync(failed);
                 return;
             }
 
-            Record(queued with
+            DesktopBusinessJobEntry succeeded = queued with
             {
                 Timestamp = DateTimeOffset.Now,
                 Status = DesktopBusinessJobStatus.Succeeded,
                 Message = execution.Message
-            });
+            };
+            Record(succeeded);
+            await NotifyCompletionAsync(succeeded);
         }
         catch (Exception ex)
         {
-            RecordFailed(queued, $"desktop_execution=failed error={ex.GetType().Name}");
+            DesktopBusinessJobEntry failed = RecordFailed(queued, $"desktop_execution=failed error={ex.GetType().Name}");
+            await NotifyCompletionAsync(failed);
         }
         finally
         {
@@ -197,14 +212,30 @@ public sealed class DesktopBusinessTaskQueue : IDesktopApprovedDraftExecutor, ID
         }
     }
 
-    void RecordFailed(DesktopBusinessJobEntry queued, string message)
+    async Task NotifyCompletionAsync(DesktopBusinessJobEntry job)
     {
-        Record(queued with
+        if (completionSink == null)
+            return;
+
+        try
+        {
+            await completionSink.NotifyCompletionAsync(job);
+        }
+        catch
+        {
+        }
+    }
+
+    DesktopBusinessJobEntry RecordFailed(DesktopBusinessJobEntry queued, string message)
+    {
+        DesktopBusinessJobEntry failed = queued with
         {
             Timestamp = DateTimeOffset.Now,
             Status = DesktopBusinessJobStatus.Failed,
             Message = SanitizeMessage(message)
-        });
+        };
+        Record(failed);
+        return failed;
     }
 
     void Record(DesktopBusinessJobEntry entry)

@@ -92,6 +92,33 @@ public sealed class DesktopBusinessTaskQueueTests
     }
 
     [Test]
+    public async Task ExecuteAsync_SuccessfulJobNotifiesCompletionSinkOnce()
+    {
+        string path = CreateJobPath();
+        FakeDesktopApprovedDraftExecutor executor = new();
+        FakeDraftController draftController = new();
+        FakeCompletionSink completionSink = new();
+        DesktopBusinessTaskQueue queue = new(
+            executor,
+            draftController,
+            path,
+            completionSink: completionSink);
+
+        DesktopBusinessExecutionResult queued = await queue.ExecuteAsync(CreateDraft("open notepad"));
+        string jobId = ExtractJobId(queued.Message);
+
+        await WaitUntilAsync(() => completionSink.Notifications.Count == 1);
+        DesktopBusinessJobEntry notification = completionSink.Notifications.Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(notification.JobId, Is.EqualTo(jobId));
+            Assert.That(notification.Status, Is.EqualTo(DesktopBusinessJobStatus.Succeeded));
+            Assert.That(notification.Message, Does.Contain("desktop_execution=started"));
+        });
+    }
+
+    [Test]
     public async Task ExecuteAsync_FailedJobLeavesDraftApproved()
     {
         string path = CreateJobPath();
@@ -195,6 +222,19 @@ public sealed class DesktopBusinessTaskQueueTests
                 true,
                 entry,
                 $"desktop_draft=updated id={request.Detail} status={status} execution=disabled");
+        }
+    }
+
+    sealed class FakeCompletionSink : IDesktopBusinessJobCompletionSink
+    {
+        public List<DesktopBusinessJobEntry> Notifications { get; } = new();
+
+        public Task NotifyCompletionAsync(
+            DesktopBusinessJobEntry job,
+            CancellationToken cancellationToken = default)
+        {
+            Notifications.Add(job);
+            return Task.CompletedTask;
         }
     }
 }

@@ -205,8 +205,18 @@ public partial class QChatService(
     IAgentQChatJoinedGroupProvider
 {
     const string DesktopControlAgentId = "xiayu";
-    readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
-        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog, desktopActionDraftSink, desktopActionDraftReader, desktopActionDraftController, desktopBusinessExecutor);
+    readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
+    DesktopActionGateway? resolvedDesktopActionGateway;
+    DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
+        ?? CreateDefaultDesktopActionGateway(
+            desktopControl,
+            desktopActionAuditSink,
+            desktopActionAuditLog,
+            desktopActionDraftSink,
+            desktopActionDraftReader,
+            desktopActionDraftController,
+            desktopBusinessExecutor,
+            new QChatDesktopBusinessJobCompletionSink(GetOneBotClient));
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -218,7 +228,8 @@ public partial class QChatService(
         IDesktopActionDraftSink? desktopActionDraftSink,
         IDesktopActionDraftReader? desktopActionDraftReader,
         IDesktopActionDraftController? desktopActionDraftController,
-        IDesktopApprovedDraftExecutor? desktopBusinessExecutor)
+        IDesktopApprovedDraftExecutor? desktopBusinessExecutor,
+        IDesktopBusinessJobCompletionSink? desktopJobCompletionSink = null)
     {
         DesktopControlService control = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
         DesktopActionAuditLogService? defaultAuditLog = desktopActionAuditLog;
@@ -260,13 +271,44 @@ public partial class QChatService(
                 Path.Combine(
                     AlifePath.StorageFolderPath,
                     "AgentWorkspace",
-                    "desktop-business-jobs.jsonl"));
+                    "desktop-business-jobs.jsonl"),
+                completionSink: desktopJobCompletionSink);
             businessExecutor = taskQueue;
             jobReader = taskQueue;
         }
 
         DesktopCapabilityRegistry capabilityRegistry = DesktopCapabilityRegistry.CreateDefault();
         return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink, draftReader, draftController, businessExecutor, jobReader, capabilityRegistry);
+    }
+
+    sealed class QChatDesktopBusinessJobCompletionSink(Func<IOneBotRuntime> runtimeProvider) : IDesktopBusinessJobCompletionSink
+    {
+        public async Task NotifyCompletionAsync(
+            DesktopBusinessJobEntry job,
+            CancellationToken cancellationToken = default)
+        {
+            if (job.Status is not (DesktopBusinessJobStatus.Succeeded or DesktopBusinessJobStatus.Failed))
+                return;
+
+            string message =
+                $"desktop_job={job.JobId} status={job.Status} draft={job.DraftId} action={FormatAction(job.RequestedAction)}";
+            await runtimeProvider().SendPrivateMessageWithResult(job.ActorUserId, message);
+        }
+
+        static string FormatAction(string value)
+        {
+            string normalized = (value ?? string.Empty)
+                .Replace('\r', ' ')
+                .Replace('\n', ' ')
+                .Replace('\t', ' ')
+                .Trim();
+            while (normalized.Contains("  ", StringComparison.Ordinal))
+                normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+
+            return normalized.Length <= 80
+                ? normalized
+                : normalized[..80].TrimEnd();
+        }
     }
 
     readonly PromptStablePrefixService stablePrefixService = new();
@@ -3462,7 +3504,7 @@ public partial class QChatService(
         }
         else
         {
-            DesktopActionResult result = await desktopActionGateway.ExecuteAsync(new DesktopActionRequest(
+            DesktopActionResult result = await DesktopGateway.ExecuteAsync(new DesktopActionRequest(
                 actionName,
                 messageEvent.UserId,
                 route.AgentId,

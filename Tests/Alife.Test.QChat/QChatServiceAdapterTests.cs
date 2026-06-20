@@ -1445,8 +1445,8 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
-            string executeReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+            string executeReply = FirstPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-");
             await WaitUntilAsync(() =>
                 File.Exists(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")) &&
                 ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")).Contains("\"Status\":\"Executed\"", StringComparison.Ordinal));
@@ -1533,7 +1533,7 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
 
             runtime.Raise(new OneBotMessageEvent
             {
@@ -1541,8 +1541,8 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
-            string duplicateReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "existing=true"));
+            string duplicateReply = FirstPrivateMessageContaining(runtime, "existing=true");
             completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_notepad"));
             await WaitUntilAsync(() =>
                 ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl")).Contains("\"Status\":\"Executed\"", StringComparison.Ordinal));
@@ -1612,7 +1612,7 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=denied"));
 
             runtime.Raise(new OneBotMessageEvent
             {
@@ -1620,9 +1620,9 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = "/qchat desktop drafts recent"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
-            string executeReply = runtime.PrivateMessages[2].Message;
-            string recentReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, $"{draftId} status=Approved"));
+            string executeReply = FirstPrivateMessageContaining(runtime, "desktop_execution=denied");
+            string recentReply = FirstPrivateMessageContaining(runtime, $"{draftId} status=Approved");
             string draftPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl");
             string draftLog = File.ReadAllText(draftPath);
             string[] executedLines = File.ReadAllLines(draftPath)
@@ -1702,7 +1702,7 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
 
             runtime.Raise(new OneBotMessageEvent
             {
@@ -1710,9 +1710,9 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = "/qchat desktop drafts recent"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
-            string executeReply = runtime.PrivateMessages[2].Message;
-            string recentReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, $"{draftId} status=Approved"));
+            string executeReply = FirstPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-");
+            string recentReply = FirstPrivateMessageContaining(runtime, $"{draftId} status=Approved");
             string jobId = ExtractDesktopJobId(executeReply);
             await WaitUntilAsync(() =>
                 ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-business-jobs.jsonl")).Contains("\"Status\":\"Failed\"", StringComparison.Ordinal));
@@ -1794,8 +1794,8 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop draft execute {draftId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
-            string jobId = ExtractDesktopJobId(runtime.PrivateMessages[2].Message);
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+            string jobId = ExtractDesktopJobId(FirstPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
             await WaitUntilAsync(() =>
                 ReadAllTextWithSharing(Path.Combine(storageRoot, "AgentWorkspace", "desktop-business-jobs.jsonl")).Contains("\"Status\":\"Succeeded\"", StringComparison.Ordinal));
 
@@ -1805,7 +1805,7 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = "/qchat desktop jobs recent"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "Recent desktop jobs:"));
 
             runtime.Raise(new OneBotMessageEvent
             {
@@ -1813,9 +1813,13 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = $"/qchat desktop job {jobId}"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 5);
-            string recentReply = runtime.PrivateMessages[3].Message;
-            string detailReply = runtime.PrivateMessages[4].Message;
+            await WaitUntilAsync(() => runtime.PrivateMessages.Any(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("message=", StringComparison.Ordinal)));
+            string recentReply = FirstPrivateMessageContaining(runtime, "Recent desktop jobs:");
+            string detailReply = runtime.PrivateMessages.First(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("message=", StringComparison.Ordinal)).Message;
 
             Assert.Multiple(() =>
             {
@@ -1901,8 +1905,8 @@ public class QChatServiceAdapterTests
                 UserId = 3045846738,
                 RawMessage = "/qchat desktop jobs recent"
             });
-            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
-            string jobsReply = runtime.PrivateMessages[3].Message;
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "Recent desktop jobs:"));
+            string jobsReply = FirstPrivateMessageContaining(runtime, "Recent desktop jobs:");
 
             completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_notepad"));
             await WaitUntilAsync(() =>
@@ -1914,6 +1918,92 @@ public class QChatServiceAdapterTests
                 Assert.That(jobsReply, Does.Contain("Recent desktop jobs:"));
                 Assert.That(jobsReply, Does.Contain("status=Running"));
                 Assert.That(executor.ExecutedDrafts, Has.Count.EqualTo(1));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
+    public async Task OwnerXiayuQChatDesktopQueuedJobCompletionSendsCompactOwnerNotification()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-job-notification-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            TaskCompletionSource<DesktopBusinessExecutionResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeDesktopBusinessExecutor executor = new()
+            {
+                ExecuteOverride = _ => completion.Task
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))),
+                desktopBusinessExecutor: executor);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string draftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft execute {draftId}"
+            });
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+            string jobId = ExtractDesktopJobId(FirstPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+            completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open_notepad"));
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Any(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("status=Succeeded", StringComparison.Ordinal)));
+            string notification = runtime.PrivateMessages.First(message =>
+                message.Message.Contains($"desktop_job={jobId}", StringComparison.Ordinal) &&
+                message.Message.Contains("status=Succeeded", StringComparison.Ordinal)).Message;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages[3].Target, Is.EqualTo(3045846738));
+                Assert.That(notification, Does.Contain($"desktop_job={jobId}"));
+                Assert.That(notification, Does.Contain("status=Succeeded"));
+                Assert.That(notification, Does.Contain($"draft={draftId}"));
+                Assert.That(notification, Does.Contain("action=open notepad"));
+                Assert.That(notification, Does.Not.Contain("notepad.exe"));
+                Assert.That(notification, Does.Not.Contain("desktop-business-jobs.jsonl"));
             });
         }
         finally
@@ -8635,6 +8725,21 @@ public class QChatServiceAdapterTests
             .FirstOrDefault(part => part.StartsWith("job=desktop-job-", StringComparison.Ordinal));
         Assert.That(token, Is.Not.Null);
         return token!["job=".Length..];
+    }
+
+    static bool HasPrivateMessageContaining(FakeOneBotRuntime runtime, string value)
+    {
+        return runtime.PrivateMessages.Any(message =>
+            message.Message.Contains(value, StringComparison.Ordinal));
+    }
+
+    static string FirstPrivateMessageContaining(FakeOneBotRuntime runtime, string value)
+    {
+        string? match = runtime.PrivateMessages
+            .Select(message => message.Message)
+            .FirstOrDefault(message => message.Contains(value, StringComparison.Ordinal));
+        Assert.That(match, Is.Not.Null);
+        return match!;
     }
 
     static string ReadAllTextWithSharing(string path)
