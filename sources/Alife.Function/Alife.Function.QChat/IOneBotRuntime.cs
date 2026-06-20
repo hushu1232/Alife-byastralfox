@@ -14,6 +14,8 @@ public interface IOneBotRuntime : IAsyncDisposable
     Task ConnectAsync();
     Task SendGroupMessage(long groupId, string message);
     Task SendPrivateMessage(long userId, string message);
+    Task<T?> CallActionAsync<T>(string action, object? parameters = null) =>
+        throw new NotSupportedException("This OneBot runtime does not support generic action calls.");
     async Task<OneBotSendMessageResult?> SendGroupMessageWithResult(long groupId, string message)
     {
         await SendGroupMessage(groupId, message);
@@ -52,6 +54,7 @@ public sealed class OneBotRuntime(OneBotClient client) : IOneBotRuntime
     public Task ConnectAsync() => client.ConnectAsync();
     public Task SendGroupMessage(long groupId, string message) => client.SendGroupMessage(groupId, message);
     public Task SendPrivateMessage(long userId, string message) => client.SendPrivateMessage(userId, message);
+    public Task<T?> CallActionAsync<T>(string action, object? parameters = null) => client.CallActionAsync<T>(action, parameters);
     public Task<OneBotSendMessageResult?> SendGroupMessageWithResult(long groupId, string message) => client.SendGroupMessageWithResult(groupId, message);
     public Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(long userId, string message) => client.SendPrivateMessageWithResult(userId, message);
     public Task DeleteMessage(long messageId) => client.DeleteMessage(messageId);

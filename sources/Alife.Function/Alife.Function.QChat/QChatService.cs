@@ -57,7 +57,7 @@ public record QChatConfig
     public string ProtectedUserIds { get; set; } = "";
     public bool EnableQChatRiskScoring { get; set; } = true;
     public bool EnableAutoLocalBlock { get; set; } = true;
-    public bool EnableAutoFriendDelete { get; set; }
+    public bool EnableAutoFriendDelete { get; set; } = true;
     public int LocalBlockThreshold { get; set; } = 120;
     public int AutoDeleteFriendThreshold { get; set; } = 160;
     public int CriticalAutoDeleteFriendThreshold { get; set; } = 220;
@@ -66,6 +66,10 @@ public record QChatConfig
     public int AutoDeleteDailyLimit { get; set; } = 5;
     public int MinIndependentEventsForDelete { get; set; } = 2;
     public int MinDeleteObservationMinutes { get; set; } = 10;
+    public string FriendDeleteActionName { get; set; } = "delete_friend";
+    public bool FriendDeleteTempBlock { get; set; }
+    public bool FriendDeleteTempBothDelete { get; set; }
+    public string FriendDeleteAllowedAgentIds { get; set; } = "xiayu";
     public float AutoPokeBackPrivateProbability { get; set; } = 0.5f;
     public float AutoPokeBackGroupProbability { get; set; } = 0.5f;
     public bool PersistQuietModeAcrossRestart { get; set; }
@@ -213,7 +217,8 @@ public partial class QChatService(
     IDesktopActionDraftReader? desktopActionDraftReader = null,
     IDesktopActionDraftController? desktopActionDraftController = null,
     IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
-    QChatRiskScoreService? riskScoreService = null) :
+    QChatRiskScoreService? riskScoreService = null,
+    IQChatFriendActionGateway? friendActionGateway = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -1856,6 +1861,10 @@ public partial class QChatService(
     readonly QChatRecentEventMemory recentEventMemory = new();
     readonly QChatRiskEventDetector riskEventDetector = new();
     readonly QChatRiskScoreService riskScores = riskScoreService ?? new QChatRiskScoreService();
+    readonly IQChatFriendActionGateway? injectedFriendActionGateway = friendActionGateway;
+    readonly object friendDeletePolicyGate = new();
+    readonly Dictionary<string, int> friendDeleteDailyCounts = new(StringComparer.Ordinal);
+    readonly Dictionary<string, DateTimeOffset> friendDeleteLastAttemptTimes = new(StringComparer.Ordinal);
     readonly object pendingDispatchGate = new();
     readonly Dictionary<string, QChatPendingDispatchSession> pendingDispatchSessions = new();
     readonly object groupDecisionGate = new();
@@ -2308,9 +2317,11 @@ public partial class QChatService(
                     });
                     return;
                 }
-                if (ShouldBlockQChatMessage(config, messageEvent))
+                if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: false))
                     return;
                 if (await TryApplyQChatRiskScoringAsync(config, messageEvent, senderRole, content))
+                    return;
+                if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: true))
                     return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 if (await BuildOwnerCommandService().TryHandleAsync(new QChatOwnerCommandContext(
@@ -2397,29 +2408,146 @@ public partial class QChatService(
                 LocalBlockThreshold: config.EnableAutoLocalBlock ? config.LocalBlockThreshold : int.MaxValue,
                 AutoDeleteFriendThreshold: config.AutoDeleteFriendThreshold,
                 CriticalAutoDeleteFriendThreshold: config.CriticalAutoDeleteFriendThreshold));
-        if (config.EnableAutoLocalBlock == false || update.CrossedLocalBlockThreshold == false)
-            return false;
-
-        WriteQChatDiagnostic("qchat-risk-local-block", "QChat risk score crossed local block threshold.", new {
-            messageEvent.UserId,
-            messageEvent.GroupId,
-            botId,
-            agentId,
-            update.State.Score,
-            update.State.EventCount,
-            reasons = update.State.Reasons
-        });
-        if (config.OwnerId != 0)
+        bool handled = false;
+        if (config.EnableAutoLocalBlock && update.CrossedLocalBlockThreshold)
         {
-            string report = QChatRiskOwnerNotifier.FormatLocalBlockReport(update.State);
-            string formattedReport = QChatCommandPersonaFormatter.Format(agentId, QChatSenderRole.Owner, report);
-            await SendTextOrMediaMessageAsync(OneBotMessageType.Private, config.OwnerId, formattedReport, streamText: false);
+            WriteQChatDiagnostic("qchat-risk-local-block", "QChat risk score crossed local block threshold.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                botId,
+                agentId,
+                update.State.Score,
+                update.State.EventCount,
+                reasons = update.State.Reasons
+            });
+            await SendOwnerRiskReportAsync(config, agentId, QChatRiskOwnerNotifier.FormatLocalBlockReport(update.State, config.LocalBlockThreshold));
+            handled = true;
         }
 
+        if (await TryApplyQChatFriendDeleteAsync(config, agentId, botId, update.State))
+            handled = true;
+
+        return handled;
+    }
+
+    async Task<bool> TryApplyQChatFriendDeleteAsync(
+        QChatConfig config,
+        string agentId,
+        long botId,
+        QChatRiskUserState state)
+    {
+        QChatFriendDeleteRuntimeState runtimeState = GetFriendDeleteRuntimeState(config, agentId, botId);
+        int observationMinutes = Math.Max(0, (int)(state.LastSeenAt - state.FirstSeenAt).TotalMinutes);
+        QChatFriendDeleteDecision decision = QChatRiskActionPolicy.EvaluateFriendDelete(new QChatFriendDeleteContext(
+            EnableAutoFriendDelete: config.EnableAutoFriendDelete,
+            AgentId: agentId,
+            UserId: state.UserId,
+            BotId: botId,
+            OwnerId: config.OwnerId,
+            AllowedPrivateUserIds: config.AllowedPrivateUserIds,
+            ProtectedUserIds: config.ProtectedUserIds,
+            QuietModeWakeUserIds: config.QuietModeWakeUserIds,
+            Score: state.Score,
+            EventCount: state.EventCount,
+            MinutesBetweenFirstAndLastRisk: observationMinutes,
+            DailyDeleteCount: runtimeState.DailyDeleteCount,
+            DailyDeleteLimit: Math.Max(0, config.AutoDeleteDailyLimit),
+            CooldownActive: runtimeState.CooldownActive,
+            Threshold: config.AutoDeleteFriendThreshold,
+            MinIndependentEvents: Math.Max(1, config.MinIndependentEventsForDelete),
+            MinObservationMinutes: Math.Max(0, config.MinDeleteObservationMinutes),
+            DeleteAllowedAgentIds: config.FriendDeleteAllowedAgentIds));
+
+        if (decision.CanDelete == false)
+        {
+            WriteQChatDiagnostic("qchat-risk-friend-delete-skipped", "QChat friend delete policy did not allow deletion.", new {
+                state.UserId,
+                botId,
+                agentId,
+                state.Score,
+                decision.Reason
+            });
+            return false;
+        }
+
+        RecordFriendDeleteAttempt(agentId, botId);
+        IQChatFriendActionGateway gateway = ResolveFriendActionGateway(config);
+        QChatFriendDeleteResult result = await gateway.DeleteFriendAsync(state.UserId);
+        WriteQChatDiagnostic(
+            result.Succeeded ? "qchat-risk-friend-delete-succeeded" : "qchat-risk-friend-delete-failed",
+            "QChat automatic friend delete gateway completed.",
+            new {
+                state.UserId,
+                botId,
+                agentId,
+                state.Score,
+                result.Succeeded,
+                result.Message
+            });
+        await SendOwnerRiskReportAsync(config, agentId, QChatRiskOwnerNotifier.FormatFriendDeleteReport(state, result, config.AutoDeleteFriendThreshold));
         return true;
     }
 
-    bool ShouldBlockQChatMessage(QChatConfig config, OneBotMessageEvent messageEvent)
+    async Task SendOwnerRiskReportAsync(QChatConfig config, string agentId, string report)
+    {
+        if (config.OwnerId == 0)
+            return;
+
+        string formattedReport = QChatCommandPersonaFormatter.Format(agentId, QChatSenderRole.Owner, report);
+        await SendTextOrMediaMessageAsync(OneBotMessageType.Private, config.OwnerId, formattedReport, streamText: false);
+    }
+
+    IQChatFriendActionGateway ResolveFriendActionGateway(QChatConfig config)
+    {
+        return injectedFriendActionGateway ?? new QChatOneBotFriendActionGateway(
+            GetOneBotClient(),
+            new QChatFriendActionGatewayOptions
+            {
+                DeleteFriendAction = string.IsNullOrWhiteSpace(config.FriendDeleteActionName)
+                    ? "delete_friend"
+                    : config.FriendDeleteActionName.Trim(),
+                TempBlock = config.FriendDeleteTempBlock,
+                TempBothDelete = config.FriendDeleteTempBothDelete
+            });
+    }
+
+    QChatFriendDeleteRuntimeState GetFriendDeleteRuntimeState(QChatConfig config, string agentId, long botId)
+    {
+        lock (friendDeletePolicyGate)
+        {
+            string dayKey = BuildFriendDeleteDayKey(agentId, botId, DateTimeOffset.Now);
+            friendDeleteDailyCounts.TryGetValue(dayKey, out int dailyDeleteCount);
+            string cooldownKey = BuildFriendDeleteCooldownKey(agentId, botId);
+            bool cooldownActive = config.AutoDeleteCooldownMinutes > 0 &&
+                                  friendDeleteLastAttemptTimes.TryGetValue(cooldownKey, out DateTimeOffset lastAttempt) &&
+                                  DateTimeOffset.Now - lastAttempt < TimeSpan.FromMinutes(config.AutoDeleteCooldownMinutes);
+            return new QChatFriendDeleteRuntimeState(dailyDeleteCount, cooldownActive);
+        }
+    }
+
+    void RecordFriendDeleteAttempt(string agentId, long botId)
+    {
+        lock (friendDeletePolicyGate)
+        {
+            string dayKey = BuildFriendDeleteDayKey(agentId, botId, DateTimeOffset.Now);
+            friendDeleteDailyCounts[dayKey] = friendDeleteDailyCounts.TryGetValue(dayKey, out int count) ? count + 1 : 1;
+            friendDeleteLastAttemptTimes[BuildFriendDeleteCooldownKey(agentId, botId)] = DateTimeOffset.Now;
+        }
+    }
+
+    static string BuildFriendDeleteDayKey(string agentId, long botId, DateTimeOffset now)
+    {
+        return $"{agentId.Trim().ToLowerInvariant()}:{botId}:{now:yyyyMMdd}";
+    }
+
+    static string BuildFriendDeleteCooldownKey(string agentId, long botId)
+    {
+        return $"{agentId.Trim().ToLowerInvariant()}:{botId}";
+    }
+
+    sealed record QChatFriendDeleteRuntimeState(int DailyDeleteCount, bool CooldownActive);
+
+    bool ShouldBlockQChatMessage(QChatConfig config, OneBotMessageEvent messageEvent, bool includeRiskLocalBlock)
     {
         string agentId = ResolveCurrentAgentId(config);
         long botId = ResolveCurrentBotId(config, messageEvent);
@@ -2433,7 +2561,7 @@ public partial class QChatService(
             GroupId: messageEvent.GroupId == 0 ? null : messageEvent.GroupId,
             BlockedPrivateUserIds: config.BlockedPrivateUserIds,
             BlockedGroupIds: config.BlockedGroupIds,
-            IsLocallyBlocked: isLocallyBlocked));
+            IsLocallyBlocked: includeRiskLocalBlock && isLocallyBlocked));
 
         if (decision.IsBlocked == false)
             return false;

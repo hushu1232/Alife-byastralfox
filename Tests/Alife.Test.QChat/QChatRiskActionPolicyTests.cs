@@ -1,5 +1,6 @@
 using Alife.Function.QChat;
 using NUnit.Framework;
+using System.Text.Json;
 
 namespace Alife.Test.QChat;
 
@@ -110,5 +111,42 @@ public sealed class QChatRiskActionPolicyTests
 
         Assert.That(result.Succeeded, Is.False);
         Assert.That(result.Message, Is.EqualTo("friend_delete_gateway=not_enabled"));
+    }
+
+    [Test]
+    public async Task OneBotFriendActionGatewayCallsDeleteFriendAction()
+    {
+        RecordingOneBotActionInvoker invoker = new();
+        QChatOneBotFriendActionGateway gateway = new(invoker, new QChatFriendActionGatewayOptions
+        {
+            DeleteFriendAction = "delete_friend",
+            TempBlock = true,
+            TempBothDelete = false
+        });
+
+        QChatFriendDeleteResult result = await gateway.DeleteFriendAsync(2001);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Succeeded, Is.True);
+            Assert.That(result.Message, Does.Contain("friend_delete_action=delete_friend"));
+            Assert.That(invoker.Action, Is.EqualTo("delete_friend"));
+            Assert.That(invoker.Payload.GetProperty("user_id").GetInt64(), Is.EqualTo(2001));
+            Assert.That(invoker.Payload.GetProperty("temp_block").GetBoolean(), Is.True);
+            Assert.That(invoker.Payload.GetProperty("temp_both_del").GetBoolean(), Is.False);
+        });
+    }
+
+    sealed class RecordingOneBotActionInvoker : IOneBotActionInvoker
+    {
+        public string? Action { get; private set; }
+        public JsonElement Payload { get; private set; }
+
+        public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
+        {
+            Action = action;
+            Payload = JsonSerializer.SerializeToElement(parameters);
+            return Task.FromResult<T?>(default);
+        }
     }
 }

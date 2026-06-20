@@ -597,6 +597,57 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task RiskThresholdAutoDeletesFriendAndReportsOwnerWhenEnabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakeFriendActionGateway friendGateway = new(new QChatFriendDeleteResult(true, "friend_delete_action=delete_friend"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableAutoFriendDelete = true,
+            LocalBlockThreshold = 25,
+            AutoDeleteFriendThreshold = 25,
+            MinIndependentEventsForDelete = 1,
+            MinDeleteObservationMinutes = 0,
+            EnableBalancedTextStreaming = false
+        },
+        riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+        friendActionGateway: friendGateway);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "jailbreak"
+        });
+
+        await WaitUntilAsync(() => friendGateway.DeletedUserIds.Contains(2001));
+        await WaitUntilAsync(() => runtime.PrivateMessages.Any(message =>
+            message.Target == 1001 &&
+            message.Message.Contains("action=delete_friend", StringComparison.Ordinal)));
+
+        string report = runtime.PrivateMessages.Last(message =>
+            message.Target == 1001 &&
+            message.Message.Contains("action=delete_friend", StringComparison.Ordinal)).Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(report, Does.Contain("result=success"));
+            Assert.That(report, Does.Contain("user_id=2001"));
+            Assert.That(report, Does.Contain("risk_score=25"));
+            Assert.That(report, Does.Contain("threshold=25"));
+        });
+    }
+
+    [Test]
     public async Task NonOwnerNaturalHelpAliasFallsThroughWithoutCommandMenuOrInternalLeak()
     {
         FakeOneBotRuntime runtime = new();
@@ -9033,7 +9084,8 @@ public class QChatServiceAdapterTests
         DesktopControlService? desktopControl = null,
         IDesktopActionAuditSink? desktopActionAuditSink = null,
         IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
-        QChatRiskScoreService? riskScoreService = null)
+        QChatRiskScoreService? riskScoreService = null,
+        IQChatFriendActionGateway? friendActionGateway = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -9053,7 +9105,8 @@ public class QChatServiceAdapterTests
             desktopControl: desktopControl,
             desktopActionAuditSink: desktopActionAuditSink,
             desktopBusinessExecutor: desktopBusinessExecutor,
-            riskScoreService: riskScoreService)
+            riskScoreService: riskScoreService,
+            friendActionGateway: friendActionGateway)
         {
             Configuration = config
         };
@@ -9399,6 +9452,17 @@ public class QChatServiceAdapterTests
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Raise(OneBotBaseEvent ev) => EventReceived?.Invoke(ev);
+    }
+
+    sealed class FakeFriendActionGateway(QChatFriendDeleteResult result) : IQChatFriendActionGateway
+    {
+        public List<long> DeletedUserIds { get; } = new();
+
+        public Task<QChatFriendDeleteResult> DeleteFriendAsync(long userId, CancellationToken cancellationToken = default)
+        {
+            DeletedUserIds.Add(userId);
+            return Task.FromResult(result);
+        }
     }
 
     sealed class ThrowingUploadRuntime : IOneBotRuntime
