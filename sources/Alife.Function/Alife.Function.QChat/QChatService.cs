@@ -182,7 +182,9 @@ public partial class QChatService(
     QChatManagedFileService? managedFileService = null,
     AgentApprovalService? approvalService = null,
     AgentEditCheckpointService? checkpointService = null,
-    AgentTaskService? taskService = null) :
+    AgentTaskService? taskService = null,
+    IMemoryConsistencyReporter? memoryConsistencyReporter = null,
+    IAutobiographicalMemorySink? autobiographicalMemorySink = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -3053,6 +3055,7 @@ public partial class QChatService(
         return new QChatOwnerCommandService([
             context => TryHandleApprovalCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryHandleOwnerTimingCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerMemoryStatusCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3062,6 +3065,98 @@ public partial class QChatService(
             context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
             context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
         ]);
+    }
+
+    async Task<bool> TryHandleOwnerMemoryStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (text.Equals("/qchat memory status", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory status.", streamText: false);
+            return true;
+        }
+
+        QChatAgentRoute route = BuildQChatMemoryStatusRoute(messageEvent, Configuration!);
+        QChatAgentProfile profile = ResolveQChatMemoryStatusProfile(route);
+        string status = FormatQChatMemoryStatus(route, profile);
+        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
+        WriteQChatDiagnostic("qchat-memory-status-command", "QChat memory status command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            route.AgentId,
+            profile.MemoryScope
+        });
+        return true;
+    }
+
+    string FormatQChatMemoryStatus(QChatAgentRoute route, QChatAgentProfile profile)
+    {
+        MemoryConsistencySnapshot memoryConsistency = memoryConsistencyReporter?.GetMemoryConsistencySnapshot()
+                                                     ?? MemoryConsistencySnapshot.Empty;
+        string longTermMemory = memoryConsistencyReporter == null
+            ? "not_connected"
+            : memoryConsistency.HasIssues == false ? "available" : "degraded";
+        string autobiographicalMemory = autobiographicalMemorySink == null ? "not_connected" : "available";
+        string lifeEvents = lifeEventPublisher == null ? "not_connected" : "publisher_connected";
+        string relationMemory = injectedRelationCache == null ? "cache_only" : "cache_injected";
+
+        return string.Join(Environment.NewLine,
+            $"agent={route.AgentId}",
+            $"bot={route.BotAccountId}",
+            $"memory_scope={profile.MemoryScope}",
+            "recent_context=enabled",
+            $"life_events={lifeEvents}",
+            $"long_term_memory={longTermMemory}",
+            $"autobiographical_memory={autobiographicalMemory}",
+            $"relation_memory={relationMemory}",
+            $"memory_consistency_issues={memoryConsistency.TotalIssues}");
+    }
+
+    static QChatAgentRoute BuildQChatMemoryStatusRoute(OneBotMessageEvent messageEvent, QChatConfig config)
+    {
+        long botAccountId = messageEvent.SelfId > 0
+            ? messageEvent.SelfId
+            : config.BotId;
+        QChatAgentRouteService routeService = new(new QChatAgentRouteConfig
+        {
+            OwnerUserId = config.OwnerId,
+        });
+
+        return routeService.Resolve(botAccountId, messageEvent);
+    }
+
+    static QChatAgentProfile ResolveQChatMemoryStatusProfile(QChatAgentRoute route)
+    {
+        try
+        {
+            return QChatProfileService.CreateDefault().Get(route);
+        }
+        catch (InvalidOperationException)
+        {
+            return new QChatAgentProfile(
+                route.AgentId,
+                route.AgentId,
+                string.Empty,
+                $"qchat/{route.AgentId}",
+                "unknown",
+                string.Empty,
+                [],
+                new QChatAgentCapabilities(
+                    AllowComputerFileTools: false,
+                    AllowProjectModification: false,
+                    AllowRecall: false,
+                    AllowPoke: false));
+        }
     }
 
     async Task<bool> TryHandleOwnerTimingCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)

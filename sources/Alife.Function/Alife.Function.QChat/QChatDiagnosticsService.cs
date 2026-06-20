@@ -124,6 +124,7 @@ public static class QChatDiagnosticsService
             "/qchat profile - show model/persona/memory",
             "/qchat status - show online and timing state",
             "/qchat timing on|off|status - toggle humanlike reply timing",
+            "/qchat memory status - show QChat memory layer wiring",
             "/qchat files - show file task summary",
             "/qchat approvals - show pending approvals",
             "/qchat failures - show failure count",
