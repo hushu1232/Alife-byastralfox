@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
   <ItemGroup>
     <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+    <ProjectReference Include="..\Alife.Function.MessageFilter\Alife.Function.MessageFilter.csproj" />
+    <ProjectReference Include="..\Alife.Function.Emotion\Alife.Function.Emotion.csproj" />
     <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
     <ProjectReference Include="..\Alife.Function.Speech\Alife.Function.Speech.csproj" />
   </ItemGroup>

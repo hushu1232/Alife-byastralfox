@@ -13,7 +13,7 @@ public static class OneBotSegment
     public static string GetSourceTag(this OneBotMessageEvent message)
     {
         string groupLabel = $"{message.GroupId}({message.GroupName})";
-        string sayerLabel = $"{message.UserId}({message.Sender?.Nickname})";
+        string sayerLabel = $"{message.UserId}({GetSenderDisplayName(message.Sender)})";
         return message.MessageType == OneBotMessageType.Group
             ? $"[群聊 {groupLabel}, 发言人 {sayerLabel}]"
             : $"[私聊 {sayerLabel}]";
@@ -21,9 +21,18 @@ public static class OneBotSegment
     public static string GetSpeakerTag(this OneBotBasicMessageEvent basicMessage)
     {
         string sayerLabel = basicMessage is OneBotMessageEvent messageEvent
-            ? $"{basicMessage.UserId}({messageEvent.Sender?.Nickname})"
+            ? $"{basicMessage.UserId}({GetSenderDisplayName(messageEvent.Sender)})"
             : $"{basicMessage.UserId}";
         return (basicMessage.GroupId == 0 ? "\n[私聊]" : "") + $"[{sayerLabel}]";
+    }
+
+    static string GetSenderDisplayName(OneBotSender? sender)
+    {
+        if (sender == null)
+            return "";
+        if (string.IsNullOrWhiteSpace(sender.Card) == false)
+            return sender.Card.Trim();
+        return sender.Nickname?.Trim() ?? "";
     }
     public static string GetGroupTag(this OneBotBasicMessageEvent basicMessage)
     {
@@ -36,24 +45,46 @@ public static class OneBotSegment
     /// <summary>
     /// 将消息转换为 AI 友好的可读文本（处理回复、@、图片、表情等）。
     /// </summary>
-    public static async Task<string> GetReadableMessage(this OneBotMessageEvent messageEvent, OneBotClient oneBotClient)
+    public static async Task<string> GetReadableMessage(
+        this OneBotMessageEvent messageEvent,
+        IOneBotRuntime oneBotClient,
+        bool includeFiles = true,
+        System.Action<string, string, object?, System.Exception?>? diagnosticWriter = null)
     {
         string content = string.IsNullOrEmpty(messageEvent.RawMessage) && messageEvent.Message is System.Text.Json.JsonElement elem
             ? elem.ToCQString()
             : messageEvent.RawMessage;
         content = FilterFace(content);
         content = FilterAt(content);
-        content = await FilterReply(content, oneBotClient);
-        content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
-        content = FilterForward(content);
+        content = await FilterReply(content, oneBotClient, diagnosticWriter);
+        if (includeFiles)
+            content = await FilterFile(content, messageEvent.GroupId, oneBotClient);
+        content = await ExpandForward(content, oneBotClient, diagnosticWriter);
         content = FilterImage(content);
         return content;
     }
     /// <summary>
     /// 处理转发消息中的内容（处理嵌套转发、图片、表情等）。
     /// </summary>
-    public static string GetReadableForwardContent(System.Text.Json.JsonElement content, OneBotClient oneBotClient)
+    public static string GetReadableForwardContent(System.Text.Json.JsonElement content, IOneBotRuntime oneBotClient)
     {
+        if (content.ValueKind is System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null)
+            return "";
+        if (content.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            if (content.TryGetProperty("message", out System.Text.Json.JsonElement message))
+                return GetReadableForwardContent(message, oneBotClient);
+            if (content.TryGetProperty("content", out System.Text.Json.JsonElement nestedContent))
+                return GetReadableForwardContent(nestedContent, oneBotClient);
+            if (content.TryGetProperty("data", out System.Text.Json.JsonElement data))
+            {
+                if (data.TryGetProperty("content", out System.Text.Json.JsonElement dataContent))
+                    return GetReadableForwardContent(dataContent, oneBotClient);
+                if (data.TryGetProperty("text", out System.Text.Json.JsonElement textElement))
+                    return textElement.GetString() ?? "";
+            }
+        }
+
         string text = content.ToCQString();
         text = FilterFace(text);
         text = FilterAt(text);
@@ -105,17 +136,39 @@ public static class OneBotSegment
     /// <summary>
     /// 将转发消息列表格式化为 AI 可读的 Markdown 文本。
     /// </summary>
-    public static string FormatForwardList(string forwardId, List<OneBotForwardMessage> messages, OneBotClient oneBotClient)
+    public static string FormatForwardList(string forwardId, List<OneBotForwardMessage> messages, IOneBotRuntime oneBotClient)
     {
         StringBuilder sb = new();
         sb.AppendLine($"# 转发消息内容 (ID: {forwardId})");
         foreach (OneBotForwardMessage msg in messages)
         {
-            string readableContent = GetReadableForwardContent(msg.Content, oneBotClient);
+            System.Text.Json.JsonElement content = SelectForwardContent(msg);
+            string readableContent = GetReadableForwardContent(content, oneBotClient);
             sb.AppendLine($"## {msg.Sender?.UserId}({msg.Sender?.Nickname})：");
             sb.AppendLine(readableContent);
         }
         return sb.ToString();
+    }
+    static System.Text.Json.JsonElement SelectForwardContent(OneBotForwardMessage message)
+    {
+        if (message.Content.ValueKind is not System.Text.Json.JsonValueKind.Undefined and not System.Text.Json.JsonValueKind.Null)
+            return message.Content;
+        return message.Message;
+    }
+    static string[] GetJsonPropertyNames(System.Text.Json.JsonElement element)
+    {
+        if (element.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return System.Array.Empty<string>();
+
+        List<string> names = new();
+        foreach (System.Text.Json.JsonProperty property in element.EnumerateObject())
+        {
+            names.Add(property.Name);
+            if (names.Count >= 16)
+                break;
+        }
+
+        return names.ToArray();
     }
     public static string FilterFace(string text)
     {
@@ -126,11 +179,79 @@ public static class OneBotSegment
         string label = isNested ? "嵌套转发消息" : "转发消息";
         return Regex.Replace(text, @"\[CQ:forward,.*?id=(?<id>[^,\]]+).*?\]", $"[{label}: ${{id}}]");
     }
+    public static async Task<string> ExpandForward(
+        string text,
+        IOneBotRuntime client,
+        System.Action<string, string, object?, System.Exception?>? diagnosticWriter = null)
+    {
+        var matches = Regex.Matches(text, @"\[CQ:forward,.*?id=(?<id>[^,\]]+).*?\]");
+        foreach (Match match in matches)
+        {
+            string forwardId = match.Groups["id"].Value;
+            string replacement = $"[Forward message: {forwardId}]";
+            diagnosticWriter?.Invoke("qchat-forward-expand-start", "QQ forward message expansion started.", new {
+                forwardId
+            }, null);
+            try
+            {
+                List<OneBotForwardMessage>? messages = await client.GetForwardMessage(forwardId);
+                if (messages is { Count: > 0 })
+                {
+                    List<object> nodes = new();
+                    for (int i = 0; i < messages.Count; i++)
+                    {
+                        OneBotForwardMessage message = messages[i];
+                        System.Text.Json.JsonElement selected = SelectForwardContent(message);
+                        string readable = GetReadableForwardContent(selected, client);
+                        nodes.Add(new {
+                            index = i,
+                            senderId = message.Sender?.UserId,
+                            senderNickname = message.Sender?.Nickname,
+                            contentKind = message.Content.ValueKind.ToString(),
+                            messageKind = message.Message.ValueKind.ToString(),
+                            selectedKind = selected.ValueKind.ToString(),
+                            contentProperties = GetJsonPropertyNames(message.Content),
+                            messageProperties = GetJsonPropertyNames(message.Message),
+                            readableLength = readable.Length,
+                            hasReadableContent = string.IsNullOrWhiteSpace(readable) == false
+                        });
+                    }
+
+                    diagnosticWriter?.Invoke("qchat-forward-expand-succeeded", "QQ forward message expansion succeeded.", new {
+                        forwardId,
+                        nodeCount = messages.Count,
+                        nodes
+                    }, null);
+                    replacement = FormatForwardList(forwardId, messages, client).Trim();
+                }
+                else
+                {
+                    diagnosticWriter?.Invoke("qchat-forward-expand-empty", "QQ forward message expansion returned no nodes.", new {
+                        forwardId
+                    }, null);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                diagnosticWriter?.Invoke("qchat-forward-expand-failed", ex.Message, new {
+                    forwardId
+                }, ex);
+                // Keep the forward id visible when OneBot cannot expand it.
+            }
+
+            text = text.Replace(match.Value, replacement);
+        }
+
+        return text;
+    }
     public static string FilterAt(string text)
     {
         return Regex.Replace(text, @"\[CQ:at,.*?qq=(?<qq>\d+)[^\]]*\]", "@${qq}");
     }
-    public static async Task<string> FilterReply(string text, OneBotClient client)
+    public static async Task<string> FilterReply(
+        string text,
+        IOneBotRuntime client,
+        System.Action<string, string, object?, System.Exception?>? diagnosticWriter = null)
     {
         var matches = Regex.Matches(text, @"\[CQ:reply,.*?id=(?<id>-?\d+)[^\]]*\]");
         foreach (Match match in matches)
@@ -139,7 +260,7 @@ public static class OneBotSegment
             {
                 OneBotMessageEvent? quoted = await client.GetMessage(replyId);
                 string quotedInfo = quoted != null
-                    ? $"[对“{quoted.UserId}：{await quoted.GetReadableMessage(client)}”的回复]"
+                    ? $"[对“{quoted.UserId}：{await quoted.GetReadableMessage(client, diagnosticWriter: diagnosticWriter)}”的回复]"
                     : "[对其他消息的回复]";
                 text = text.Replace(match.Value, quotedInfo);
             }
@@ -153,7 +274,7 @@ public static class OneBotSegment
         text = Regex.Replace(text, @"\[CQ:image[^\]]*\]", "[图片]");
         return text;
     }
-    public static async Task<string> FilterFile(string text, long groupId, OneBotClient client)
+    public static async Task<string> FilterFile(string text, long groupId, IOneBotRuntime client)
     {
         var matches = Regex.Matches(text, @"\[CQ:file,.*?\]");
         foreach (Match match in matches)

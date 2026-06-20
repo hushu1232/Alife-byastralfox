@@ -1,5 +1,6 @@
 @using System.Reflection
 @using System.Text.RegularExpressions
+@using Alife.Components
 @using Alife.Components.Elements.Utility
 @using Autofac.Core
 @inject ModuleSystem ModuleSystem
@@ -8,7 +9,7 @@
 @inject INotificationService NotificationService
 @implements IDisposable
 
-<ErrorWindowUI Title="角色激活失败喵！" @bind-Value="@activityException"></ErrorWindowUI>
+<ErrorWindowUI Title="角色激活失败" @bind-Value="@activityException"></ErrorWindowUI>
 
 <CharacterLoadingUI Visible="@isLoading"
                     Title=@($"正在激活 {Character?.Name}")
@@ -17,13 +18,23 @@
 
 @if (Visibility)
 {
-    <div style="padding: 24px; height: 100%; overflow-y: auto;">
+    <div class="character-home-shell">
         @if (Character != null)
         {
+            <Card Size="CardSize.Small" Class="character-home-header">
+                <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                    <div>
+                        <Title Level="3" Style="margin: 0;">角色工作台</Title>
+                        <Text Type="TextElementType.Secondary">集中管理角色设定、模块能力和启动状态。</Text>
+                    </div>
+                    <AstralFoxDevMark />
+                </Flex>
+            </Card>
+
             <GridRow Gutter="16">
-                <!-- 第一列：状态与控制 -->
+                <!-- 第一列：状态与启动 -->
                 <GridCol Span="8">
-                    <Card Title="状态控制" Style="border-radius: 12px; height: 100%;">
+                    <Card Title="状态与启动" Style="border-radius: 12px; height: 100%;">
                         <Flex Direction="@FlexDirection.Vertical"
                               Align="@FlexAlign.Center" Justify="@FlexJustify.Center"
                               Style="padding: 24px 0;">
@@ -68,22 +79,22 @@
                 <!-- 第二列：核心设定与插件 -->
                 <GridCol Span="16">
                     <Card Title="角色配置" Style="border-radius: 12px;">
-                        <Alert Message="提示" Description="角色活动时无法修改配置喵。" Type="@AlertType.Info"
+                        <Alert Message="正在运行" Description="角色运行中无法修改配置，请先停止运行后再编辑。" Type="@AlertType.Info"
                                ShowIcon="true"
                                Style="@($"margin-bottom: 12px; display: {(activity != null ? "block" : "none")}")"/>
 
-                        <Title Level="5">简介 (Description)</Title>
+                        <Title Level="5">人格简介</Title>
                         <Input @bind-Value="Character.Description"
-                               Placeholder="一句话介绍一下角色，如：一只的猫娘。"
+                               Placeholder="用一句话描述角色定位，例如：负责群聊陪伴和日程提醒的助手。"
                                Disabled="@(activity != null)"
                                Style="margin-bottom: 16px; border-radius: 8px;"/>
 
-                        <Title Level="5">设定 (System Prompt)</Title>
+                        <Title Level="5">系统设定</Title>
                         <TextArea MinRows="6" MaxRows="12" @bind-Value="Character.Prompt"
                                   Disabled="@(activity != null)"
                                   Style="margin-bottom: 24px; border-radius: 8px;"></TextArea>
 
-                        <Title Level="5">模块 (Modules)</Title>
+                        <Title Level="5">模块能力</Title>
                         <div
                             style="max-height: 400px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px; background: @(activity != null ? "#fafafa" : "#fff")">
                             <StringFolderSelectorUI
@@ -111,13 +122,13 @@
         }
         else
         {
-            <Empty Description="@("角色为空！")"/>
+            <Empty Description="@("请选择角色")"/>
         }
 
         @if (activity != null)
         {
-            <Divider>隐含上下文 (Implicit Context / Effective Tools)</Divider>
-            <Card Title="函数调用" Style="border-radius: 12px; margin-top: 16px;">
+            <Divider>当前可用能力</Divider>
+            <Card Title="模型可见的工具上下文" Style="border-radius: 12px; margin-top: 16px;">
                 @foreach (var sysPrompt in activity.GetImplicitFunctionContext())
                 {
                     <Paragraph Copyable
@@ -129,6 +140,20 @@
         }
     </div>
 }
+
+<style>
+    .character-home-shell {
+        padding: 24px;
+        height: 100%;
+        overflow-y: auto;
+        background: #fafafa;
+    }
+
+    .character-home-header {
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+</style>
 
 @code
 {
@@ -176,7 +201,7 @@
     ChatActivity? activity;
     Exception? activityException;
     bool isLoading;
-    string loadingTask = "正在初始化环境喵...";
+    string loadingTask = "正在初始化环境...";
     float loadingProgress;
     bool isSaving;
     HashSet<string> moduleIDs = new();
@@ -211,7 +236,7 @@
         if (character.Name != Character?.Name) return;
         isLoading = true;
         loadingProgress = 0;
-        loadingTask = "正在初始化环境喵...";
+        loadingTask = "正在初始化环境...";
         InvokeAsync(UpdateState);
     }
     void OnActivationFailed(Character character, Exception ex)

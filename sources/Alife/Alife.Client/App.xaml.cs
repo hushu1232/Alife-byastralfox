@@ -67,6 +67,16 @@ public partial class App
 
         ServiceProvider = services.BuildServiceProvider();
         ServiceProvider.GetRequiredService<ChatMessageService>();
+        _ = Task.Run(async () => {
+            try
+            {
+                await ServiceProvider.GetRequiredService<ChatActivitySystem>().ActivateAutoActivateCharacters();
+            }
+            catch (Exception ex)
+            {
+                AlifeTerminal.LogError(ex.ToString());
+            }
+        });
         ServiceProvider.GetRequiredService<MainWindow>().Show();
     }
 

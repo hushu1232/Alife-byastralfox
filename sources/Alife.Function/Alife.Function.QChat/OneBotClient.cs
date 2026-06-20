@@ -54,6 +54,8 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
         set => token = value;
     }
 
+    public TimeSpan ActionTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
 
     public async Task ConnectAsync()
     {
@@ -95,7 +97,7 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
     }
 
 
-    public async Task SendActionAsync(string action, object? @params = null, string? echo = null)
+    public virtual async Task SendActionAsync(string action, object? @params = null, string? echo = null)
     {
         OneBotAction payload = new() { Action = action, Params = @params, Echo = echo };
         string json = JsonSerializer.Serialize(payload);
@@ -108,20 +110,42 @@ public class OneBotClient(string url, string token = "") : IAsyncDisposable
         TaskCompletionSource<JsonElement> tcs = new();
         pendingActions[echo] = tcs;
 
-        await SendActionAsync(action, @params, echo);
-
-        using CancellationTokenSource timeout = new(10000);
-        await using CancellationTokenRegistration ctRegistration = timeout.Token.Register(() => tcs.TrySetCanceled());
-
-        JsonElement result = await tcs.Task;
-        OneBotResponse<T>? response = result.Deserialize<OneBotResponse<T>>();
-        
-        if (response != null && response.RetCode != 0 && response.RetCode != 1)
+        try
         {
-            throw new Exception($"调用失败 (RetCode: {response.RetCode}) - {response.Message}");
-        }
+            try
+            {
+                await SendActionAsync(action, @params, echo);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"OneBot action '{action}' could not be sent: {ex.Message}",
+                    ex);
+            }
 
-        return response != null ? response.Data : default;
+            using CancellationTokenSource timeout = new(ActionTimeout);
+            await using CancellationTokenRegistration ctRegistration = timeout.Token.Register(() => tcs.TrySetCanceled());
+
+            JsonElement result = await tcs.Task;
+            OneBotResponse<T>? response = result.Deserialize<OneBotResponse<T>>();
+
+            if (response != null && response.RetCode != 0 && response.RetCode != 1)
+            {
+                throw new Exception($"调用失败 (RetCode: {response.RetCode}) - {response.Message}");
+            }
+
+            return response != null ? response.Data : default;
+        }
+        catch (TaskCanceledException ex)
+        {
+            throw new TimeoutException(
+                $"OneBot action '{action}' timed out after {ActionTimeout.TotalMilliseconds:0} ms.",
+                ex);
+        }
+        finally
+        {
+            pendingActions.TryRemove(echo, out _);
+        }
     }
 
 

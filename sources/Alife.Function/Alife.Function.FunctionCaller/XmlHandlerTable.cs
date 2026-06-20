@@ -10,6 +10,7 @@ namespace Alife.Function.Interpreter;
 public class XmlHandlerTable
 {
     public IReadOnlyList<XmlHandler> Handlers => xmlHandlers;
+    public XmlFunctionExecutionPolicy ExecutionPolicy { get; } = new();
 
     public void Register(XmlHandler handler)
     {
@@ -36,6 +37,12 @@ public class XmlHandlerTable
         }
     }
 
+    public bool ContainsFunction(string name)
+    {
+        return xmlFunctions.TryGetValue(name.ToLower(), out SortedSet<XmlFunction>? xmlFunctionGroup)
+               && xmlFunctionGroup.Count > 0;
+    }
+
     public string Document()
     {
         StringBuilder sb = new();
@@ -56,7 +63,13 @@ public class XmlHandlerTable
         if (xmlFunctionGroup == null || xmlFunctionGroup.Count == 0)
             throw new Exception($"未找到名为 {name} 的可调用函数");
         foreach (XmlFunction xmlFunction in xmlFunctionGroup)
+        {
+            XmlFunctionExecutionDecision decision = ExecutionPolicy.TryConsume(xmlFunction);
+            if (decision.IsAllowed == false)
+                throw new InvalidOperationException(decision.Reason);
+
             await xmlFunction.Invoker(tagContext, cancellationToken);
+        }
     }
 
     readonly List<XmlHandler> xmlHandlers = new();

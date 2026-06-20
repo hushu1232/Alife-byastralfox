@@ -4,24 +4,27 @@
 @inject ConfigurationSystem ConfigurationSystem
 @inject IMessageService MessageService
 
-<div>
-    <Flex Justify="FlexJustify.End" Align="FlexAlign.Center">
+<div class="config-save-actions">
+    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")">
+        <Text Type="TextElementType.Secondary" Style="font-size: 12px;">
+            全局配置影响默认行为；当前角色配置只影响此角色。
+        </Text>
         <Space>
             <SpaceItem>
                 <Popconfirm Title="确认保存到全局吗？所有未单独配置的角色将默认使用此配置。" OnConfirm="SaveToGlobal">
-                    <Button Type="@ButtonType.Primary" Icon="@IconType.Outline.Global">应用到全局</Button>
+                    <Button Type="@ButtonType.Primary" Icon="@IconType.Outline.Global">保存到全局</Button>
                 </Popconfirm>
             </SpaceItem>
             @if (!string.IsNullOrEmpty(CharacterName))
             {
                 <SpaceItem>
-                    <Button Icon="@IconType.Outline.User" OnClick="SaveToCharacter">应用到角色</Button>
+                    <Button Icon="@IconType.Outline.User" OnClick="SaveToCharacter">保存到当前角色</Button>
                 </SpaceItem>
                 <SpaceItem>
                     <Popconfirm Title="确认删除角色独立配置吗？删除后将回退至全局配置。"
                                 OnConfirm="DeleteCharacterConfig"
                                 Disabled="@(!hasCharacterConfig)">
-                        <Button Danger Icon="@IconType.Outline.Delete" Disabled="@(!hasCharacterConfig)">取消角色配置
+                        <Button Danger Icon="@IconType.Outline.Delete" Disabled="@(!hasCharacterConfig)">删除角色配置
                         </Button>
                     </Popconfirm>
                 </SpaceItem>
@@ -29,6 +32,12 @@
         </Space>
     </Flex>
 </div>
+
+<style>
+    .config-save-actions {
+        min-width: 0;
+    }
+</style>
 
 @code {
 
@@ -79,7 +88,7 @@
     {
         if (ModuleType == null || Configuration == null) return;
         ConfigurationSystem.SetConfiguration(ModuleType, Configuration);
-        MessageService.Success("全局配置保存成功喵！");
+        MessageService.Success("全局配置已保存。");
         OnConfigurationChanged.InvokeAsync(Configuration);
     }
 
@@ -88,7 +97,7 @@
         if (ModuleType == null || Configuration == null || string.IsNullOrEmpty(CharacterName)) return;
         ConfigurationSystem.SetConfiguration(ModuleType, Configuration, Path.Combine("Character", CharacterName));
         UpdateStatus();
-        MessageService.Success($"角色 [{CharacterName}] 的独立配置保存成功喵！");
+        MessageService.Success($"角色 [{CharacterName}] 的独立配置已保存。");
         OnConfigurationChanged.InvokeAsync(Configuration);
     }
 
@@ -105,7 +114,7 @@
             await OnConfigurationChanged.InvokeAsync(globalConfig);
         }
 
-        MessageService.Success($"角色 [{CharacterName}] 的独立配置已删除，已回退至全局配置喵！");
+        MessageService.Success($"角色 [{CharacterName}] 的独立配置已删除，已回退至全局配置。");
     }
 
 }

@@ -1,23 +1,38 @@
 @using Newtonsoft.Json
 @using System.Reflection
+@using Alife.Components
 @inject ConfigurationSystem ConfigurationSystem
 
-<div style="display: flex; flex-direction: column; gap: 16px;">
-    @if (customUIType != null && customUIParameters.Count > 0)
-    {
-        <DynamicComponent Type="customUIType" Parameters="customUIParameters"/>
-    }
-    else
-    {
-        @CreateDefaultUI()
-    }
+<div class="module-config-shell">
+    <Card Size="CardSize.Small" Class="module-config-card">
+        <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+            <div>
+                <Title Level="4" Style="margin: 0;">@GetModuleDisplayName()</Title>
+                <Text Type="TextElementType.Secondary">@GetModuleFullName()</Text>
+            </div>
+            <AstralFoxDevMark />
+        </Flex>
+    </Card>
+
+    <div class="module-config-body">
+        @if (customUIType != null && customUIParameters.Count > 0)
+        {
+            <DynamicComponent Type="customUIType" Parameters="customUIParameters"/>
+        }
+        else
+        {
+            @CreateDefaultUI()
+        }
+    </div>
 
     @if (ConfigurationSystem.CanConfiguration(ModuleType))
     {
-        <ConfigSaveUI ModuleType="@ModuleType"
-                      Configuration="@GetConfigFromText()"
-                      CharacterName="@Character?.Name"
-                      OnConfigurationChanged="@OnConfigChanged"/>
+        <Card Size="CardSize.Small" Class="module-config-card save-card">
+            <ConfigSaveUI ModuleType="@ModuleType"
+                          Configuration="@GetConfigFromText()"
+                          CharacterName="@Character?.Name"
+                          OnConfigurationChanged="@OnConfigChanged"/>
+        </Card>
     }
 </div>
 
@@ -30,8 +45,10 @@
     Dictionary<string, object> customUIParameters = new();
 
     RenderFragment CreateDefaultUI() =>
-        @<div style="display: flex; flex-direction: column; gap: 16px;">
-            <TextArea Style="min-height: 200px; border-radius: 8px;" @bind-Value="moduleConfiguration"/>
+        @<div class="default-config-editor">
+            <Text Type="TextElementType.Secondary">此模块没有专用配置界面，可以直接编辑 JSON 配置。</Text>
+            <TextArea Style="min-height: 260px; border-radius: 8px; font-family: Consolas, monospace;"
+                      @bind-Value="moduleConfiguration"/>
         </div>;
 
     object? GetConfigFromText()
@@ -51,6 +68,17 @@
     {
         moduleConfiguration = JsonConvert.SerializeObject(newConfig, Formatting.Indented);
         StateHasChanged();
+    }
+
+    string GetModuleDisplayName()
+    {
+        ModuleAttribute? attr = ModuleType.GetCustomAttribute<ModuleAttribute>();
+        return attr?.Name ?? ModuleType.Name;
+    }
+
+    string GetModuleFullName()
+    {
+        return ModuleType.FullName ?? ModuleType.Name;
     }
 
     protected override void OnParametersSet()
@@ -86,3 +114,33 @@
         }
     }
 }
+
+<style>
+    .module-config-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    .module-config-card {
+        border-radius: 8px;
+    }
+
+    .module-config-body {
+        min-width: 0;
+    }
+
+    .save-card {
+        background: #fff;
+    }
+
+    .default-config-editor {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+</style>

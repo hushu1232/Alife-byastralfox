@@ -58,6 +58,8 @@ public record OneBotSender
 
 public record OneBotMessageEvent : OneBotBasicMessageEvent
 {
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
 
     [JsonPropertyName("group_name")]
     public string? GroupName { get; init; }
@@ -111,6 +113,15 @@ public record OneBotNoticeEvent : OneBotBasicMessageEvent
     [JsonPropertyName("sub_type")]
     public string? SubType { get; init; }
 
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
+
+    [JsonPropertyName("operator_id")]
+    public long OperatorId { get; init; }
+
+    [JsonPropertyName("target_id")]
+    public long TargetId { get; init; }
+
     [JsonPropertyName("file")]
     public OneBotNoticeFile? File { get; init; }
 }
@@ -118,7 +129,7 @@ public record OneBotNoticeEvent : OneBotBasicMessageEvent
 public record OneBotPokeEvent : OneBotNoticeEvent
 {
     [JsonPropertyName("target_id")]
-    public long TargetId { get; init; }
+    public new long TargetId { get; init; }
 }
 
 public record OneBotRequestEvent : OneBotBaseEvent
@@ -132,6 +143,9 @@ public record OneBotForwardMessage
     [JsonPropertyName("content")]
     public System.Text.Json.JsonElement Content { get; init; }
 
+    [JsonPropertyName("message")]
+    public System.Text.Json.JsonElement Message { get; init; }
+
     [JsonPropertyName("sender")]
     public OneBotSender? Sender { get; init; }
 
@@ -143,6 +157,55 @@ public record OneBotForwardData
 {
     [JsonPropertyName("messages")]
     public List<OneBotForwardMessage> Messages { get; init; } = [];
+}
+
+public sealed record OneBotGroupMember
+{
+    [JsonPropertyName("group_id")]
+    public long GroupId { get; init; }
+
+    [JsonPropertyName("user_id")]
+    public long UserId { get; init; }
+
+    [JsonPropertyName("nickname")]
+    public string Nickname { get; init; } = "";
+
+    [JsonPropertyName("card")]
+    public string Card { get; init; } = "";
+
+    [JsonPropertyName("role")]
+    public string Role { get; init; } = "";
+
+    [JsonPropertyName("title")]
+    public string Title { get; init; } = "";
+
+    [JsonIgnore]
+    public string DisplayName
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(Card) == false)
+                return Card.Trim();
+            if (string.IsNullOrWhiteSpace(Nickname) == false)
+                return Nickname.Trim();
+            return UserId.ToString();
+        }
+    }
+}
+
+public sealed record OneBotGroupInfo
+{
+    [JsonPropertyName("group_id")]
+    public long GroupId { get; init; }
+
+    [JsonPropertyName("group_name")]
+    public string GroupName { get; init; } = "";
+
+    [JsonPropertyName("member_count")]
+    public int MemberCount { get; init; }
+
+    [JsonPropertyName("max_member_count")]
+    public int MaxMemberCount { get; init; }
 }
 
 #endregion
@@ -174,6 +237,12 @@ public record OneBotResponse<T>
 
     [JsonPropertyName("message")]
     public string Message { get; init; } = "";
+}
+
+public record OneBotSendMessageResult
+{
+    [JsonPropertyName("message_id")]
+    public long MessageId { get; init; }
 }
 
 public record OneBotFile

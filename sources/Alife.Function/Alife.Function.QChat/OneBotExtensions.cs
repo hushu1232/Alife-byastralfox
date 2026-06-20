@@ -12,9 +12,29 @@ public static class OneBotExtensions
     {
         await client.CallActionAsync<object>("send_private_msg", new { user_id = userId, message });
     }
+    public static Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(this OneBotClient client, long userId, string message)
+    {
+        return client.CallActionAsync<OneBotSendMessageResult>("send_private_msg", new { user_id = userId, message });
+    }
     public static async Task SendGroupMessage(this OneBotClient client, long groupId, string message)
     {
         await client.CallActionAsync<object>("send_group_msg", new { group_id = groupId, message });
+    }
+    public static Task<OneBotSendMessageResult?> SendGroupMessageWithResult(this OneBotClient client, long groupId, string message)
+    {
+        return client.CallActionAsync<OneBotSendMessageResult>("send_group_msg", new { group_id = groupId, message });
+    }
+    public static Task DeleteMessage(this OneBotClient client, long messageId)
+    {
+        return client.CallActionAsync<object>("delete_msg", new { message_id = messageId });
+    }
+    public static Task PokePrivate(this OneBotClient client, long userId)
+    {
+        return client.CallActionAsync<object>("friend_poke", new { user_id = userId });
+    }
+    public static Task PokeGroup(this OneBotClient client, long groupId, long userId)
+    {
+        return client.CallActionAsync<object>("group_poke", new { group_id = groupId, user_id = userId });
     }
     public static async Task UploadPrivateFile(this OneBotClient client, long userId, string filePath, string name)
     {
@@ -53,5 +73,21 @@ public static class OneBotExtensions
     {
         OneBotForwardData? data = await client.CallActionAsync<OneBotForwardData>("get_forward_msg", new { id = forwardId });
         return data?.Messages;
+    }
+
+    public static async Task<IReadOnlyList<OneBotGroupMember>> GetGroupMemberList(this OneBotClient client, long groupId)
+    {
+        List<OneBotGroupMember>? members = await client.CallActionAsync<List<OneBotGroupMember>>(
+            "get_group_member_list",
+            new { group_id = groupId });
+        return members ?? [];
+    }
+
+    public static async Task<IReadOnlyList<OneBotGroupInfo>> GetGroupList(this OneBotClient client)
+    {
+        List<OneBotGroupInfo>? groups = await client.CallActionAsync<List<OneBotGroupInfo>>(
+            "get_group_list",
+            new { });
+        return groups ?? [];
     }
 }

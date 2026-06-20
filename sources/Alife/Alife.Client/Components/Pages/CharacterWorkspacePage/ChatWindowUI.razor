@@ -1,4 +1,5 @@
 @implements IDisposable
+@using Alife.Components
 @inject IJSRuntime JsRuntime
 @inject ChatMessageService ChatMessageService
 
@@ -6,22 +7,29 @@
       Direction="@FlexDirection.Vertical">
 
     <!-- 顶部操作栏 -->
-    <Flex Justify="@FlexJustify.SpaceBetween" Align="@FlexAlign.Center"
-          Style="padding: 8px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid #f0f0f0;">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">消息标签:</AntDesign.Text>
+    <Flex Justify="@FlexJustify.SpaceBetween" Align="@FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")"
+          Style="padding: 10px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid #f0f0f0;">
+        <div class="chat-toolbar-fields">
+            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">消息标签</AntDesign.Text>
             <Input @bind-Value="ChatMessageService.MessageTag" Placeholder=""
                    Size="@InputSize.Small"
                    Style="width: 100px; border-radius: 4px;"/>
-            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">最大条数:</AntDesign.Text>
+            <AntDesign.Text Type="@TextElementType.Secondary" Style="font-size: 12px;">保留条数</AntDesign.Text>
             <AntDesign.InputNumber @bind-Value="ChatMessageService.MaxMessageCount" Min="10" Max="10000"
                                    Size="@InputSize.Small" Style="width: 80px; border-radius: 4px;"/>
         </div>
-        <Button Icon="@IconType.Outline.Clear"
-                Type="@ButtonType.Link"
-                Danger
-                OnClick="@(OnClear)">清理对话日志
-        </Button>
+        <Space>
+            <SpaceItem>
+                <AstralFoxDevMark />
+            </SpaceItem>
+            <SpaceItem>
+                <Button Icon="@IconType.Outline.Clear"
+                        Type="@ButtonType.Default"
+                        Danger
+                        OnClick="@(OnClear)">清理对话日志
+                </Button>
+            </SpaceItem>
+        </Space>
     </Flex>
 
     <!-- 消息区域 -->
@@ -30,7 +38,7 @@
         {
             @if (messages.Count == 0)
             {
-                <Empty Style="margin-top: 100px" Description="@("暂无聊天信息，开始对话吧喵！")"/>
+                <Empty Style="margin-top: 100px" Description="@("暂无聊天信息，可以直接开始对话。")"/>
             }
             else
             {
@@ -76,7 +84,7 @@
         }
         else
         {
-            <Empty Description="@("消息存储不存在！")"/>
+            <Empty Description="@("消息存储未就绪")"/>
         }
     </div>
 
@@ -89,7 +97,7 @@
                 <div style="flex: 1; align-self: stretch; position: relative; min-height: 0;">
                     <textarea id="chatInput"
                               class="native-chat-input"
-                              placeholder="@("输入消息... (Enter 发送, Shift+Enter 换行)")"
+                              placeholder="@("输入消息，Enter 发送，Shift+Enter 换行")"
                               @bind="inputText"
                               @bind:event="oninput"
                               @onkeydown="HandleNativeKeyDown"
@@ -102,7 +110,7 @@
                         <div class="input-busy-tag">
                             <Icon Type="@IconType.Outline.Loading" Style="font-size: 14px; color: #1890ff;"/>
                             <span
-                                style="color: #1890ff; font-size: 12px; font-weight: 500;">@(CharacterName)工作/记忆中...</span>
+                                style="color: #1890ff; font-size: 12px; font-weight: 500;">@(CharacterName) 正在处理...</span>
                         </div>
                     }
                 </div>
@@ -118,6 +126,14 @@
 </Flex>
 
 <style>
+    .chat-toolbar-fields {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        min-width: 0;
+    }
+
     .chat-input-container {
         flex: 1 1 auto;
         display: flex;

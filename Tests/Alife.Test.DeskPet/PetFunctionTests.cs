@@ -7,6 +7,8 @@ namespace Alife.Test.DeskPet;
 /// 桌宠功能集成测试：采用人工互动验证模式
 /// </summary>
 [TestFixture]
+[Explicit("Integration test: requires launching the Live2D desk pet client and manual message-box verification.")]
+[Category("Integration")]
 public class PetFunctionTests
 {
     [Test, Order(1)]

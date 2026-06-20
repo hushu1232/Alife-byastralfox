@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Newtonsoft.Json;
+using Alife.Framework;
 using Alife.Platform;
 
 namespace Alife.Function.Memory;
@@ -156,10 +157,14 @@ public class MemoryManager
         {
             if (chatMessageContent.Content == null)
                 continue;
+            MemoryMeta memoryMeta = GetMemoryMetaData(chatMessageContent);
+            if (MemoryTextSanitizer.Default.ShouldDropHistoryRecord(chatMessageContent.Content, memoryMeta.Level))
+                continue;
+
             history.Add(new HistoryRecord(
                 chatMessageContent.Role,
                 chatMessageContent.Content,
-                GetMemoryMetaData(chatMessageContent)
+                memoryMeta
             ));
         }
 
@@ -190,9 +195,28 @@ public class MemoryManager
         return memoryStorage.LoadAsync(level, index);
     }
 
-    public async Task<(List<SearchResult> Results, int Total)> SearchMemory(int level, string keyword, string? question, int count, int offset, DateTime? startTime, DateTime? endTime)
+    public async Task<(List<SearchResult> Results, int Total)> SearchMemory(
+        int level,
+        string keyword,
+        string? question,
+        int count,
+        int offset,
+        DateTime? startTime,
+        DateTime? endTime,
+        MemorySearchMode searchMode = MemorySearchMode.Hybrid,
+        bool includePermanent = true)
     {
-        return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime);
+        return await memoryStorage.SearchAsync(level, keyword, question, count, offset, startTime, endTime, searchMode, includePermanent);
+    }
+
+    public MemoryConsistencySnapshot GetConsistencySnapshot()
+    {
+        return ToConsistencySnapshot(memoryStorage.LastConsistencyReport);
+    }
+
+    public async Task<MemoryConsistencySnapshot> RepairConsistencyAsync()
+    {
+        return ToConsistencySnapshot(await memoryStorage.RepairConsistencyAsync());
     }
 
     public MemoryMeta GetMemoryMetaData(ChatMessageContent content)
@@ -204,6 +228,17 @@ public class MemoryManager
         }
 
         return data;
+    }
+
+    static MemoryConsistencySnapshot ToConsistencySnapshot(MemoryStorageConsistencyReport report)
+    {
+        return new MemoryConsistencySnapshot(
+            report.MissingArchiveFiles,
+            report.MissingIndexRecords,
+            report.ContentMismatches,
+            report.RepairedArchiveFiles,
+            report.RepairedIndexRecords,
+            report.RepairedContentMismatches);
     }
 
     record HistoryRecord(AuthorRole Role, string Content, MemoryMeta MemoryMeta);

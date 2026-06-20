@@ -125,7 +125,9 @@ public class ModuleSystem
         if (compatibilityMode)
             return true;
 
-        return typeof(ISystemEvent).IsAssignableFrom(type);
+        return typeof(ISystemEvent).IsAssignableFrom(type)
+               || typeof(ILanguageModel).IsAssignableFrom(type)
+               || type.GetInterfaces().Any(IsModuleDependencyProviderInterface);
     }
     public void ReloadModules()
     {
@@ -339,5 +341,13 @@ public class ModuleSystem
                 }
             }
         }
+    }
+
+    static bool IsModuleDependencyProviderInterface(Type type)
+    {
+        return type.FullName is
+            "Alife.Function.Speech.ISpeechModel" or
+            "Alife.Function.Vision.IVisionModel" or
+            "Alife.Function.AuditoryModel.IAuditoryModel";
     }
 }

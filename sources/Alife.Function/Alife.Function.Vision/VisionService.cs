@@ -22,9 +22,14 @@ public record VisionServiceConfig
     EditorUI = typeof(VisionServiceUI))]
 [Description($"此服务让你拥有视觉感知能力，你可以通过<{nameof(GetWindows)}>获取当前系统运行的窗口，然后传入到<{nameof(LookWindow)}>中进行视觉分析。或则直接将图片链接或地址，传入到<{nameof(LookImage)}>中分析")]
 public class VisionService(XmlFunctionCaller functionService, IVisionModel? visionModel = null)
-    : InteractiveModule<VisionService>, IConfigurable<VisionServiceConfig>
+    : InteractiveModule<VisionService>, IConfigurable<VisionServiceConfig>, IEmbodiedCapability
 {
     public VisionServiceConfig? Configuration { get; set; }
+
+    public string Name => "Vision";
+    public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Sense;
+    public string SelfDescription => "Your visual sense for observing the screen, windows, and image files.";
+    public string? GetCurrentState() => visionModel == null ? "vision model unavailable" : "vision model available";
 
     /// <summary>
     /// 获取当前可以截取的所有可用窗口的列表，供 AI 选择截屏目标。

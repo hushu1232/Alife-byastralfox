@@ -32,6 +32,8 @@ public class VitsSpeechTests
     // Test 1 – 基本合成：中文句子 → 生成 wav 文件
     // ------------------------------------------------------------------ //
     [Test]
+    [Explicit("Requires local VITS runtime, model files, Python dependencies, and GPU/CPU inference environment.")]
+    [Category("Integration")]
     public async Task SynthesizeChinese_ReturnsValidWavFile()
     {
         Assert.That(_synth, Is.Not.Null, "VitsSpeechSynthesizer 初始化失败");
@@ -51,6 +53,8 @@ public class VitsSpeechTests
     // Test 2 – 缓存：同一文本二次调用应直接返回缓存路径
     // ------------------------------------------------------------------ //
     [Test]
+    [Explicit("Requires local VITS runtime, model files, Python dependencies, and GPU/CPU inference environment.")]
+    [Category("Integration")]
     public async Task SynthesizeSameText_ReturnsCachedPath()
     {
         Assert.That(_synth, Is.Not.Null);
@@ -80,6 +84,19 @@ public class VitsSpeechTests
     // Test 4 – 日文混合：中日混合文本
     // ------------------------------------------------------------------ //
     [Test]
+    public void SynthesizeWithoutAwake_ThrowsInvalidOperationException()
+    {
+        Assert.That(_synth, Is.Not.Null);
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await _synth!.GenerateSpeechFileAsync("生命周期未初始化测试"));
+
+        Assert.That(exception!.Message, Does.Contain("VITS speech model is not initialized"));
+    }
+
+    [Test]
+    [Explicit("Requires local VITS runtime, model files, Python dependencies, and GPU/CPU inference environment.")]
+    [Category("Integration")]
     public async Task SynthesizeMixed_ChineseJapanese_ReturnsValidWavFile()
     {
         Assert.That(_synth, Is.Not.Null);

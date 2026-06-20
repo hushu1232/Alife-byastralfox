@@ -14,6 +14,28 @@ using ChatMessageContent=Microsoft.SemanticKernel.ChatMessageContent;
 
 namespace Alife.Framework;
 
+public sealed record ChatRuntimeEvent(DateTimeOffset Timestamp, string Kind, string Detail);
+
+public sealed record ChatLatencySnapshot(
+    DateTimeOffset? LastChatStartedAt,
+    DateTimeOffset? LastFirstContentAt,
+    DateTimeOffset? LastChatEndedAt,
+    TimeSpan? LastFirstContentLatency,
+    TimeSpan? LastChatDuration)
+{
+    public static ChatLatencySnapshot Empty { get; } = new(null, null, null, null, null);
+}
+
+public sealed record ChatRuntimeState(
+    bool IsChatting,
+    int PendingPokeCount,
+    int ChatHistoryCount,
+    string? LastError,
+    IReadOnlyList<ChatRuntimeEvent> RecentEvents)
+{
+    public ChatLatencySnapshot Latency { get; init; } = ChatLatencySnapshot.Empty;
+}
+
 public class ChatBot : IAsyncDisposable
 {
     public const string ThinkContentPrefix = "__THINK__";
@@ -34,12 +56,15 @@ public class ChatBot : IAsyncDisposable
 
     public async Task RequestChatAsync(CancellationToken cancellationToken = default)
     {
+        RecordRuntimeEvent("ChatLockWait", "Waiting for chat lock.");
         await chatSemaphore.WaitAsync(cancellationToken);
+        RecordRuntimeEvent("ChatLockAcquired", "Chat lock acquired.");
     }
 
     public void ReleaseChat()
     {
         chatSemaphore.Release();
+        RecordRuntimeEvent("ChatLockReleased", "Chat lock released.");
     }
 
     public async IAsyncEnumerable<string> ChatStreamingAsync(string message, AuthorRole? role = null)
@@ -52,7 +77,15 @@ public class ChatBot : IAsyncDisposable
         await RequestChatAsync();
         try
         {
+            MarkChatStart();
+            RecordRuntimeEvent("ChatStart", "Chat streaming started.");
             chatBreakSource = new CancellationTokenSource();
+            if (llmAgent == null)
+            {
+                InvalidOperationException exception = new("Chat completion agent is unavailable.");
+                RecordError(exception.ToString());
+                throw exception;
+            }
 
             if (ChatSend != null)
             {
@@ -106,6 +139,7 @@ public class ChatBot : IAsyncDisposable
                     }
                     else
                     {
+                        MarkFirstContent();
                         yield return content;
                         ChatReceived?.Invoke(content);
                         cleanResponseBuilder.Append(content);
@@ -151,12 +185,15 @@ public class ChatBot : IAsyncDisposable
 
             if (error != null)
             {
+                RecordError(error);
                 llmAgentThread.ChatHistory.AddMessage(AuthorRole.System, error);
                 yield return error;
             }
         }
         finally
         {
+            MarkChatEnd();
+            RecordRuntimeEvent("ChatEnd", "Chat streaming ended.");
             ReleaseChat();
         }
     }
@@ -182,6 +219,7 @@ public class ChatBot : IAsyncDisposable
         }
         catch (Exception e)
         {
+            RecordError(e.ToString());
             AlifeTerminal.LogError(e.ToString());
         }
     }
@@ -191,6 +229,7 @@ public class ChatBot : IAsyncDisposable
         while (messageCache.Count > 11)
             messageCache.TryDequeue(out _);
         messageCache.Enqueue($"{message}\n");
+        RecordRuntimeEvent("PokeQueued", $"Pending poke messages: {messageCache.Count}.");
         lastAutoFlushTime = 0;//重新计时，防止后续还有Poke
     }
 
@@ -206,11 +245,29 @@ public class ChatBot : IAsyncDisposable
         lastContentIndex = ChatHistory.Count;
     }
 
+    public ChatRuntimeState GetRuntimeState()
+    {
+        return new ChatRuntimeState(
+            IsChatting,
+            messageCache.Count,
+            llmAgentThread?.ChatHistory.Count ?? 0,
+            lastError,
+            runtimeEvents.ToArray())
+        {
+            Latency = BuildLatencySnapshot()
+        };
+    }
+
     readonly ChatCompletionAgent llmAgent;
     readonly ChatHistoryAgentThread llmAgentThread;
     readonly ConcurrentQueue<string> messageCache;
+    readonly ConcurrentQueue<ChatRuntimeEvent> runtimeEvents = new();
     readonly SemaphoreSlim chatSemaphore;
     CancellationTokenSource chatBreakSource = new();
+    string? lastError;
+    DateTimeOffset? lastChatStartedAt;
+    DateTimeOffset? lastFirstContentAt;
+    DateTimeOffset? lastChatEndedAt;
 
     int lastContentIndex;
 
@@ -272,15 +329,18 @@ public class ChatBot : IAsyncDisposable
         catch (OperationCanceledException) {}
         catch (Exception e)
         {
+            RecordError(e.ToString());
             AlifeTerminal.LogError(e.ToString());
         }
     }
 
     async Task TryFlushMessageCache(CancellationToken cancellationToken = default)
     {
-        if (messageCache.Count == 0)
+        int pendingCount = messageCache.Count;
+        if (pendingCount == 0)
             return;
 
+        RecordRuntimeEvent("PokeFlushStarted", $"Flushing {pendingCount} pending poke message(s).");
         await RequestChatAsync(cancellationToken);
         try
         {
@@ -301,6 +361,7 @@ public class ChatBot : IAsyncDisposable
             }
 
             //发送消息
+            RecordRuntimeEvent("PokeFlushDispatched", "Pending poke messages were dispatched into chat.");
             Chat($"{PokeMessageTag}\n{poke}");
         }
         finally
@@ -313,5 +374,52 @@ public class ChatBot : IAsyncDisposable
     {
         for (; lastContentIndex < ChatHistory.Count; lastContentIndex++)
             ChatHistoryAdd?.Invoke(ChatHistory[lastContentIndex]);
+    }
+
+    void RecordError(string error)
+    {
+        lastError = error;
+        RecordRuntimeEvent("Error", error);
+    }
+
+    void MarkChatStart()
+    {
+        lastChatStartedAt = DateTimeOffset.Now;
+        lastFirstContentAt = null;
+        lastChatEndedAt = null;
+    }
+
+    void MarkFirstContent()
+    {
+        lastFirstContentAt ??= DateTimeOffset.Now;
+    }
+
+    void MarkChatEnd()
+    {
+        lastChatEndedAt = DateTimeOffset.Now;
+    }
+
+    ChatLatencySnapshot BuildLatencySnapshot()
+    {
+        TimeSpan? firstContentLatency = lastChatStartedAt != null && lastFirstContentAt != null
+            ? lastFirstContentAt.Value - lastChatStartedAt.Value
+            : null;
+        TimeSpan? chatDuration = lastChatStartedAt != null && lastChatEndedAt != null
+            ? lastChatEndedAt.Value - lastChatStartedAt.Value
+            : null;
+
+        return new ChatLatencySnapshot(
+            lastChatStartedAt,
+            lastFirstContentAt,
+            lastChatEndedAt,
+            firstContentLatency,
+            chatDuration);
+    }
+
+    void RecordRuntimeEvent(string kind, string detail)
+    {
+        runtimeEvents.Enqueue(new ChatRuntimeEvent(DateTimeOffset.Now, kind, detail));
+        while (runtimeEvents.Count > 32)
+            runtimeEvents.TryDequeue(out _);
     }
 }

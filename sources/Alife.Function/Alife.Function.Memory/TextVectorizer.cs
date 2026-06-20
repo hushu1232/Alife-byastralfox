@@ -12,7 +12,12 @@ namespace Alife.Function.Memory;
 /// 纯粹且独立的文本向量化器。
 /// 内部通过 PythonPipe 加载 safetensors 格式的 BERT 模型，提供嵌入支持。
 /// </summary>
-public class TextVectorizer : IAsyncDisposable
+public interface ITextVectorizer
+{
+    Task<float[]> VectorizeAsync(string text);
+}
+
+public class TextVectorizer : ITextVectorizer, IAsyncDisposable
 {
     public static async Task<TextVectorizer> CreateAsync()
     {

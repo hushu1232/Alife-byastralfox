@@ -1,0 +1,268 @@
+@namespace Alife.Function.QChat
+@inherits Alife.Framework.ModuleUIBase<QZoneService, QZoneServiceConfig>
+@using AntDesign
+@implements IDisposable
+@inject IMessageService MessageService
+
+<div class="qzone-shell">
+    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+        <Card Size="CardSize.Small" Class="qzone-card">
+            <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                <div>
+                    <Title Level="4" Style="margin: 0;">QQ空间配置</Title>
+                    <Text Type="TextElementType.Secondary">
+                        配置空间桥接连接、安全模式、互动目标和行为概率。
+                    </Text>
+                </div>
+                <Space>
+                    <SpaceItem>
+                        <Tag Color="@(Configuration.DryRunExternalActions ? TagColor.Orange : TagColor.Green)">
+                            @(Configuration.DryRunExternalActions ? "Dry-run" : "Live")
+                        </Tag>
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Badge Status="@GetHealthBadge()"
+                               Text="@GetHealthText()" />
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Button Type="@ButtonType.Primary"
+                                Icon="@IconType.Outline.Link"
+                                Loading="@isConnecting"
+                                Disabled="@(!CanConnect)"
+                                OnClick="Connect">
+                            连接
+                        </Button>
+                    </SpaceItem>
+                </Space>
+            </Flex>
+        </Card>
+
+        <Alert Type="@(Configuration.DryRunExternalActions ? AlertType.Warning : AlertType.Info)"
+               Message="@(Configuration.DryRunExternalActions ? "当前为 dry-run 模式，不会真实发帖、评论、回复或点赞。" : "当前为 live 模式，空间互动会真实发送到桥接端。")"
+               ShowIcon="true" />
+
+        <Form TModel="QZoneServiceConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+            <Tabs @bind-ActiveKey="@activeTabKey">
+                <TabPane Tab="连接" Key="connection">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="16">
+                            <Card Size="CardSize.Small" Title="桥接端" Class="qzone-card">
+                                <FormItem Label="WebSocket URL">
+                                    <Input @bind-Value="@Configuration.Url" Placeholder="ws://127.0.0.1:3010" />
+                                </FormItem>
+                                <FormItem Label="Access Token">
+                                    <InputPassword @bind-Value="@Configuration.Token" Placeholder="桥接端启用 token 时填写" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="8">
+                            <Card Size="CardSize.Small" Title="启动策略" Class="qzone-card">
+                                <FormItem Label="启用 QQ 空间">
+                                    <Switch @bind-Value="@Configuration.EnableQZone" />
+                                </FormItem>
+                                <FormItem Label="自动连接">
+                                    <Switch @bind-Value="@Configuration.AutoConnect" />
+                                </FormItem>
+                                <FormItem Label="Dry-run 模式">
+                                    <Switch @bind-Value="@Configuration.DryRunExternalActions" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="安全" Key="safety">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="目标范围" Class="qzone-card">
+                                <FormItem Label="允许互动的空间目标">
+                                    <TextArea @bind-Value="@Configuration.AllowedQZoneTargetIds"
+                                              Rows="3"
+                                              Placeholder="QQ号用英文逗号分隔；留空表示不额外限制" />
+                                </FormItem>
+                                <FormItem Label="私聊联系人池">
+                                    <TextArea @bind-Value="@Configuration.PrivateChatContactIds"
+                                              Rows="3"
+                                              Placeholder="只有这里的对象会被随机点赞，例如 10001,10002" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="内容限制" Class="qzone-card">
+                                <FormItem Label="最大内容长度">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxContentLength"
+                                                           Min="1"
+                                                           Max="2000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="空间内容属于外部不可信内容；群友或访客不能通过空间内容授权高风险行为。" />
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="互动策略" Key="policy">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="点赞" Class="qzone-card">
+                                <FormItem Label="私聊联系人随机点赞概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PrivateContactLikeProbability"
+                                                           Min="0.0"
+                                                           Max="1.0"
+                                                           Step="0.05"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <Text Type="TextElementType.Secondary">
+                                    点赞只从私聊联系人池中随机发生，不做全量点赞。
+                                </Text>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="评论回复" Class="qzone-card">
+                                <FormItem Label="评论回复概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.CommentReplyProbability"
+                                                           Min="0.0"
+                                                           Max="1.0"
+                                                           Step="0.05"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <Text Type="TextElementType.Secondary">
+                                    默认偏积极回复评论，但仍受白名单、内容长度和高风险策略限制。
+                                </Text>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                    <GridRow Gutter="16" Style="margin-top: 16px;">
+                        <GridCol Xs="24">
+                            <Card Size="CardSize.Small" Title="Interaction limits" Class="qzone-card">
+                                <GridRow Gutter="16">
+                                    <GridCol Xs="24" Md="12">
+                                        <FormItem Label="Target cooldown minutes">
+                                            <AntDesign.InputNumber @bind-Value="@Configuration.QZoneTargetCooldownMinutes"
+                                                                   Min="0.0"
+                                                                   Max="1440.0"
+                                                                   Step="1.0"
+                                                                   Style="width: 100%;" />
+                                        </FormItem>
+                                    </GridCol>
+                                    <GridCol Xs="24" Md="12">
+                                        <FormItem Label="Max interactions per target per day">
+                                            <AntDesign.InputNumber @bind-Value="@Configuration.MaxQZoneInteractionsPerTargetPerDay"
+                                                                   Min="0"
+                                                                   Max="50"
+                                                                   Style="width: 100%;" />
+                                        </FormItem>
+                                    </GridCol>
+                                </GridRow>
+                                <Text Type="TextElementType.Secondary">
+                                    Set 0 to disable a limit. These rules apply after the allowlist check and before live QZone actions.
+                                </Text>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="高级" Key="advanced">
+                    <Card Size="CardSize.Small" Title="OneBot Action 映射" Class="qzone-card">
+                        <GridRow Gutter="16">
+                            <GridCol Xs="24" Md="8">
+                                <FormItem Label="发空间 Action">
+                                    <Input @bind-Value="@Configuration.PostAction" Placeholder="send_msg" />
+                                </FormItem>
+                            </GridCol>
+                            <GridCol Xs="24" Md="8">
+                                <FormItem Label="评论 Action">
+                                    <Input @bind-Value="@Configuration.CommentAction" Placeholder="send_comment" />
+                                </FormItem>
+                            </GridCol>
+                            <GridCol Xs="24" Md="8">
+                                <FormItem Label="点赞 Action">
+                                    <Input @bind-Value="@Configuration.LikeAction" Placeholder="send_like" />
+                                </FormItem>
+                            </GridCol>
+                        </GridRow>
+                        <Text Type="TextElementType.Secondary">
+                            如果你的 QQ 空间桥接端字段不同，只需要调整这里的 action 名称；参数结构由运行时适配层统一管理。
+                        </Text>
+                    </Card>
+                </TabPane>
+            </Tabs>
+        </Form>
+    </Flex>
+</div>
+
+@code {
+    string activeTabKey = "connection";
+    bool isConnecting;
+    System.Timers.Timer? refreshTimer;
+
+    bool CanConnect => Module != null && Configuration.EnableQZone && Configuration.DryRunExternalActions == false;
+
+    protected override void OnInitialized()
+    {
+        refreshTimer = new System.Timers.Timer(1000);
+        refreshTimer.Elapsed += (_, _) => InvokeAsync(StateHasChanged);
+        refreshTimer.Start();
+    }
+
+    async Task Connect()
+    {
+        if (Module == null)
+            return;
+
+        isConnecting = true;
+        try
+        {
+            await Module.ConnectAsync();
+            await MessageService.SuccessAsync("QQ空间桥接端已连接。");
+        }
+        catch (Exception ex)
+        {
+            await MessageService.ErrorAsync($"QQ空间连接失败: {ex.Message}");
+        }
+        finally
+        {
+            isConnecting = false;
+            StateHasChanged();
+        }
+    }
+
+    BadgeStatus GetHealthBadge()
+    {
+        if (Module == null)
+            return BadgeStatus.Default;
+
+        return Module.GetHealth().Status switch
+        {
+            Alife.Framework.ModuleHealthStatus.Healthy => BadgeStatus.Success,
+            Alife.Framework.ModuleHealthStatus.Degraded => BadgeStatus.Warning,
+            _ => BadgeStatus.Error
+        };
+    }
+
+    string GetHealthText()
+    {
+        return Module?.GetHealth().Summary ?? "模块未启动";
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Stop();
+        refreshTimer?.Dispose();
+    }
+}
+
+<style>
+    .qzone-shell {
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    .qzone-card {
+        border-radius: 8px;
+    }
+</style>

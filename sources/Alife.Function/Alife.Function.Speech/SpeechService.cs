@@ -17,10 +17,21 @@ namespace Alife.Function.Speech;
 public class SpeechService(
     XmlFunctionCaller functionService,
     ISpeechModel speechModel,
-    ILogger<SpeechService> logger)
-    : InteractiveModule<SpeechService>, IAsyncDisposable
+    ILogger<SpeechService> logger,
+    ISpeechAudioPlayer? audioPlayer = null,
+    ILifeEventPublisher? lifeEventPublisher = null)
+    : InteractiveModule<SpeechService>, IAsyncDisposable, IEmbodiedCapability, IVoiceOutputSink, IModuleHealthReporter
 {
     public bool IsSpeaking => playAudioTask is { IsCompleted: false };
+
+    public string Name => "Voice";
+    public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Expression;
+    public string SelfDescription => "Your voice output channel. Use it when a response should be spoken instead of only written.";
+    public string? GetCurrentState() => IsSpeaking ? "currently speaking" : "idle";
+    public ModuleHealth GetHealth() => new(
+        "Voice",
+        ModuleHealthStatus.Healthy,
+        IsSpeaking ? "Speech model is available and currently speaking." : "Speech model is available and idle.");
 
     [XmlFunction(FunctionMode.Content, order: -10)]
     [Description("将文本以语音方式输出（这应该是你默认对外的交互方式）")]
@@ -43,9 +54,7 @@ public class SpeechService(
                 case CallMode.Content:
                 {
                     string content = context.Content.Trim();
-                    if (string.IsNullOrWhiteSpace(content))
-                        break;
-                    await QueueSpeakAsync(content, cancellationToken);
+                    await SpeakAsync(content, cancellationToken);
                     break;
                 }
             }
@@ -64,6 +73,16 @@ public class SpeechService(
     public async ValueTask DisposeAsync()
     {
         await playAudioTask;
+    }
+
+    public Task SpeakAsync(string text, CancellationToken cancellationToken = default)
+    {
+        string content = text.Trim();
+        if (string.IsNullOrWhiteSpace(content))
+            return Task.CompletedTask;
+
+        PublishLifeEvent($"You spoke through your voice: {content}");
+        return QueueSpeakAsync(content, cancellationToken);
     }
 
     async Task QueueSpeakAsync(string text, CancellationToken cancellationToken = default)
@@ -97,8 +116,11 @@ public class SpeechService(
         if (audioFile == null)
             return;// 没有可朗读的文本
 
-        playAudioTask = PlayAudioAsync(audioFile, cancellationToken);
+        playAudioTask = (audioPlayer ?? defaultAudioPlayer).PlayAsync(audioFile, cancellationToken);
     }
+
+    readonly ISpeechAudioPlayer defaultAudioPlayer = new NAudioSpeechAudioPlayer();
+
     async Task PlayAudioAsync(string filePath, CancellationToken cancellationToken = default)
     {
         TaskCompletionSource tcs = new();
@@ -120,5 +142,14 @@ public class SpeechService(
             else
                 tcs.TrySetResult();
         }
+    }
+
+    void PublishLifeEvent(string summary)
+    {
+        lifeEventPublisher?.Publish(new LifeEvent(
+            DateTimeOffset.Now,
+            LifeEventKind.Voice,
+            "Speech",
+            summary));
     }
 }

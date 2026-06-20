@@ -18,7 +18,10 @@ namespace Alife.Function.DeskPet;
 https://github.com/imuncle/live2d",
     defaultCategory: "Alife 官方/交互方式",
     EditorUI = typeof(DeskPetServiceUI))]
-public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModule<DeskPetService>, IAsyncDisposable, IConfigurable<DeskPetServiceConfig>
+public class DeskPetService(
+    XmlFunctionCaller functionService,
+    IDeskPetRuntime? petRuntime = null,
+    ILifeEventPublisher? lifeEventPublisher = null) : InteractiveModule<DeskPetService>, IAsyncDisposable, IConfigurable<DeskPetServiceConfig>, IEmbodiedCapability, IBodyExpressionSink, IModuleHealthReporter
 {
     [XmlFunction(FunctionMode.Content)]
     [Description("显示一段气泡文本")]
@@ -35,20 +38,31 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
             }
             case CallMode.Content:
             {
-                content = content.Trim();
-                if (string.IsNullOrWhiteSpace(content))
-                    break;
-                if (cancellationToken.IsCancellationRequested)
-                    break;
-
-                if (DateTimeOffset.Now.ToUnixTimeMilliseconds() < lastBubbleEndTime)
-                    await Task.Delay(
-                        TimeSpan.FromMilliseconds(lastBubbleEndTime - DateTimeOffset.Now.ToUnixTimeMilliseconds()));
-                client!.ShowBubble(content);
-                lastBubbleEndTime = DateTimeOffset.Now.ToUnixTimeMilliseconds() + content.Length * 150;
+                await ShowBubbleAsync(content, cancellationToken);
                 break;
             }
         }
+    }
+
+    public void PlayExpression(string option) => Expression(option);
+
+    public void PlayMotion(string option) => Motion(option);
+
+    public async Task ShowBubbleAsync(string text, CancellationToken cancellationToken = default)
+    {
+        string content = text.Trim();
+        if (string.IsNullOrWhiteSpace(content))
+            return;
+        if (cancellationToken.IsCancellationRequested)
+            return;
+
+        if (DateTimeOffset.Now.ToUnixTimeMilliseconds() < lastBubbleEndTime)
+            await Task.Delay(
+                TimeSpan.FromMilliseconds(lastBubbleEndTime - DateTimeOffset.Now.ToUnixTimeMilliseconds()),
+                cancellationToken);
+        client!.ShowBubble(content);
+        lastBubbleEndTime = DateTimeOffset.Now.ToUnixTimeMilliseconds() + content.Length * 150;
+        PublishLifeEvent($"You displayed a desk-pet bubble: {content}");
     }
 
     [XmlFunction(FunctionMode.OneShot)]
@@ -62,6 +76,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
             throw new Exception("选项不存在");
 
         client!.PlayExpression(option);
+        PublishLifeEvent($"Your desk-pet body played expression: {option}.");
     }
 
     [XmlFunction(FunctionMode.OneShot)]
@@ -75,6 +90,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
             throw new Exception("选项不存在");
 
         client.PlayMotion(motion.Group, motion.Index);
+        PublishLifeEvent($"Your desk-pet body played motion: {option}.");
     }
 
     [XmlFunction(FunctionMode.OneShot)]
@@ -98,6 +114,7 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
     {
         await client!.MoveAsync(x, y, duration);
         (x, y) = await client!.GetPositionAsync();
+        PublishLifeEvent($"Your desk-pet body moved to x={x}, y={y}.");
         Poke($"移动成功，当前位置: x={x}, y={y}");
     }
 
@@ -113,7 +130,31 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
 
     public DeskPetServiceConfig? Configuration { get; set; }
 
-    PetServer? client;
+    public string Name => "Desk pet body";
+    public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Body;
+    public string SelfDescription => "Your visible Live2D body. It can show expressions, play motions, display speech bubbles, receive touch interactions, and reflect your current activity.";
+
+    public string? GetCurrentState()
+    {
+        string modelName = string.IsNullOrWhiteSpace(Configuration?.ModelName) ? "Mao" : Configuration!.ModelName;
+        string connection = client == null ? "not connected yet" : "connected";
+        return $"Model: {modelName}; client: {connection}.";
+    }
+
+    public ModuleHealth GetHealth()
+    {
+        if (isDisposed)
+            return new ModuleHealth("DeskPet", ModuleHealthStatus.Unavailable, "Desk pet service has been disposed.");
+        if (client == null)
+            return new ModuleHealth("DeskPet", ModuleHealthStatus.Degraded, "Desk pet client is not initialized yet.");
+
+        return new ModuleHealth(
+            "DeskPet",
+            ModuleHealthStatus.Healthy,
+            $"Desk pet client is initialized; expressions: {client.SupportedExpressions.Count()}; motions: {client.SupportedMotions.Count}.");
+    }
+
+    IDeskPetRuntime? client;
     EmotionLive2DParameterDriver? emotionParameterDriver;
     CancellationTokenSource? emotionSyncCancellation;
     Task? emotionSyncTask;
@@ -126,14 +167,14 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
         string? modelName = Configuration?.ModelName;
         if (string.IsNullOrWhiteSpace(modelName))
             modelName = "Mao";
-        client = new PetServer(modelName);
+        client = petRuntime ?? new PetServer(modelName);
         string supportedExpressionsDescription = string.Join(", ", client.SupportedExpressions);
         if (string.IsNullOrEmpty(supportedExpressionsDescription)) supportedExpressionsDescription = $"当前不支持<{nameof(Expression)}>功能";
         string supportedMotionsDescription = string.Join(", ", client.SupportedMotions.Keys);
         if (string.IsNullOrEmpty(supportedMotionsDescription)) supportedMotionsDescription = $"当前不支持<{nameof(Motion)}>功能";
 
         XmlHandler xmlHandler = new(this);
-        functionService.RegisterHandlerWithoutDocument(xmlHandler);
+        functionService?.RegisterHandlerWithoutDocument(xmlHandler);
 
         Prompt($"""
                 此服务让你获得一副交互性的Live2D身体。这是你主要的对外输出表情动作等外观信息的工具，需要积极使用。
@@ -215,6 +256,15 @@ public class DeskPetService(XmlFunctionCaller functionService) : InteractiveModu
 
             await Task.Delay(250);
         }
+    }
+
+    void PublishLifeEvent(string summary)
+    {
+        lifeEventPublisher?.Publish(new LifeEvent(
+            DateTimeOffset.Now,
+            LifeEventKind.Body,
+            "DeskPet",
+            summary));
     }
 
     public async ValueTask DisposeAsync()

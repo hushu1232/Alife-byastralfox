@@ -9,12 +9,20 @@ using Microsoft.SemanticKernel;
 
 namespace Alife.Function.FunctionCaller;
 
+public enum DocumentMode
+{
+    Not,
+    Implicit,
+    Explicit,
+}
+
 [Module("Xml函数执行器", "提供一种Xml函数调用框架，可以将注册其中的函数，暴露给AI，并指导其用Xml标签调用。",
     defaultCategory: "Alife 官方/功能底座",
     launchOrder: -1000)]
 public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveModule<XmlFunctionCaller>
 {
     public bool IsIdle => executor.IsInactive;
+    public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
 
     public void RegisterHandlerWithoutDocument(XmlHandler handler, params string[] plainAreas)
     {
@@ -23,9 +31,28 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     }
     public void RegisterHandler(XmlHandler handler, params string[] plainAreas)
     {
+        RegisterHandler(handler, DocumentMode.Explicit, plainAreas);
+    }
+    public void RegisterHandler(XmlHandler handler, DocumentMode documentMode, params string[] plainAreas)
+    {
         handlerTable.Register(handler);
         this.plainAreas.AddRange(plainAreas);
-        showDocuments.Add(handler);
+        switch (documentMode)
+        {
+            case DocumentMode.Not:
+                break;
+            case DocumentMode.Implicit:
+                if (string.IsNullOrWhiteSpace(handler.Name))
+                    throw new InvalidOperationException("Implicit XmlHandler requires a name.");
+                implicitHandlers.Add(handler);
+                AddImplicitTrigger(handler);
+                break;
+            case DocumentMode.Explicit:
+                explicitHandlers.Add(handler);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(documentMode), documentMode, null);
+        }
     }
     public void RegisterHandler(object handler, params string[] plainAreas)
     {
@@ -44,7 +71,54 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;
     XmlStreamExecutor executor = null!;
-    List<XmlHandler> showDocuments = new();
+    readonly List<XmlHandler> explicitHandlers = new();
+    readonly List<XmlHandler> implicitHandlers = new();
+
+    public bool CanHandleFunction(string name) => handlerTable.ContainsFunction(name);
+
+    public string BuildFunctionGuide()
+    {
+        string explicitDocuments = string.Join("\n", explicitHandlers.Select(handler => handler.Document()));
+        string implicitDocuments = string.Join("\n", implicitHandlers.Select(GetImplicitDocument));
+        return $"""
+                ## 可用函数
+
+                ### 显式服务
+
+                {explicitDocuments}
+
+                ### 隐式服务
+
+                有些服务是渐进式加载的，你需要显式阅读它们的文档，再学习如何使用。读取隐式服务文档时，直接输出对应 XML 标签即可。
+
+                {implicitDocuments}
+
+                上面这些标签都是开启隐式服务文档的入口。根据实际情况主动查阅它们，很多能力可能藏在其中。
+                """;
+    }
+
+    static string GetImplicitDocument(XmlHandler handler)
+    {
+        return $"- <{handler.Name!.ToLowerInvariant()} /> : {handler.Description}";
+    }
+
+    void AddImplicitTrigger(XmlHandler source)
+    {
+        XmlHandler trigger = new()
+        {
+            Name = source.Name + "_Trigger",
+        };
+        trigger.Functions.Add(new XmlFunction
+        {
+            Name = source.Name!.ToLowerInvariant(),
+            Invoker = (_, _) =>
+            {
+                Poke(source.Document());
+                return Task.CompletedTask;
+            }
+        });
+        handlerTable.Register(trigger);
+    }
 
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
@@ -58,6 +132,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             ["，", "。", "！", "？", "......", "~", "…"],
             minBreakingLength: 9
         );
+        handlerTable.ExecutionPolicy.ResetTurnBudget();
         parser.Error += OnError;
         executor.Error += OnError;
 
@@ -69,7 +144,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
                 ## 可用函数(不一定全，具体要看其他功能服务的说明)
 
-                {string.Join("\n", showDocuments.Select(handler => handler.Document()))}
+                {BuildFunctionGuide()}
 
                 ## 使用提示
                 1. 由于xml的解释器的存在，【" | & | < | >】之类的xml符号都无法直接输出，你需要使用xml转义的方式【&quot; | &amp; | &lt; | &gt;】来输出尖括号。
@@ -116,6 +191,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             finally
             {
                 ChatBot.ReleaseChat();
+                handlerTable.ExecutionPolicy.ResetTurnBudget();
             }
         }
         catch (OperationCanceledException) {}

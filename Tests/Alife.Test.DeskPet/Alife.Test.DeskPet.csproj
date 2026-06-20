@@ -21,6 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Sources\Alife.DeskPet\Alife.DeskPet.Client\Alife.DeskPet.Client.csproj" />
+    <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Emotion\Alife.Function.Emotion.csproj" />
     <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.DeskPet\Alife.Function.DeskPet.csproj" />
   </ItemGroup>
 

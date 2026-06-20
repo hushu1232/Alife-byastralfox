@@ -3,7 +3,7 @@
 @inject ConfigurationSystem ConfigurationSystem
 
 <Modal
-    Title=@($"配置 {ModuleType.FullName}")
+    Title=@($"配置模块：{ModuleType.FullName}")
     Visible="Visible"
     BodyStyle="height: 50vh;"
     OnCancel="@(OnCancel)"
@@ -15,7 +15,7 @@
     else
     {
         <TextArea
-            Style="height: 100%;"
+            Style="height: 100%; border-radius: 8px; font-family: Consolas, monospace;"
             @bind-Value="moduleConfiguration">
         </TextArea>
     }
@@ -64,7 +64,14 @@
 
         footerUI = value => {
             if (value.customUIType == null)
-                return @<Button Type="@(ButtonType.Primary)" OnClick="@(() => value.OnConfirm())">保存</Button>;
+                return @<Space>
+                    <SpaceItem>
+                        <Button OnClick="@(() => value.OnCancel())">取消</Button>
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Button Type="@(ButtonType.Primary)" OnClick="@(() => value.OnConfirm())">保存配置</Button>
+                    </SpaceItem>
+                </Space>;
             else
                 return @<div></div>;
         };

@@ -32,6 +32,9 @@ public class VitsSpeechModel(
         if (string.IsNullOrWhiteSpace(text))
             return null;
 
+        if (Configuration == null || pythonPipe == null)
+            throw new InvalidOperationException("VITS speech model is not initialized. Ensure configuration is injected and AwakeAsync has completed before synthesis.");
+
         string md5Hash;
         using (var md5 = System.Security.Cryptography.MD5.Create())
         {
@@ -39,7 +42,7 @@ public class VitsSpeechModel(
             md5Hash = Convert.ToHexString(hashBytes);
         }
 
-        string safeFileName = $"vits_{Configuration!.SpeakerId}_{md5Hash}.wav";
+        string safeFileName = $"vits_{Configuration.SpeakerId}_{md5Hash}.wav";
         string outputPath = Path.Combine(AlifePath.TempFolderPath, safeFileName);
 
         if (File.Exists(outputPath))

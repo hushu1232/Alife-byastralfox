@@ -26,13 +26,32 @@ public partial class MainWindow
         };
 
         WebView2 webView = mainWindow.WebView;
-        await webView.EnsureCoreWebView2Async();
+        string userDataFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "WebView2Data");
+        if (!Directory.Exists(userDataFolder))
+            Directory.CreateDirectory(userDataFolder);
+        CoreWebView2EnvironmentOptions options = new(
+            "--disable-gpu --disable-gpu-compositing --disable-gpu-sandbox --disable-features=RendererCodeIntegrity --no-sandbox");
+        CoreWebView2Environment environment = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
+        await webView.EnsureCoreWebView2Async(environment);
         string wwwroot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwwroot");
         webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
             "app.local", wwwroot, CoreWebView2HostResourceAccessKind.Allow);
-        webView.Source = new Uri("https://app.local/index.html");
+        webView.CoreWebView2.ProcessFailed += async (_, e) => {
+            await File.AppendAllTextAsync(
+                "pet.log",
+                $"[webview] process failed kind={e.ProcessFailedKind} reason={e.Reason} exitCode={e.ExitCode} description={e.ProcessDescription} source={e.FailureSourceModulePath}" +
+                Environment.NewLine);
+        };
+        webView.CoreWebView2.NavigationCompleted += async (_, e) => {
+            await File.AppendAllTextAsync("pet.log", $"[webview] navigation completed success={e.IsSuccess} status={e.WebErrorStatus}" + Environment.NewLine);
+        };
 
         return mainWindow;
+    }
+
+    public void NavigateRenderer()
+    {
+        WebView.CoreWebView2.Navigate("https://app.local/index.html");
     }
 
     public (double Left, double Top, double Width, double Height) GetLayout()

@@ -182,7 +182,7 @@ public class DeveloperService(
         }
     }
 
-    [XmlFunction(FunctionMode.OneShot)]
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 8)]
     public void ReloadModules()
     {
         ModuleLoadContext context = moduleSystem.CompileModule(pluginCopyRoot);
@@ -192,7 +192,7 @@ public class DeveloperService(
         Poke("模块重载成功！接下来请确认角色配置文件中是否正确添加了模块，然后重启角色活动，以使模块生效。");
     }
 
-    [XmlFunction(FunctionMode.OneShot)]
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
     public void RestartActivity([Description("为空表示自己")] string? charactorName = null)
     {
         Character? character;

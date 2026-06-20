@@ -3,7 +3,7 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Web.WebView2" Version="*" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />

@@ -8,8 +8,27 @@
 !/开发规范/*
 
 !/.gitignore
+!/AGENTS.md
 !/Alife.slnx
 !/Directory.Build.props
+
+!/docs/
+!/docs/github-upload-via-foxd.md
+!/docs/astralfox-engineering-standards.md
+!/docs/agent-debug-map.md
+!/docs/superpowers/
+docs/superpowers/*
+!/docs/superpowers/specs/
+docs/superpowers/specs/*
+!/docs/superpowers/specs/2026-06-20-astralfox-engineering-standards.md
+!/docs/superpowers/specs/2026-06-20-persona-aware-token-efficient-agent-debugging.md
+!/docs/superpowers/plans/
+docs/superpowers/plans/*
+!/docs/superpowers/plans/2026-06-20-persona-aware-token-efficient-agent-debugging.md
+
+!/tools/
+!/tools/upload-alife-service-via-foxd.ps1
+!/tools/start-alife-napcat-live.ps1
 
 !/README.md
 !/LICENSE

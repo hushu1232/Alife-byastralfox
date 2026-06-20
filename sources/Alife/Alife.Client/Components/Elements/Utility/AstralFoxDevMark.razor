@@ -1,0 +1,38 @@
+@namespace Alife.Components
+
+<div class="astralfox-dev-mark @Class">
+    <span class="astralfox-dev-dot"></span>
+    <span class="astralfox-dev-text">AstralFox重铸版本</span>
+</div>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+}
+
+<style>
+    .astralfox-dev-mark {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 10px;
+        border: 1px solid #d9d9d9;
+        border-radius: 999px;
+        background: #ffffff;
+        color: rgba(0, 0, 0, 0.65);
+        font-size: 12px;
+        line-height: 20px;
+        white-space: nowrap;
+    }
+
+    .astralfox-dev-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #1677ff;
+        box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.12);
+    }
+
+    .astralfox-dev-text {
+        font-weight: 600;
+    }
+</style>

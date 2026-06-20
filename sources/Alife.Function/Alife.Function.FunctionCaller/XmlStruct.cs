@@ -187,6 +187,9 @@ public class XmlHandler
             ContentDescription = contentDescription,
             Parameters = normalParameters,
             Order = functionAttribute.Order,
+            Mode = functionAttribute.Mode,
+            RiskLevel = functionAttribute.RiskLevel,
+            BudgetCost = functionAttribute.BudgetCost,
             Invoker = Invoker,
         };
     }
@@ -253,12 +256,72 @@ public enum FunctionMode
     OneShot = 0b_10,
 }
 
+public enum XmlFunctionRiskLevel
+{
+    Low,
+    Medium,
+    High,
+}
+
+public sealed record XmlFunctionExecutionDecision(bool IsAllowed, string? Reason = null);
+
+public sealed class XmlFunctionExecutionPolicy
+{
+    public bool AllowHighRisk { get; set; }
+    public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
+    public int MaxBudgetPerTurn { get; set; } = 64;
+    public int BudgetUsedThisTurn { get; private set; }
+
+    public void ResetTurnBudget()
+    {
+        lock (gate)
+        {
+            BudgetUsedThisTurn = 0;
+        }
+    }
+
+    public XmlFunctionExecutionDecision TryConsume(XmlFunction function)
+    {
+        if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
+        {
+            XmlFunctionExecutionDecision? authorization = AuthorizeHighRiskFunction?.Invoke(function);
+            if (authorization is not { IsAllowed: true })
+            {
+                return authorization ?? new XmlFunctionExecutionDecision(
+                    false,
+                    $"XML function '{function.Name}' is high-risk and is blocked by policy.");
+            }
+        }
+
+        lock (gate)
+        {
+            int budgetCost = Math.Max(1, function.BudgetCost);
+            if (BudgetUsedThisTurn + budgetCost > MaxBudgetPerTurn)
+                return new XmlFunctionExecutionDecision(
+                    false,
+                    $"XML function budget exhausted before '{function.Name}'.");
+
+            BudgetUsedThisTurn += budgetCost;
+            return new XmlFunctionExecutionDecision(true);
+        }
+    }
+
+    readonly object gate = new();
+}
+
 [AttributeUsage(AttributeTargets.Method)]
-public class XmlFunctionAttribute(FunctionMode mode, string? name = null, int order = 0) : Attribute
+public class XmlFunctionAttribute(
+    FunctionMode mode,
+    string? name = null,
+    int order = 0,
+    XmlFunctionRiskLevel riskLevel = XmlFunctionRiskLevel.Low,
+    int budgetCost = 1) : Attribute
 {
     public string? Name { get; } = name;
     public int Order { get; } = order;
     public FunctionMode Mode { get; } = mode;
+    public XmlFunctionRiskLevel RiskLevel { get; } = riskLevel;
+    public int BudgetCost { get; } = budgetCost;
 }
 
 public class XmlFunction : IComparable<XmlFunction>
@@ -266,6 +329,8 @@ public class XmlFunction : IComparable<XmlFunction>
     public required string Name { get; init; }
     public int Order { get; init; }
     public FunctionMode Mode { get; init; }
+    public XmlFunctionRiskLevel RiskLevel { get; init; }
+    public int BudgetCost { get; init; } = 1;
     public string? Description { get; init; }
     public string? ContentName { get; init; }
     public string? ContentDescription { get; init; }

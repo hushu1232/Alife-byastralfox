@@ -104,7 +104,9 @@
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
-                <blazor:BlazorWebView HostPage="wwwroot/index.html" Services="{x:Static alife:App.ServiceProvider}">
+                <blazor:BlazorWebView HostPage="wwwroot/index.html"
+                                      Services="{x:Static alife:App.ServiceProvider}"
+                                      BlazorWebViewInitializing="OnBlazorWebViewInitializing">
                     <blazor:BlazorWebView.RootComponents>
                         <blazor:RootComponent Selector="#app" ComponentType="{x:Type alife:Components.Routes}" />
                     </blazor:BlazorWebView.RootComponents>

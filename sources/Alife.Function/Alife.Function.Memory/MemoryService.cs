@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
@@ -86,7 +87,7 @@ public partial class MemoryService
     defaultCategory: "Alife 官方/生活环境",
     LaunchOrder = -100, EditorUI = typeof(MemoryServiceUI))]
 public partial class MemoryService(XmlFunctionCaller functionService)
-    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>
+    : InteractiveModule<MemoryService>, IConfigurable<MemoryConfig>, IEmbodiedCapability, IAutobiographicalMemorySink, IModuleHealthReporter, IMemoryConsistencyReporter
 {
     [XmlFunction(FunctionMode.OneShot)]
     public void GetMemoryGuide()
@@ -128,6 +129,8 @@ public partial class MemoryService(XmlFunctionCaller functionService)
         [Description("每页条数")] int count = 5,
         [Description("存档层级，默认3级（3级信息密度适中，1级最原始但可能冗余，高层信息损失大但结果少）")] int level = 3,
         [Description("用于向量搜索排序的提示词（错误率很高）；不提供默认按时间排序")] string? prompt = null,
+        [Description("Search mode: Keyword, Vector, or Hybrid. Hybrid uses vector recall with keyword boost when prompt is provided.")] MemorySearchMode searchMode = MemorySearchMode.Hybrid,
+        [Description("Also search level-100 permanent/autobiographical memories.")] bool includePermanent = true,
         [Description("搜索起始时间（ISO-8601），不填则不限")] DateTime? startTime = null,
         [Description("搜索结束时间（ISO-8601），不填则不限")] DateTime? endTime = null)
     {
@@ -136,7 +139,7 @@ public partial class MemoryService(XmlFunctionCaller functionService)
             throw new Exception("不支持使用空格拆分多关键词搜索！");
 
         int offset = (page - 1) * count;
-        (List<SearchResult> results, int total) = await memoryManager.SearchMemory(level, keyword, prompt, count, offset, startTime, endTime);
+        (List<SearchResult> results, int total) = await memoryManager.SearchMemory(level, keyword, prompt, count, offset, startTime, endTime, searchMode, includePermanent);
 
         StringBuilder stringBuilder = new();
         if (total == 0)
@@ -224,6 +227,17 @@ public partial class MemoryService(XmlFunctionCaller functionService)
         return name;
     }
 
+    public Task<string> InsertAutobiographicalMemoryAsync(
+        string summary,
+        string content,
+        DateTime startTime,
+        DateTime endTime,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return InsertMemory(100, summary, content, startTime, endTime);
+    }
+
     /// <summary>
     /// 感知上下文的人设化压缩器
     /// </summary>
@@ -252,6 +266,34 @@ public partial class MemoryService(XmlFunctionCaller functionService)
     }
 
     public MemoryConfig? Configuration { get; set; }
+    public string Name => "Long-term memory";
+    public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Memory;
+    public string SelfDescription => "Your persistent memory for recalling, saving, compressing, and managing important experiences and facts.";
+    public string? GetCurrentState() => Configuration == null ? "memory configuration unavailable" : "memory system configured";
+    public MemoryConsistencySnapshot GetMemoryConsistencySnapshot()
+    {
+        return memoryManager == null ? MemoryConsistencySnapshot.Empty : memoryManager.GetConsistencySnapshot();
+    }
+
+    public Task<MemoryConsistencySnapshot> RepairMemoryConsistencyAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (memoryManager == null)
+            throw new InvalidOperationException("MemoryManager is not started yet.");
+
+        return memoryManager.RepairConsistencyAsync();
+    }
+
+    public ModuleHealth GetHealth()
+    {
+        if (Configuration == null)
+            return new ModuleHealth("Memory", ModuleHealthStatus.Unavailable, "Memory configuration is unavailable.");
+        if (memoryManager == null)
+            return new ModuleHealth("Memory", ModuleHealthStatus.Degraded, "Memory configuration is loaded, but MemoryManager is not started yet.");
+
+        return new ModuleHealth("Memory", ModuleHealthStatus.Healthy, "MemoryManager is initialized and persistent memory is available.");
+    }
+
     MemoryManager memoryManager = null!;
     XmlHandler handler = null!;
     string? storagePath;

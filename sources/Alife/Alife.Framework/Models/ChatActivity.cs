@@ -152,6 +152,51 @@ public partial class ChatActivity
             throw;
         }
     }
+
+    public static IContainer BuildModuleContainer(
+        IEnumerable<Type> moduleTypes,
+        Character character,
+        ConfigurationSystem configurationSystem,
+        object[]? appendServices = null)
+    {
+        ContainerBuilder containerBuilder = new();
+        ServiceCollection serviceCollection = new();
+        serviceCollection.AddLogging(builder => {
+            builder.AddConsole();
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+        containerBuilder.Populate(serviceCollection);
+
+        foreach (Type moduleType in moduleTypes)
+        {
+            var registration = containerBuilder.RegisterType(moduleType)
+                .AsSelf()
+                .AsImplementedInterfaces()
+                .SingleInstance()
+                .OnActivated(args => {
+                    if (args.Instance is IConfigurable configurable)
+                    {
+                        object? configData = configurationSystem.GetConfiguration(args.Instance.GetType(), character.StorageKey);
+                        configurable.Configuration = configData;
+                    }
+                });
+
+            Type? baseType = moduleType.BaseType;
+            while (baseType != null && baseType != typeof(object))
+            {
+                registration.As(baseType);
+                baseType = baseType.BaseType;
+            }
+        }
+
+        if (appendServices != null)
+        {
+            foreach (var appendService in appendServices)
+                containerBuilder.RegisterInstance(appendService).As(appendService.GetType());
+        }
+
+        return containerBuilder.Build();
+    }
 }
 
 public partial class ChatActivity(Character character, Kernel kernelService, IContainer moduleService, ChatBot chatBot, List<ISystemEvent> eventModules) : IAsyncDisposable

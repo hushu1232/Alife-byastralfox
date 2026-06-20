@@ -25,6 +25,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\Sources\Alife\Alife.Platform\Alife.Platform.csproj" />
+    <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.Emotion\Alife.Function.Emotion.csproj" />
+    <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.MessageFilter\Alife.Function.MessageFilter.csproj" />
     <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
   </ItemGroup>
 

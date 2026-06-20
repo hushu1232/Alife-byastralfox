@@ -10,7 +10,7 @@ public static class AlifePath
     public static string RuntimeFolderPath { get; private set; }
     public static string TempFolderPath { get; }
 
-    public static void SetStorageFolderPath(string path)
+    public static void SetStorageFolderPath(string path, bool persist = true)
     {
         string oldPath = StorageFolderPath;
         string newPath = path;
@@ -47,7 +47,8 @@ public static class AlifePath
 
         // 更新配置
         StorageFolderPath = newPath;
-        File.WriteAllText(Path.Combine(RuntimeFolderPath, "storage_path.txt"), newPath);
+        if (persist)
+            File.WriteAllText(Path.Combine(RuntimeFolderPath, "storage_path.txt"), newPath);
     }
 
     static AlifePath()
@@ -63,9 +64,6 @@ public static class AlifePath
         string configPath = Path.Combine(RuntimeFolderPath, "storage_path.txt");
         if (File.Exists(configPath))
             StorageFolderPath = File.ReadAllText(configPath).Trim();
-        if (Directory.Exists(TempFolderPath))
-            Directory.Delete(TempFolderPath, recursive: true);
-
         //保障
         Directory.CreateDirectory(StorageFolderPath);
         Directory.CreateDirectory(RuntimeFolderPath);

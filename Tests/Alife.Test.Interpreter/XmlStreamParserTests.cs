@@ -204,4 +204,49 @@ public class XmlStreamParserTests
         await parser.Feed(@"<send arg1=""a&amp;b"" arg2=""a&b""/>你好");
         await tcs.Task;
     }
+
+    [Test]
+    public async Task TagParameters_DoNotLeakBetweenSiblingTags()
+    {
+        List<string> snapshots = [];
+        XmlStreamParser parser = new XmlStreamParser();
+
+        parser.TagOpened = () =>
+        {
+            snapshots.Add($"{parser.TagStack.Last()}:{string.Join(",", parser.TagParameters.Select(item => $"{item.Key}={item.Value}"))}");
+            return Task.CompletedTask;
+        };
+        parser.TagShotted = () =>
+        {
+            snapshots.Add($"{parser.TagStack.Last()}:{string.Join(",", parser.TagParameters.Select(item => $"{item.Key}={item.Value}"))}");
+            return Task.CompletedTask;
+        };
+
+        await parser.Feed(@"<root owner=""10001""><first temp=""leak""/><second></second></root>");
+        await parser.Flush();
+
+        Assert.That(snapshots, Does.Contain("first:owner=10001,temp=leak"));
+        Assert.That(snapshots, Does.Contain("second:owner=10001"));
+        Assert.That(snapshots, Does.Not.Contain("second:owner=10001,temp=leak"));
+    }
+
+    [Test]
+    public async Task LiteralAngleBracketsRemainContentWhenTheyAreNotXmlTags()
+    {
+        StringBuilder content = new();
+        List<string> errors = [];
+        XmlStreamParser parser = new XmlStreamParser();
+        parser.ContentGot = c =>
+        {
+            content.Append(c);
+            return Task.CompletedTask;
+        };
+        parser.Error += (tag, ex) => errors.Add($"{tag}:{ex.Message}");
+
+        await parser.Feed("#include <stdio.h>\nempty <> stays literal");
+        await parser.Flush();
+
+        Assert.That(content.ToString(), Is.EqualTo("#include <stdio.h>\nempty <> stays literal"));
+        Assert.That(errors, Is.Empty);
+    }
 }
