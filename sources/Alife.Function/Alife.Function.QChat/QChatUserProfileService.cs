@@ -18,12 +18,14 @@ public sealed record QChatUserProfile(
     float Confidence = 0f,
     long? LastSeenGroupId = null,
     DateTimeOffset? LastSeenAt = null,
-    string Notes = "");
+    string Notes = "",
+    string AgentId = "",
+    long BotId = 0);
 
 public sealed class QChatUserProfileService
 {
     readonly object syncRoot = new();
-    readonly Dictionary<long, QChatUserProfile> profiles = new();
+    readonly Dictionary<QChatUserProfileKey, QChatUserProfile> profiles = new();
     readonly string filePath;
     DateTime lastLoadedWriteTimeUtc = DateTime.MinValue;
 
@@ -43,32 +45,59 @@ public sealed class QChatUserProfileService
 
     public void SetProfile(QChatUserProfile profile)
     {
+        SetProfile("", 0, profile);
+    }
+
+    public void SetProfile(string agentId, long botId, QChatUserProfile profile)
+    {
         if (profile.UserId <= 0)
             throw new ArgumentOutOfRangeException(nameof(profile), "QQ user id must be positive.");
 
-        QChatUserProfile normalized = Normalize(profile);
+        QChatUserProfile normalized = Normalize(profile with
+        {
+            AgentId = NormalizeAgentId(agentId),
+            BotId = Math.Max(0, botId)
+        });
         lock (syncRoot)
         {
-            profiles[normalized.UserId] = normalized;
+            profiles[QChatUserProfileKey.From(normalized)] = normalized;
             SaveNoLock();
         }
     }
 
     public bool TryGetProfile(long userId, out QChatUserProfile profile)
     {
+        return TryGetProfile("", 0, userId, out profile);
+    }
+
+    public bool TryGetProfile(string agentId, long botId, long userId, out QChatUserProfile profile)
+    {
         lock (syncRoot)
         {
             ReloadIfChangedNoLock();
-            return profiles.TryGetValue(userId, out profile!);
+            QChatUserProfileKey key = new(NormalizeAgentId(agentId), Math.Max(0, botId), userId);
+            if (profiles.TryGetValue(key, out profile!))
+                return true;
+
+            QChatUserProfileKey legacyKey = new("", 0, userId);
+            return key != legacyKey && profiles.TryGetValue(legacyKey, out profile!);
         }
     }
 
     public string ResolvePreferredAddress(long userId, string? displayName = null)
     {
+        return ResolvePreferredAddress("", 0, userId, displayName);
+    }
+
+    public string ResolvePreferredAddress(string agentId, long botId, long userId, string? displayName = null)
+    {
         lock (syncRoot)
         {
             ReloadIfChangedNoLock();
-            if (profiles.TryGetValue(userId, out QChatUserProfile? profile))
+            QChatUserProfileKey key = new(NormalizeAgentId(agentId), Math.Max(0, botId), userId);
+            if (profiles.TryGetValue(key, out QChatUserProfile? profile) ||
+                (key != new QChatUserProfileKey("", 0, userId) &&
+                 profiles.TryGetValue(new QChatUserProfileKey("", 0, userId), out profile)))
             {
                 string fromProfile = FirstUsable(
                     profile.PreferredNickname,
@@ -95,7 +124,9 @@ public sealed class QChatUserProfileService
     {
         Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
         QChatUserProfile[] snapshot = profiles.Values
-            .OrderBy(profile => profile.UserId)
+            .OrderBy(profile => profile.AgentId, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(profile => profile.BotId)
+            .ThenBy(profile => profile.UserId)
             .ToArray();
         File.WriteAllText(filePath, JsonSerializer.Serialize(snapshot, JsonOptions));
         lastLoadedWriteTimeUtc = File.GetLastWriteTimeUtc(filePath);
@@ -127,7 +158,10 @@ public sealed class QChatUserProfileService
         if (loaded != null)
         {
             foreach (QChatUserProfile profile in loaded.Where(item => item.UserId > 0))
-                profiles[profile.UserId] = Normalize(profile);
+            {
+                QChatUserProfile normalized = Normalize(profile);
+                profiles[QChatUserProfileKey.From(normalized)] = normalized;
+            }
         }
 
         lastLoadedWriteTimeUtc = File.GetLastWriteTimeUtc(filePath);
@@ -149,7 +183,9 @@ public sealed class QChatUserProfileService
             RelationshipLabel = profile.RelationshipLabel?.Trim() ?? "",
             AddressStyle = profile.AddressStyle?.Trim() ?? "",
             Source = profile.Source?.Trim() ?? "",
-            Notes = profile.Notes?.Trim() ?? ""
+            Notes = profile.Notes?.Trim() ?? "",
+            AgentId = NormalizeAgentId(profile.AgentId),
+            BotId = Math.Max(0, profile.BotId)
         };
     }
 
@@ -172,5 +208,18 @@ public sealed class QChatUserProfileService
 
         string trimmed = value.Trim();
         return trimmed.Length <= 24 ? trimmed : trimmed[..24];
+    }
+
+    static string NormalizeAgentId(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "" : value.Trim().ToLowerInvariant();
+    }
+
+    readonly record struct QChatUserProfileKey(string AgentId, long BotId, long UserId)
+    {
+        public static QChatUserProfileKey From(QChatUserProfile profile)
+        {
+            return new QChatUserProfileKey(NormalizeAgentId(profile.AgentId), Math.Max(0, profile.BotId), profile.UserId);
+        }
     }
 }

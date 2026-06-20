@@ -59,4 +59,38 @@ public class QChatUserProfileServiceTests
 
         Assert.That(liveService.ResolvePreferredAddress(10004, displayName: "正式名"), Is.EqualTo("小眠"));
     }
+
+    [Test]
+    public void ScopedProfilesKeepAgentsSeparatedForSameQqUser()
+    {
+        string rootPath = Path.Combine(Path.GetTempPath(), "alife-qchat-profile-tests", Guid.NewGuid().ToString("N"));
+        QChatUserProfileService service = new(rootPath);
+
+        service.SetProfile("xiayu", 2905391496, new QChatUserProfile(
+            UserId: 2001,
+            PreferredNickname: "雨宝"));
+        service.SetProfile("mixu", 3340947887, new QChatUserProfile(
+            UserId: 2001,
+            PreferredNickname: "小雨"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.ResolvePreferredAddress("xiayu", 2905391496, 2001, "formal"), Is.EqualTo("雨宝"));
+            Assert.That(service.ResolvePreferredAddress("mixu", 3340947887, 2001, "formal"), Is.EqualTo("小雨"));
+        });
+    }
+
+    [Test]
+    public void ScopedProfilesReloadExternalFileChanges()
+    {
+        string rootPath = Path.Combine(Path.GetTempPath(), "alife-qchat-profile-tests", Guid.NewGuid().ToString("N"));
+        QChatUserProfileService liveService = new(rootPath);
+        QChatUserProfileService editorService = new(rootPath);
+
+        editorService.SetProfile("xiayu", 2905391496, new QChatUserProfile(
+            UserId: 2001,
+            PreferredNickname: "雨宝"));
+
+        Assert.That(liveService.ResolvePreferredAddress("xiayu", 2905391496, 2001, "formal"), Is.EqualTo("雨宝"));
+    }
 }

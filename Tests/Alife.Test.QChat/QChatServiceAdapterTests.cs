@@ -170,7 +170,10 @@ public class QChatServiceAdapterTests
     [Test]
     public async Task OwnerPrivateQChatRouteCommandReturnsDiagnosticsBeforeModelDispatch()
     {
-        FakeOneBotRuntime runtime = new();
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 2905391496,
@@ -443,6 +446,7 @@ public class QChatServiceAdapterTests
             Assert.That(dispatchCount, Is.Zero);
             Assert.That(config.EnableReplyTimingDelay, Is.True);
             Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(status, Does.StartWith(QChatCommandPersonaFormatter.Format("xiayu", QChatSenderRole.Owner, "timing=mixed").Split(Environment.NewLine)[0]));
             Assert.That(status, Does.Contain("timing=mixed"));
             Assert.That(status, Does.Contain("reply_timing_delay=enabled"));
             Assert.That(status, Does.Contain("conversation_settle_window=disabled"));
@@ -2271,6 +2275,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.StartWith("术术，我看过了。"));
             Assert.That(reply, Does.Contain("file_policy=enabled"));
             Assert.That(reply, Does.Contain("read_blacklist_entries="));
             Assert.That(reply, Does.Contain("write_deny_entries="));
@@ -5159,6 +5164,135 @@ public class QChatServiceAdapterTests
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
         Assert.That(inbound.Formatted, Does.Contain("preferred_address=小雨"));
         Assert.That(inbound.Formatted, Does.Contain("display_name=潇雨的吉他创作室"));
+    }
+
+    [Test]
+    public async Task IncomingPrivateMessageUsesAgentScopedUserProfile()
+    {
+        string profileRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-profile-tests", Guid.NewGuid().ToString("N"));
+        QChatUserProfileService profiles = new(profileRoot);
+        profiles.SetProfile("xiayu", 2905391496, new QChatUserProfile(
+            UserId: 2001,
+            PreferredNickname: "雨宝",
+            Source: "owner-natural-chat",
+            Confidence: 1f));
+        profiles.SetProfile("mixu", 3340947887, new QChatUserProfile(
+            UserId: 2001,
+            PreferredNickname: "小雨",
+            Source: "owner-natural-chat",
+            Confidence: 1f));
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        CapturingQChatService service = new(functionCaller, runtime, profiles)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 1001,
+                AllowPrivateGuestChat = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 2001,
+            Sender = new OneBotSender { UserId = 2001, Card = "潇雨的吉他创作室", Nickname = "formal-nick" },
+            RawMessage = "你在吗"
+        });
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("preferred_address=雨宝"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("preferred_address=小雨"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerNaturalMessageCanLearnScopedUserProfileBeforeModelDispatch()
+    {
+        string profileRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-profile-tests", Guid.NewGuid().ToString("N"));
+        QChatUserProfileService profiles = new(profileRoot);
+        QChatProfileLearningService learning = new(
+            profiles,
+            new FakeProfileSemanticExtractor(new QChatProfileSemanticResult([
+                new QChatProfileCandidate(2001, QChatProfileField.PreferredNickname, "雨宝", 0.94f, "owner natural observation")
+            ])),
+            new QChatProfileLearningPolicy());
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        CapturingQChatService service = new(
+            functionCaller,
+            runtime,
+            userProfileService: profiles,
+            profileLearningService: learning)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "以后和2001聊天时自然一点，叫雨宝就行"
+        });
+
+        await service.WaitForInboundAsync();
+        Assert.That(profiles.ResolvePreferredAddress("xiayu", 2905391496, 2001, "小雨"), Is.EqualTo("雨宝"));
+    }
+
+    [Test]
+    public async Task OwnerNaturalProfileLearningIsThrottledForRapidMessages()
+    {
+        string profileRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-profile-tests", Guid.NewGuid().ToString("N"));
+        QChatUserProfileService profiles = new(profileRoot);
+        CountingProfileSemanticExtractor extractor = new();
+        QChatProfileLearningService learning = new(profiles, extractor, new QChatProfileLearningPolicy());
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        CapturingQChatService service = new(
+            functionCaller,
+            runtime,
+            userProfileService: profiles,
+            profileLearningService: learning)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "以后叫2001雨宝"
+        });
+        await WaitUntilAsync(() => extractor.CallCount == 1);
+        await service.WaitForInboundAsync();
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "另外2002叫小术"
+        });
+        await service.WaitForInboundAsync();
+        await Task.Delay(100);
+
+        Assert.That(extractor.CallCount, Is.EqualTo(1));
     }
 
     [Test]
@@ -9287,12 +9421,14 @@ public class QChatServiceAdapterTests
         XmlFunctionCaller functionCaller,
         IOneBotRuntime runtime,
         QChatUserProfileService? userProfileService = null,
-        QChatRelationCacheService? relationCacheService = null) : QChatService(
+        QChatRelationCacheService? relationCacheService = null,
+        QChatProfileLearningService? profileLearningService = null) : QChatService(
             functionCaller,
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
             relationCacheService: relationCacheService,
-            userProfileService: userProfileService)
+            userProfileService: userProfileService,
+            profileLearningService: profileLearningService)
     {
         readonly Channel<QChatInboundMessage> inboundMessages = Channel.CreateUnbounded<QChatInboundMessage>(
             new UnboundedChannelOptions
@@ -9308,6 +9444,29 @@ public class QChatServiceAdapterTests
         {
             inboundMessages.Writer.TryWrite(message);
             return Task.FromResult("");
+        }
+    }
+
+    sealed class FakeProfileSemanticExtractor(QChatProfileSemanticResult result) : IQChatProfileSemanticExtractor
+    {
+        public Task<QChatProfileSemanticResult> ExtractAsync(
+            QChatProfileLearningContext context,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(result);
+        }
+    }
+
+    sealed class CountingProfileSemanticExtractor : IQChatProfileSemanticExtractor
+    {
+        public int CallCount { get; private set; }
+
+        public Task<QChatProfileSemanticResult> ExtractAsync(
+            QChatProfileLearningContext context,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(new QChatProfileSemanticResult([]));
         }
     }
 

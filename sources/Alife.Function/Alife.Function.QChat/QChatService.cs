@@ -20,6 +20,7 @@ using Alife.Function.MessageFilter;
 using Alife.Function.Speech;
 using Microsoft.Extensions.Logging;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.QChat;
 
@@ -49,6 +50,8 @@ public record QChatConfig
     public bool EnableTaskProgressFeedback { get; set; } = true;
     public int TaskProgressFeedbackMilliseconds { get; set; } = 2000;
     public bool EnableContinuationGate { get; set; } = true;
+    public bool EnableSemanticProfileLearning { get; set; } = true;
+    public int SemanticProfileLearningMinSeconds { get; set; } = 60;
     public float AutoPokeBackPrivateProbability { get; set; } = 0.5f;
     public float AutoPokeBackGroupProbability { get; set; } = 0.5f;
     public bool PersistQuietModeAcrossRestart { get; set; }
@@ -179,6 +182,7 @@ public partial class QChatService(
     AgentAuditLogService? auditLog = null,
     QChatRelationCacheService? relationCacheService = null,
     QChatUserProfileService? userProfileService = null,
+    QChatProfileLearningService? profileLearningService = null,
     PADEmotionEngine? emotionEngine = null,
     QChatManagedFileService? managedFileService = null,
     AgentApprovalService? approvalService = null,
@@ -1014,6 +1018,19 @@ public partial class QChatService(
             async (item, _) => await SendSingleMessageAsync(type, targetId, item.Text));
     }
 
+    Task SendCommandReplyAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        OneBotMessageType targetType,
+        long targetId,
+        string message)
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string agentId = ResolveCurrentAgentId(config);
+        string formatted = QChatCommandPersonaFormatter.Format(agentId, senderRole, message);
+        return SendTextOrMediaMessageAsync(targetType, targetId, formatted, streamText: false);
+    }
+
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
     {
         OneBotSendMessageResult? result;
@@ -1806,7 +1823,12 @@ public partial class QChatService(
     readonly AgentAuditLogService? auditLog = auditLog;
     readonly QChatRelationCacheService? injectedRelationCache = relationCacheService;
     QChatRelationCacheService? relationCache;
-    readonly QChatUserProfileService userProfiles = userProfileService ?? new QChatUserProfileService();
+    QChatProfileRuntimeServices profileRuntimeServices = CreateProfileRuntimeServices(
+        userProfileService,
+        profileLearningService);
+    readonly bool hasInjectedProfileLearningService = profileLearningService != null;
+    readonly object profileLearningThrottleGate = new();
+    readonly Dictionary<string, DateTimeOffset> profileLearningTimes = new(StringComparer.Ordinal);
     readonly QChatManagedFileService? injectedManagedFileService = managedFileService;
     readonly AgentEditCheckpointService editCheckpoints = checkpointService
         ?? new AgentEditCheckpointService(Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "checkpoints"));
@@ -1843,6 +1865,46 @@ public partial class QChatService(
     static readonly TimeSpan PokeCooldown = TimeSpan.FromSeconds(60);
     const int MaxRecentSentMessages = 40;
     long outboundMessageVersion;
+
+    sealed record QChatProfileRuntimeServices(
+        QChatUserProfileService UserProfiles,
+        QChatProfileLearningService ProfileLearning);
+
+    static QChatProfileRuntimeServices CreateProfileRuntimeServices(
+        QChatUserProfileService? userProfileService,
+        QChatProfileLearningService? profileLearningService)
+    {
+        QChatUserProfileService resolvedProfiles = userProfileService ?? new QChatUserProfileService();
+        QChatProfileLearningService resolvedLearning = profileLearningService
+            ?? new QChatProfileLearningService(
+                resolvedProfiles,
+                new QChatNullProfileSemanticExtractor(),
+                new QChatProfileLearningPolicy());
+
+        return new QChatProfileRuntimeServices(resolvedProfiles, resolvedLearning);
+    }
+
+    void ConfigureProfileLearningFromKernel(Kernel kernel)
+    {
+        if (hasInjectedProfileLearningService)
+            return;
+
+        if (Configuration?.EnableSemanticProfileLearning != true)
+            return;
+
+        IChatCompletionService? chatCompletionService =
+            kernel.Services.GetService(typeof(IChatCompletionService)) as IChatCompletionService;
+        if (chatCompletionService == null)
+            return;
+
+        profileRuntimeServices = profileRuntimeServices with
+        {
+            ProfileLearning = new QChatProfileLearningService(
+                profileRuntimeServices.UserProfiles,
+                new QChatModelProfileSemanticExtractor(new QChatSemanticKernelProfileModel(chatCompletionService)),
+                new QChatProfileLearningPolicy())
+        };
+    }
     readonly object permissionGate = new();
     AgentPermissionRequest? currentPermissionRequest;
     DateTime currentPermissionExpiresAt = DateTime.MinValue;
@@ -1965,6 +2027,7 @@ public partial class QChatService(
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
         await base.StartAsync(kernel, chatActivity);
+        ConfigureProfileLearningFromKernel(kernel);
 
         if (oneBotClient == null)
             throw new NullReferenceException(nameof(oneBotClient));
@@ -2234,6 +2297,7 @@ public partial class QChatService(
                         senderRole,
                         content)))
                     return;
+                StartProfileLearningFromMessage(config, messageEvent, senderRole, content);
 
                 string formatted = $"{speaker}：{content}";
                 bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
@@ -2277,6 +2341,107 @@ public partial class QChatService(
         {
             logger.LogError(e, null);
             WriteQChatDiagnostic("event-error", e.Message, exception: e);
+        }
+    }
+
+    void StartProfileLearningFromMessage(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string content)
+    {
+        if (ShouldLearnProfileFromMessage(config, messageEvent, senderRole, content) == false)
+            return;
+
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = ResolveCurrentBotId(config, messageEvent);
+        string displayName = ResolveDisplayName(messageEvent);
+        QChatProfileLearningContext context = new(
+            AgentId: agentId,
+            BotId: botId,
+            SenderUserId: messageEvent.UserId,
+            IsOwner: senderRole == QChatSenderRole.Owner,
+            GroupId: messageEvent.GroupId == 0 ? null : messageEvent.GroupId,
+            Text: content,
+            RecentParticipants: [new QChatProfileParticipant(messageEvent.UserId, displayName)]);
+
+        _ = LearnProfileFromMessageAsync(context);
+    }
+
+    bool ShouldLearnProfileFromMessage(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string content)
+    {
+        if (config.EnableSemanticProfileLearning == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        string trimmed = content.TrimStart();
+        if (trimmed.StartsWith("/", StringComparison.Ordinal))
+            return false;
+
+        if (trimmed.Length > 2000)
+            return false;
+
+        return TryEnterProfileLearningWindow(config, messageEvent);
+    }
+
+    bool TryEnterProfileLearningWindow(QChatConfig config, OneBotMessageEvent messageEvent)
+    {
+        int minSeconds = Math.Max(0, config.SemanticProfileLearningMinSeconds);
+        if (minSeconds == 0)
+            return true;
+
+        string key = string.Join(
+            ":",
+            ResolveCurrentAgentId(config),
+            ResolveCurrentBotId(config, messageEvent),
+            messageEvent.MessageType,
+            GetQChatConversationTargetId(messageEvent),
+            messageEvent.UserId);
+        DateTimeOffset now = DateTimeOffset.Now;
+
+        lock (profileLearningThrottleGate)
+        {
+            if (profileLearningTimes.TryGetValue(key, out DateTimeOffset last) &&
+                now - last < TimeSpan.FromSeconds(minSeconds))
+            {
+                return false;
+            }
+
+            profileLearningTimes[key] = now;
+            return true;
+        }
+    }
+
+    async Task LearnProfileFromMessageAsync(QChatProfileLearningContext context)
+    {
+        try
+        {
+            QChatProfileLearningResult result = await profileRuntimeServices.ProfileLearning.LearnAsync(context);
+            if (result.Applied.Count > 0 || result.Blocked.Count > 0)
+            {
+                WriteQChatDiagnostic("qchat-profile-learning", "QChat profile learning evaluated a natural message.", new {
+                    context.AgentId,
+                    context.BotId,
+                    context.SenderUserId,
+                    context.GroupId,
+                    applied = result.Applied.Count,
+                    blocked = result.Blocked.Count
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "QChat profile learning failed.");
+            WriteQChatDiagnostic("qchat-profile-learning-failed", ex.Message, exception: ex);
         }
     }
 
@@ -2517,8 +2682,10 @@ public partial class QChatService(
     string BuildAddressPrompt(QChatConfig config, OneBotBasicMessageEvent messageEvent)
     {
         string displayName = ResolveDisplayName(messageEvent);
-        string preferredAddress = ResolvePreferredAddress(config, messageEvent.UserId, displayName);
-        userProfiles.TryGetProfile(messageEvent.UserId, out QChatUserProfile? profile);
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = ResolveCurrentBotId(config, messageEvent);
+        string preferredAddress = ResolvePreferredAddress(config, messageEvent.UserId, displayName, agentId, botId);
+        profileRuntimeServices.UserProfiles.TryGetProfile(agentId, botId, messageEvent.UserId, out QChatUserProfile? profile);
 
         return $"""
                 [QQ address]
@@ -2551,12 +2718,27 @@ public partial class QChatService(
 
     string ResolvePreferredAddress(QChatConfig config, long userId, string? displayName)
     {
+        return ResolvePreferredAddress(config, userId, displayName, ResolveCurrentAgentId(config), Math.Max(0, config.BotId));
+    }
+
+    string ResolvePreferredAddress(QChatConfig config, long userId, string? displayName, string agentId, long botId)
+    {
         if (config.OwnerId != 0 && userId == config.OwnerId)
             return "主人";
         if (IsQuietModeWakeUser(userId))
             return "妈妈";
 
-        return userProfiles.ResolvePreferredAddress(userId, displayName);
+        return profileRuntimeServices.UserProfiles.ResolvePreferredAddress(agentId, botId, userId, displayName);
+    }
+
+    string ResolveCurrentAgentId(QChatConfig config)
+    {
+        return QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
+    }
+
+    static long ResolveCurrentBotId(QChatConfig config, OneBotBasicMessageEvent messageEvent)
+    {
+        return Math.Max(0, messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId);
     }
 
     string ResolveDisplayName(OneBotBasicMessageEvent messageEvent)
@@ -3200,14 +3382,14 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory status.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat memory status.");
             return true;
         }
 
         QChatAgentRoute route = BuildQChatMemoryStatusRoute(messageEvent, Configuration!);
         QChatAgentProfile profile = ResolveQChatMemoryStatusProfile(route);
         string status = FormatQChatMemoryStatus(route, profile);
-        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, status);
         WriteQChatDiagnostic("qchat-memory-status-command", "QChat memory status command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3232,12 +3414,12 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory recent.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat memory recent.");
             return true;
         }
 
         string reply = FormatQChatMemoryRecent();
-        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, reply);
         WriteQChatDiagnostic("qchat-memory-recent-command", "QChat recent memory command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3289,20 +3471,20 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory forget.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat memory forget.");
             return true;
         }
 
         if (parts.Length < 4)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "usage=/qchat memory forget <memory_id>", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "usage=/qchat memory forget <memory_id>");
             return true;
         }
 
         string memoryName = parts[3];
         if (autobiographicalMemoryController == null)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "memory_controller=not_connected", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "memory_controller=not_connected");
             return true;
         }
 
@@ -3311,7 +3493,7 @@ public partial class QChatService(
             $"memory_forget={(result.Success ? "succeeded" : "failed")}",
             $"memory={result.MemoryName ?? memoryName}",
             $"message={NormalizeStatusLine(result.Message)}");
-        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, reply);
         WriteQChatDiagnostic("qchat-memory-forget-command", "QChat memory forget command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3342,13 +3524,13 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use QChat memory purge.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat memory purge.");
             return true;
         }
 
         if (parts.Length < 4)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "usage=/qchat memory purge <memory_id> confirm", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "usage=/qchat memory purge <memory_id> confirm");
             return true;
         }
 
@@ -3356,13 +3538,13 @@ public partial class QChatService(
         bool confirmed = parts.Length >= 5 && parts[4].Equals("confirm", StringComparison.OrdinalIgnoreCase);
         if (confirmed == false)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, $"confirmation_required=/qchat memory purge {memoryName} confirm", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, $"confirmation_required=/qchat memory purge {memoryName} confirm");
             return true;
         }
 
         if (autobiographicalMemoryController == null)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "memory_controller=not_connected", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "memory_controller=not_connected");
             return true;
         }
 
@@ -3375,7 +3557,7 @@ public partial class QChatService(
         if (string.IsNullOrWhiteSpace(result.TrashPath) == false)
             lines.Add($"trash_path={result.TrashPath}");
 
-        await SendTextOrMediaMessageAsync(targetType, targetId, string.Join(Environment.NewLine, lines), streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, string.Join(Environment.NewLine, lines));
         WriteQChatDiagnostic("qchat-memory-purge-command", "QChat memory purge command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3405,14 +3587,14 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use desktop diagnostics.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use desktop diagnostics.");
             return true;
         }
 
         QChatAgentRoute route = BuildQChatMemoryStatusRoute(messageEvent, Configuration!);
         if (route.AgentId.Equals(DesktopControlAgentId, StringComparison.OrdinalIgnoreCase) == false)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Desktop diagnostics are only enabled for xiayu.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Desktop diagnostics are only enabled for xiayu.");
             return true;
         }
 
@@ -3525,7 +3707,7 @@ public partial class QChatService(
             reply = result.Message;
         }
 
-        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, reply);
         WriteQChatDiagnostic("qchat-desktop-command", "QChat desktop command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3657,7 +3839,7 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can change QChat timing.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can change QChat timing.");
             return true;
         }
 
@@ -3674,12 +3856,12 @@ public partial class QChatService(
         }
         else if (mode.Equals("status", StringComparison.OrdinalIgnoreCase) == false)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Usage: /qchat timing on|off|status", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Usage: /qchat timing on|off|status");
             return true;
         }
 
         string status = FormatQChatTimingStatus();
-        await SendTextOrMediaMessageAsync(targetType, targetId, status, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, status);
         WriteQChatDiagnostic("qchat-timing-command", "QChat timing mode command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3822,7 +4004,7 @@ public partial class QChatService(
             handled = approvals.TryDeny(approvalId, messageEvent.UserId, out result);
         }
 
-        await SendTextOrMediaMessageAsync(targetType, targetId, result, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, result);
         WriteQChatDiagnostic(
             handled ? "agent-approval-command-handled" : "agent-approval-command-rejected",
             "QQ approval command handled.",
@@ -3845,7 +4027,7 @@ public partial class QChatService(
             messageEvent,
             senderRole,
             Configuration ?? new QChatConfig(),
-            (type, targetId, message) => SendTextOrMediaMessageAsync(type, targetId, message, streamText: false),
+            (type, targetId, message) => SendCommandReplyAsync(messageEvent, senderRole, type, targetId, message),
             WriteQChatDiagnostic);
     }
 
@@ -3865,7 +4047,7 @@ public partial class QChatService(
 
         if (senderRole != QChatSenderRole.Owner)
         {
-            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can roll back file edits.", streamText: false);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can roll back file edits.");
             return true;
         }
 
@@ -3873,7 +4055,7 @@ public partial class QChatService(
         string message = result.Errors.Count == 0
             ? $"Restored {result.RestoredFiles} file(s) for {result.TaskId}."
             : $"Restored {result.RestoredFiles} file(s), errors: {string.Join("; ", result.Errors)}";
-        await SendTextOrMediaMessageAsync(targetType, targetId, message, streamText: false);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, message);
         WriteQChatDiagnostic("agent-rollback-command", "QQ rollback command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -3890,7 +4072,7 @@ public partial class QChatService(
             messageEvent,
             senderRole,
             agentTasks.FormatStatus,
-            (type, targetId, message) => SendTextOrMediaMessageAsync(type, targetId, message, streamText: false),
+            (type, targetId, message) => SendCommandReplyAsync(messageEvent, senderRole, type, targetId, message),
             WriteQChatDiagnostic);
     }
 
