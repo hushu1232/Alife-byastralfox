@@ -148,6 +148,7 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Contain("/qchat identity"));
             Assert.That(result.Text, Does.Contain("/qchat profile"));
             Assert.That(result.Text, Does.Contain("/qchat status"));
+            Assert.That(result.Text, Does.Contain("/qchat timing on|off|status"));
             Assert.That(result.Text, Does.Contain("/qchat files"));
             Assert.That(result.Text, Does.Contain("/qchat approvals"));
             Assert.That(result.Text, Does.Contain("/qchat failures"));

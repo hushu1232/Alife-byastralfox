@@ -45,6 +45,20 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                && (text.Length == prefix.Length || char.IsWhiteSpace(text[prefix.Length]));
     }
 
+    public static bool IsHelpAliasCommand(string text)
+    {
+        string normalized = text.Trim();
+        return normalized.Equals("/help", StringComparison.OrdinalIgnoreCase)
+               || normalized.Equals("help", StringComparison.OrdinalIgnoreCase)
+               || normalized.Equals("qchat help", StringComparison.OrdinalIgnoreCase)
+               || normalized.Equals("qchat \u5e2e\u52a9", StringComparison.OrdinalIgnoreCase)
+               || normalized.Equals("qchat\u5e2e\u52a9", StringComparison.OrdinalIgnoreCase)
+               || normalized.Equals("\u5e2e\u52a9", StringComparison.Ordinal)
+               || normalized.Equals("\u6307\u4ee4", StringComparison.Ordinal)
+               || normalized.Equals("\u547d\u4ee4", StringComparison.Ordinal)
+               || normalized.Equals("\u83dc\u5355", StringComparison.Ordinal);
+    }
+
     public static bool IsStatusCommand(string text)
     {
         return text.Equals("/status", StringComparison.OrdinalIgnoreCase)
@@ -66,7 +80,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         ArgumentNullException.ThrowIfNull(messageEvent);
 
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (IsDiagnosticsCommand(text) == false)
+        bool isDiagnosticsCommand = IsDiagnosticsCommand(text);
+        bool isHelpAliasCommand = IsHelpAliasCommand(text);
+        if (isDiagnosticsCommand == false && isHelpAliasCommand == false)
             return false;
 
         ArgumentNullException.ThrowIfNull(config);
@@ -79,6 +95,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         if (senderRole != QChatSenderRole.Owner)
         {
+            if (isHelpAliasCommand)
+                return false;
+
             await sendAsync(
                 targetType,
                 targetId,
@@ -93,8 +112,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
         QChatAgentRoute route = BuildQChatDiagnosticsRoute(messageEvent, config);
         QChatAgentProfile profile = ResolveQChatDiagnosticsProfile(route);
+        string commandText = isHelpAliasCommand ? "/qchat" : text;
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
-            text,
+            commandText,
             route,
             profile,
             new QChatDiagnosticsRuntimeState(

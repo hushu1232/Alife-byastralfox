@@ -378,6 +378,7 @@ public class QChatServiceAdapterTests
             Assert.That(dispatchCount, Is.Zero);
             Assert.That(config.EnableReplyTimingDelay, Is.True);
             Assert.That(config.EnableConversationSettleWindow, Is.False);
+            Assert.That(status, Does.Contain("timing=mixed"));
             Assert.That(status, Does.Contain("reply_timing_delay=enabled"));
             Assert.That(status, Does.Contain("conversation_settle_window=disabled"));
         });
@@ -454,6 +455,42 @@ public class QChatServiceAdapterTests
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("Only the owner"));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("session="));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("agent=xiayu"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerNaturalHelpAliasReturnsQChatCommandMenuWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "\u6307\u4ee4"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Supported commands:"));
+            Assert.That(reply, Does.Contain("/qchat status"));
+            Assert.That(reply, Does.Contain("/qchat timing on|off|status"));
+            Assert.That(reply, Does.Contain("/qchat route"));
         });
     }
 

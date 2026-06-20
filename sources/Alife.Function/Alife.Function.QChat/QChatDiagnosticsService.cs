@@ -123,6 +123,7 @@ public static class QChatDiagnosticsService
             "/qchat identity",
             "/qchat profile",
             "/qchat status",
+            "/qchat timing on|off|status",
             "/qchat files",
             "/qchat approvals",
             "/qchat failures",

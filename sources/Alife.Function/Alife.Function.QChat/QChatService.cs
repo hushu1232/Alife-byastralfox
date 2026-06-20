@@ -3119,9 +3119,22 @@ public partial class QChatService(
 
     string FormatQChatTimingStatus()
     {
+        bool replyTimingDelayEnabled = Configuration?.EnableReplyTimingDelay == true;
+        bool conversationSettleWindowEnabled = Configuration?.EnableConversationSettleWindow == true;
         return string.Join(Environment.NewLine,
-            $"reply_timing_delay={FormatEnabled(Configuration?.EnableReplyTimingDelay == true)}",
-            $"conversation_settle_window={FormatEnabled(Configuration?.EnableConversationSettleWindow == true)}");
+            $"timing={FormatTimingMode(replyTimingDelayEnabled, conversationSettleWindowEnabled)}",
+            $"reply_timing_delay={FormatEnabled(replyTimingDelayEnabled)}",
+            $"conversation_settle_window={FormatEnabled(conversationSettleWindowEnabled)}");
+    }
+
+    static string FormatTimingMode(bool replyTimingDelayEnabled, bool conversationSettleWindowEnabled)
+    {
+        if (replyTimingDelayEnabled && conversationSettleWindowEnabled)
+            return "humanlike";
+        if (replyTimingDelayEnabled == false && conversationSettleWindowEnabled == false)
+            return "instant";
+
+        return "mixed";
     }
 
     static string FormatEnabled(bool value)
