@@ -26,6 +26,9 @@ large files or logs.
 | Memory stores internal labels or diagnostic noise | `memory-contamination` | memory sanitizer and memory write paths | `MemoryTextSanitizer`, `AutobiographicalMemoryService`, `MemoryStorage` | `MemoryTextSanitizerTests`, `AutobiographicalMemoryServiceTests`, `MemoryStorageConsistencyTests` |
 | Agent reads too much context before locating issue | `token-overuse-during-debugging` | issue packet and debug map use | `docs/agent-debug-map.md`, CodeGraph tools, future issue-packet service | no code test yet; use review checklist |
 | Persona hides uncertainty or changes engineering facts | `persona-fact-boundary-mix` | persona contract and final formatter | future persona-aware formatter, `QChatExperienceSanitizer`, `PromptStablePrefixService` | future persona contract tests |
+| Desktop command leaks process/window details to non-owner | `desktop-permission-leak` | owner gate, desktop command handler, fake desktop reader | `TryHandleOwnerDesktopCommandAsync`, `DesktopControlService` | `QChatServiceAdapterTests`, `DesktopControlServiceTests` |
+| Desktop command works from non-XiaYu bot | `desktop-bot-boundary-bypass` | bot route resolution, XiaYu allowlist, command handler | `BuildQChatMemoryStatusRoute`, `TryHandleOwnerDesktopCommandAsync`, `QChatAgentIdentityRegistry` | `QChatServiceAdapterTests`, `QChatAgentIdentityRegistryTests` |
+| Desktop action executes without gateway | `desktop-action-bypass` | action gateway, permission policy, approval service | future `DesktopActionGateway`, `AgentPermissionPolicy`, `AgentApprovalService` | future `DesktopActionGatewayTests`, `AgentPermissionGateTests` |
 
 ## Output Surface Index
 

@@ -1,5 +1,6 @@
 using Alife.Function.QChat;
 using Alife.Function.Agent;
+using Alife.Function.DesktopControl;
 using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
@@ -626,6 +627,7 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Contain("/qchat memory recent"));
             Assert.That(reply, Does.Contain("/qchat memory forget"));
             Assert.That(reply, Does.Contain("/qchat memory purge"));
+            Assert.That(reply, Does.Contain("/qchat desktop status"));
             Assert.That(reply, Does.Contain("/qchat route"));
         });
     }
@@ -871,6 +873,134 @@ public class QChatServiceAdapterTests
             Assert.That(reply, Does.Not.Contain("memory_scope="));
             Assert.That(reply, Does.Not.Contain("long_term_memory="));
             Assert.That(reply, Does.Not.Contain("agent=xiayu"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerXiayuQChatDesktopStatusReportsSnapshotWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        DesktopControlService desktopControl = new(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+            DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+            new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+            [new ProcessSnapshot(1, "Alife.Client", 100)],
+            [new WindowSnapshot(1, "Alife", "Alife.Client")],
+            [])));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            desktopControl: desktopControl);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat desktop status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("desktop_status=ok"));
+            Assert.That(reply, Does.Contain("processes=1"));
+            Assert.That(reply, Does.Contain("windows=1"));
+            Assert.That(reply, Does.Not.Contain("Alife.Client"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        },
+            desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                [new ProcessSnapshot(1, "secret-process", 100)],
+                [new WindowSnapshot(1, "Secret Window", "secret-process")],
+                []))));
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat desktop status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Only the owner"));
+            Assert.That(reply, Does.Not.Contain("desktop_status="));
+            Assert.That(reply, Does.Not.Contain("secret-process"));
+            Assert.That(reply, Does.Not.Contain("Secret Window"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerMixuQChatDesktopStatusIsRejectedBecauseDesktopControlIsXiayuOnly()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 3340947887,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        },
+            desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                [new ProcessSnapshot(1, "xiayu-only-process", 100)],
+                [new WindowSnapshot(1, "Xiayu Only Window", "xiayu-only-process")],
+                []))));
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 3340947887,
+            UserId = 3045846738,
+            RawMessage = "/qchat desktop status"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("Desktop diagnostics are only enabled for xiayu."));
+            Assert.That(reply, Does.Not.Contain("desktop_status="));
+            Assert.That(reply, Does.Not.Contain("xiayu-only-process"));
+            Assert.That(reply, Does.Not.Contain("Xiayu Only Window"));
         });
     }
 
@@ -7349,7 +7479,8 @@ public class QChatServiceAdapterTests
         ILifeEventPublisher? lifeEventPublisher = null,
         IMemoryConsistencyReporter? memoryConsistencyReporter = null,
         IAutobiographicalMemorySink? autobiographicalMemorySink = null,
-        IAutobiographicalMemoryController? autobiographicalMemoryController = null)
+        IAutobiographicalMemoryController? autobiographicalMemoryController = null,
+        DesktopControlService? desktopControl = null)
     {
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
@@ -7364,7 +7495,8 @@ public class QChatServiceAdapterTests
             lifeEventPublisher: lifeEventPublisher,
             memoryConsistencyReporter: memoryConsistencyReporter,
             autobiographicalMemorySink: autobiographicalMemorySink,
-            autobiographicalMemoryController: autobiographicalMemoryController)
+            autobiographicalMemoryController: autobiographicalMemoryController,
+            desktopControl: desktopControl)
         {
             Configuration = config
         };
@@ -7493,6 +7625,14 @@ public class QChatServiceAdapterTests
         {
             PurgeRequests.Add(memoryName);
             return Task.FromResult(purgeResult ?? new AutobiographicalMemoryPurgeResult(false, "not configured", memoryName, null));
+        }
+    }
+
+    sealed class FakeDesktopRuntimeReader(DesktopSnapshot snapshot) : IDesktopRuntimeReader
+    {
+        public Task<DesktopSnapshot> CaptureAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(snapshot);
         }
     }
 

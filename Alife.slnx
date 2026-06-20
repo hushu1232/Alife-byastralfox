@@ -16,6 +16,7 @@
     <Project Path="Sources/Alife.Function/Alife.Function.Memory/Alife.Function.Memory.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.MessageFilter/Alife.Function.MessageFilter.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.Developer/Alife.Function.Developer.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.DesktopControl/Alife.Function.DesktopControl.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.SystemEvent/Alife.Function.SystemEvent.csproj" />
     <Project Path="Sources/Alife.Function/Alife.Function.VirtualWorld/Alife.Function.VirtualWorld.csproj" />
   </Folder>
@@ -53,6 +54,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Alife.Test.Browser/Alife.Test.Browser.csproj" />
+    <Project Path="Tests/Alife.Test.DesktopControl/Alife.Test.DesktopControl.csproj" />
     <Project Path="Tests/Alife.Test.DeskPet/Alife.Test.DeskPet.csproj" />
     <Project Path="Tests/Alife.Test.Framework/Alife.Test.Framework.csproj" />
     <Project Path="Tests/Alife.Test.Interpreter/Alife.Test.Interpreter.csproj" />

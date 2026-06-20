@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
 using Alife.Function.Agent;
+using Alife.Function.DesktopControl;
 using Alife.Function.Emotion;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
@@ -185,7 +186,8 @@ public partial class QChatService(
     AgentTaskService? taskService = null,
     IMemoryConsistencyReporter? memoryConsistencyReporter = null,
     IAutobiographicalMemorySink? autobiographicalMemorySink = null,
-    IAutobiographicalMemoryController? autobiographicalMemoryController = null) :
+    IAutobiographicalMemoryController? autobiographicalMemoryController = null,
+    DesktopControlService? desktopControl = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -195,6 +197,9 @@ public partial class QChatService(
     IModuleHealthReporter,
     IAgentQChatJoinedGroupProvider
 {
+    const string DesktopControlAgentId = "xiayu";
+    readonly DesktopControlService desktopControlService = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
+
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
 
@@ -3060,6 +3065,7 @@ public partial class QChatService(
             context => TryHandleOwnerMemoryRecentCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryForgetCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryPurgeCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerDesktopCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3267,6 +3273,57 @@ public partial class QChatService(
             messageEvent.GroupId,
             MemoryName = memoryName,
             result.Success
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerDesktopCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2 ||
+            parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[1].Equals("desktop", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Only the owner can use desktop diagnostics.", streamText: false);
+            return true;
+        }
+
+        QChatAgentRoute route = BuildQChatMemoryStatusRoute(messageEvent, Configuration!);
+        if (route.AgentId.Equals(DesktopControlAgentId, StringComparison.OrdinalIgnoreCase) == false)
+        {
+            await SendTextOrMediaMessageAsync(targetType, targetId, "Desktop diagnostics are only enabled for xiayu.", streamText: false);
+            return true;
+        }
+
+        string mode = parts.Length >= 3 ? parts[2] : "status";
+        string reply = mode.ToLowerInvariant() switch
+        {
+            "status" => await desktopControlService.GetStatusAsync(),
+            "health" => await desktopControlService.GetStatusAsync(),
+            "processes" => await desktopControlService.GetProcessListAsync(),
+            "windows" => await desktopControlService.GetWindowListAsync(),
+            _ => "usage=/qchat desktop status|health|processes|windows"
+        };
+
+        await SendTextOrMediaMessageAsync(targetType, targetId, reply, streamText: false);
+        WriteQChatDiagnostic("qchat-desktop-command", "QChat desktop command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            route.AgentId,
+            mode
         });
         return true;
     }
