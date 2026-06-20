@@ -44,6 +44,11 @@ public interface IDesktopActionAuditSink
     void Record(DesktopActionAuditEntry entry);
 }
 
+public interface IDesktopActionAuditReader
+{
+    IReadOnlyList<DesktopActionAuditEntry> GetRecentEntries(int maxCount);
+}
+
 public sealed class DesktopActionGateway(
     IEnumerable<IDesktopAction> actions,
     IDesktopActionAuditSink? auditSink = null,

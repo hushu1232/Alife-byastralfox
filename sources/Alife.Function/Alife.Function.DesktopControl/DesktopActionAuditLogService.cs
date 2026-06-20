@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace Alife.Function.DesktopControl;
 
-public sealed class DesktopActionAuditLogService : IDesktopActionAuditSink
+public sealed class DesktopActionAuditLogService : IDesktopActionAuditSink, IDesktopActionAuditReader
 {
     const int MaxMessageLength = 200;
     static readonly JsonSerializerOptions JsonOptions = new()

@@ -2,13 +2,18 @@ namespace Alife.Function.DesktopControl;
 
 public static class DesktopReadOnlyActions
 {
+    const int MaxRecentAuditEntries = 8;
+
     public const string Status = "qchat.desktop.status";
     public const string Health = "qchat.desktop.health";
     public const string Processes = "qchat.desktop.processes";
     public const string Windows = "qchat.desktop.windows";
     public const string Capabilities = "qchat.desktop.capabilities";
+    public const string AuditRecent = "qchat.desktop.audit.recent";
 
-    public static IReadOnlyList<IDesktopAction> Create(DesktopControlService desktopControl)
+    public static IReadOnlyList<IDesktopAction> Create(
+        DesktopControlService desktopControl,
+        IDesktopActionAuditReader? auditReader = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
@@ -17,16 +22,32 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(Health, "read-only desktop health", desktopControl.GetStatusAsync),
             new DelegateDesktopAction(Processes, "read-only process summary", token => desktopControl.GetProcessListAsync(cancellationToken: token)),
             new DelegateDesktopAction(Windows, "read-only window summary", token => desktopControl.GetWindowListAsync(cancellationToken: token)),
-            new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", _ => Task.FromResult(desktopControl.GetCapabilitySummary()))
+            new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", _ => Task.FromResult(desktopControl.GetCapabilitySummary())),
+            new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", _ => Task.FromResult(FormatRecentAudit(auditReader)))
         ];
     }
 
     public static DesktopActionGateway CreateGateway(
         DesktopControlService desktopControl,
-        IDesktopActionAuditSink? auditSink = null)
+        IDesktopActionAuditSink? auditSink = null,
+        IDesktopActionAuditReader? auditReader = null)
     {
-        return new DesktopActionGateway(Create(desktopControl), auditSink);
+        return new DesktopActionGateway(Create(desktopControl, auditReader), auditSink);
     }
+
+    static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
+    {
+        IReadOnlyList<DesktopActionAuditEntry> entries = auditReader?.GetRecentEntries(MaxRecentAuditEntries) ?? [];
+        if (entries.Count == 0)
+            return string.Join(Environment.NewLine, "Recent desktop actions:", "none");
+
+        List<string> lines = ["Recent desktop actions:"];
+        lines.AddRange(entries.Select(entry =>
+            $"{entry.Timestamp:O} {entry.ActionName} risk={entry.Risk} succeeded={FormatBool(entry.Succeeded)} agent={entry.AgentId} actor={entry.ActorUserId}"));
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatBool(bool value) => value ? "true" : "false";
 
     sealed class DelegateDesktopAction(
         string name,

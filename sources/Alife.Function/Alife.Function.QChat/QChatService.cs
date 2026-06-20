@@ -189,6 +189,7 @@ public partial class QChatService(
     IAutobiographicalMemoryController? autobiographicalMemoryController = null,
     DesktopControlService? desktopControl = null,
     IDesktopActionAuditSink? desktopActionAuditSink = null,
+    DesktopActionAuditLogService? desktopActionAuditLog = null,
     DesktopActionGateway? desktopActionGateway = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
@@ -201,15 +202,32 @@ public partial class QChatService(
 {
     const string DesktopControlAgentId = "xiayu";
     readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
-        ?? DesktopReadOnlyActions.CreateGateway(
-            desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader()),
-            desktopActionAuditSink ?? new DesktopActionAuditLogService(Path.Combine(
-                AlifePath.StorageFolderPath,
-                "AgentWorkspace",
-                "desktop-action-audit.jsonl")));
+        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog);
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
+
+    static DesktopActionGateway CreateDefaultDesktopActionGateway(
+        DesktopControlService? desktopControl,
+        IDesktopActionAuditSink? desktopActionAuditSink,
+        DesktopActionAuditLogService? desktopActionAuditLog)
+    {
+        DesktopControlService control = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
+        DesktopActionAuditLogService? defaultAuditLog = desktopActionAuditLog;
+        if (desktopActionAuditSink == null && defaultAuditLog == null)
+        {
+            defaultAuditLog = new DesktopActionAuditLogService(Path.Combine(
+                AlifePath.StorageFolderPath,
+                "AgentWorkspace",
+                "desktop-action-audit.jsonl"));
+        }
+
+        IDesktopActionAuditSink? auditSink = desktopActionAuditSink ?? defaultAuditLog;
+        IDesktopActionAuditReader? auditReader = desktopActionAuditLog
+                                                   ?? defaultAuditLog
+                                                   ?? (desktopActionAuditSink as IDesktopActionAuditReader);
+        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader);
+    }
 
     readonly PromptStablePrefixService stablePrefixService = new();
     bool stablePersonaPromptRegistered;
@@ -3317,19 +3335,28 @@ public partial class QChatService(
         }
 
         string mode = parts.Length >= 3 ? parts[2] : "status";
-        string? actionName = mode.ToLowerInvariant() switch
+        string actionKey = mode;
+        if (mode.Equals("audit", StringComparison.OrdinalIgnoreCase) &&
+            parts.Length >= 4 &&
+            parts[3].Equals("recent", StringComparison.OrdinalIgnoreCase))
+        {
+            actionKey = "audit recent";
+        }
+
+        string? actionName = actionKey.ToLowerInvariant() switch
         {
             "status" => DesktopReadOnlyActions.Status,
             "health" => DesktopReadOnlyActions.Health,
             "processes" => DesktopReadOnlyActions.Processes,
             "windows" => DesktopReadOnlyActions.Windows,
             "capabilities" => DesktopReadOnlyActions.Capabilities,
+            "audit recent" => DesktopReadOnlyActions.AuditRecent,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent";
         }
         else
         {
@@ -3338,7 +3365,7 @@ public partial class QChatService(
                 messageEvent.UserId,
                 route.AgentId,
                 IsOwner: true,
-                Detail: mode));
+                Detail: actionKey));
             reply = result.Message;
         }
 
@@ -3347,7 +3374,7 @@ public partial class QChatService(
             messageEvent.UserId,
             messageEvent.GroupId,
             route.AgentId,
-            mode
+            mode = actionKey
         });
         return true;
     }
