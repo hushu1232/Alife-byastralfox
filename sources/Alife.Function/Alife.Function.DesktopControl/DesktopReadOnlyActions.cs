@@ -15,12 +15,15 @@ public static class DesktopReadOnlyActions
     public const string AuditHealth = "qchat.desktop.audit.health";
     public const string RequestDraft = "qchat.desktop.request.draft";
     public const string DraftsRecent = "qchat.desktop.drafts.recent";
+    public const string DraftReject = "qchat.desktop.draft.reject";
+    public const string DraftApprove = "qchat.desktop.draft.approve";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
         IDesktopActionAuditReader? auditReader = null,
         IDesktopActionDraftSink? draftSink = null,
-        IDesktopActionDraftReader? draftReader = null)
+        IDesktopActionDraftReader? draftReader = null,
+        IDesktopActionDraftController? draftController = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
@@ -33,7 +36,9 @@ public static class DesktopReadOnlyActions
             new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", (_, _) => Task.FromResult(FormatRecentAudit(auditReader))),
             new DelegateDesktopAction(AuditHealth, "desktop action audit health summary", (_, _) => Task.FromResult(FormatAuditHealth(auditReader))),
             new DelegateDesktopAction(RequestDraft, "create a pending desktop action draft without execution", (request, _) => Task.FromResult(CreateRequestDraft(request, draftSink))),
-            new DelegateDesktopAction(DraftsRecent, "recent desktop action draft summary", (_, _) => Task.FromResult(FormatRecentDrafts(draftReader)))
+            new DelegateDesktopAction(DraftsRecent, "recent desktop action draft summary", (_, _) => Task.FromResult(FormatRecentDrafts(draftReader))),
+            new DelegateDesktopAction(DraftReject, "reject a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Rejected))),
+            new DelegateDesktopAction(DraftApprove, "approve a pending desktop action draft without execution", (request, _) => Task.FromResult(UpdateDraftStatus(request, draftController, DesktopActionDraftStatus.Approved)))
         ];
     }
 
@@ -42,9 +47,10 @@ public static class DesktopReadOnlyActions
         IDesktopActionAuditSink? auditSink = null,
         IDesktopActionAuditReader? auditReader = null,
         IDesktopActionDraftSink? draftSink = null,
-        IDesktopActionDraftReader? draftReader = null)
+        IDesktopActionDraftReader? draftReader = null,
+        IDesktopActionDraftController? draftController = null)
     {
-        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader), auditSink);
+        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink, draftReader, draftController), auditSink);
     }
 
     static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
@@ -94,6 +100,18 @@ public static class DesktopReadOnlyActions
         lines.AddRange(drafts.Select(draft =>
             $"{draft.Timestamp:O} {draft.DraftId} status={draft.Status} agent={draft.AgentId} actor={draft.ActorUserId} preview={FormatDraftPreview(draft.RequestedAction)}"));
         return string.Join(Environment.NewLine, lines);
+    }
+
+    static string UpdateDraftStatus(
+        DesktopActionRequest request,
+        IDesktopActionDraftController? draftController,
+        DesktopActionDraftStatus status)
+    {
+        if (draftController == null)
+            return "desktop_draft=unavailable reason=draft_controller_missing execution=disabled";
+
+        DesktopActionDraftUpdateResult result = draftController.UpdateStatus(request, status);
+        return result.Message;
     }
 
     static string FormatDraftPreview(string value)

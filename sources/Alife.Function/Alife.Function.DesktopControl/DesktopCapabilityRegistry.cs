@@ -32,7 +32,9 @@ public sealed class DesktopCapabilityRegistry(IReadOnlyList<DesktopCapabilityDes
             new DesktopCapabilityDescriptor("/qchat desktop audit recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop action audit summary"),
             new DesktopCapabilityDescriptor("/qchat desktop audit health", DesktopCapabilityRisk.ReadOnly, true, "desktop action audit health summary"),
             new DesktopCapabilityDescriptor("/qchat desktop request <action>", DesktopCapabilityRisk.ReadOnly, true, "create a pending desktop action draft without execution"),
-            new DesktopCapabilityDescriptor("/qchat desktop drafts recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop action draft summary")
+            new DesktopCapabilityDescriptor("/qchat desktop drafts recent", DesktopCapabilityRisk.ReadOnly, true, "recent desktop action draft summary"),
+            new DesktopCapabilityDescriptor("/qchat desktop draft reject <draft_id>", DesktopCapabilityRisk.ReadOnly, true, "reject a pending desktop action draft without execution"),
+            new DesktopCapabilityDescriptor("/qchat desktop draft approve <draft_id>", DesktopCapabilityRisk.ReadOnly, true, "approve a pending desktop action draft without execution")
         ]);
     }
 

@@ -29,7 +29,19 @@ public interface IDesktopActionDraftReader
     IReadOnlyList<DesktopActionDraftEntry> GetRecentDrafts(int maxCount);
 }
 
-public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDesktopActionDraftReader
+public sealed record DesktopActionDraftUpdateResult(
+    bool Success,
+    DesktopActionDraftEntry? Entry,
+    string Message);
+
+public interface IDesktopActionDraftController
+{
+    DesktopActionDraftUpdateResult UpdateStatus(
+        DesktopActionRequest request,
+        DesktopActionDraftStatus status);
+}
+
+public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDesktopActionDraftReader, IDesktopActionDraftController
 {
     const int MaxRequestedActionLength = 300;
     static readonly JsonSerializerOptions JsonOptions = new()
@@ -82,7 +94,52 @@ public sealed class DesktopActionDraftLogService : IDesktopActionDraftSink, IDes
 
         lock (syncRoot)
         {
-            return entries.TakeLast(maxCount).ToArray();
+            HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+            List<DesktopActionDraftEntry> drafts = [];
+            for (int i = entries.Count - 1; i >= 0 && drafts.Count < maxCount; i--)
+            {
+                DesktopActionDraftEntry entry = entries[i];
+                if (seen.Add(entry.DraftId))
+                    drafts.Add(entry);
+            }
+
+            drafts.Reverse();
+            return drafts.ToArray();
+        }
+    }
+
+    public DesktopActionDraftUpdateResult UpdateStatus(
+        DesktopActionRequest request,
+        DesktopActionDraftStatus status)
+    {
+        string draftId = NormalizeRequired(request.Detail, nameof(DesktopActionRequest.Detail));
+        lock (syncRoot)
+        {
+            DesktopActionDraftEntry? current = entries.LastOrDefault(entry =>
+                entry.DraftId.Equals(draftId, StringComparison.OrdinalIgnoreCase));
+            if (current == null)
+                return new DesktopActionDraftUpdateResult(false, null, "desktop_draft=not_found");
+
+            if (current.Status != DesktopActionDraftStatus.PendingApproval)
+            {
+                return new DesktopActionDraftUpdateResult(
+                    false,
+                    current,
+                    $"desktop_draft=not_pending id={current.DraftId} status={current.Status} execution=disabled");
+            }
+
+            DesktopActionDraftEntry updated = current with
+            {
+                Timestamp = DateTimeOffset.Now,
+                Status = status
+            };
+            entries.Add(updated);
+            TrimOverflow();
+            AppendLineWithSharing(draftFilePath, JsonSerializer.Serialize(updated, JsonOptions));
+            return new DesktopActionDraftUpdateResult(
+                true,
+                updated,
+                $"desktop_draft=updated id={updated.DraftId} status={updated.Status} execution=disabled");
         }
     }
 

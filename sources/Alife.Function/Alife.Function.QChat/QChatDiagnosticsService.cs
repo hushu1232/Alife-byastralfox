@@ -136,6 +136,8 @@ public static class QChatDiagnosticsService
             "/qchat desktop audit health - show desktop action audit safety state",
             "/qchat desktop request <action> - create a pending desktop action draft",
             "/qchat desktop drafts recent - show recent desktop action drafts",
+            "/qchat desktop draft reject <draft_id> - reject a pending desktop action draft",
+            "/qchat desktop draft approve <draft_id> - approve a pending desktop action draft",
             "/qchat files - show file task summary",
             "/qchat approvals - show pending approvals",
             "/qchat failures - show failure count",

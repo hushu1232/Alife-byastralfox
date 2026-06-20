@@ -1284,6 +1284,106 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerXiayuQChatDesktopDraftRejectAndApproveUpdateDraftStatusWithoutExecution()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-draft-state-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))));
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string rejectedDraftId = ExtractDesktopDraftId(runtime.PrivateMessages[0].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+            string approvedDraftId = ExtractDesktopDraftId(runtime.PrivateMessages[1].Message);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft reject {rejectedDraftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {approvedDraftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop drafts recent"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 5);
+            string rejectReply = runtime.PrivateMessages[2].Message;
+            string approveReply = runtime.PrivateMessages[3].Message;
+            string recentReply = runtime.PrivateMessages[4].Message;
+            string draftPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-drafts.jsonl");
+            string auditPath = Path.Combine(storageRoot, "AgentWorkspace", "desktop-action-audit.jsonl");
+            string draftLog = File.ReadAllText(draftPath);
+            string audit = File.ReadAllText(auditPath);
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(rejectReply, Does.Contain("desktop_draft=updated"));
+                Assert.That(rejectReply, Does.Contain("status=Rejected"));
+                Assert.That(rejectReply, Does.Contain("execution=disabled"));
+                Assert.That(approveReply, Does.Contain("desktop_draft=updated"));
+                Assert.That(approveReply, Does.Contain("status=Approved"));
+                Assert.That(approveReply, Does.Contain("execution=disabled"));
+                Assert.That(recentReply, Does.Contain($"{rejectedDraftId} status=Rejected"));
+                Assert.That(recentReply, Does.Contain($"{approvedDraftId} status=Approved"));
+                Assert.That(draftLog, Does.Contain("\"Status\":\"Rejected\""));
+                Assert.That(draftLog, Does.Contain("\"Status\":\"Approved\""));
+                Assert.That(audit, Does.Contain("\"ActionName\":\"qchat.desktop.draft.reject\""));
+                Assert.That(audit, Does.Contain("\"ActionName\":\"qchat.desktop.draft.approve\""));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();
@@ -1403,12 +1503,14 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(dispatchCount, Is.Zero);
-            Assert.That(reply, Does.Contain("desktop_capabilities=8"));
+            Assert.That(reply, Does.Contain("desktop_capabilities=10"));
             Assert.That(reply, Does.Contain("/qchat desktop status risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit recent risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop audit health risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop request <action> risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("/qchat desktop drafts recent risk=ReadOnly enabled=true"));
+            Assert.That(reply, Does.Contain("/qchat desktop draft reject <draft_id> risk=ReadOnly enabled=true"));
+            Assert.That(reply, Does.Contain("/qchat desktop draft approve <draft_id> risk=ReadOnly enabled=true"));
             Assert.That(reply, Does.Contain("desktop_mutation=disabled"));
             Assert.That(reply, Does.Contain("shell_execution=disabled"));
             Assert.That(reply, Does.Not.Contain("delete"));
@@ -7971,6 +8073,15 @@ public class QChatServiceAdapterTests
         }
 
         Assert.Fail("Condition was not met before timeout.");
+    }
+
+    static string ExtractDesktopDraftId(string message)
+    {
+        string? token = message
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(part => part.StartsWith("id=desktop-draft-", StringComparison.Ordinal));
+        Assert.That(token, Is.Not.Null);
+        return token!["id=".Length..];
     }
 
     static System.Text.Json.JsonElement CreateForwardTextContent(string text)
