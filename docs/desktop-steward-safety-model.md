@@ -83,18 +83,26 @@ Desktop capabilities must be classified before they are exposed:
 | High | Destructive, execution-bearing, or privacy-sensitive | Not implemented |
 | Critical | System-wide or credential-sensitive | Disabled |
 
-## Future Action Gateway Requirement
+## Action Gateway
 
-Any future mutating desktop feature must go through an action gateway that
-performs:
+Desktop action routing now has a gateway shell. It performs:
 
 1. Capability lookup.
 2. Risk classification.
 3. Owner and bot eligibility checks.
-4. Action preview.
-5. Approval when required.
-6. Execution through a named handler.
-7. Audit logging.
-8. Recovery or rollback guidance when possible.
+4. Unknown action denial.
+5. Mutation denial while `desktop_mutation=disabled`.
+6. Execution only through a named handler.
+7. Audit sink recording for attempts and outcomes.
+
+Current gateway limits:
+
+- Only registered `ReadOnly` actions can execute.
+- `Low`, `Medium`, `High`, and `Critical` actions are denied while desktop
+  mutation is disabled.
+- Approval flow is not connected yet.
+- No real mutating desktop action is registered.
+- Recovery or rollback guidance is not implemented yet because no mutation is
+  implemented yet.
 
 Arbitrary shell execution must not be exposed as a generic desktop capability.

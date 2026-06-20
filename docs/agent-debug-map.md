@@ -28,7 +28,7 @@ large files or logs.
 | Persona hides uncertainty or changes engineering facts | `persona-fact-boundary-mix` | persona contract and final formatter | future persona-aware formatter, `QChatExperienceSanitizer`, `PromptStablePrefixService` | future persona contract tests |
 | Desktop command leaks process/window details to non-owner | `desktop-permission-leak` | owner gate, desktop command handler, fake desktop reader | `TryHandleOwnerDesktopCommandAsync`, `DesktopControlService` | `QChatServiceAdapterTests`, `DesktopControlServiceTests` |
 | Desktop command works from non-XiaYu bot | `desktop-bot-boundary-bypass` | bot route resolution, XiaYu allowlist, command handler | `BuildQChatMemoryStatusRoute`, `TryHandleOwnerDesktopCommandAsync`, `QChatAgentIdentityRegistry` | `QChatServiceAdapterTests`, `QChatAgentIdentityRegistryTests` |
-| Desktop action executes without gateway | `desktop-action-bypass` | action gateway, permission policy, approval service | future `DesktopActionGateway`, `AgentPermissionPolicy`, `AgentApprovalService` | future `DesktopActionGatewayTests`, `AgentPermissionGateTests` |
+| Desktop action executes without gateway | `desktop-action-bypass` | action gateway, owner gate, XiaYu gate, mutation-disabled policy | `DesktopActionGateway`, `DesktopCapabilityRegistry` | `DesktopActionGatewayTests`, `DesktopCapabilityRegistryTests` |
 
 ## Output Surface Index
 
