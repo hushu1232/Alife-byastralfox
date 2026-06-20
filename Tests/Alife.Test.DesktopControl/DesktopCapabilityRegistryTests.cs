@@ -11,7 +11,7 @@ public sealed class DesktopCapabilityRegistryTests
 
         IReadOnlyList<DesktopCapabilityDescriptor> capabilities = registry.GetAll();
 
-        Assert.That(capabilities, Has.Count.EqualTo(6));
+        Assert.That(capabilities, Has.Count.EqualTo(7));
         Assert.That(capabilities.Select(capability => capability.Name), Is.EqualTo(new[]
         {
             "/qchat desktop status",
@@ -19,7 +19,8 @@ public sealed class DesktopCapabilityRegistryTests
             "/qchat desktop processes",
             "/qchat desktop windows",
             "/qchat desktop audit recent",
-            "/qchat desktop audit health"
+            "/qchat desktop audit health",
+            "/qchat desktop request <action>"
         }));
         Assert.That(capabilities.All(capability => capability.Risk == DesktopCapabilityRisk.ReadOnly), Is.True);
         Assert.That(capabilities.All(capability => capability.Enabled), Is.True);
@@ -34,11 +35,12 @@ public sealed class DesktopCapabilityRegistryTests
 
         string text = registry.FormatForOwner();
 
-        Assert.That(text, Does.Contain("desktop_capabilities=6"));
+        Assert.That(text, Does.Contain("desktop_capabilities=7"));
         Assert.That(text, Does.Contain("/qchat desktop status risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop processes risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop audit recent risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("/qchat desktop audit health risk=ReadOnly enabled=true"));
+        Assert.That(text, Does.Contain("/qchat desktop request <action> risk=ReadOnly enabled=true"));
         Assert.That(text, Does.Contain("desktop_mutation=disabled"));
         Assert.That(text, Does.Contain("shell_execution=disabled"));
         Assert.That(text, Does.Not.Contain("delete"));

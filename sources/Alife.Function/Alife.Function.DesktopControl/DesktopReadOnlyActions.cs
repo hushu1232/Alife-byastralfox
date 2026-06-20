@@ -11,30 +11,34 @@ public static class DesktopReadOnlyActions
     public const string Capabilities = "qchat.desktop.capabilities";
     public const string AuditRecent = "qchat.desktop.audit.recent";
     public const string AuditHealth = "qchat.desktop.audit.health";
+    public const string RequestDraft = "qchat.desktop.request.draft";
 
     public static IReadOnlyList<IDesktopAction> Create(
         DesktopControlService desktopControl,
-        IDesktopActionAuditReader? auditReader = null)
+        IDesktopActionAuditReader? auditReader = null,
+        IDesktopActionDraftSink? draftSink = null)
     {
         ArgumentNullException.ThrowIfNull(desktopControl);
         return
         [
-            new DelegateDesktopAction(Status, "read-only desktop status", desktopControl.GetStatusAsync),
-            new DelegateDesktopAction(Health, "read-only desktop health", desktopControl.GetStatusAsync),
-            new DelegateDesktopAction(Processes, "read-only process summary", token => desktopControl.GetProcessListAsync(cancellationToken: token)),
-            new DelegateDesktopAction(Windows, "read-only window summary", token => desktopControl.GetWindowListAsync(cancellationToken: token)),
-            new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", _ => Task.FromResult(desktopControl.GetCapabilitySummary())),
-            new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", _ => Task.FromResult(FormatRecentAudit(auditReader))),
-            new DelegateDesktopAction(AuditHealth, "desktop action audit health summary", _ => Task.FromResult(FormatAuditHealth(auditReader)))
+            new DelegateDesktopAction(Status, "read-only desktop status", (_, token) => desktopControl.GetStatusAsync(token)),
+            new DelegateDesktopAction(Health, "read-only desktop health", (_, token) => desktopControl.GetStatusAsync(token)),
+            new DelegateDesktopAction(Processes, "read-only process summary", (_, token) => desktopControl.GetProcessListAsync(cancellationToken: token)),
+            new DelegateDesktopAction(Windows, "read-only window summary", (_, token) => desktopControl.GetWindowListAsync(cancellationToken: token)),
+            new DelegateDesktopAction(Capabilities, "enabled read-only desktop capabilities", (_, _) => Task.FromResult(desktopControl.GetCapabilitySummary())),
+            new DelegateDesktopAction(AuditRecent, "recent desktop action audit summary", (_, _) => Task.FromResult(FormatRecentAudit(auditReader))),
+            new DelegateDesktopAction(AuditHealth, "desktop action audit health summary", (_, _) => Task.FromResult(FormatAuditHealth(auditReader))),
+            new DelegateDesktopAction(RequestDraft, "create a pending desktop action draft without execution", (request, _) => Task.FromResult(CreateRequestDraft(request, draftSink)))
         ];
     }
 
     public static DesktopActionGateway CreateGateway(
         DesktopControlService desktopControl,
         IDesktopActionAuditSink? auditSink = null,
-        IDesktopActionAuditReader? auditReader = null)
+        IDesktopActionAuditReader? auditReader = null,
+        IDesktopActionDraftSink? draftSink = null)
     {
-        return new DesktopActionGateway(Create(desktopControl, auditReader), auditSink);
+        return new DesktopActionGateway(Create(desktopControl, auditReader, draftSink), auditSink);
     }
 
     static string FormatRecentAudit(IDesktopActionAuditReader? auditReader)
@@ -63,12 +67,23 @@ public static class DesktopReadOnlyActions
             $"recent_failures={recentFailures}");
     }
 
+    static string CreateRequestDraft(
+        DesktopActionRequest request,
+        IDesktopActionDraftSink? draftSink)
+    {
+        if (draftSink == null)
+            return "desktop_request=unavailable reason=draft_sink_missing execution=disabled";
+
+        DesktopActionDraftEntry entry = draftSink.CreateDraft(request);
+        return $"desktop_request=draft_created id={entry.DraftId} approval_required=true execution=disabled risk=pending_review";
+    }
+
     static string FormatBool(bool value) => value ? "true" : "false";
 
     sealed class DelegateDesktopAction(
         string name,
         string summary,
-        Func<CancellationToken, Task<string>> execute) : IDesktopAction
+        Func<DesktopActionRequest, CancellationToken, Task<string>> execute) : IDesktopAction
     {
         public string Name { get; } = name;
         public DesktopCapabilityRisk Risk => DesktopCapabilityRisk.ReadOnly;
@@ -79,7 +94,7 @@ public static class DesktopReadOnlyActions
             DesktopActionRequest request,
             CancellationToken cancellationToken = default)
         {
-            return execute(cancellationToken);
+            return execute(request, cancellationToken);
         }
     }
 }

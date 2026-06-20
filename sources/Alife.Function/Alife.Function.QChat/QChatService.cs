@@ -190,7 +190,8 @@ public partial class QChatService(
     DesktopControlService? desktopControl = null,
     IDesktopActionAuditSink? desktopActionAuditSink = null,
     DesktopActionAuditLogService? desktopActionAuditLog = null,
-    DesktopActionGateway? desktopActionGateway = null) :
+    DesktopActionGateway? desktopActionGateway = null,
+    IDesktopActionDraftSink? desktopActionDraftSink = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -202,7 +203,7 @@ public partial class QChatService(
 {
     const string DesktopControlAgentId = "xiayu";
     readonly DesktopActionGateway desktopActionGateway = desktopActionGateway
-        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog);
+        ?? CreateDefaultDesktopActionGateway(desktopControl, desktopActionAuditSink, desktopActionAuditLog, desktopActionDraftSink);
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -210,7 +211,8 @@ public partial class QChatService(
     static DesktopActionGateway CreateDefaultDesktopActionGateway(
         DesktopControlService? desktopControl,
         IDesktopActionAuditSink? desktopActionAuditSink,
-        DesktopActionAuditLogService? desktopActionAuditLog)
+        DesktopActionAuditLogService? desktopActionAuditLog,
+        IDesktopActionDraftSink? desktopActionDraftSink)
     {
         DesktopControlService control = desktopControl ?? new DesktopControlService(new WindowsDesktopRuntimeReader());
         DesktopActionAuditLogService? defaultAuditLog = desktopActionAuditLog;
@@ -226,7 +228,11 @@ public partial class QChatService(
         IDesktopActionAuditReader? auditReader = desktopActionAuditLog
                                                    ?? defaultAuditLog
                                                    ?? (desktopActionAuditSink as IDesktopActionAuditReader);
-        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader);
+        IDesktopActionDraftSink draftSink = desktopActionDraftSink ?? new DesktopActionDraftLogService(Path.Combine(
+            AlifePath.StorageFolderPath,
+            "AgentWorkspace",
+            "desktop-action-drafts.jsonl"));
+        return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink);
     }
 
     readonly PromptStablePrefixService stablePrefixService = new();
@@ -3336,6 +3342,7 @@ public partial class QChatService(
 
         string mode = parts.Length >= 3 ? parts[2] : "status";
         string actionKey = mode;
+        string actionDetail = actionKey;
         if (mode.Equals("audit", StringComparison.OrdinalIgnoreCase) &&
             parts.Length >= 4)
         {
@@ -3346,6 +3353,13 @@ public partial class QChatService(
                 "health" => "audit health",
                 _ => actionKey
             };
+            actionDetail = actionKey;
+        }
+        else if (mode.Equals("request", StringComparison.OrdinalIgnoreCase) &&
+                 parts.Length >= 4)
+        {
+            actionKey = "request";
+            actionDetail = string.Join(' ', parts.Skip(3));
         }
 
         string? actionName = actionKey.ToLowerInvariant() switch
@@ -3357,12 +3371,13 @@ public partial class QChatService(
             "capabilities" => DesktopReadOnlyActions.Capabilities,
             "audit recent" => DesktopReadOnlyActions.AuditRecent,
             "audit health" => DesktopReadOnlyActions.AuditHealth,
+            "request" => DesktopReadOnlyActions.RequestDraft,
             _ => null
         };
         string reply;
         if (actionName == null)
         {
-            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health";
+            reply = "usage=/qchat desktop status|health|processes|windows|capabilities|audit recent|audit health|request <action>";
         }
         else
         {
@@ -3371,7 +3386,7 @@ public partial class QChatService(
                 messageEvent.UserId,
                 route.AgentId,
                 IsOwner: true,
-                Detail: actionKey));
+                Detail: actionDetail));
             reply = result.Message;
         }
 
