@@ -52,6 +52,20 @@ public record QChatConfig
     public bool EnableContinuationGate { get; set; } = true;
     public bool EnableSemanticProfileLearning { get; set; } = true;
     public int SemanticProfileLearningMinSeconds { get; set; } = 60;
+    public string BlockedPrivateUserIds { get; set; } = "";
+    public string BlockedGroupIds { get; set; } = "";
+    public string ProtectedUserIds { get; set; } = "";
+    public bool EnableQChatRiskScoring { get; set; } = true;
+    public bool EnableAutoLocalBlock { get; set; } = true;
+    public bool EnableAutoFriendDelete { get; set; }
+    public int LocalBlockThreshold { get; set; } = 120;
+    public int AutoDeleteFriendThreshold { get; set; } = 160;
+    public int CriticalAutoDeleteFriendThreshold { get; set; } = 220;
+    public int RiskDecayPerDay { get; set; } = 20;
+    public int AutoDeleteCooldownMinutes { get; set; } = 10;
+    public int AutoDeleteDailyLimit { get; set; } = 5;
+    public int MinIndependentEventsForDelete { get; set; } = 2;
+    public int MinDeleteObservationMinutes { get; set; } = 10;
     public float AutoPokeBackPrivateProbability { get; set; } = 0.5f;
     public float AutoPokeBackGroupProbability { get; set; } = 0.5f;
     public bool PersistQuietModeAcrossRestart { get; set; }
@@ -1839,6 +1853,7 @@ public partial class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
+    readonly QChatRiskScoreService riskScores = new();
     readonly object pendingDispatchGate = new();
     readonly Dictionary<string, QChatPendingDispatchSession> pendingDispatchSessions = new();
     readonly object groupDecisionGate = new();
@@ -2291,6 +2306,8 @@ public partial class QChatService(
                     });
                     return;
                 }
+                if (ShouldBlockQChatMessage(config, messageEvent))
+                    return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 if (await BuildOwnerCommandService().TryHandleAsync(new QChatOwnerCommandContext(
                         messageEvent,
@@ -2342,6 +2359,35 @@ public partial class QChatService(
             logger.LogError(e, null);
             WriteQChatDiagnostic("event-error", e.Message, exception: e);
         }
+    }
+
+    bool ShouldBlockQChatMessage(QChatConfig config, OneBotMessageEvent messageEvent)
+    {
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = ResolveCurrentBotId(config, messageEvent);
+        bool isLocallyBlocked = riskScores.TryGetState(agentId, botId, messageEvent.UserId, out QChatRiskUserState? riskState) &&
+                                riskState?.IsLocallyBlocked == true;
+        QChatBlockDecision decision = QChatBlocklistPolicy.Evaluate(new QChatBlockContext(
+            UserId: messageEvent.UserId,
+            BotId: botId,
+            OwnerId: config.OwnerId,
+            GroupId: messageEvent.GroupId == 0 ? null : messageEvent.GroupId,
+            BlockedPrivateUserIds: config.BlockedPrivateUserIds,
+            BlockedGroupIds: config.BlockedGroupIds,
+            IsLocallyBlocked: isLocallyBlocked));
+
+        if (decision.IsBlocked == false)
+            return false;
+
+        WriteQChatDiagnostic("qchat-message-blocked", "QChat message blocked before command handling, profile learning, and model dispatch.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            botId,
+            agentId,
+            reason = decision.Reason,
+            riskScore = riskState?.Score
+        });
+        return true;
     }
 
     void StartProfileLearningFromMessage(

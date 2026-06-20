@@ -528,6 +528,36 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task BlockedPrivateUserDoesNotReachModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            BlockedPrivateUserIds = "2001",
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "hello"
+        });
+        await Task.Delay(150);
+
+        Assert.That(dispatchCount, Is.Zero);
+    }
+
+    [Test]
     public async Task NonOwnerNaturalHelpAliasFallsThroughWithoutCommandMenuOrInternalLeak()
     {
         FakeOneBotRuntime runtime = new();
