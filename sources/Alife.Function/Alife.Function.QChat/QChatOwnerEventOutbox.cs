@@ -149,24 +149,12 @@ public sealed class QChatOwnerEventOutbox
 
         lock (syncRoot)
         {
-            List<QChatOwnerEventEntry> recent = new(capacity: maxCount);
-            int deliveredCount = 0;
-            foreach (QChatOwnerEventEntry entry in entriesById.Values
+            return entriesById.Values
                 .OrderByDescending(entry => entry.CreatedAt)
                 .ThenByDescending(entry => entry.DeliveredAt)
-                .ThenBy(entry => entry.EventId, StringComparer.Ordinal))
-            {
-                if (entry.Status == QChatOwnerEventStatus.Delivered && deliveredCount >= maxDeliveredEntries)
-                    continue;
-
-                recent.Add(entry);
-                if (entry.Status == QChatOwnerEventStatus.Delivered)
-                    deliveredCount++;
-                if (recent.Count >= maxCount)
-                    break;
-            }
-
-            return recent;
+                .ThenBy(entry => entry.EventId, StringComparer.Ordinal)
+                .Take(maxCount)
+                .ToArray();
         }
     }
 

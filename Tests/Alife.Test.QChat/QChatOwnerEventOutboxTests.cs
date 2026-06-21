@@ -103,6 +103,29 @@ public class QChatOwnerEventOutboxTests
     }
 
     [Test]
+    public void GetRecentIncludesDeliveredEventsNewestFirst()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset olderAt = new(2026, 6, 21, 10, 3, 0, TimeSpan.Zero);
+        DateTimeOffset newerAt = olderAt.AddMinutes(1);
+        QChatOwnerEventOutbox outbox = new(path, maxDeliveredEntries: 0);
+        QChatOwnerEventEntry older = outbox.Enqueue(CreateRequest("recent-older"), olderAt);
+        QChatOwnerEventEntry newer = outbox.Enqueue(CreateRequest("recent-newer"), newerAt);
+        outbox.MarkDelivered(newer.EventId, 123456, newerAt.AddSeconds(10));
+
+        IReadOnlyList<QChatOwnerEventEntry> recent = outbox.GetRecent(2);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(recent, Has.Count.EqualTo(2));
+            Assert.That(recent[0].EventId, Is.EqualTo(newer.EventId));
+            Assert.That(recent[0].Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(recent[1].EventId, Is.EqualTo(older.EventId));
+            Assert.That(recent[1].Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+        });
+    }
+
+    [Test]
     public void MarkFailedKeepsPendingAndSchedulesRetry()
     {
         string path = CreateTempPath();
