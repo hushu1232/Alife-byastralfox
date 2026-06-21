@@ -2284,6 +2284,83 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task DesktopJobCompletionPersistsOwnerEventWhenOwnerMessageSendFails()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-desktop-job-outbox-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            string outboxPath = CreateTempOwnerEventOutboxPath();
+            QChatOwnerEventOutbox outbox = new(outboxPath);
+            QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+            QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+            TaskCompletionSource<DesktopBusinessExecutionResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeDesktopBusinessExecutor executor = new()
+            {
+                ExecuteOverride = _ => completion.Task
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            },
+                desktopBusinessExecutor: executor,
+                desktopControl: new DesktopControlService(new FakeDesktopRuntimeReader(new DesktopSnapshot(
+                    DateTimeOffset.Parse("2026-06-20T12:00:00+08:00"),
+                    new SystemHealthSnapshot(8, 16000, 4000, 512000, 256000),
+                    [],
+                    [],
+                    []))),
+                ownerEventPublisher: publisher);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat desktop request open notepad"
+            });
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "id=desktop-draft-"));
+            string draftId = ExtractDesktopDraftId(FirstPrivateMessageContaining(runtime, "id=desktop-draft-"));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft approve {draftId}"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"/qchat desktop draft execute {draftId}"
+            });
+            await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "desktop_execution=queued job=desktop-job-"));
+
+            runtime.SendException = new InvalidOperationException("offline");
+            completion.SetResult(new DesktopBusinessExecutionResult(true, "desktop_execution=started action=open notepad"));
+            await WaitUntilAsync(() => outbox.GetRecent(10).Any(item => item.Message.Contains("desktop_job=", StringComparison.Ordinal)));
+
+            QChatOwnerEventEntry entry = outbox.GetRecent(10).Single(item => item.Message.Contains("desktop_job=", StringComparison.Ordinal));
+            Assert.Multiple(() =>
+            {
+                Assert.That(entry.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+                Assert.That(entry.Message, Does.Contain("status=Succeeded"));
+                Assert.That(entry.Message, Does.Contain("action=open notepad"));
+                Assert.That(entry.LastError, Does.Contain("offline"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();

@@ -256,7 +256,7 @@ public partial class QChatService(
             desktopActionDraftReader,
             desktopActionDraftController,
             desktopBusinessExecutor,
-            new QChatDesktopBusinessJobCompletionSink(GetOneBotClient));
+            new QChatDesktopBusinessJobCompletionSink(() => OwnerEventPublisher));
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -321,7 +321,7 @@ public partial class QChatService(
         return DesktopReadOnlyActions.CreateGateway(control, auditSink, auditReader, draftSink, draftReader, draftController, businessExecutor, jobReader, capabilityRegistry);
     }
 
-    sealed class QChatDesktopBusinessJobCompletionSink(Func<IOneBotRuntime> runtimeProvider) : IDesktopBusinessJobCompletionSink
+    sealed class QChatDesktopBusinessJobCompletionSink(Func<IQChatOwnerEventPublisher> ownerEventPublisherProvider) : IDesktopBusinessJobCompletionSink
     {
         public async Task NotifyCompletionAsync(
             DesktopBusinessJobEntry job,
@@ -332,7 +332,16 @@ public partial class QChatService(
 
             string message =
                 $"desktop_job={job.JobId} status={job.Status} draft={job.DraftId} action={FormatAction(job.RequestedAction)}";
-            await runtimeProvider().SendPrivateMessageWithResult(job.ActorUserId, message);
+            await ownerEventPublisherProvider().PublishAsync(new QChatOwnerEventRequest(
+                    AgentId: job.AgentId,
+                    OwnerId: job.ActorUserId,
+                    Severity: job.Status == DesktopBusinessJobStatus.Failed ? "warning" : "info",
+                    Category: "desktop_job",
+                    Source: "desktop-business-task-queue",
+                    SourceId: job.JobId,
+                    DedupeKey: $"desktop-job:{job.JobId}:{job.Status}",
+                    Message: message),
+                cancellationToken);
         }
 
         static string FormatAction(string value)
