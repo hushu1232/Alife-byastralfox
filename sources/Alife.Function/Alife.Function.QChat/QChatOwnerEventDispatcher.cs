@@ -13,13 +13,19 @@ public sealed class QChatOwnerEventDispatcher(
 
     public async Task<int> FlushAsync(CancellationToken cancellationToken = default)
     {
+        return await FlushAsync(includeScheduled: false, cancellationToken);
+    }
+
+    public async Task<int> FlushAsync(bool includeScheduled, CancellationToken cancellationToken = default)
+    {
         if (!await flushGate.WaitAsync(0, cancellationToken))
             return 0;
 
         try
         {
             int delivered = 0;
-            foreach (QChatOwnerEventEntry entry in outbox.GetPending(DateTimeOffset.Now, maxBatchSize))
+            DateTimeOffset dueAt = includeScheduled ? DateTimeOffset.MaxValue : DateTimeOffset.Now;
+            foreach (QChatOwnerEventEntry entry in outbox.GetPending(dueAt, maxBatchSize))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 

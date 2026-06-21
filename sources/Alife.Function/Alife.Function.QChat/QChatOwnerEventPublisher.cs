@@ -11,6 +11,7 @@ public interface IQChatOwnerEventPublisher
         CancellationToken cancellationToken = default);
 
     Task<int> FlushAsync(CancellationToken cancellationToken = default);
+    Task<int> FlushAsync(bool includeScheduled, CancellationToken cancellationToken = default);
     QChatOwnerEventSummary GetSummary();
     IReadOnlyList<QChatOwnerEventEntry> GetRecent(int maxCount);
 }
@@ -30,6 +31,9 @@ public sealed class QChatOwnerEventPublisher(
 
     public Task<int> FlushAsync(CancellationToken cancellationToken = default) =>
         dispatcher.FlushAsync(cancellationToken);
+
+    public Task<int> FlushAsync(bool includeScheduled, CancellationToken cancellationToken = default) =>
+        dispatcher.FlushAsync(includeScheduled, cancellationToken);
 
     public QChatOwnerEventSummary GetSummary() => outbox.GetSummary();
 

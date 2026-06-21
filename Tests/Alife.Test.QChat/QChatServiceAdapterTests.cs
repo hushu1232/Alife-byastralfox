@@ -2361,6 +2361,125 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerQChatEventsStatusReportsOutboxSummaryWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatOwnerEventOutbox outbox = new(CreateTempOwnerEventOutboxPath());
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        outbox.Enqueue(new QChatOwnerEventRequest(
+            DedupeKey: "events-status-1",
+            AgentId: "xiayu",
+            OwnerId: 1001,
+            Severity: "warning",
+            Category: "risk",
+            Source: "test",
+            SourceId: "source-1",
+            Message: "action=test result=pending"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        },
+            ownerEventPublisher: publisher);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "/qchat events status"
+        });
+
+        await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "owner_events="));
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(FirstPrivateMessageContaining(runtime, "owner_events="), Does.Contain("pending=1"));
+        });
+    }
+
+    [Test]
+    public async Task NonOwnerQChatEventsStatusIsDeniedWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatOwnerEventOutbox outbox = new(CreateTempOwnerEventOutboxPath());
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableBalancedTextStreaming = false
+        },
+            ownerEventPublisher: publisher);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "/qchat events status"
+        });
+
+        await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "Only the owner can use QChat owner events."));
+        Assert.That(dispatchCount, Is.Zero);
+    }
+
+    [Test]
+    public async Task OwnerQChatEventsRetryFlushesPendingEvents()
+    {
+        FakeOneBotRuntime runtime = new() { SendException = new InvalidOperationException("offline") };
+        QChatOwnerEventOutbox outbox = new(CreateTempOwnerEventOutboxPath());
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        outbox.Enqueue(new QChatOwnerEventRequest(
+            DedupeKey: "events-retry-1",
+            AgentId: "xiayu",
+            OwnerId: 1001,
+            Severity: "warning",
+            Category: "risk",
+            Source: "test",
+            SourceId: "source-1",
+            Message: "action=test result=pending"));
+        await publisher.FlushAsync();
+        runtime.SendException = null;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        },
+            ownerEventPublisher: publisher);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "/qchat events retry"
+        });
+
+        await WaitUntilAsync(() => HasPrivateMessageContaining(runtime, "owner_events_retry="));
+        Assert.Multiple(() =>
+        {
+            Assert.That(outbox.GetRecent(10).Single(item => item.DedupeKey == "events-retry-1").Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(FirstPrivateMessageContaining(runtime, "owner_events_retry="), Does.Contain("delivered=1"));
+        });
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();

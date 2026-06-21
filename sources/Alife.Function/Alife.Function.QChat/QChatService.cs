@@ -3669,6 +3669,7 @@ public partial class QChatService(
             context => TryHandleOwnerMemoryForgetCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerMemoryPurgeCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerDesktopCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerEventsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -4130,6 +4131,59 @@ public partial class QChatService(
                     AllowRecall: false,
                     AllowPoke: false));
         }
+    }
+
+    async Task<bool> TryHandleOwnerEventsCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3 ||
+            parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
+            parts[1].Equals("events", StringComparison.OrdinalIgnoreCase) == false)
+        {
+            return false;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat owner events.");
+            return true;
+        }
+
+        string mode = parts[2].ToLowerInvariant();
+        if (mode == "status")
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, FormatOwnerEventStatus());
+            return true;
+        }
+
+        if (mode == "retry")
+        {
+            int delivered = await OwnerEventPublisher.FlushAsync(includeScheduled: true);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, $"owner_events_retry=completed delivered={delivered}");
+            return true;
+        }
+
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "usage=/qchat events status|retry");
+        return true;
+    }
+
+    string FormatOwnerEventStatus()
+    {
+        QChatOwnerEventSummary summary = OwnerEventPublisher.GetSummary();
+        return string.Join(Environment.NewLine,
+            $"owner_events={summary.Total}",
+            $"pending={summary.Pending}",
+            $"delivered={summary.Delivered}",
+            $"abandoned={summary.Abandoned}",
+            $"last_error={NormalizeStatusLine(summary.LastError ?? "none")}");
     }
 
     async Task<bool> TryHandleOwnerTimingCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
