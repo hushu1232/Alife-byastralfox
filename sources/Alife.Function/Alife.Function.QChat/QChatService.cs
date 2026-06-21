@@ -4461,8 +4461,25 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
             return false;
 
-        string text = $"{OneBotSegment.GetPlainText(messageEvent.RawMessage)}\n{readable}";
-        if (QChatOwnerCommandService.IsRecallCommand(text) == false)
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        long? replyId = messageEvent.GetReplyId();
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyRecall(new QChatIntentInput(
+            PlainText: plainText,
+            ReadableText: readable,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: replyId.HasValue,
+            ReplyMessageId: replyId));
+        WriteQChatDiagnostic("qchat-intent-decision", "QChat recall intent was evaluated.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            decision.Kind,
+            decision.IsCandidate,
+            decision.IsConfirmed,
+            decision.TargetKind,
+            decision.Reason
+        });
+        if (decision.IsConfirmed == false)
             return false;
 
         if (TryExtractReplyMessageId(messageEvent.RawMessage, out long replyMessageId))

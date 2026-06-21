@@ -7236,6 +7236,68 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerGroupRecallNaturalShortCommandDeletesLatestGroupBotMessage()
+    {
+        FakeOneBotRuntime runtime = new() { NextMessageId = 9000 };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        await service.SendChatAsync("group", 3001, "message to recall");
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            RawMessage = "撤了吧"
+        });
+
+        await WaitUntilAsync(() => runtime.DeletedMessages.Count == 1, TimeSpan.FromSeconds(2));
+        Assert.That(runtime.DeletedMessages, Is.EqualTo(new[] { 9000L }));
+        Assert.That(dispatchCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task OwnerGroupRecallMetaDiscussionDoesNotDeleteOrBypassModel()
+    {
+        FakeOneBotRuntime runtime = new() { NextMessageId = 9000 };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        await service.SendChatAsync("group", 3001, "message to keep");
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            RawMessage = "他是不是不会撤回"
+        });
+
+        await Task.Delay(300);
+        Assert.That(runtime.DeletedMessages, Is.Empty);
+        Assert.That(dispatchCount, Is.GreaterThanOrEqualTo(1));
+    }
+
+    [Test]
     public async Task OwnerPrivateRecallRecentNaturalLanguageCommandRuntimeFailureDoesNotPokeChatBot()
     {
         FakeOneBotRuntime runtime = new() { NextMessageId = 9000 };

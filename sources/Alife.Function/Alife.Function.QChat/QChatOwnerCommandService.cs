@@ -67,7 +67,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
     public static bool IsRecallCommand(string text)
     {
-        return ContainsAny(text, "\u64a4\u56de", "\u6536\u56de", "\u5220\u6389", "\u5220\u9664");
+        return QChatIntentClassifier.ClassifyRecall(QChatIntentInput.FromText(text)).IsConfirmed;
     }
 
     public static async Task<bool> TryHandleDiagnosticsCommandAsync(

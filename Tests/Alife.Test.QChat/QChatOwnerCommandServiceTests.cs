@@ -250,9 +250,12 @@ public class QChatOwnerCommandServiceTests
     [TestCase("撤回刚才那条", true)]
     [TestCase("收回上一条", true)]
     [TestCase("删除刚刚发的", true)]
-    [TestCase("不要撤回，我只是解释", true)]
+    [TestCase("撤了吧", true)]
+    [TestCase("把那条撤了", true)]
+    [TestCase("不要撤回，我只是解释", false)]
+    [TestCase("他是不是不会撤回", false)]
     [TestCase("hello", false)]
-    public void IsRecallCommandDetectsRecallKeywords(string text, bool expected)
+    public void IsRecallCommandDetectsRecallIntent(string text, bool expected)
     {
         Assert.That(QChatOwnerCommandService.IsRecallCommand(text), Is.EqualTo(expected));
     }
