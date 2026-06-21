@@ -280,7 +280,7 @@ public sealed class QChatOwnerEventOutbox
                 continue;
             }
 
-            if (entry != null)
+            if (entry != null && IsValidLoadedEntry(entry))
                 Store(entry, append: false);
         }
 
@@ -303,6 +303,12 @@ public sealed class QChatOwnerEventOutbox
 
         return entry;
     }
+
+    static bool IsValidLoadedEntry(QChatOwnerEventEntry entry) =>
+        !string.IsNullOrWhiteSpace(entry.EventId) &&
+        !string.IsNullOrWhiteSpace(entry.DedupeKey) &&
+        !string.IsNullOrWhiteSpace(entry.Message) &&
+        entry.OwnerId > 0;
 
     IEnumerable<QChatOwnerEventEntry> GetRetainedEntries()
     {

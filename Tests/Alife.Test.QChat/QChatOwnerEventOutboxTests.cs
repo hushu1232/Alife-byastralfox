@@ -85,6 +85,58 @@ public class QChatOwnerEventOutboxTests
     }
 
     [Test]
+    public void ReloadIgnoresSemanticallyInvalidJsonAndKeepsNewestValidSnapshot()
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        DateTimeOffset failedAt = createdAt.AddSeconds(10);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-invalid-object"), createdAt);
+        source.MarkFailed(created.EventId, "temporary failure", failedAt);
+        string[] validLines = File.ReadAllLines(sourcePath);
+        string path = CreateTempPath();
+        File.WriteAllLines(path, new[] { validLines[0], "{}", validLines[1] });
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        QChatOwnerEventEntry? loaded = reloaded.GetById(created.EventId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded, Is.Not.Null);
+            Assert.That(loaded!.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(loaded.AttemptCount, Is.EqualTo(1));
+            Assert.That(loaded.LastError, Is.EqualTo("temporary failure"));
+            Assert.That(reloaded.GetPending(failedAt.AddSeconds(31)).Select(entry => entry.EventId), Is.EqualTo(new[] { created.EventId }));
+        });
+    }
+
+    [Test]
+    public void ConstructorRejectsEmptyFilePath()
+    {
+        Assert.Throws<ArgumentException>(() => new QChatOwnerEventOutbox(""));
+    }
+
+    [Test]
+    public void EnqueueRejectsEmptyDedupeKey()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventRequest request = CreateRequest("") with { SourceId = "empty-dedupe-key" };
+
+        Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
+    }
+
+    [Test]
+    public void EnqueueRejectsEmptyMessage()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventRequest request = CreateRequest("empty-message") with { Message = "" };
+
+        Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
+    }
+
+    [Test]
     public void DuplicateDedupeKeyReturnsExistingEvent()
     {
         string path = CreateTempPath();
