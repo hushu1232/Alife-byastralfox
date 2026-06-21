@@ -81,6 +81,13 @@ public sealed class QChatOwnerEventOutbox
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateRequired(request.DedupeKey, nameof(request.DedupeKey));
+        ValidateRequired(request.AgentId, nameof(request.AgentId));
+        if (request.OwnerId <= 0)
+            throw new ArgumentException("OwnerId must be greater than zero.", nameof(request.OwnerId));
+        ValidateRequired(request.Severity, nameof(request.Severity));
+        ValidateRequired(request.Category, nameof(request.Category));
+        ValidateRequired(request.Source, nameof(request.Source));
+        ValidateRequired(request.SourceId, nameof(request.SourceId));
         ValidateRequired(request.Message, nameof(request.Message));
 
         lock (syncRoot)
@@ -281,7 +288,7 @@ public sealed class QChatOwnerEventOutbox
             }
 
             if (entry != null && IsValidLoadedEntry(entry))
-                Store(entry, append: false);
+                StoreLoaded(entry);
         }
 
     }
@@ -307,8 +314,26 @@ public sealed class QChatOwnerEventOutbox
     static bool IsValidLoadedEntry(QChatOwnerEventEntry entry) =>
         !string.IsNullOrWhiteSpace(entry.EventId) &&
         !string.IsNullOrWhiteSpace(entry.DedupeKey) &&
+        !string.IsNullOrWhiteSpace(entry.AgentId) &&
+        entry.OwnerId > 0 &&
+        !string.IsNullOrWhiteSpace(entry.Severity) &&
+        !string.IsNullOrWhiteSpace(entry.Category) &&
+        !string.IsNullOrWhiteSpace(entry.Source) &&
+        !string.IsNullOrWhiteSpace(entry.SourceId) &&
         !string.IsNullOrWhiteSpace(entry.Message) &&
-        entry.OwnerId > 0;
+        string.Equals(entry.EventId, CreateEventId(entry.DedupeKey), StringComparison.Ordinal);
+
+    void StoreLoaded(QChatOwnerEventEntry entry)
+    {
+        if (entriesById.TryGetValue(entry.EventId, out QChatOwnerEventEntry? existing) &&
+            existing.Status == QChatOwnerEventStatus.Delivered &&
+            entry.Status != QChatOwnerEventStatus.Delivered)
+        {
+            return;
+        }
+
+        Store(entry, append: false);
+    }
 
     IEnumerable<QChatOwnerEventEntry> GetRetainedEntries()
     {

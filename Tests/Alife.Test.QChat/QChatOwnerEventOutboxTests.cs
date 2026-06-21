@@ -111,6 +111,82 @@ public class QChatOwnerEventOutboxTests
     }
 
     [Test]
+    public void ReloadKeepsDeliveredTerminalWhenLaterSnapshotIsPending()
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-terminal"), createdAt);
+        source.MarkDelivered(created.EventId, 123456, createdAt.AddMinutes(1));
+        string[] lines = File.ReadAllLines(sourcePath);
+        string path = CreateTempPath();
+        File.WriteAllLines(path, new[] { lines[0], lines[1], lines[0] });
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        QChatOwnerEventEntry? loaded = reloaded.GetById(created.EventId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded, Is.Not.Null);
+            Assert.That(loaded!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(loaded.DeliveryMessageId, Is.EqualTo(123456));
+            Assert.That(reloaded.GetPending(createdAt.AddMinutes(10)).Select(entry => entry.EventId), Is.Empty);
+        });
+    }
+
+    [Test]
+    public void ReloadSkipsMismatchedEventIdForDedupeKey()
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-mismatched-id"), createdAt);
+        string invalidLine = File.ReadAllText(sourcePath).Replace(created.EventId, "owner-event-not-the-deterministic-id");
+        string path = CreateTempPath();
+        File.WriteAllText(path, invalidLine);
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        QChatOwnerEventEntry enqueued = reloaded.Enqueue(CreateRequest("reload-mismatched-id"), createdAt.AddMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reloaded.GetRecent(10), Has.Count.EqualTo(1));
+            Assert.That(enqueued.EventId, Is.EqualTo(created.EventId));
+            Assert.That(enqueued.EventId, Is.Not.EqualTo("owner-event-not-the-deterministic-id"));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
+        });
+    }
+
+    [TestCase("agentId", "xiayu")]
+    [TestCase("severity", "info")]
+    [TestCase("category", "risk")]
+    [TestCase("source", "test")]
+    [TestCase("sourceId", "reload-blank-loaded-field")]
+    [TestCase("message", "action=test dedupe=reload-blank-loaded-field")]
+    public void ReloadSkipsEntriesWithBlankRequiredTextField(string jsonProperty, string originalValue)
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-blank-loaded-field"), createdAt);
+        string invalidLine = File.ReadAllText(sourcePath).Replace(
+            $"\"{jsonProperty}\":\"{originalValue}\"",
+            $"\"{jsonProperty}\":\" \"");
+        string path = CreateTempPath();
+        File.WriteAllText(path, invalidLine);
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        QChatOwnerEventEntry enqueued = reloaded.Enqueue(CreateRequest("reload-blank-loaded-field"), createdAt.AddMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reloaded.GetRecent(10), Has.Count.EqualTo(1));
+            Assert.That(enqueued.EventId, Is.EqualTo(created.EventId));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
+        });
+    }
+
+    [Test]
     public void ConstructorRejectsEmptyFilePath()
     {
         Assert.Throws<ArgumentException>(() => new QChatOwnerEventOutbox(""));
@@ -132,6 +208,36 @@ public class QChatOwnerEventOutboxTests
         string path = CreateTempPath();
         QChatOwnerEventOutbox outbox = new(path);
         QChatOwnerEventRequest request = CreateRequest("empty-message") with { Message = "" };
+
+        Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
+    }
+
+    [Test]
+    public void EnqueueRejectsInvalidOwnerId()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventRequest request = CreateRequest("invalid-owner") with { OwnerId = 0 };
+
+        Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
+    }
+
+    [Test]
+    public void EnqueueRejectsBlankAgentId()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventRequest request = CreateRequest("blank-agent") with { AgentId = " " };
+
+        Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
+    }
+
+    [Test]
+    public void EnqueueRejectsBlankSourceId()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventRequest request = CreateRequest("blank-source-id") with { SourceId = " " };
 
         Assert.Throws<ArgumentException>(() => outbox.Enqueue(request));
     }
@@ -267,6 +373,22 @@ public class QChatOwnerEventOutboxTests
             Assert.That(duplicate.EventId, Is.EqualTo(oldDelivered.EventId));
             Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(5));
         });
+    }
+
+    [Test]
+    public void MaxDeliveredEntriesZeroKeepsOneDeliveredEventInRecentHistory()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset baseTime = new(2026, 6, 21, 10, 3, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox outbox = new(path, maxDeliveredEntries: 0);
+        QChatOwnerEventEntry older = outbox.Enqueue(CreateRequest("clamp-older"), baseTime);
+        QChatOwnerEventEntry newer = outbox.Enqueue(CreateRequest("clamp-newer"), baseTime.AddMinutes(1));
+        outbox.MarkDelivered(older.EventId, 111, baseTime.AddMinutes(2));
+        outbox.MarkDelivered(newer.EventId, 222, baseTime.AddMinutes(3));
+
+        IReadOnlyList<QChatOwnerEventEntry> recent = outbox.GetRecent(10);
+
+        Assert.That(recent.Select(entry => entry.EventId), Is.EqualTo(new[] { newer.EventId }));
     }
 
     [Test]
