@@ -3683,6 +3683,7 @@ public partial class QChatService(
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerAllowlistIntentCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryHandleOwnerRecallCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryHandleOwnerPokeCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryApplyOwnerQuietCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
@@ -4451,6 +4452,75 @@ public partial class QChatService(
             agentTasks.FormatStatus,
             (type, targetId, message) => SendCommandReplyAsync(messageEvent, senderRole, type, targetId, message),
             WriteQChatDiagnostic);
+    }
+
+    async Task<bool> TryHandleOwnerAllowlistIntentCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        if (senderRole != QChatSenderRole.Owner)
+            return false;
+
+        long currentGroupId = messageEvent.MessageType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : 0;
+        long? replyId = messageEvent.GetReplyId();
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyAllowlist(new QChatIntentInput(
+            PlainText: OneBotSegment.GetPlainText(messageEvent.RawMessage),
+            ReadableText: readable,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: replyId.HasValue,
+            ReplyMessageId: replyId),
+            currentGroupId);
+        if (decision.IsCandidate)
+        {
+            WriteQChatDiagnostic("qchat-intent-decision", "QChat allowlist intent was evaluated.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                decision.Kind,
+                decision.IsCandidate,
+                decision.IsConfirmed,
+                decision.TargetText,
+                decision.TargetId,
+                decision.Reason
+            });
+        }
+
+        if (decision.IsConfirmed == false || decision.TargetId is not long id)
+            return false;
+
+        string[] parts = (decision.TargetText ?? "group:add").Split(':', 2);
+        string target = NormalizeAllowlistToken(parts[0]);
+        string action = NormalizeAllowlistToken(parts.Length > 1 ? parts[1] : "add");
+        if (target is not "group" and not "groups")
+            return false;
+
+        Configuration!.AllowedGroupIds = UpdateAllowlistIds(Configuration.AllowedGroupIds, action, id);
+        string result = $"群白名单已更新：{FormatAllowlistIds(Configuration.AllowedGroupIds)}";
+        WriteQChatDiagnostic("qchat-allowlist-updated", "QQ allowlist was updated by owner natural-language intent.", new {
+            target,
+            action,
+            id,
+            Configuration.AllowedGroupIds
+        });
+
+        OneBotMessageType replyType = messageEvent.MessageType;
+        long replyTargetId = replyType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (replyTargetId > 0)
+        {
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                replyType,
+                replyTargetId,
+                $"{result}\n\n{FormatAllowlistStatus()}");
+        }
+
+        return true;
     }
 
     async Task<bool> TryHandleOwnerRecallCommandAsync(

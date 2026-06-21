@@ -5124,6 +5124,79 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerGroupNaturalAllowlistCommandAddsCurrentGroupBeforeModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 1072509877,
+            RawMessage = "把这个群加入白名单"
+        });
+
+        await WaitUntilAsync(() => config.AllowedGroupIds.Contains("1072509877", StringComparison.Ordinal));
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.AllowedGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                Is.EquivalentTo(new[] { "867165927", "1072509877" }));
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("1072509877"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateRawAllowlistToolTextAddsExplicitGroupBeforeModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatConfig config = new()
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowedGroupIds = "867165927",
+            EnableBalancedTextStreaming = false
+        };
+        QChatService service = CreateStartedService(runtime, config);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            Interlocked.Increment(ref dispatchCount);
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "qchat_allowlist_update target=\"group\" action=\"add\" id=\"1072509877\""
+        });
+
+        await WaitUntilAsync(() => config.AllowedGroupIds.Contains("1072509877", StringComparison.Ordinal));
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.AllowedGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                Is.EquivalentTo(new[] { "867165927", "1072509877" }));
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("1072509877"));
+        });
+    }
+
+    [Test]
     public async Task QChatAllowlistUpdateXmlToolOwnerCanAddGroupDuringQqContext()
     {
         FakeOneBotRuntime runtime = new();
