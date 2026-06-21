@@ -561,6 +561,10 @@ public class QChatServiceAdapterTests
     public async Task RiskThresholdAutoBlocksUserAndReportsOwner()
     {
         FakeOneBotRuntime runtime = new();
+        string outboxPath = CreateTempOwnerEventOutboxPath();
+        QChatOwnerEventOutbox outbox = new(outboxPath);
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 999,
@@ -569,7 +573,8 @@ public class QChatServiceAdapterTests
             LocalBlockThreshold = 25,
             EnableBalancedTextStreaming = false
         },
-        riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()));
+        riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+        ownerEventPublisher: publisher);
         int dispatchCount = 0;
         service.InboundChatDispatcher = _ =>
         {
