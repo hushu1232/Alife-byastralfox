@@ -157,6 +157,31 @@ public class QChatOwnerEventOutboxTests
         });
     }
 
+    [Test]
+    public void ReloadSkipsEntriesWithUndefinedStatus()
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-invalid-status"), createdAt);
+        string invalidLine = File.ReadAllText(sourcePath).Replace("\"status\":\"Pending\"", "\"status\":999");
+        string path = CreateTempPath();
+        File.WriteAllText(path, invalidLine);
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        IReadOnlyList<QChatOwnerEventEntry> recentBeforeEnqueue = reloaded.GetRecent(10);
+        QChatOwnerEventEntry enqueued = reloaded.Enqueue(CreateRequest("reload-invalid-status"), createdAt.AddMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(recentBeforeEnqueue, Is.Empty);
+            Assert.That(enqueued.EventId, Is.EqualTo(created.EventId));
+            Assert.That(enqueued.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(enqueued.CreatedAt, Is.EqualTo(createdAt.AddMinutes(1)));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
+        });
+    }
+
     [TestCase("agentId", "xiayu")]
     [TestCase("severity", "info")]
     [TestCase("category", "risk")]

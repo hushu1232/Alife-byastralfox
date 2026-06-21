@@ -263,7 +263,7 @@ public sealed class QChatOwnerEventOutbox
     static JsonSerializerOptions CreateJsonOptions()
     {
         JsonSerializerOptions options = new(JsonSerializerDefaults.Web);
-        options.Converters.Add(new JsonStringEnumConverter());
+        options.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         return options;
     }
 
@@ -321,6 +321,7 @@ public sealed class QChatOwnerEventOutbox
         !string.IsNullOrWhiteSpace(entry.Source) &&
         !string.IsNullOrWhiteSpace(entry.SourceId) &&
         !string.IsNullOrWhiteSpace(entry.Message) &&
+        Enum.IsDefined(entry.Status) &&
         string.Equals(entry.EventId, CreateEventId(entry.DedupeKey), StringComparison.Ordinal);
 
     void StoreLoaded(QChatOwnerEventEntry entry)
