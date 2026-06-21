@@ -115,6 +115,47 @@ public class QChatOwnerEventDispatcherTests
     }
 
     [Test]
+    public async Task ForcedFlushWaitsForCurrentFlushAndSendsScheduledPendingEvents()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        FakeOneBotRuntime runtime = new()
+        {
+            BlockSend = true,
+            NextMessageId = 10
+        };
+        QChatOwnerEventEntry blockingEntry = outbox.Enqueue(CreateRequest("blocking-flush"));
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+
+        Task<int> ordinaryFlush = dispatcher.FlushAsync();
+        await runtime.WaitForSendStartedAsync();
+        QChatOwnerEventEntry scheduledEntry = outbox.Enqueue(CreateRequest("scheduled-force"));
+        outbox.MarkFailed(scheduledEntry.EventId, "offline", DateTimeOffset.UtcNow);
+
+        Task<int> forcedFlush = dispatcher.FlushAsync(includeScheduled: true);
+        await Task.Delay(50);
+        Assert.That(forcedFlush.IsCompleted, Is.False);
+
+        runtime.ReleaseBlockedSend();
+        int ordinaryDelivered = await ordinaryFlush;
+        int forcedDelivered = await forcedFlush;
+
+        QChatOwnerEventEntry? storedBlocking = outbox.GetById(blockingEntry.EventId);
+        QChatOwnerEventEntry? storedScheduled = outbox.GetById(scheduledEntry.EventId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(ordinaryDelivered, Is.EqualTo(1));
+            Assert.That(forcedDelivered, Is.EqualTo(1));
+            Assert.That(runtime.SendAttemptCount, Is.EqualTo(2));
+            Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(2));
+            Assert.That(storedBlocking, Is.Not.Null);
+            Assert.That(storedBlocking!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(storedScheduled, Is.Not.Null);
+            Assert.That(storedScheduled!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+        });
+    }
+
+    [Test]
     public async Task PublisherEnqueuesAndFlushesWithoutThrowing()
     {
         string path = CreateTempPath();

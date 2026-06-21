@@ -18,8 +18,14 @@ public sealed class QChatOwnerEventDispatcher(
 
     public async Task<int> FlushAsync(bool includeScheduled, CancellationToken cancellationToken = default)
     {
-        if (!await flushGate.WaitAsync(0, cancellationToken))
+        if (includeScheduled)
+        {
+            await flushGate.WaitAsync(cancellationToken);
+        }
+        else if (!await flushGate.WaitAsync(0, cancellationToken))
+        {
             return 0;
+        }
 
         try
         {
