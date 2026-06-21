@@ -66,11 +66,9 @@ public sealed class QChatOwnerEventOutbox
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("File path is required.", nameof(filePath));
-        if (maxDeliveredEntries < 0)
-            throw new ArgumentOutOfRangeException(nameof(maxDeliveredEntries), "Maximum delivered entries cannot be negative.");
 
         this.filePath = filePath;
-        this.maxDeliveredEntries = maxDeliveredEntries;
+        this.maxDeliveredEntries = Math.Max(1, maxDeliveredEntries);
 
         string? directory = Path.GetDirectoryName(filePath);
         if (!string.IsNullOrWhiteSpace(directory))
@@ -149,7 +147,7 @@ public sealed class QChatOwnerEventOutbox
 
         lock (syncRoot)
         {
-            return entriesById.Values
+            return GetRetainedEntries()
                 .OrderByDescending(entry => entry.CreatedAt)
                 .ThenByDescending(entry => entry.DeliveredAt)
                 .ThenBy(entry => entry.EventId, StringComparer.Ordinal)
@@ -162,7 +160,7 @@ public sealed class QChatOwnerEventOutbox
     {
         lock (syncRoot)
         {
-            QChatOwnerEventEntry[] entries = entriesById.Values.ToArray();
+            QChatOwnerEventEntry[] entries = GetRetainedEntries().ToArray();
             return new QChatOwnerEventSummary(
                 entries.Length,
                 entries.Count(entry => entry.Status == QChatOwnerEventStatus.Pending),
@@ -183,6 +181,9 @@ public sealed class QChatOwnerEventOutbox
         lock (syncRoot)
         {
             QChatOwnerEventEntry existing = GetRequired(eventId);
+            if (existing.Status == QChatOwnerEventStatus.Delivered)
+                return existing;
+
             QChatOwnerEventEntry delivered = existing with
             {
                 Status = QChatOwnerEventStatus.Delivered,
@@ -201,6 +202,9 @@ public sealed class QChatOwnerEventOutbox
         lock (syncRoot)
         {
             QChatOwnerEventEntry existing = GetRequired(eventId);
+            if (existing.Status == QChatOwnerEventStatus.Delivered)
+                return existing;
+
             int attemptCount = existing.AttemptCount + 1;
             QChatOwnerEventEntry failed = existing with
             {
@@ -266,7 +270,16 @@ public sealed class QChatOwnerEventOutbox
             if (string.IsNullOrWhiteSpace(line))
                 continue;
 
-            QChatOwnerEventEntry? entry = JsonSerializer.Deserialize<QChatOwnerEventEntry>(line, JsonOptions);
+            QChatOwnerEventEntry? entry;
+            try
+            {
+                entry = JsonSerializer.Deserialize<QChatOwnerEventEntry>(line, JsonOptions);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
             if (entry != null)
                 Store(entry, append: false);
         }
@@ -291,4 +304,19 @@ public sealed class QChatOwnerEventOutbox
         return entry;
     }
 
+    IEnumerable<QChatOwnerEventEntry> GetRetainedEntries()
+    {
+        HashSet<string> retainedDeliveredIds = entriesById.Values
+            .Where(entry => entry.Status == QChatOwnerEventStatus.Delivered)
+            .OrderByDescending(entry => entry.CreatedAt)
+            .ThenByDescending(entry => entry.DeliveredAt)
+            .ThenBy(entry => entry.EventId, StringComparer.Ordinal)
+            .Take(maxDeliveredEntries)
+            .Select(entry => entry.EventId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return entriesById.Values.Where(entry =>
+            entry.Status != QChatOwnerEventStatus.Delivered ||
+            retainedDeliveredIds.Contains(entry.EventId));
+    }
 }

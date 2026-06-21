@@ -59,6 +59,32 @@ public class QChatOwnerEventOutboxTests
     }
 
     [Test]
+    public void ReloadIgnoresMalformedLinesAndKeepsNewestValidSnapshot()
+    {
+        string sourcePath = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 1, 0, TimeSpan.Zero);
+        DateTimeOffset failedAt = createdAt.AddSeconds(10);
+        QChatOwnerEventOutbox source = new(sourcePath);
+        QChatOwnerEventEntry created = source.Enqueue(CreateRequest("reload-malformed"), createdAt);
+        source.MarkFailed(created.EventId, "temporary failure", failedAt);
+        string[] validLines = File.ReadAllLines(sourcePath);
+        string path = CreateTempPath();
+        File.WriteAllLines(path, new[] { validLines[0], "{ malformed json", "", validLines[1] });
+
+        QChatOwnerEventOutbox reloaded = new(path);
+        QChatOwnerEventEntry? loaded = reloaded.GetById(created.EventId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded, Is.Not.Null);
+            Assert.That(loaded!.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(loaded.AttemptCount, Is.EqualTo(1));
+            Assert.That(loaded.LastError, Is.EqualTo("temporary failure"));
+            Assert.That(reloaded.GetPending(failedAt.AddSeconds(31)).Select(entry => entry.EventId), Is.EqualTo(new[] { created.EventId }));
+        });
+    }
+
+    [Test]
     public void DuplicateDedupeKeyReturnsExistingEvent()
     {
         string path = CreateTempPath();
@@ -73,6 +99,23 @@ public class QChatOwnerEventOutboxTests
             Assert.That(second.EventId, Is.EqualTo(first.EventId));
             Assert.That(second.CreatedAt, Is.EqualTo(first.CreatedAt));
             Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void PersistenceUsesStringEnumsAndUtf8WithoutBom()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+
+        outbox.Enqueue(CreateRequest("format"), new DateTimeOffset(2026, 6, 21, 10, 2, 0, TimeSpan.Zero));
+        byte[] bytes = File.ReadAllBytes(path);
+        string text = File.ReadAllText(path);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(bytes.Take(3).ToArray(), Is.Not.EqualTo(new byte[] { 0xEF, 0xBB, 0xBF }));
+            Assert.That(text, Does.Contain("\"status\":\"Pending\""));
         });
     }
 
@@ -103,6 +146,27 @@ public class QChatOwnerEventOutboxTests
     }
 
     [Test]
+    public void MarkDeliveredIsIdempotentForDeliveredEvent()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 3, 0, TimeSpan.Zero);
+        DateTimeOffset deliveredAt = createdAt.AddMinutes(1);
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventEntry created = outbox.Enqueue(CreateRequest("delivered-idempotent"), createdAt);
+        QChatOwnerEventEntry first = outbox.MarkDelivered(created.EventId, 123456, deliveredAt);
+
+        QChatOwnerEventEntry second = outbox.MarkDelivered(created.EventId, 999999, deliveredAt.AddMinutes(5));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(second, Is.EqualTo(first));
+            Assert.That(second.DeliveryMessageId, Is.EqualTo(123456));
+            Assert.That(second.DeliveredAt, Is.EqualTo(deliveredAt));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
+        });
+    }
+
+    [Test]
     public void GetRecentIncludesDeliveredEventsNewestFirst()
     {
         string path = CreateTempPath();
@@ -122,6 +186,34 @@ public class QChatOwnerEventOutboxTests
             Assert.That(recent[0].Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
             Assert.That(recent[1].EventId, Is.EqualTo(older.EventId));
             Assert.That(recent[1].Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+        });
+    }
+
+    [Test]
+    public void RetentionOmitsOldDeliveredEventsButKeepsPendingVisibleAndDedupeProtected()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset baseTime = new(2026, 6, 21, 10, 3, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox outbox = new(path, maxDeliveredEntries: 1);
+        QChatOwnerEventEntry oldDelivered = outbox.Enqueue(CreateRequest("retention-old-delivered"), baseTime);
+        QChatOwnerEventEntry pending = outbox.Enqueue(CreateRequest("retention-pending"), baseTime.AddMinutes(1));
+        QChatOwnerEventEntry newDelivered = outbox.Enqueue(CreateRequest("retention-new-delivered"), baseTime.AddMinutes(2));
+        outbox.MarkDelivered(oldDelivered.EventId, 111, baseTime.AddMinutes(3));
+        outbox.MarkDelivered(newDelivered.EventId, 222, baseTime.AddMinutes(4));
+
+        IReadOnlyList<QChatOwnerEventEntry> recent = outbox.GetRecent(10);
+        QChatOwnerEventSummary summary = outbox.GetSummary();
+        QChatOwnerEventOutbox reloaded = new(path, maxDeliveredEntries: 1);
+        QChatOwnerEventEntry duplicate = reloaded.Enqueue(CreateRequest("retention-old-delivered"), baseTime.AddMinutes(10));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(recent.Select(entry => entry.EventId), Is.EqualTo(new[] { newDelivered.EventId, pending.EventId }));
+            Assert.That(summary.Total, Is.EqualTo(2));
+            Assert.That(summary.Pending, Is.EqualTo(1));
+            Assert.That(summary.Delivered, Is.EqualTo(1));
+            Assert.That(duplicate.EventId, Is.EqualTo(oldDelivered.EventId));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(5));
         });
     }
 
@@ -158,6 +250,52 @@ public class QChatOwnerEventOutboxTests
             Assert.That(summary.Delivered, Is.EqualTo(0));
             Assert.That(summary.Abandoned, Is.EqualTo(0));
             Assert.That(summary.LastError, Is.EqualTo(failed.LastError));
+            Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void MarkFailedSchedulesRetryDelaysForAttemptsOneThroughFour()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 5, 0, TimeSpan.Zero);
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventEntry entry = outbox.Enqueue(CreateRequest("retry-delays"), createdAt);
+
+        QChatOwnerEventEntry first = outbox.MarkFailed(entry.EventId, "failure 1", createdAt.AddSeconds(1));
+        QChatOwnerEventEntry second = outbox.MarkFailed(entry.EventId, "failure 2", createdAt.AddSeconds(2));
+        QChatOwnerEventEntry third = outbox.MarkFailed(entry.EventId, "failure 3", createdAt.AddSeconds(3));
+        QChatOwnerEventEntry fourth = outbox.MarkFailed(entry.EventId, "failure 4", createdAt.AddSeconds(4));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.NextAttemptAt, Is.EqualTo(createdAt.AddSeconds(31)));
+            Assert.That(second.NextAttemptAt, Is.EqualTo(createdAt.AddSeconds(2).AddMinutes(2)));
+            Assert.That(third.NextAttemptAt, Is.EqualTo(createdAt.AddSeconds(3).AddMinutes(10)));
+            Assert.That(fourth.NextAttemptAt, Is.EqualTo(createdAt.AddSeconds(4).AddMinutes(30)));
+            Assert.That(fourth.AttemptCount, Is.EqualTo(4));
+        });
+    }
+
+    [Test]
+    public void MarkFailedDoesNotResurrectDeliveredEvent()
+    {
+        string path = CreateTempPath();
+        DateTimeOffset createdAt = new(2026, 6, 21, 10, 6, 0, TimeSpan.Zero);
+        DateTimeOffset deliveredAt = createdAt.AddMinutes(1);
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventEntry created = outbox.Enqueue(CreateRequest("failed-delivered"), createdAt);
+        QChatOwnerEventEntry delivered = outbox.MarkDelivered(created.EventId, 123456, deliveredAt);
+
+        QChatOwnerEventEntry failed = outbox.MarkFailed(created.EventId, "late failure", deliveredAt.AddMinutes(1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failed, Is.EqualTo(delivered));
+            Assert.That(failed.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(failed.AttemptCount, Is.EqualTo(0));
+            Assert.That(failed.NextAttemptAt, Is.EqualTo(createdAt));
+            Assert.That(failed.LastError, Is.Null);
             Assert.That(File.ReadAllLines(path), Has.Length.EqualTo(2));
         });
     }
