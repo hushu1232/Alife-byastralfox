@@ -13,6 +13,7 @@ using NUnit.Framework;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 
@@ -3726,7 +3727,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task NonOwnerGroupSendThisFileCommandRequiresOwnerApprovalBeforeUpload()
+    public async Task NonOwnerGroupSendThisFileCommandIsRejectedBeforePublicApproval()
     {
         string originalCurrentDirectory = Environment.CurrentDirectory;
         string root = Path.Combine(Path.GetTempPath(), "alife-qchat-member-group-file-tests", Guid.NewGuid().ToString("N"));
@@ -3766,27 +3767,87 @@ public class QChatServiceAdapterTests
                 RawMessage = "[CQ:at,qq=2905391496] \u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc"
             });
 
-            await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+            await Task.Delay(300);
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
                 Assert.That(runtime.GroupFiles, Is.Empty);
-                Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("/approve 1"));
-                Assert.That(approvals.GetRequest(1)!.Status, Is.EqualTo(AgentApprovalStatus.Pending));
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(approvals.GetRequest(1), Is.Null);
             });
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+        }
+    }
+
+    [Test]
+    public async Task ForwardedImageMetadataDoesNotTriggerExistingGroupFileUploadApproval()
+    {
+        string originalCurrentDirectory = Environment.CurrentDirectory;
+        string root = Path.Combine(Path.GetTempPath(), "alife-qchat-forward-file-tests", Guid.NewGuid().ToString("N"));
+        string outputDirectory = Path.Combine(root, "output");
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
+        await File.WriteAllTextAsync(Path.Combine(outputDirectory, "hello_world.c"), "int main(void) { return 0; }");
+
+        try
+        {
+            string clientDirectory = Path.Combine(root, "Outputs", "Alife.Client");
+            Directory.CreateDirectory(clientDirectory);
+            Environment.CurrentDirectory = clientDirectory;
+            FakeOneBotRuntime runtime = new();
+            runtime.ForwardMessages["forward-fileid"] =
+            [
+                new OneBotForwardMessage
+                {
+                    Sender = new OneBotSender { UserId = 1094950020, Nickname = "QQ用户" },
+                    Message = JsonSerializer.Deserialize<JsonElement>("""
+                        [{"type":"image","data":{"url":"https://multimedia.nt.qq.com.cn/download?fileid=abc","file":"x.jpg"}}]
+                        """)
+                },
+                new OneBotForwardMessage
+                {
+                    Sender = new OneBotSender { UserId = 1094950020, Nickname = "QQ用户" },
+                    Message = JsonSerializer.Deserialize<JsonElement>("""
+                        [{"type":"text","data":{"text":"输入群主就会出现这个"}}]
+                        """)
+                }
+            ];
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                AllowGroupMemberChat = true,
+                AllowProactiveGroupChat = true,
+                ProactiveChatProbability = 1.0f,
+                MaxBufferMessages = 0,
+                FlushInterval = 0,
+                EnableBalancedTextStreaming = false
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
 
             runtime.Raise(new OneBotMessageEvent
             {
                 SelfId = 2905391496,
-                UserId = 3045846738,
-                RawMessage = "/approve 1"
+                GroupId = 971237816,
+                UserId = 20002,
+                RawMessage = "[CQ:forward,id=forward-fileid]"
             });
 
-            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
-            Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
-                971237816L,
-                file.Replace('\\', '/'),
-                "hello_world.c")));
+            await WaitUntilAsync(() => dispatchCount > 0, TimeSpan.FromSeconds(2));
+            Assert.Multiple(() =>
+            {
+                Assert.That(runtime.GroupFiles, Is.Empty);
+                Assert.That(runtime.GroupMessages.Any(message =>
+                    message.Message.Contains("Owner confirmation required", StringComparison.Ordinal)), Is.False);
+            });
         }
         finally
         {

@@ -4766,7 +4766,8 @@ public partial class QChatService(
         QChatSenderRole senderRole,
         string readable)
     {
-        string text = $"{messageEvent.RawMessage}\n{readable}";
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        string text = $"{plainText}\n{readable}";
         if (messageEvent.MessageType == OneBotMessageType.Private)
         {
             if (senderRole != QChatSenderRole.Owner)
@@ -4849,18 +4850,42 @@ public partial class QChatService(
         QChatSenderRole senderRole,
         string text)
     {
+        long? replyId = messageEvent.GetReplyId();
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyFileUpload(new QChatIntentInput(
+            PlainText: OneBotSegment.GetPlainText(messageEvent.RawMessage),
+            ReadableText: text,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: replyId.HasValue,
+            ReplyMessageId: replyId));
+        WriteQChatDiagnostic("qchat-intent-decision", "QChat group file upload intent was evaluated.", new {
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            decision.Kind,
+            decision.IsCandidate,
+            decision.IsConfirmed,
+            decision.Reason
+        });
+        if (decision.IsConfirmed == false)
+            return false;
+
         if (ContainsAny(text, "\u65b0\u5efa", "\u521b\u5efa", "\u5efa\u7acb"))
-            return false;
-        if (ContainsAny(text, "\u53d1", "\u53d1\u9001", "\u4f20", "\u4e0a\u4f20", "send", "upload") == false)
-            return false;
-        if (ContainsAny(text, "\u8fd9\u4e2a\u6587\u4ef6", "\u90a3\u4e2a\u6587\u4ef6", "\u6587\u4ef6", "hello_world.c", "hello world", "file") == false)
-            return false;
-        if (ContainsAny(text, "\u7fa4", "\u7fa4\u91cc", "\u7fa4\u6587\u4ef6", "\u672c\u7fa4", "\u8fd9\u91cc", "\u5f53\u524d\u7fa4") == false)
             return false;
 
         string? filePath = FindOwnerPrivateFileSendTarget(text);
         if (filePath == null)
             return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-group-existing-file-command-rejected", "Non-owner group file-send intent was rejected before QQ file gateway.", new {
+                messageEvent.GroupId,
+                messageEvent.UserId,
+                senderRole,
+                decision.Reason
+            });
+            return true;
+        }
 
         string fileName = Path.GetFileName(filePath);
         AgentPermissionRequest request = BuildDeterministicFilePermissionRequest(
