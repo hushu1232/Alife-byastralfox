@@ -1802,6 +1802,7 @@ public partial class QChatService(
         client.Url = Configuration!.Url;
         client.Token = Configuration.Token;
         await client.ConnectAsync();
+        _ = OwnerEventPublisher.FlushAsync();
     }
     protected override string ChatTextFilter(string text)
     {
@@ -1960,6 +1961,8 @@ public partial class QChatService(
     AgentPermissionRequest? currentPermissionRequest;
     DateTime currentPermissionExpiresAt = DateTime.MinValue;
     DateTime lastReconnectAttemptTime = DateTime.MinValue;
+    DateTime lastOwnerEventFlushAttemptTime = DateTime.MinValue;
+    static readonly TimeSpan OwnerEventPeriodicFlushInterval = TimeSpan.FromSeconds(30);
     CancellationTokenSource? oneBotEventProcessingCancellation;
     Task? oneBotEventProcessingTask;
     XmlHandler xmlHandler = null!;
@@ -2191,6 +2194,13 @@ public partial class QChatService(
                     }
                 }
             }
+        }
+
+        if (IsConnected &&
+            DateTime.Now - lastOwnerEventFlushAttemptTime >= OwnerEventPeriodicFlushInterval)
+        {
+            lastOwnerEventFlushAttemptTime = DateTime.Now;
+            _ = OwnerEventPublisher.FlushAsync();
         }
     }
     

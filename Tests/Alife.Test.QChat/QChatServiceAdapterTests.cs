@@ -2480,6 +2480,69 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QChatPeriodicUpdateFlushesDueOwnerEvents()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatOwnerEventOutbox outbox = new(CreateTempOwnerEventOutboxPath());
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        outbox.Enqueue(new QChatOwnerEventRequest(
+            DedupeKey: "periodic-event-1",
+            AgentId: "xiayu",
+            OwnerId: 1001,
+            Severity: "warning",
+            Category: "risk",
+            Source: "test",
+            SourceId: "periodic-source",
+            Message: "action=test result=pending"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        },
+            ownerEventPublisher: publisher);
+        float seconds = 1;
+
+        ((ITimeIterative)service).OnUpdate(ref seconds);
+
+        await WaitUntilAsync(() => outbox.GetRecent(10).Single(item => item.DedupeKey == "periodic-event-1").Status == QChatOwnerEventStatus.Delivered);
+        Assert.That(runtime.PrivateMessages.Any(message => message.Message.Contains("action=test result=pending", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
+    public async Task QChatReconnectFlushesDueOwnerEvents()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatOwnerEventOutbox outbox = new(CreateTempOwnerEventOutboxPath());
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        outbox.Enqueue(new QChatOwnerEventRequest(
+            DedupeKey: "reconnect-event-1",
+            AgentId: "xiayu",
+            OwnerId: 1001,
+            Severity: "warning",
+            Category: "risk",
+            Source: "test",
+            SourceId: "reconnect-source",
+            Message: "action=reconnect result=pending"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            Url = "ws://localhost:3001",
+            Token = "test",
+            EnableBalancedTextStreaming = false
+        },
+            ownerEventPublisher: publisher);
+
+        await service.ReconnectAsync();
+
+        await WaitUntilAsync(() => outbox.GetRecent(10).Single(item => item.DedupeKey == "reconnect-event-1").Status == QChatOwnerEventStatus.Delivered);
+        Assert.That(runtime.PrivateMessages.Any(message => message.Message.Contains("action=reconnect result=pending", StringComparison.Ordinal)), Is.True);
+    }
+
+    [Test]
     public async Task NonOwnerQChatDesktopStatusIsRejectedWithoutDesktopStateLeak()
     {
         FakeOneBotRuntime runtime = new();
