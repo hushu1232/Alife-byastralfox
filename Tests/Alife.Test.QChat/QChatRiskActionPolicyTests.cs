@@ -27,7 +27,12 @@ public sealed class QChatRiskActionPolicyTests
             CooldownActive: false,
             Threshold: 160));
 
-        Assert.That(decision.CanDelete, Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.CanDelete, Is.True);
+            Assert.That(decision.RiskLevel, Is.EqualTo(QChatCapabilityRiskLevel.Critical));
+            Assert.That(decision.RequiresOwnerEventOutbox, Is.True);
+        });
     }
 
     [Test]
@@ -52,6 +57,7 @@ public sealed class QChatRiskActionPolicyTests
 
         Assert.That(decision.CanDelete, Is.False);
         Assert.That(decision.Reason, Is.EqualTo("protected_user"));
+        Assert.That(decision.RequiresOwnerEventOutbox, Is.True);
     }
 
     [Test]

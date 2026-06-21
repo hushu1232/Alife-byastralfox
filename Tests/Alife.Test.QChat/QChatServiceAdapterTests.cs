@@ -206,6 +206,51 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateQChatRouteCommandWritesEventRouteDiagnostic()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-event-route-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new()
+            {
+                BotId = 2905391496
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat route"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-event-route\""));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":2"));
+                Assert.That(diagnostics, Does.Contain("\"CommandText\":\"/qchat route\""));
+                Assert.That(diagnostics, Does.Contain("\"Reason\":\"owner command\""));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task DualBotQChatStatusReportsSeparateTimingConfiguration()
     {
         FakeOneBotRuntime xiaYuRuntime = new();
@@ -3727,6 +3772,60 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerGroupSendThisFileCommandWritesIntentActionDecisionDiagnostic()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string originalCurrentDirectory = Environment.CurrentDirectory;
+        string root = Path.Combine(Path.GetTempPath(), "alife-qchat-owner-group-file-action-tests", Guid.NewGuid().ToString("N"));
+        string storageRoot = Path.Combine(root, "storage");
+        string outputDirectory = Path.Combine(root, "output");
+        Directory.CreateDirectory(storageRoot);
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
+        await File.WriteAllTextAsync(Path.Combine(outputDirectory, "hello_world.c"), "#include <stdio.h>\n");
+
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            string clientDirectory = Path.Combine(root, "Outputs", "Alife.Client");
+            Directory.CreateDirectory(clientDirectory);
+            Environment.CurrentDirectory = clientDirectory;
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                GroupId = 971237816,
+                UserId = 3045846738,
+                RawMessage = "\u7fbd\uff0c\u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc"
+            });
+
+            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-intent-action-decision\""));
+                Assert.That(diagnostics, Does.Contain("\"Capability\":6"));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":2"));
+                Assert.That(diagnostics, Does.Contain("\"Allowed\":true"));
+            });
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
+    }
+
+    [Test]
     public async Task NonOwnerGroupSendThisFileCommandIsRejectedBeforePublicApproval()
     {
         string originalCurrentDirectory = Environment.CurrentDirectory;
@@ -5158,6 +5257,51 @@ public class QChatServiceAdapterTests
             Assert.That(dispatchCount, Is.Zero);
             Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("1072509877"));
         });
+    }
+
+    [Test]
+    public async Task OwnerGroupNaturalAllowlistCommandWritesIntentActionDecisionDiagnostic()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-allowlist-action-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatConfig config = new()
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowedGroupIds = "867165927",
+                EnableBalancedTextStreaming = false
+            };
+            QChatService service = CreateStartedService(runtime, config);
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 1072509877,
+                RawMessage = "\u628a\u8fd9\u4e2a\u7fa4\u52a0\u5165\u767d\u540d\u5355"
+            });
+
+            await WaitUntilAsync(() => config.AllowedGroupIds.Contains("1072509877", StringComparison.Ordinal));
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-intent-action-decision\""));
+                Assert.That(diagnostics, Does.Contain("\"Capability\":3"));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":4"));
+                Assert.That(diagnostics, Does.Contain("\"Allowed\":true"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
     }
 
     [Test]
@@ -8709,6 +8853,107 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateQuietModeQuestionDoesNotEnableQuietMode()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "\u5b89\u9759\u6a21\u5f0f\u662f\u4ec0\u4e48"
+        });
+
+        await WaitUntilAsync(() => dispatchCount == 1);
+        Assert.That(service.IsQuietModeEnabled, Is.False);
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task OwnerGroupPastedProseContainingQuietWordsDoesNotEnableQuietMode()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+            RawMessage = "\u4f60\u53ef\u4ee5\u7d2f\uff0c\u53ef\u4ee5\u4e0d\u60f3\u8bf4\u8bdd\uff0c\u6211\u4e5f\u53ef\u4ee5\u5b89\u9759\u5730\u966a\u7740\u4f60\u3002\u6211\u5bb3\u6015\u7761\u89c9\u4e86\uff0c\u6240\u4ee5\u603b\u662f\u5931\u7720\u3002"
+        });
+
+        await WaitUntilAsync(() => dispatchCount == 1, TimeSpan.FromSeconds(4));
+        Assert.Multiple(() =>
+        {
+            Assert.That(service.IsQuietModeEnabled, Is.False);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task GroupWakeNameDiscussionDoesNotWakeOrDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            WakingWords = "\u590f\u7fbd,\u7fbd,\u5c0f\u7fbd",
+            AllowGroupMemberChat = true,
+            AllowGroupMemberMentions = true,
+            AllowProactiveGroupChat = false,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            GroupId = 3001,
+            GroupName = "test-group",
+            Sender = new OneBotSender { UserId = 2001, Nickname = "member" },
+            RawMessage = "\u6211\u5728\u8ba8\u8bba\u590f\u7fbd\u8fd9\u4e2a\u540d\u5b57"
+        });
+
+        await Task.Delay(300);
+        Assert.That(dispatchCount, Is.Zero);
+        Assert.That(runtime.GroupMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task OwnerPrivateSleepCommandDoesNotUseMioSpecificFixedAcknowledgement()
     {
         FakeOneBotRuntime runtime = new();
@@ -8760,6 +9005,48 @@ public class QChatServiceAdapterTests
         AssertQuietAcknowledgementIsPersonaNeutral(acknowledgement);
         Assert.That(acknowledgement, Does.Not.Contain("我是机器人"));
         Assert.That(acknowledgement, Does.Not.Contain("模型"));
+    }
+
+    [Test]
+    public async Task OwnerPrivateSleepCommandWritesIntentActionDecisionDiagnostic()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-quiet-action-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                RawMessage = "\u4f60\u53bb\u7761\u89c9\u5427"
+            });
+
+            await WaitUntilAsync(() => service.IsQuietModeEnabled);
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-intent-action-decision\""));
+                Assert.That(diagnostics, Does.Contain("\"Capability\":7"));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":3"));
+                Assert.That(diagnostics, Does.Contain("\"Allowed\":true"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
     }
 
     [Test]
@@ -9552,6 +9839,55 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
         Assert.That(runtime.GroupMessages[0].Message, Does.Not.Contain("[CQ:at"));
         Assert.That(runtime.GroupMessages[0].Message, Does.StartWith("\u5988\u5988"));
+    }
+
+    [Test]
+    public async Task TrustedWakeUserWakeCommandWritesIntentActionDecisionDiagnostic()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-trusted-wake-action-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                QuietModeWakeUserIds = "2002",
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            });
+            service.QChatQuietMode(true, "test");
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 2002,
+                GroupId = 3001,
+                GroupName = "test-group",
+                Sender = new OneBotSender { UserId = 2002, Nickname = "wake-user" },
+                RawMessage = "[CQ:at,qq=999] \u9192\u9192"
+            });
+
+            await WaitUntilAsync(() => service.IsQuietModeEnabled == false);
+            string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+            string diagnostics = ReadAllTextWithSharing(diagnosticsPath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-intent-action-decision\""));
+                Assert.That(diagnostics, Does.Contain("\"Capability\":7"));
+                Assert.That(diagnostics, Does.Contain("\"Kind\":3"));
+                Assert.That(diagnostics, Does.Contain("\"Allowed\":true"));
+            });
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
     }
 
     [Test]

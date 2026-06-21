@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 
@@ -65,7 +66,7 @@ public static class QChatIntentClassifier
             return None(QChatIntentKind.RecallMessage, "no recall keyword");
 
         bool negation = ContainsAny(text, "不要撤", "别撤", "不用撤", "不要删除", "别删除");
-        bool meta = ContainsAny(text, "是不是", "会不会", "能不能", "为什么", "怎么", "失败", "不会撤回");
+        bool meta = ContainsAny(text, "是不是", "会不会", "能不能", "为什么", "怎么", "失败", "不会撤回", "测试", "验证", "演示", "试试");
         bool command = ContainsAny(text, "撤了", "撤回", "收回", "删掉", "删除", "撤你", "撤刚才", "撤上一", "把那条撤", "把这条撤");
         bool confirmed = command && negation == false && meta == false;
         QChatIntentTargetKind target = input.HasReply
@@ -143,6 +144,119 @@ public static class QChatIntentClassifier
             confirmed ? "confirmed group allowlist update" : "allowlist target is missing");
     }
 
+    public static QChatIntentDecision ClassifyQuietMode(QChatIntentInput input)
+    {
+        string text = Merge(input.PlainText, input.ReadableText);
+        bool sleep = ContainsDirectQuietModeSleepCommand(text);
+        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "wake", "resume");
+        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "quiet", "silent", "wake", "resume");
+        bool meta = ContainsAny(text, "是什么", "会不会", "为什么", "怎么", "失败", "测试", "验证", "演示", "试试", "能不能", "是不是", "是否");
+        bool candidate = sleep || wake || (quietModeMention && meta);
+        if (candidate == false)
+            return None(QChatIntentKind.QuietMode, "no quiet-mode keyword");
+
+        string? action = wake ? "wake" : sleep ? "sleep" : null;
+        bool confirmed = action != null && meta == false;
+
+        return new QChatIntentDecision(
+            QChatIntentKind.QuietMode,
+            true,
+            confirmed,
+            confirmed ? 0.88 : 0.3,
+            confirmed ? QChatIntentTargetKind.CurrentSession : QChatIntentTargetKind.None,
+            confirmed ? action : null,
+            null,
+            null,
+            false,
+            meta,
+            confirmed ? $"confirmed quiet-mode {action} request" : "quiet-mode keyword is not an execution command");
+    }
+
+    static bool ContainsDirectQuietModeSleepCommand(string text)
+    {
+        return ContainsAny(
+            text,
+            "先安静",
+            "安静一下",
+            "安静一会",
+            "安静一阵",
+            "安静点",
+            "安静下来",
+            "保持安静",
+            "别说话",
+            "不要说话",
+            "别回复",
+            "不要回复",
+            "去睡觉",
+            "睡觉吧",
+            "睡一会",
+            "睡会",
+            "睡一下",
+            "闭眼睡",
+            "闭眼 睡",
+            "先睡",
+            "先休息",
+            "去休息",
+            "休息一下",
+            "休息一会",
+            "休息会",
+            "休息吧",
+            "quiet",
+            "silent");
+    }
+
+    public static QChatIntentDecision ClassifyGroupWake(
+        QChatIntentInput input,
+        IEnumerable<string> wakingWords,
+        bool isAtBot)
+    {
+        string text = Merge(input.PlainText, input.ReadableText);
+        if (isAtBot)
+        {
+            return new QChatIntentDecision(
+                QChatIntentKind.GroupWake,
+                true,
+                true,
+                1,
+                QChatIntentTargetKind.CurrentSession,
+                "at",
+                null,
+                null,
+                false,
+                false,
+                "bot was mentioned by at");
+        }
+
+        string[] words = wakingWords
+            .Where(word => string.IsNullOrWhiteSpace(word) == false)
+            .Select(word => word.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        bool hasWakeName = words.Any(word => text.Contains(word, StringComparison.OrdinalIgnoreCase));
+        if (hasWakeName == false)
+            return None(QChatIntentKind.GroupWake, "no wake target");
+
+        bool negation = ContainsAny(text, "不是在叫", "不叫", "别出来", "不用出来", "不用回");
+        bool meta = ContainsAny(text, "讨论", "这个名字", "会不会被", "是不是会", "为什么", "怎么唤醒", "测试", "验证", "演示", "试试");
+        bool callAction = ContainsAny(text, "出来", "在吗", "帮我", "帮忙", "看看", "回我", "理我", "醒醒", "过来", "听得到", "你怎么看", "能不能帮");
+        string compactText = CompactForIntent(text);
+        bool directNameCall = words.Any(word => compactText.Equals(CompactForIntent(word), StringComparison.OrdinalIgnoreCase));
+        bool confirmed = (callAction || directNameCall) && negation == false && meta == false;
+
+        return new QChatIntentDecision(
+            QChatIntentKind.GroupWake,
+            true,
+            confirmed,
+            confirmed ? 0.86 : 0.3,
+            confirmed ? QChatIntentTargetKind.CurrentSession : QChatIntentTargetKind.None,
+            confirmed ? "directed" : null,
+            null,
+            null,
+            negation,
+            meta,
+            confirmed ? "confirmed directed group wake request" : "wake target is not a directed request");
+    }
+
     static QChatIntentDecision None(QChatIntentKind kind, string reason)
     {
         return new QChatIntentDecision(kind, false, false, 0, QChatIntentTargetKind.None, null, null, null, false, false, reason);
@@ -158,6 +272,11 @@ public static class QChatIntentClassifier
         return values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
     }
 
+    static string CompactForIntent(string text)
+    {
+        return new string(text.Where(ch => char.IsWhiteSpace(ch) == false && char.IsPunctuation(ch) == false && char.IsSymbol(ch) == false).ToArray());
+    }
+
     static long ExtractFirstId(string text)
     {
         Match match = Regex.Match(text, @"(?<!\d)([1-9]\d{5,12})(?!\d)");
@@ -166,7 +285,11 @@ public static class QChatIntentClassifier
 
     static string? ExtractWindowsPath(string text)
     {
-        Match match = Regex.Match(text, @"[A-Za-z]:[\\/][^\r\n""<>|?*]+");
+        Match quoted = Regex.Match(text, @"""([A-Za-z]:[\\/][^""<>|?*]+)""");
+        if (quoted.Success)
+            return quoted.Groups[1].Value.Trim();
+
+        Match match = Regex.Match(text, @"[A-Za-z]:[\\/][^\s""<>|?*]+");
         return match.Success ? match.Value.Trim() : null;
     }
 }

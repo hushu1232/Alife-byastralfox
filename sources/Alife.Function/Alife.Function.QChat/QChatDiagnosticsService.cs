@@ -12,6 +12,12 @@ public static class QChatDiagnosticsService
 {
     const string CommandPrefix = "/qchat";
 
+    public static string FormatDecisionTrace(QChatDecisionTrace trace)
+    {
+        ArgumentNullException.ThrowIfNull(trace);
+        return trace.ToDiagnosticText();
+    }
+
     public static QChatDiagnosticsResult TryHandle(string? text, QChatAgentRoute route, QChatAgentProfile profile)
     {
         return TryHandle(text, route, profile, new QChatDiagnosticsRuntimeState());

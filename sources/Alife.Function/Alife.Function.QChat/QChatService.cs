@@ -189,6 +189,9 @@ sealed class QChatPendingDispatchSession
                 """,
     defaultCategory: "Alife 官方/交互方式",
     editorUI: typeof(QChatServiceUI), LaunchOrder = 10)]
+// QChatService owns runtime wiring and top-level flow. QChatEventRouter classifies
+// incoming events, QChatIntentOrchestrator gates deterministic intent actions, and
+// QChatCapabilityPolicy owns owner-only and high-risk capability authorization.
 public partial class QChatService(
     XmlFunctionCaller functionService,
     ILogger<QChatService> logger,
@@ -2238,8 +2241,17 @@ public partial class QChatService(
         if (canControlQuietMode == false)
             return false;
 
-        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
-        return IsQuietSleepCommand(normalized) || IsQuietWakeCommand(normalized);
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(new QChatIntentInput(
+            PlainText: OneBotSegment.GetPlainText(messageEvent.RawMessage),
+            ReadableText: messageEvent.RawMessage,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: messageEvent.GetReplyId().HasValue,
+            ReplyMessageId: messageEvent.GetReplyId()));
+        if (decision.IsConfirmed == false)
+            return false;
+
+        return decision.TargetText == "sleep" ||
+               (decision.TargetText == "wake" && IsQuietModeEnabled);
     }
 
     async Task ProcessOneBotEventAsync(OneBotBaseEvent oneBotEvent)
@@ -2359,17 +2371,63 @@ public partial class QChatService(
                 if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: true))
                     return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
-                if (await BuildOwnerCommandService().TryHandleAsync(new QChatOwnerCommandContext(
+                QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
+                QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
+                if (eventRoute.Kind == QChatEventRouteKind.OwnerCommand)
+                {
+                    WriteQChatDiagnostic("qchat-event-route", "QChat event router classified an owner command before owner-command handling.", new {
+                        messageEvent.MessageType,
+                        messageEvent.UserId,
+                        messageEvent.GroupId,
+                        eventRoute.Kind,
+                        eventRoute.IntentKind,
+                        eventRoute.IntentConfirmed,
+                        eventRoute.CommandText,
+                        eventRoute.Reason
+                    });
+                    if (await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
+                            messageEvent,
+                            senderRole,
+                            content)))
+                    {
+                        return;
+                    }
+                }
+                if (eventRoute.Kind != QChatEventRouteKind.OwnerCommand &&
+                    await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
                         messageEvent,
                         senderRole,
                         content)))
+                {
                     return;
+                }
                 StartProfileLearningFromMessage(config, messageEvent, senderRole, content);
 
                 string formatted = $"{speaker}：{content}";
-                bool isMentionedOrWoken = messageEvent.GetAtID() == client.BotId ||
-                                          groupAwakingWords.Any(word =>
-                                              messageEvent.RawMessage.Contains(word, StringComparison.OrdinalIgnoreCase));
+                bool isAtBot = messageEvent.GetAtID() == client.BotId;
+                QChatIntentDecision wakeDecision = QChatIntentClassifier.ClassifyGroupWake(
+                    new QChatIntentInput(
+                        PlainText: OneBotSegment.GetPlainText(messageEvent.RawMessage),
+                        ReadableText: content,
+                        RawMessage: messageEvent.RawMessage,
+                        HasReply: messageEvent.GetReplyId().HasValue,
+                        ReplyMessageId: messageEvent.GetReplyId()),
+                    groupAwakingWords,
+                    isAtBot);
+                bool isMentionedOrWoken = wakeDecision.IsConfirmed;
+                if (messageEvent.MessageType == OneBotMessageType.Group && wakeDecision.IsCandidate)
+                {
+                    WriteQChatDiagnostic("qchat-intent-decision", "QChat group wake intent was evaluated.", new {
+                        messageEvent.MessageType,
+                        messageEvent.UserId,
+                        messageEvent.GroupId,
+                        wakeDecision.Kind,
+                        wakeDecision.IsCandidate,
+                        wakeDecision.IsConfirmed,
+                        wakeDecision.TargetText,
+                        wakeDecision.Reason
+                    });
+                }
                 formatted = BuildFormattedModelInput(
                     config,
                     messageEvent,
@@ -4280,18 +4338,60 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
             return false;
 
-        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
-        if (string.IsNullOrWhiteSpace(normalized))
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(new QChatIntentInput(
+            PlainText: plainText,
+            ReadableText: plainText,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: messageEvent.GetReplyId().HasValue,
+            ReplyMessageId: messageEvent.GetReplyId()));
+        if (decision.IsCandidate)
+        {
+            WriteQChatDiagnostic("qchat-intent-decision", "QChat quiet-mode intent was evaluated.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                decision.Kind,
+                decision.IsCandidate,
+                decision.IsConfirmed,
+                decision.TargetText,
+                decision.Reason
+            });
+        }
+        if (decision.IsConfirmed == false)
             return false;
 
-        if (IsQuietWakeCommand(normalized))
+        QChatIntentAction action = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: decision,
+            SenderRole: senderRole,
+            AgentId: ResolveCurrentAgentId(Configuration!),
+            BotId: ResolveCurrentBotId(Configuration!, messageEvent),
+            OwnerId: Configuration!.OwnerId,
+            CurrentGroupId: messageEvent.GroupId));
+        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before quiet-mode control.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            action.Kind,
+            action.Allowed,
+            action.Capability,
+            action.Reason,
+            action.RiskLevel
+        });
+        if (action.Kind != QChatIntentActionKind.SetQuietMode || action.Allowed == false)
+            return false;
+
+        if (decision.TargetText == "wake")
         {
+            if (IsQuietModeEnabled == false)
+                return false;
             SetQuietMode(false, messageEvent, "owner-wake-command");
             await SendQuietModeWakeAcknowledgementAsync(messageEvent);
             return true;
         }
 
-        if (IsQuietSleepCommand(normalized))
+        if (decision.TargetText == "sleep")
         {
             SetQuietMode(true, messageEvent, "owner-sleep-command");
             await SendQuietModeAcknowledgementAsync(messageEvent);
@@ -4491,6 +4591,27 @@ public partial class QChatService(
         if (decision.IsConfirmed == false || decision.TargetId is not long id)
             return false;
 
+        QChatIntentAction intentAction = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: decision,
+            SenderRole: senderRole,
+            AgentId: ResolveCurrentAgentId(Configuration!),
+            BotId: ResolveCurrentBotId(Configuration!, messageEvent),
+            OwnerId: Configuration!.OwnerId,
+            CurrentGroupId: currentGroupId));
+        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before allowlist update.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            intentAction.Kind,
+            intentAction.Allowed,
+            intentAction.Capability,
+            intentAction.Reason,
+            intentAction.RiskLevel
+        });
+        if (intentAction.Kind != QChatIntentActionKind.UpdateAllowlist || intentAction.Allowed == false)
+            return false;
+
         string[] parts = (decision.TargetText ?? "group:add").Split(':', 2);
         string target = NormalizeAllowlistToken(parts[0]);
         string action = NormalizeAllowlistToken(parts.Length > 1 ? parts[1] : "add");
@@ -4549,7 +4670,14 @@ public partial class QChatService(
             decision.TargetKind,
             decision.Reason
         });
-        if (decision.IsConfirmed == false)
+        QChatIntentAction action = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: decision,
+            SenderRole: senderRole,
+            AgentId: ResolveCurrentAgentId(Configuration!),
+            BotId: ResolveCurrentBotId(Configuration!, messageEvent),
+            OwnerId: Configuration!.OwnerId,
+            CurrentGroupId: messageEvent.GroupId));
+        if (action.Kind != QChatIntentActionKind.RecallMessage || action.Allowed == false)
             return false;
 
         if (TryExtractReplyMessageId(messageEvent.RawMessage, out long replyMessageId))
@@ -4822,8 +4950,50 @@ public partial class QChatService(
         if (IsQuietModeWakeUser(messageEvent.UserId) == false)
             return false;
 
-        string normalized = NormalizeQuietCommandText(messageEvent.RawMessage, messageEvent.RawMessage);
-        if (string.IsNullOrWhiteSpace(normalized) || IsQuietWakeCommand(normalized) == false)
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(new QChatIntentInput(
+            PlainText: plainText,
+            ReadableText: plainText,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: messageEvent.GetReplyId().HasValue,
+            ReplyMessageId: messageEvent.GetReplyId()));
+        if (decision.IsCandidate)
+        {
+            WriteQChatDiagnostic("qchat-intent-decision", "QChat trusted wake-user quiet-mode intent was evaluated.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                decision.Kind,
+                decision.IsCandidate,
+                decision.IsConfirmed,
+                decision.TargetText,
+                decision.Reason
+            });
+        }
+        if (decision.IsConfirmed == false || decision.TargetText != "wake")
+            return false;
+
+        QChatSenderRole senderRole = QChatMessageSecurity.Classify(Configuration!, messageEvent);
+        QChatIntentAction action = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: decision,
+            SenderRole: senderRole,
+            AgentId: ResolveCurrentAgentId(Configuration!),
+            BotId: ResolveCurrentBotId(Configuration!, messageEvent),
+            OwnerId: Configuration!.OwnerId,
+            CurrentGroupId: messageEvent.GroupId,
+            IsTrustedWakeUser: true));
+        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before trusted wake-user quiet-mode control.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            action.Kind,
+            action.Allowed,
+            action.Capability,
+            action.Reason,
+            action.RiskLevel
+        });
+        if (action.Kind != QChatIntentActionKind.SetQuietMode || action.Allowed == false)
             return false;
 
         SetQuietMode(false, messageEvent, "trusted-wake-user-command");
@@ -4942,17 +5112,35 @@ public partial class QChatService(
         if (ContainsAny(text, "\u65b0\u5efa", "\u521b\u5efa", "\u5efa\u7acb"))
             return false;
 
+        QChatIntentAction action = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: decision,
+            SenderRole: senderRole,
+            AgentId: ResolveCurrentAgentId(Configuration!),
+            BotId: ResolveCurrentBotId(Configuration!, messageEvent),
+            OwnerId: Configuration!.OwnerId,
+            CurrentGroupId: messageEvent.GroupId));
+        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before deterministic file upload.", new {
+            messageEvent.GroupId,
+            messageEvent.UserId,
+            senderRole,
+            action.Kind,
+            action.Allowed,
+            action.Capability,
+            action.Reason,
+            action.RiskLevel
+        });
+
         string? filePath = FindOwnerPrivateFileSendTarget(text);
         if (filePath == null)
             return false;
 
-        if (senderRole != QChatSenderRole.Owner)
+        if (action.Kind != QChatIntentActionKind.UploadGroupFile || action.Allowed == false)
         {
             WriteQChatDiagnostic("qchat-group-existing-file-command-rejected", "Non-owner group file-send intent was rejected before QQ file gateway.", new {
                 messageEvent.GroupId,
                 messageEvent.UserId,
                 senderRole,
-                decision.Reason
+                action.Reason
             });
             return true;
         }
