@@ -648,6 +648,57 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task RiskDeleteReportPersistsOwnerEventWhenOwnerMessageSendFails()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            SendException = new InvalidOperationException("offline")
+        };
+        FakeFriendActionGateway friendGateway = new(new QChatFriendDeleteResult(true, "friend_delete_action=delete_friend"));
+        string outboxPath = CreateTempOwnerEventOutboxPath();
+        QChatOwnerEventOutbox outbox = new(outboxPath);
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            AllowPrivateGuestChat = true,
+            EnableAutoFriendDelete = true,
+            LocalBlockThreshold = 25,
+            AutoDeleteFriendThreshold = 25,
+            MinIndependentEventsForDelete = 1,
+            MinDeleteObservationMinutes = 0,
+            EnableBalancedTextStreaming = false
+        },
+        riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+        friendActionGateway: friendGateway,
+        ownerEventPublisher: publisher);
+
+        service.InboundChatDispatcher = _ => Task.CompletedTask;
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 2001,
+            RawMessage = "jailbreak"
+        });
+
+        await WaitUntilAsync(() => outbox.GetRecent(10).Any(entry =>
+            entry.Message.Contains("action=delete_friend", StringComparison.Ordinal)));
+
+        QChatOwnerEventEntry entry = outbox.GetRecent(10).Single(entry =>
+            entry.Message.Contains("action=delete_friend", StringComparison.Ordinal));
+        Assert.Multiple(() =>
+        {
+            Assert.That(entry.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(entry.AttemptCount, Is.EqualTo(1));
+            Assert.That(entry.LastError, Does.Contain("offline"));
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task NonOwnerNaturalHelpAliasFallsThroughWithoutCommandMenuOrInternalLeak()
     {
         FakeOneBotRuntime runtime = new();
@@ -9085,7 +9136,8 @@ public class QChatServiceAdapterTests
         IDesktopActionAuditSink? desktopActionAuditSink = null,
         IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
         QChatRiskScoreService? riskScoreService = null,
-        IQChatFriendActionGateway? friendActionGateway = null)
+        IQChatFriendActionGateway? friendActionGateway = null,
+        IQChatOwnerEventPublisher? ownerEventPublisher = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -9106,7 +9158,8 @@ public class QChatServiceAdapterTests
             desktopActionAuditSink: desktopActionAuditSink,
             desktopBusinessExecutor: desktopBusinessExecutor,
             riskScoreService: riskScoreService,
-            friendActionGateway: friendActionGateway)
+            friendActionGateway: friendActionGateway,
+            ownerEventPublisher: ownerEventPublisher)
         {
             Configuration = config
         };
@@ -9117,6 +9170,11 @@ public class QChatServiceAdapterTests
     static string CreateTempRiskRoot()
     {
         return Path.Combine(Path.GetTempPath(), "alife-qchat-risk-service-tests", Guid.NewGuid().ToString("N"));
+    }
+
+    static string CreateTempOwnerEventOutboxPath()
+    {
+        return Path.Combine(Path.GetTempPath(), "alife-qchat-owner-event-tests", Guid.NewGuid().ToString("N"), "qchat-owner-events.jsonl");
     }
 
     static void StartService(QChatService service, string characterName = "QChatTest")

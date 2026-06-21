@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -218,7 +219,8 @@ public partial class QChatService(
     IDesktopActionDraftController? desktopActionDraftController = null,
     IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
     QChatRiskScoreService? riskScoreService = null,
-    IQChatFriendActionGateway? friendActionGateway = null) :
+    IQChatFriendActionGateway? friendActionGateway = null,
+    IQChatOwnerEventPublisher? ownerEventPublisher = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -229,7 +231,21 @@ public partial class QChatService(
     IAgentQChatJoinedGroupProvider
 {
     const string DesktopControlAgentId = "xiayu";
+    readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
+    QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
+    QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
+    IQChatOwnerEventPublisher? resolvedOwnerEventPublisher;
+    QChatOwnerEventOutbox OwnerEventOutbox => resolvedOwnerEventOutbox ??= new QChatOwnerEventOutbox(Path.Combine(
+        AlifePath.StorageFolderPath,
+        "AgentWorkspace",
+        "qchat-owner-events.jsonl"));
+    QChatOwnerEventDispatcher OwnerEventDispatcher => resolvedOwnerEventDispatcher ??= new QChatOwnerEventDispatcher(
+        OwnerEventOutbox,
+        GetOneBotClient);
+    IQChatOwnerEventPublisher OwnerEventPublisher => injectedOwnerEventPublisher
+        ?? (resolvedOwnerEventPublisher ??= new QChatOwnerEventPublisher(OwnerEventOutbox, OwnerEventDispatcher));
+
     DesktopActionGateway? resolvedDesktopActionGateway;
     DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
         ?? CreateDefaultDesktopActionGateway(
@@ -2493,8 +2509,63 @@ public partial class QChatService(
         if (config.OwnerId == 0)
             return;
 
-        string formattedReport = QChatCommandPersonaFormatter.Format(agentId, QChatSenderRole.Owner, report);
-        await SendTextOrMediaMessageAsync(OneBotMessageType.Private, config.OwnerId, formattedReport, streamText: false);
+        await OwnerEventPublisher.PublishAsync(new QChatOwnerEventRequest(
+            DedupeKey: BuildOwnerRiskDedupeKey(agentId, config.OwnerId, report),
+            AgentId: agentId,
+            OwnerId: config.OwnerId,
+            Severity: "warning",
+            Category: "risk",
+            Source: "qchat-risk",
+            SourceId: BuildOwnerRiskSourceId(report),
+            Message: report));
+    }
+
+    static string BuildOwnerRiskSourceId(string report)
+    {
+        string action = ExtractReportField(report, "action");
+        string userId = ExtractReportField(report, "user_id");
+        return string.IsNullOrWhiteSpace(userId)
+            ? NormalizeOwnerRiskDedupePart(action)
+            : $"{NormalizeOwnerRiskDedupePart(action)}:{NormalizeOwnerRiskDedupePart(userId)}";
+    }
+
+    static string BuildOwnerRiskDedupeKey(string agentId, long ownerId, string report)
+    {
+        return string.Join(':',
+            "qchat-risk",
+            NormalizeOwnerRiskDedupePart(agentId),
+            ownerId.ToString(CultureInfo.InvariantCulture),
+            NormalizeOwnerRiskDedupePart(ExtractReportField(report, "action")),
+            NormalizeOwnerRiskDedupePart(ExtractReportField(report, "user_id")),
+            NormalizeOwnerRiskDedupePart(ExtractReportField(report, "risk_score")),
+            NormalizeOwnerRiskDedupePart(ExtractReportField(report, "events")));
+    }
+
+    static string ExtractReportField(string report, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(report) || string.IsNullOrWhiteSpace(fieldName))
+            return "";
+
+        foreach (string rawLine in report.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            string line = rawLine.Trim();
+            int separatorIndex = line.IndexOf('=');
+            if (separatorIndex <= 0)
+                continue;
+
+            string name = line[..separatorIndex].Trim();
+            if (string.Equals(name, fieldName, StringComparison.Ordinal))
+                return line[(separatorIndex + 1)..].Trim();
+        }
+
+        return "";
+    }
+
+    static string NormalizeOwnerRiskDedupePart(string value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "-"
+            : value.Trim().ToLowerInvariant();
     }
 
     IQChatFriendActionGateway ResolveFriendActionGateway(QChatConfig config)
