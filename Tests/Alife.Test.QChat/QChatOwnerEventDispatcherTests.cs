@@ -25,6 +25,7 @@ public class QChatOwnerEventDispatcherTests
             Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
             Assert.That(runtime.PrivateMessages[0].Target, Is.EqualTo(1001));
             Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("action=test"));
+            Assert.That(runtime.PrivateMessages[0].Message, Is.Not.EqualTo("action=test result=success"));
             Assert.That(stored, Is.Not.Null);
             Assert.That(stored!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
             Assert.That(stored.DeliveryMessageId, Is.EqualTo(10));
@@ -58,6 +59,62 @@ public class QChatOwnerEventDispatcherTests
     }
 
     [Test]
+    public void FlushAsyncPropagatesCancellationWithoutMarkingFailed()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        FakeOneBotRuntime runtime = new()
+        {
+            SendException = new OperationCanceledException("cancelled")
+        };
+        QChatOwnerEventEntry entry = outbox.Enqueue(CreateRequest("runtime-cancelled"));
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+
+        Assert.ThrowsAsync<OperationCanceledException>(() => dispatcher.FlushAsync());
+
+        QChatOwnerEventEntry? stored = outbox.GetById(entry.EventId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.SendAttemptCount, Is.EqualTo(1));
+            Assert.That(stored, Is.Not.Null);
+            Assert.That(stored!.Status, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(stored.AttemptCount, Is.Zero);
+            Assert.That(stored.LastError, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task FlushAsyncReturnsZeroWhenAlreadyFlushing()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        FakeOneBotRuntime runtime = new()
+        {
+            BlockSend = true,
+            NextMessageId = 10
+        };
+        QChatOwnerEventEntry entry = outbox.Enqueue(CreateRequest("overlap"));
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+
+        Task<int> firstFlush = dispatcher.FlushAsync();
+        await runtime.WaitForSendStartedAsync();
+        int secondDelivered = await dispatcher.FlushAsync();
+        runtime.ReleaseBlockedSend();
+        int firstDelivered = await firstFlush;
+
+        QChatOwnerEventEntry? stored = outbox.GetById(entry.EventId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(secondDelivered, Is.Zero);
+            Assert.That(firstDelivered, Is.EqualTo(1));
+            Assert.That(runtime.SendAttemptCount, Is.EqualTo(1));
+            Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+            Assert.That(stored, Is.Not.Null);
+            Assert.That(stored!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+        });
+    }
+
+    [Test]
     public async Task PublisherEnqueuesAndFlushesWithoutThrowing()
     {
         string path = CreateTempPath();
@@ -87,7 +144,7 @@ public class QChatOwnerEventDispatcherTests
         "risk",
         "test",
         dedupeKey,
-        "action=test");
+        "action=test result=success");
 
     static string CreateTempPath() =>
         Path.Combine(Path.GetTempPath(), "alife-qchat-owner-events", $"{Guid.NewGuid():N}.jsonl");
@@ -101,7 +158,11 @@ public class QChatOwnerEventDispatcherTests
         public string Token { get; set; } = "";
         public List<(long Target, string Message)> PrivateMessages { get; } = new();
         public Exception? SendException { get; set; }
+        public bool BlockSend { get; set; }
+        public int SendAttemptCount { get; private set; }
         public long NextMessageId { get; set; } = 1;
+        readonly TaskCompletionSource sendStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource releaseSend = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task ConnectAsync() => Task.CompletedTask;
         public Task SendGroupMessage(long groupId, string message) => Task.CompletedTask;
@@ -117,11 +178,28 @@ public class QChatOwnerEventDispatcherTests
 
         public Task<OneBotSendMessageResult?> SendPrivateMessageWithResult(long userId, string message)
         {
+            SendAttemptCount++;
+            sendStarted.TrySetResult();
+
             if (SendException != null)
                 throw SendException;
 
+            if (BlockSend)
+                return SendPrivateMessageWithResultAfterReleaseAsync(userId, message);
+
             PrivateMessages.Add((userId, message));
             return Task.FromResult<OneBotSendMessageResult?>(new OneBotSendMessageResult { MessageId = NextMessageId++ });
+        }
+
+        public Task WaitForSendStartedAsync() => sendStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public void ReleaseBlockedSend() => releaseSend.TrySetResult();
+
+        async Task<OneBotSendMessageResult?> SendPrivateMessageWithResultAfterReleaseAsync(long userId, string message)
+        {
+            await releaseSend.Task;
+            PrivateMessages.Add((userId, message));
+            return new OneBotSendMessageResult { MessageId = NextMessageId++ };
         }
 
         public Task UploadGroupFile(long groupId, string filePath, string name) => Task.CompletedTask;

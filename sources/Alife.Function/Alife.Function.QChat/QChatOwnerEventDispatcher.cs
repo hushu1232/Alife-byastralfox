@@ -35,6 +35,10 @@ public sealed class QChatOwnerEventDispatcher(
                     outbox.MarkDelivered(entry.EventId, result?.MessageId, DateTimeOffset.Now);
                     delivered++;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     outbox.MarkFailed(entry.EventId, ex.Message, DateTimeOffset.Now);
