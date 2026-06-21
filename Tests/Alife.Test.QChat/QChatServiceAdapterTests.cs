@@ -601,6 +601,10 @@ public class QChatServiceAdapterTests
     {
         FakeOneBotRuntime runtime = new();
         FakeFriendActionGateway friendGateway = new(new QChatFriendDeleteResult(true, "friend_delete_action=delete_friend"));
+        string outboxPath = CreateTempOwnerEventOutboxPath();
+        QChatOwnerEventOutbox outbox = new(outboxPath);
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+        QChatOwnerEventPublisher publisher = new(outbox, dispatcher);
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 999,
@@ -614,7 +618,8 @@ public class QChatServiceAdapterTests
             EnableBalancedTextStreaming = false
         },
         riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
-        friendActionGateway: friendGateway);
+        friendActionGateway: friendGateway,
+        ownerEventPublisher: publisher);
         int dispatchCount = 0;
         service.InboundChatDispatcher = _ =>
         {
