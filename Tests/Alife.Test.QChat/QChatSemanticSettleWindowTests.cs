@@ -1,4 +1,5 @@
 using Alife.Function.QChat;
+using NUnit.Framework;
 
 namespace Alife.Test.QChat;
 
