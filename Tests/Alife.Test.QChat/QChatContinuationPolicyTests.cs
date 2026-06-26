@@ -37,4 +37,55 @@ public class QChatContinuationPolicyTests
             Assert.That(decision.ShouldDispatchModel, Is.True);
         });
     }
+
+    [Test]
+    public void DeterministicTaskWithoutFeedbackStillBlocksModelDispatch()
+    {
+        QChatContinuationDecision decision = QChatContinuationPolicy.Decide(new QChatContinuationContext(
+            DeterministicTaskHandled: true,
+            SentTaskFeedback: false,
+            HasModelReply: false,
+            IncomingText: "check file upload status"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatContinuationAction.TaskFeedbackOnly));
+            Assert.That(decision.ShouldDispatchModel, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("deterministic-task-handled"));
+        });
+    }
+
+    [Test]
+    public void DeterministicTaskWithExistingModelReplyDoesNotContinueAgain()
+    {
+        QChatContinuationDecision decision = QChatContinuationPolicy.Decide(new QChatContinuationContext(
+            DeterministicTaskHandled: true,
+            SentTaskFeedback: true,
+            HasModelReply: true,
+            IncomingText: "task already completed"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatContinuationAction.StopAfterTaskFeedback));
+            Assert.That(decision.ShouldDispatchModel, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("deterministic-task-handled"));
+        });
+    }
+
+    [Test]
+    public void FeedbackFlagAloneDoesNotSuppressNormalConversation()
+    {
+        QChatContinuationDecision decision = QChatContinuationPolicy.Decide(new QChatContinuationContext(
+            DeterministicTaskHandled: false,
+            SentTaskFeedback: true,
+            HasModelReply: false,
+            IncomingText: "continue the previous topic"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatContinuationAction.ReplyNow));
+            Assert.That(decision.ShouldDispatchModel, Is.True);
+            Assert.That(decision.Reason, Is.EqualTo("normal-conversation"));
+        });
+    }
 }
