@@ -16,6 +16,7 @@ Key anchors:
 
 - `Tests/Alife.Test.QChat/QChatServiceAdapterTests.cs`: QChat service harness with `CreateStartedService`, fake OneBot runtime, fake image recognition, and service-level behavior checks.
 - `Tests/Alife.Test.QChat/QChatModelReplyLoopLiveTests.cs`: live model reply loop boundary tests.
+- `Tests/Alife.Test.QChat/QChatPromptLeakContractTests.cs`: required prompt leak contract tests that guard internal/private state against visible reply exposure.
 
 Optional active-workspace anchors the local project may contain:
 
@@ -43,12 +44,15 @@ Key anchors:
 - `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`: `ScheduleSettledDispatch` and `DispatchSettledConversationAsync` implement semantic settle dispatch.
 - `sources/Alife.Function/Alife.Function.QChat/QChatService.cs`: `EnableContinuationGate` controls model continuation after deterministic task feedback.
 - `sources/Alife.Function/Alife.Function.QChat/QChatContinuationPolicy.cs`: continuation decision policy.
+- `Tests/Alife.Test.QChat/QChatContinuationPolicyTests.cs`: required continuation invariant tests covering deterministic task feedback and normal conversation dispatch behavior.
 - `sources/Alife.Function/Alife.Function.QChat/QChatOwnerEventDispatcher.cs`: owner-event outbox flushing and retry boundary.
 
 Optional active-workspace anchors the local project may contain:
 
 - `sources/Alife.Function/Alife.Function.QChat/QChatVoiceWarmupCoordinator.cs`: background TTS warmup and retry coordination.
 - `sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs`: `XiaYuSelfStateMachine.Apply` updates private character state from event frames.
+- `Tests/Alife.Test.QChat/QChatSemanticSettleWindowTests.cs`: optional semantic settle contract tests for empty windows and maximum-window forced settling.
+- `Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs`: optional voice warmup contract tests. These may be reported missing until the full voice warmup production dependency chain is committed.
 
 Runtime flow:
 
@@ -112,12 +116,12 @@ Run the static engineering map check with:
 powershell -ExecutionPolicy Bypass -File tools/check-qchat-engineering-map.ps1
 ```
 
-The script does not start services, read API keys, call external networks, or modify runtime state. It only verifies that expected files and symbols still exist.
+The script does not start services, read API keys, call external networks, or modify runtime state. It only verifies that expected files and symbols still exist. A successful static checker run is not full build validation, full test validation, or live service validation.
 
 The checker has two levels:
 
 - Required committed-baseline anchors must be present in a clean checkout of the delivered commits. These anchors control the script exit code.
-- Optional active-workspace anchors describe capabilities this local project or workspace may contain, including vision readiness, TTS warmup, XiaYu private state, semantic-window summaries, and persona intensity/frame prompt extensions. The checker reports these as present or missing, but missing optional anchors do not make the script fail.
+- Optional active-workspace anchors describe capabilities this local project or workspace may contain, including vision readiness, TTS warmup, voice warmup contract tests, XiaYu private state, semantic settle contract tests, semantic-window summaries, and persona intensity/frame prompt extensions. The checker reports these as present or missing, but missing optional anchors do not make the script fail.
 
 Expected result:
 

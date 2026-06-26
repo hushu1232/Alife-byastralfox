@@ -47,6 +47,7 @@ Add-Check -Group "Harness" -Name "QChat service adapter harness" -Path "Tests/Al
 Add-Check -Group "Harness" -Name "Vision readiness tests" -Path "Tests/Alife.Test.QChat/QChatVisionReadinessTests.cs" -Patterns @("QChatVisionReadiness") -Required $false
 Add-Check -Group "Harness" -Name "Voice warmup coordinator tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("QChatVoiceWarmupCoordinator") -Required $false
 Add-Check -Group "Harness" -Name "Model reply loop live tests" -Path "Tests/Alife.Test.QChat/QChatModelReplyLoopLiveTests.cs" -Patterns @("QChatModelReplyLoopLiveTests")
+Add-Check -Group "Harness" -Name "Prompt leak contract tests" -Path "Tests/Alife.Test.QChat/QChatPromptLeakContractTests.cs" -Patterns @("QChatPromptLeakContractTests", "InternalStateTextDoesNotBecomePrivateVisibleReply")
 Add-Check -Group "Harness" -Name "Runtime readiness script" -Path "tools/check-qchat-runtime-readiness.ps1" -Patterns @("AgnesVisionKeyConfigured") -Required $false
 
 Add-Check -Group "Loop" -Name "OneBot receive loop" -Path "sources/Alife.Function/Alife.Function.QChat/OneBotClient.cs" -Patterns @("ReceiveLoop", "while (ws.State == WebSocketState.Open")
@@ -56,6 +57,9 @@ Add-Check -Group "Loop" -Name "Semantic settle dispatch loop" -Path "sources/Ali
 Add-Check -Group "Loop" -Name "Continuation gate" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("EnableContinuationGate")
 Add-Check -Group "Loop" -Name "Voice warmup retry coordinator" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVoiceWarmupCoordinator.cs" -Patterns @("QChatVoiceWarmupCoordinator", "Task.Delay") -Required $false
 Add-Check -Group "Loop" -Name "Continuation policy" -Path "sources/Alife.Function/Alife.Function.QChat/QChatContinuationPolicy.cs" -Patterns @("QChatContinuationPolicy", "Decide")
+Add-Check -Group "Loop" -Name "Continuation invariant tests" -Path "Tests/Alife.Test.QChat/QChatContinuationPolicyTests.cs" -Patterns @("DeterministicTaskWithoutFeedbackStillBlocksModelDispatch", "FeedbackFlagAloneDoesNotSuppressNormalConversation")
+Add-Check -Group "Loop" -Name "Semantic settle window contract tests" -Path "Tests/Alife.Test.QChat/QChatSemanticSettleWindowTests.cs" -Patterns @("EmptyWindowNeverSettles", "MaxWindowDurationForcesIncompleteTrailingTextToSettle") -Required $false
+Add-Check -Group "Loop" -Name "Voice warmup contract tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("WarmupAsync_MultipleProfilesTrackIndependentStatuses", "StartAsync_RetriesUntilEndpointBecomesReachable") -Required $false
 Add-Check -Group "Loop" -Name "XiaYu self-state machine" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuSelfStateMachine", "Apply") -Required $false
 Add-Check -Group "Loop" -Name "Owner event dispatcher" -Path "sources/Alife.Function/Alife.Function.QChat/QChatOwnerEventDispatcher.cs" -Patterns @("QChatOwnerEventDispatcher", "FlushAsync")
 
