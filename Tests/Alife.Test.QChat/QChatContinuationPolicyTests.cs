@@ -56,7 +56,7 @@ public class QChatContinuationPolicyTests
     }
 
     [Test]
-    public void DeterministicTaskWithExistingModelReplyDoesNotContinueAgain()
+    public void DeterministicTaskFeedbackStopsDispatchEvenWhenModelReplyExists()
     {
         QChatContinuationDecision decision = QChatContinuationPolicy.Decide(new QChatContinuationContext(
             DeterministicTaskHandled: true,
