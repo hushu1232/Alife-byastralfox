@@ -1,0 +1,74 @@
+using NUnit.Framework;
+using System.IO;
+
+namespace Alife.Test.QChat;
+
+[TestFixture]
+public sealed class QChatEngineeringMapRequiredV2Tests
+{
+    static readonly string[] RequiredV2Checks =
+    [
+        "Vision readiness tests",
+        "Voice warmup coordinator tests",
+        "Voice warmup retry coordinator",
+        "Semantic settle window contract tests",
+        "Voice warmup contract tests",
+        "XiaYu self-state machine",
+        "Persona frame prompt",
+        "XiaYu private state prompt",
+        "Semantic window summary prompt"
+    ];
+
+    [Test]
+    public void RequiredV2ChecksAreNotDeclaredOptional()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        foreach (string checkName in RequiredV2Checks)
+        {
+            string declaration = FindAddCheckDeclaration(script, checkName);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(declaration, Is.Not.Empty, $"Missing Add-Check declaration for '{checkName}'.");
+                Assert.That(declaration, Does.Not.Contain("-Required $false"), $"'{checkName}' must be required.");
+            });
+        }
+    }
+
+    static string FindAddCheckDeclaration(string script, string checkName)
+    {
+        string marker = $"-Name \"{checkName}\"";
+        int nameIndex = script.IndexOf(marker, StringComparison.Ordinal);
+        if (nameIndex < 0)
+            return string.Empty;
+
+        int start = script.LastIndexOf("Add-Check", nameIndex, StringComparison.Ordinal);
+        if (start < 0)
+            return string.Empty;
+
+        int next = script.IndexOf("Add-Check", nameIndex + marker.Length, StringComparison.Ordinal);
+        return next < 0
+            ? script[start..]
+            : script[start..next];
+    }
+
+    static string FindRepoRoot(string startDirectory)
+    {
+        DirectoryInfo? directory = new(startDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tools")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate repository root from test directory.");
+    }
+}

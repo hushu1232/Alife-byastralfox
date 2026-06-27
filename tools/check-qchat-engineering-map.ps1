@@ -44,8 +44,8 @@ function Add-Check {
 }
 
 Add-Check -Group "Harness" -Name "QChat service adapter harness" -Path "Tests/Alife.Test.QChat/QChatServiceAdapterTests.cs" -Patterns @("CreateStartedService", "FakeOneBotRuntime")
-Add-Check -Group "Harness" -Name "Vision readiness tests" -Path "Tests/Alife.Test.QChat/QChatVisionReadinessTests.cs" -Patterns @("QChatVisionReadiness") -Required $false
-Add-Check -Group "Harness" -Name "Voice warmup coordinator tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("QChatVoiceWarmupCoordinator") -Required $false
+Add-Check -Group "Harness" -Name "Vision readiness tests" -Path "Tests/Alife.Test.QChat/QChatVisionReadinessTests.cs" -Patterns @("QChatVisionReadiness")
+Add-Check -Group "Harness" -Name "Voice warmup coordinator tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("QChatVoiceWarmupCoordinator")
 Add-Check -Group "Harness" -Name "Model reply loop live tests" -Path "Tests/Alife.Test.QChat/QChatModelReplyLoopLiveTests.cs" -Patterns @("QChatModelReplyLoopLiveTests")
 Add-Check -Group "Harness" -Name "Prompt leak contract tests" -Path "Tests/Alife.Test.QChat/QChatPromptLeakContractTests.cs" -Patterns @("QChatPromptLeakContractTests", "InternalStateTextDoesNotBecomePrivateVisibleReply")
 Add-Check -Group "Harness" -Name "Runtime readiness script" -Path "tools/check-qchat-runtime-readiness.ps1" -Patterns @("AgnesVisionKeyConfigured") -Required $false
@@ -55,22 +55,22 @@ Add-Check -Group "Loop" -Name "QChat event queue loop" -Path "sources/Alife.Func
 Add-Check -Group "Loop" -Name "QChat time iterative update loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ITimeIterative", "OnUpdate")
 Add-Check -Group "Loop" -Name "Semantic settle dispatch loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ScheduleSettledDispatch", "DispatchSettledConversationAsync")
 Add-Check -Group "Loop" -Name "Continuation gate" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("EnableContinuationGate")
-Add-Check -Group "Loop" -Name "Voice warmup retry coordinator" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVoiceWarmupCoordinator.cs" -Patterns @("QChatVoiceWarmupCoordinator", "Task.Delay") -Required $false
+Add-Check -Group "Loop" -Name "Voice warmup retry coordinator" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVoiceWarmupCoordinator.cs" -Patterns @("QChatVoiceWarmupCoordinator", "Task.Delay")
 Add-Check -Group "Loop" -Name "Continuation policy" -Path "sources/Alife.Function/Alife.Function.QChat/QChatContinuationPolicy.cs" -Patterns @("QChatContinuationPolicy", "Decide")
 Add-Check -Group "Loop" -Name "Continuation invariant tests" -Path "Tests/Alife.Test.QChat/QChatContinuationPolicyTests.cs" -Patterns @("DeterministicTaskWithoutFeedbackStillBlocksModelDispatch", "FeedbackFlagAloneDoesNotSuppressNormalConversation")
-Add-Check -Group "Loop" -Name "Semantic settle window contract tests" -Path "Tests/Alife.Test.QChat/QChatSemanticSettleWindowTests.cs" -Patterns @("EmptyWindowNeverSettles", "MaxWindowDurationForcesIncompleteTrailingTextToSettle") -Required $false
-Add-Check -Group "Loop" -Name "Voice warmup contract tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("WarmupAsync_MultipleProfilesTrackIndependentStatuses", "StartAsync_RetriesUntilEndpointBecomesReachable") -Required $false
-Add-Check -Group "Loop" -Name "XiaYu self-state machine" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuSelfStateMachine", "Apply") -Required $false
+Add-Check -Group "Loop" -Name "Semantic settle window contract tests" -Path "Tests/Alife.Test.QChat/QChatSemanticSettleWindowTests.cs" -Patterns @("EmptyWindowNeverSettles", "MaxWindowDurationForcesIncompleteTrailingTextToSettle")
+Add-Check -Group "Loop" -Name "Voice warmup contract tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("WarmupAsync_MultipleProfilesTrackIndependentStatuses", "StartAsync_RetriesUntilEndpointBecomesReachable")
+Add-Check -Group "Loop" -Name "XiaYu self-state machine" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuSelfStateMachine", "Apply")
 Add-Check -Group "Loop" -Name "Owner event dispatcher" -Path "sources/Alife.Function/Alife.Function.QChat/QChatOwnerEventDispatcher.cs" -Patterns @("QChatOwnerEventDispatcher", "FlushAsync")
 
 Add-Check -Group "Prompt" -Name "Stable persona prompt registration" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("RegisterStablePersonaPromptIfNeeded")
 Add-Check -Group "Prompt" -Name "Persona intensity prompt formatter" -Path "sources/Alife.Function/Alife.Function.QChat/QChatAggressionBoundaryPolicy.cs" -Patterns @("QChatPersonaIntensityPromptFormatter", "persona_intensity") -Required $false
-Add-Check -Group "Prompt" -Name "Persona frame prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("FormatPersonaFramePrompt", "[qchat persona frame]") -Required $false
+Add-Check -Group "Prompt" -Name "Persona frame prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("FormatPersonaFramePrompt", "[qchat persona frame]")
 Add-Check -Group "Prompt" -Name "Conversation cognition prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatConversationCognition.cs" -Patterns @("BuildInternalPrompt")
 Add-Check -Group "Prompt" -Name "Address prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("BuildAddressPrompt")
 Add-Check -Group "Prompt" -Name "Quiet mode prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("BuildQuietModeAcknowledgementPrompt")
-Add-Check -Group "Prompt" -Name "XiaYu private state prompt" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuStatePromptFormatter", "[XiaYu state - private, do not quote]") -Required $false
-Add-Check -Group "Prompt" -Name "Semantic window summary prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatSemanticWindowSummary.cs" -Patterns @("QChatSemanticWindowSummary", "[semantic_window]") -Required $false
+Add-Check -Group "Prompt" -Name "XiaYu private state prompt" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuStatePromptFormatter", "[XiaYu state - private, do not quote]")
+Add-Check -Group "Prompt" -Name "Semantic window summary prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatSemanticWindowSummary.cs" -Patterns @("QChatSemanticWindowSummary", "[semantic_window]")
 Add-Check -Group "Prompt" -Name "Untrusted external context wrapper" -Path "sources/Alife/Alife.Framework/Models/Module/ContextContribution.cs" -Patterns @("ExternalContextFormatter", "WrapUntrusted")
 Add-Check -Group "Prompt" -Name "Context budget composer" -Path "sources/Alife/Alife.Framework/Models/Module/ContextContribution.cs" -Patterns @("ContextBudgetComposer", "Compose")
 Add-Check -Group "Prompt" -Name "Visible text policy" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVisibleTextPolicy.cs" -Patterns @("QChatVisibleTextPolicy", "IsHumanInvisibleStateText")
