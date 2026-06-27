@@ -205,7 +205,22 @@ public sealed class DataAgentPlannerTests
             Assert.That(analystPlan.OrderBy.Select(order => (order.Field, order.Direction)), Is.EqualTo(
                 developerPlan.OrderBy.Select(order => (order.Field, order.Direction))));
             Assert.That(analystPlan.Limit, Is.EqualTo(developerPlan.Limit));
-            Assert.That(analystEnvelope.Explanation, Is.EqualTo(developerEnvelope.Explanation));
+        });
+        AssertSameExplanation(analystEnvelope.Explanation, developerEnvelope.Explanation);
+    }
+
+    static void AssertSameExplanation(
+        DataAgentPlannerExplanation actual,
+        DataAgentPlannerExplanation expected)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual.PlannerName, Is.EqualTo(expected.PlannerName));
+            Assert.That(actual.Dataset, Is.EqualTo(expected.Dataset));
+            Assert.That(actual.Intent, Is.EqualTo(expected.Intent));
+            Assert.That(actual.Confidence, Is.EqualTo(expected.Confidence));
+            Assert.That(actual.Signals, Is.EqualTo(expected.Signals));
+            Assert.That(actual.Reason, Is.EqualTo(expected.Reason));
         });
     }
 
