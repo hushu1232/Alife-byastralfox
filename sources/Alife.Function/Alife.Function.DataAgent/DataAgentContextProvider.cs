@@ -56,6 +56,8 @@ public static class DataAgentContextProvider
 
     static void AppendPlannerMetadata(StringBuilder builder, DataAgentPlannerExplanation explanation)
     {
+        ArgumentNullException.ThrowIfNull(explanation);
+
         builder.AppendLine($"planner={Sanitize(explanation.PlannerName)}");
         builder.AppendLine($"planner_confidence={Sanitize(explanation.Confidence)}");
         builder.AppendLine($"planner_reason={Sanitize(explanation.Reason)}");

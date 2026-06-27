@@ -28,7 +28,7 @@ public sealed class DataAgentService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
-        DataAgentQueryPlanEnvelope envelope = planner.Plan(new DataAgentQueryRequest(question, "developer", "zh-CN", false));
+        DataAgentQueryPlanEnvelope envelope = ValidateEnvelope(planner.Plan(new DataAgentQueryRequest(question, "developer", "zh-CN", false)));
         DataAgentQueryPlan plan = envelope.Plan;
         DataAgentPlannerExplanation explanation = envelope.Explanation;
         string queryPlanJson = JsonSerializer.Serialize(plan);
@@ -79,6 +79,26 @@ public sealed class DataAgentService
         string summary = $"DataAgent query rejected: {reason}";
         string context = DataAgentContextProvider.BuildRejected(question, plan.Dataset, reason, explanation);
         return new DataAgentAnswer(plan.Dataset, generatedSql, 0, summary, context, false, reason, explanation);
+    }
+
+    static DataAgentQueryPlanEnvelope ValidateEnvelope(DataAgentQueryPlanEnvelope envelope)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(envelope.Plan);
+        ArgumentNullException.ThrowIfNull(envelope.Explanation);
+
+        DataAgentPlannerExplanation explanation = envelope.Explanation;
+        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.PlannerName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Intent);
+        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Dataset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Confidence);
+        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Reason);
+        ArgumentNullException.ThrowIfNull(explanation.Signals);
+
+        foreach (string signal in explanation.Signals)
+            ArgumentException.ThrowIfNullOrWhiteSpace(signal);
+
+        return envelope;
     }
 }
 

@@ -83,8 +83,8 @@ public sealed class DataAgentContextProviderTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(context, Does.Contain("planner_reason=reason  with newline"));
-            Assert.That(context, Does.Contain("planner_signals=line  break"));
+            Assert.That(context, Does.Contain("planner_reason=reason with newline"));
+            Assert.That(context, Does.Contain("planner_signals=line break"));
             Assert.That(context, Does.Not.Contain("reason\r\nwith"));
             Assert.That(context, Does.Not.Contain("line\r\nbreak"));
         });

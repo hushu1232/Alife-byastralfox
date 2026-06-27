@@ -1,4 +1,5 @@
 using Alife.Function.DataAgent;
+using Microsoft.Data.Sqlite;
 
 namespace Alife.Test.DataAgent;
 
@@ -70,6 +71,26 @@ public sealed class DataAgentServicePlannerInjectionTests
         });
     }
 
+    [Test]
+    public void MalformedPlannerExplanationIsRejectedBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+        DropDocumentIndexTable(databasePath);
+
+        DataAgentQueryPlan plan = new(
+            "document_index",
+            "forced_document_lookup",
+            ["path", "title", "summary"],
+            [new DataAgentFilter("tags", "contains", "dataagent")],
+            [],
+            20);
+        DataAgentService service = new(databasePath, new MalformedExplanationPlanner(plan));
+
+        Assert.Throws<ArgumentNullException>(() => service.Answer("force malformed explanation"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
     static string CreateDatabasePath()
     {
         string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "dataagent-service-planner-tests");
@@ -78,6 +99,20 @@ public sealed class DataAgentServicePlannerInjectionTests
         DataAgentSchemaInitializer.Initialize(databasePath);
         DataAgentFixtureImporter.Import(databasePath);
         return databasePath;
+    }
+
+    static void DropDocumentIndexTable(string databasePath)
+    {
+        SqliteConnectionStringBuilder builder = new()
+        {
+            DataSource = databasePath
+        };
+
+        using SqliteConnection connection = new(builder.ToString());
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DROP TABLE document_index";
+        command.ExecuteNonQuery();
     }
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
@@ -93,6 +128,22 @@ public sealed class DataAgentServicePlannerInjectionTests
                     "low",
                     ["injected-test"],
                     "test planner returned fixed query plan"));
+        }
+    }
+
+    sealed class MalformedExplanationPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(MalformedExplanationPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "high",
+                    null!,
+                    "malformed explanation"));
         }
     }
 }
