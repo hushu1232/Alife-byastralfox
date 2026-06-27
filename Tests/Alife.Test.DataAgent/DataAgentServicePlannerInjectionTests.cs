@@ -72,7 +72,7 @@ public sealed class DataAgentServicePlannerInjectionTests
     }
 
     [Test]
-    public void MalformedPlannerExplanationIsRejectedBeforeQueryAudit()
+    public void MalformedPlannerExplanationThrowsBeforeQueryAudit()
     {
         string databasePath = CreateDatabasePath();
         DropDocumentIndexTable(databasePath);
@@ -87,6 +87,25 @@ public sealed class DataAgentServicePlannerInjectionTests
         DataAgentService service = new(databasePath, new MalformedExplanationPlanner(plan));
 
         Assert.Throws<ArgumentNullException>(() => service.Answer("force malformed explanation"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
+    [Test]
+    public void MismatchedPlannerExplanationThrowsBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+
+        DataAgentQueryPlan plan = new(
+            "engineering_gate",
+            "readiness_status",
+            ["name", "status", "detail"],
+            [],
+            [],
+            20);
+        DataAgentService service = new(databasePath, new MismatchedExplanationPlanner(plan));
+
+        Assert.Throws<ArgumentException>(() => service.Answer("force mismatched explanation"));
 
         Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
     }
@@ -144,6 +163,26 @@ public sealed class DataAgentServicePlannerInjectionTests
                     "high",
                     null!,
                     "malformed explanation"));
+        }
+    }
+
+    sealed class MismatchedExplanationPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            string mismatchedDataset = string.Equals(plan.Dataset, "engineering_gate", StringComparison.Ordinal)
+                ? "document_index"
+                : "engineering_gate";
+
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(MismatchedExplanationPlanner),
+                    "different_intent",
+                    mismatchedDataset,
+                    "high",
+                    ["mismatch-test"],
+                    "mismatched explanation"));
         }
     }
 }

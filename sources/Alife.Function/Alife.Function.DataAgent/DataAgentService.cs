@@ -98,6 +98,12 @@ public sealed class DataAgentService
         foreach (string signal in explanation.Signals)
             ArgumentException.ThrowIfNullOrWhiteSpace(signal);
 
+        if (string.Equals(explanation.Dataset, envelope.Plan.Dataset, StringComparison.Ordinal) == false)
+            throw new ArgumentException("Planner explanation dataset must match the query plan dataset.", nameof(envelope));
+
+        if (string.Equals(explanation.Intent, envelope.Plan.Intent, StringComparison.Ordinal) == false)
+            throw new ArgumentException("Planner explanation intent must match the query plan intent.", nameof(envelope));
+
         return envelope;
     }
 }
