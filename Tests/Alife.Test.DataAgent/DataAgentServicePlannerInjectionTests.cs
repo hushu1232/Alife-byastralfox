@@ -24,6 +24,7 @@ public sealed class DataAgentServicePlannerInjectionTests
             Assert.That(answer.Validated, Is.True);
             Assert.That(answer.Dataset, Is.EqualTo("document_index"));
             Assert.That(answer.Summary, Does.Contain("DataAgent NL2SQL Design"));
+            Assert.That(answer.PlannerExplanation.PlannerName, Is.EqualTo("FixedPlanner"));
         });
     }
 
@@ -62,6 +63,7 @@ public sealed class DataAgentServicePlannerInjectionTests
             Assert.That(answer.Validated, Is.False);
             Assert.That(answer.RejectedReason, Does.Contain("unsupported_operator:starts_with"));
             Assert.That(answer.Context, Does.Contain("sql_status=rejected"));
+            Assert.That(answer.Context, Does.Contain("planner=FixedPlanner"));
             Assert.That(audit.Validated, Is.False);
             Assert.That(audit.Dataset, Is.EqualTo("engineering_gate"));
             Assert.That(audit.RejectedReason, Does.Contain("unsupported_operator:starts_with"));
@@ -80,6 +82,17 @@ public sealed class DataAgentServicePlannerInjectionTests
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {
-        public DataAgentQueryPlan Plan(DataAgentQueryRequest request) => plan;
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(FixedPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "low",
+                    ["injected-test"],
+                    "test planner returned fixed query plan"));
+        }
     }
 }
