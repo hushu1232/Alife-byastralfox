@@ -20,7 +20,7 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentFixtureImporter.Import(databasePath);
 
         DataAgentService service = new(databasePath);
-        XmlHandler xmlHandler = new XmlHandler(new DataAgentToolHandler(service));
+        XmlHandler xmlHandler = new XmlHandler(new DataAgentToolHandler(service, Poke));
         functionService.RegisterHandlerWithoutDocument(xmlHandler);
 
         Prompt($"""

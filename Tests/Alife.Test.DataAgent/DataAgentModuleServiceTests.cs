@@ -27,7 +27,7 @@ public sealed class DataAgentModuleServiceTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(source, Does.Contain("new DataAgentToolHandler(service)"));
+            Assert.That(source, Does.Contain("new DataAgentToolHandler(service, Poke)"));
             Assert.That(source, Does.Contain("new XmlHandler"));
             Assert.That(source, Does.Contain("RegisterHandlerWithoutDocument(xmlHandler)"));
         });
