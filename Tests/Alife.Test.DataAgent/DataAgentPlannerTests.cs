@@ -25,6 +25,11 @@ public sealed class DataAgentPlannerTests
             Assert.That(envelope.Plan.Filters[0].Operator, Is.EqualTo("contains"));
             Assert.That(envelope.Plan.Filters[0].Value, Is.EqualTo("Tts"));
         });
+        AssertExplanation(
+            envelope,
+            "high",
+            ["readiness", "tts", "vision"],
+            "question mentions QChat TTS or vision readiness");
     }
 
     [Test]
@@ -44,6 +49,11 @@ public sealed class DataAgentPlannerTests
             Assert.That(envelope.Plan.Intent, Is.EqualTo("find_runtime_readiness_required_evidence"));
             Assert.That(envelope.Plan.Limit, Is.EqualTo(10));
         });
+        AssertExplanation(
+            envelope,
+            "high",
+            ["runtime", "readiness", "required"],
+            "question mentions runtime readiness required evidence");
     }
 
     [Test]
@@ -57,19 +67,11 @@ public sealed class DataAgentPlannerTests
             "en-US",
             false));
 
-        Assert.Multiple(() =>
-        {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("engineering_gate"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_runtime_readiness_required_evidence"));
-            Assert.That(envelope.Explanation.PlannerName, Is.EqualTo(nameof(DeterministicDataAgentQueryPlanner)));
-            Assert.That(envelope.Explanation.Dataset, Is.EqualTo(envelope.Plan.Dataset));
-            Assert.That(envelope.Explanation.Intent, Is.EqualTo(envelope.Plan.Intent));
-            Assert.That(envelope.Explanation.Confidence, Is.EqualTo("high"));
-            Assert.That(envelope.Explanation.Signals, Does.Contain("runtime"));
-            Assert.That(envelope.Explanation.Signals, Does.Contain("readiness"));
-            Assert.That(envelope.Explanation.Signals, Does.Contain("required"));
-            Assert.That(envelope.Explanation.Reason, Does.Contain("runtime readiness"));
-        });
+        AssertExplanation(
+            envelope,
+            "high",
+            ["runtime", "readiness", "required"],
+            "question mentions runtime readiness required evidence");
     }
 
     [Test]
@@ -92,6 +94,11 @@ public sealed class DataAgentPlannerTests
             Assert.That(envelope.Plan.OrderBy[0].Direction, Is.EqualTo("desc"));
             Assert.That(envelope.Plan.Limit, Is.EqualTo(1));
         });
+        AssertExplanation(
+            envelope,
+            "high",
+            ["test", "result"],
+            "question asks for latest test results");
     }
 
     [Test]
@@ -114,6 +121,11 @@ public sealed class DataAgentPlannerTests
             Assert.That(envelope.Plan.Filters[0].Operator, Is.EqualTo("contains"));
             Assert.That(envelope.Plan.Filters[0].Value, Is.EqualTo("dataagent"));
         });
+        AssertExplanation(
+            envelope,
+            "high",
+            ["dataagent", "nl2sql", "document"],
+            "question asks for DataAgent or NL2SQL documentation");
     }
 
     [Test]
@@ -139,6 +151,11 @@ public sealed class DataAgentPlannerTests
             Assert.That(envelope.Plan.Filters[1].Operator, Is.EqualTo("!="));
             Assert.That(envelope.Plan.Filters[1].Value, Is.EqualTo("passed"));
         });
+        AssertExplanation(
+            envelope,
+            "low",
+            ["fallback"],
+            "fallback to missing required engineering gates");
     }
 
     [Test]
@@ -152,14 +169,11 @@ public sealed class DataAgentPlannerTests
             "en-US",
             false));
 
-        Assert.Multiple(() =>
-        {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("engineering_gate"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_missing_required_gates"));
-            Assert.That(envelope.Explanation.Confidence, Is.EqualTo("low"));
-            Assert.That(envelope.Explanation.Signals, Does.Contain("fallback"));
-            Assert.That(envelope.Explanation.Reason, Does.Contain("fallback"));
-        });
+        AssertExplanation(
+            envelope,
+            "low",
+            ["fallback"],
+            "fallback to missing required engineering gates");
     }
 
     [Test]
@@ -191,6 +205,24 @@ public sealed class DataAgentPlannerTests
             Assert.That(analystPlan.OrderBy.Select(order => (order.Field, order.Direction)), Is.EqualTo(
                 developerPlan.OrderBy.Select(order => (order.Field, order.Direction))));
             Assert.That(analystPlan.Limit, Is.EqualTo(developerPlan.Limit));
+            Assert.That(analystEnvelope.Explanation, Is.EqualTo(developerEnvelope.Explanation));
+        });
+    }
+
+    static void AssertExplanation(
+        DataAgentQueryPlanEnvelope envelope,
+        string confidence,
+        string[] signals,
+        string reason)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(envelope.Explanation.PlannerName, Is.EqualTo(nameof(DeterministicDataAgentQueryPlanner)));
+            Assert.That(envelope.Explanation.Dataset, Is.EqualTo(envelope.Plan.Dataset));
+            Assert.That(envelope.Explanation.Intent, Is.EqualTo(envelope.Plan.Intent));
+            Assert.That(envelope.Explanation.Confidence, Is.EqualTo(confidence));
+            Assert.That(envelope.Explanation.Signals, Is.EqualTo(signals));
+            Assert.That(envelope.Explanation.Reason, Is.EqualTo(reason));
         });
     }
 }
