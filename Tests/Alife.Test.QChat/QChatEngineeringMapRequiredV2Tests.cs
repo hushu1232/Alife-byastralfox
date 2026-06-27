@@ -14,6 +14,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "Semantic settle window contract tests",
         "Voice warmup contract tests",
         "XiaYu self-state machine",
+        "Persona intensity prompt formatter",
         "Persona frame prompt",
         "XiaYu private state prompt",
         "Semantic window summary prompt"

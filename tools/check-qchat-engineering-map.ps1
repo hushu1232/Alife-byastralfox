@@ -64,7 +64,7 @@ Add-Check -Group "Loop" -Name "XiaYu self-state machine" -Path "sources/Alife.Fu
 Add-Check -Group "Loop" -Name "Owner event dispatcher" -Path "sources/Alife.Function/Alife.Function.QChat/QChatOwnerEventDispatcher.cs" -Patterns @("QChatOwnerEventDispatcher", "FlushAsync")
 
 Add-Check -Group "Prompt" -Name "Stable persona prompt registration" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("RegisterStablePersonaPromptIfNeeded")
-Add-Check -Group "Prompt" -Name "Persona intensity prompt formatter" -Path "sources/Alife.Function/Alife.Function.QChat/QChatAggressionBoundaryPolicy.cs" -Patterns @("QChatPersonaIntensityPromptFormatter", "persona_intensity") -Required $false
+Add-Check -Group "Prompt" -Name "Persona intensity prompt formatter" -Path "sources/Alife.Function/Alife.Function.QChat/QChatAggressionBoundaryPolicy.cs" -Patterns @("QChatPersonaIntensityPromptFormatter", "persona_intensity")
 Add-Check -Group "Prompt" -Name "Persona frame prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("FormatPersonaFramePrompt", "[qchat persona frame]")
 Add-Check -Group "Prompt" -Name "Conversation cognition prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatConversationCognition.cs" -Patterns @("BuildInternalPrompt")
 Add-Check -Group "Prompt" -Name "Address prompt" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("BuildAddressPrompt")
