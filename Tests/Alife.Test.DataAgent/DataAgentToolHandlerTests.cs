@@ -40,6 +40,23 @@ public sealed class DataAgentToolHandlerTests
     }
 
     [Test]
+    public void QueryPublishesContextWhenRuntimeCallbackIsProvided()
+    {
+        List<string> published = [];
+        DataAgentToolHandler handler = new(new DataAgentService(CreateDatabasePath()), published.Add);
+
+        string context = handler.Query("Which documents describe DataAgent NL2SQL?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(published, Has.Count.EqualTo(1));
+            Assert.That(published[0], Is.EqualTo(context));
+            Assert.That(published[0], Does.Contain("[data_agent_context]"));
+            Assert.That(published[0], Does.Contain("dataset=document_index"));
+        });
+    }
+
+    [Test]
     public void QueryMethodIsRegisteredAsDataAgentXmlFunction()
     {
         MethodInfo method = typeof(DataAgentToolHandler).GetMethod(nameof(DataAgentToolHandler.Query))!;
