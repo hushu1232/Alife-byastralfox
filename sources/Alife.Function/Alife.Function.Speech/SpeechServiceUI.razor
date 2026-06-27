@@ -1,0 +1,21 @@
+@namespace Alife.Function.Speech
+@using AntDesign
+@using Alife.Framework
+@inherits ModuleUIBase<SpeechService>
+
+<div style="background: #fafafa; padding: 24px; border-radius: 12px; border: 1px solid #f0f0f0;">
+    <Card Size="CardSize.Small" Title="语音合成 (TTS)" Style="border-radius: 8px;">
+        <Flex Direction="FlexDirection.Vertical" Align="@FlexAlign.Center" Style="padding: 12px 0;">
+            <div style="margin-bottom: 16px;">
+                @if (Module?.IsSpeaking == true)
+                {
+                    <Badge Status="BadgeStatus.Processing" Color="@("green")" Text="正在播放语音..."/>
+                }
+                else
+                {
+                    <Badge Status="BadgeStatus.Default" Text="待机"/>
+                }
+            </div>
+        </Flex>
+    </Card>
+</div>

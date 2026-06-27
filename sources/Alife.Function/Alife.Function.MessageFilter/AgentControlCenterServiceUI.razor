@@ -1,0 +1,1810 @@
+@namespace Alife.Function.Agent
+@inherits Alife.Framework.ModuleUIBase<AgentControlCenterService>
+@using Alife.Framework
+@using AntDesign
+
+<div class="agent-control-shell">
+    @if (snapshot == null)
+    {
+        <Alert Type="AlertType.Warning"
+               ShowIcon="true"
+               Message="Agent control center is waiting for the runtime module instance." />
+    }
+    else
+    {
+        <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+            <Card Size="CardSize.Small" Class="agent-control-card">
+                <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                    <div>
+                        <Title Level="4" Style="margin: 0;">AstralFox Agent Control</Title>
+                        <Text Type="TextElementType.Secondary">
+                            Configuration, runtime state, tasks, audit, commands, errors, and proposals.
+                        </Text>
+                    </div>
+                    <Space>
+                        <SpaceItem>
+                            <Badge Status="@GetRuntimeBadgeStatus()" Text="@GetRuntimeText()" />
+                        </SpaceItem>
+                        <SpaceItem>
+                            <Button Type="@ButtonType.Primary"
+                                    Icon="@IconType.Outline.Reload"
+                                    OnClick="Refresh">
+                                Refresh
+                            </Button>
+                        </SpaceItem>
+                    </Space>
+                </Flex>
+            </Card>
+
+            <GridRow Gutter="16">
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Runtime</Text>
+                        <div class="metric-value">@GetRuntimeText()</div>
+                        <div class="metric-caption">@snapshot.AgentState.PendingPokeCount pending / @snapshot.AgentState.ChatHistoryCount history</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Last error</Text>
+                        <div class="metric-value compact">@Truncate(snapshot.AgentState.LastError ?? "none", 36)</div>
+                        <div class="metric-caption">@snapshot.IssueReport.RuntimeErrors.Count runtime errors</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Task</Text>
+                        <div class="metric-value compact">@GetTaskText()</div>
+                        <div class="metric-caption">latest tracked task</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="agent-control-card metric-card">
+                        <Text Type="TextElementType.Secondary">Attention</Text>
+                        <div class="metric-value">@snapshot.AttentionSummary.OwnerConfirmationRequiredCount confirm</div>
+                        <div class="metric-caption">@snapshot.AttentionSummary.AutonomousLowRiskActivityCount autonomous low-risk</div>
+                    </Card>
+                </GridCol>
+            </GridRow>
+
+            <GridRow Gutter="16">
+                <GridCol Xs="24" Lg="15">
+                    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+                        @if (snapshot.NotificationSummary.ShouldNotifyOwner)
+                        {
+                            <Card Size="CardSize.Small" Title="Owner notifications" Class="agent-control-card">
+                                <div class="audit-list compact-list">
+                                    @foreach (AgentControlCenterNotification notification in snapshot.NotificationSummary.Items)
+                                    {
+                                        <div class="notification-line">
+                                            <Tag Color="@GetRiskColor(notification.RiskLevel)">@notification.Kind</Tag>
+                                            <span>@Truncate(notification.Message, 140)</span>
+                                        </div>
+                                    }
+                                </div>
+                            </Card>
+                        }
+
+                        <Card Size="CardSize.Small" Title="Attention summary" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="12">
+                                    <Text Strong>Needs your confirmation</Text>
+                                    @if (snapshot.AttentionSummary.OwnerConfirmationItems.Count == 0)
+                                    {
+                                        <div class="empty-state">No owner confirmation needed</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="audit-list compact-list">
+                                            @foreach (string item in snapshot.AttentionSummary.OwnerConfirmationItems.Take(6))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@("orange")">Review</Tag>
+                                                    <span>@Truncate(item, 96)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </GridCol>
+                                <GridCol Xs="24" Md="12">
+                                    <Text Strong>Autonomous low-risk work</Text>
+                                    @if (snapshot.AttentionSummary.AutonomousLowRiskItems.Count == 0)
+                                    {
+                                        <div class="empty-state">No recent autonomous low-risk work</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="audit-list compact-list">
+                                            @foreach (string item in snapshot.AttentionSummary.AutonomousLowRiskItems.Take(6))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@("green")">Done</Tag>
+                                                    <span>@Truncate(item, 96)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </GridCol>
+                            </GridRow>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Agent self-check" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="12">
+                                    <Text Type="TextElementType.Secondary">Owner review</Text>
+                                    <div class="metric-value compact">@snapshot.SelfCheck.OwnerReviewCount</div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="12">
+                                    <Text Type="TextElementType.Secondary">Autonomous</Text>
+                                    <div class="metric-value compact">@snapshot.SelfCheck.AutonomousRecommendationCount</div>
+                                </GridCol>
+                            </GridRow>
+                            <Divider Style="margin: 10px 0;" />
+                            @if (snapshot.SelfCheck.Items.Count == 0)
+                            {
+                                <div class="empty-state compact">No self-check items</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list compact-list">
+                                    @foreach (AgentControlCenterSelfCheckItem item in snapshot.SelfCheck.Items.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@item.Category</Text>
+                                                <div class="muted">@Truncate(item.Summary, 120)</div>
+                                                <div class="muted">Action: @Truncate(item.RecommendedAction, 140)</div>
+                                                @if (string.IsNullOrWhiteSpace(item.ActionId) == false)
+                                                {
+                                                    <div class="confirmation-text">agent_self_check_apply actionId="@item.ActionId"</div>
+                                                }
+                                            </div>
+                                            <Space>
+                                                <SpaceItem>
+                                                    <Tag Color="@GetRiskColor(item.RiskLevel)">@item.RiskLevel</Tag>
+                                                </SpaceItem>
+                                                <SpaceItem>
+                                                    <Tag Color="@GetSelfCheckHandlingColor(item.CanAgentHandleAutonomously)">
+                                                        @(item.CanAgentHandleAutonomously ? "Agent" : "Owner")
+                                                    </Tag>
+                                                </SpaceItem>
+                                            </Space>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Health triage" Class="agent-control-card">
+                            <GridRow Gutter="12">
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("blue")">Waiting</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.Waiting.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("orange")">External</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.ExternalEnvironment.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("red")">Fault</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.Faults.Count</div>
+                                    </div>
+                                </GridCol>
+                                <GridCol Xs="24" Md="6">
+                                    <div class="triage-metric">
+                                        <Tag Color="@("gold")">Owner</Tag>
+                                        <div class="metric-value compact">@snapshot.HealthTriage.OwnerConfirmationItems.Count</div>
+                                    </div>
+                                </GridCol>
+                            </GridRow>
+                            <Divider Style="margin: 10px 0;" />
+                            @if (snapshot.HealthTriage.Waiting.Count == 0
+                                 && snapshot.HealthTriage.ExternalEnvironment.Count == 0
+                                 && snapshot.HealthTriage.Faults.Count == 0
+                                 && snapshot.HealthTriage.OwnerConfirmationItems.Count == 0)
+                            {
+                                <div class="empty-state compact">No triage items</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list compact-list">
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.Faults.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("red")">Fault</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.ExternalEnvironment.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("orange")">External</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (ModuleHealth health in snapshot.HealthTriage.Waiting.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("blue")">Waiting</Tag>
+                                            <span>@health.Name: @Truncate(health.Summary, 96)</span>
+                                        </div>
+                                    }
+                                    @foreach (string item in snapshot.HealthTriage.OwnerConfirmationItems.Take(3))
+                                    {
+                                        <div class="summary-line">
+                                            <Tag Color="@("gold")">Owner</Tag>
+                                            <span>@Truncate(item, 96)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Active task queue" Class="agent-control-card">
+                            @if (snapshot.ActiveTasks.Count == 0)
+                            {
+                                <div class="empty-state">No active tasks</div>
+                            }
+                            else
+                            {
+                                <Flex Direction="FlexDirection.Vertical" Gap="@("10")">
+                                    @foreach (AgentTaskState task in snapshot.ActiveTasks.Take(4))
+                                    {
+                                        <div class="task-queue-item">
+                                            <div>
+                                                <Text Strong>@task.Goal</Text>
+                                                <Tag Color="@GetTaskColor(task.Status)" Style="margin-left: 8px;">
+                                                    @task.Status
+                                                </Tag>
+                                            </div>
+                                            <Space>
+                                                <SpaceItem>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Disabled="@(task.Status != AgentTaskStatus.Planned)"
+                                                            OnClick="@(() => StartTask(task.Id))">
+                                                        Start
+                                                    </Button>
+                                                </SpaceItem>
+                                                <SpaceItem>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Type="@ButtonType.Primary"
+                                                            Disabled="@(task.Status is AgentTaskStatus.Completed or AgentTaskStatus.Failed or AgentTaskStatus.Cancelled)"
+                                                            OnClick="@(() => CompleteTask(task.Id))">
+                                                        Complete
+                                                    </Button>
+                                                </SpaceItem>
+                                            </Space>
+                                            @if (task.Steps.Count > 0)
+                                            {
+                                                <div class="step-list">
+                                                    @foreach (string step in task.Steps)
+                                                    {
+                                                        <div class="step-line">@step</div>
+                                                    }
+                                                </div>
+                                            }
+                                            <div class="event-list">
+                                                @foreach (AgentTaskEvent taskEvent in task.Events.TakeLast(3))
+                                                {
+                                                    <div class="event-line">
+                                                        <span class="event-time">@taskEvent.Timestamp.ToString("HH:mm:ss")</span>
+                                                        <span>@taskEvent.Kind</span>
+                                                        <span>@taskEvent.Actor</span>
+                                                        <span>@taskEvent.Detail</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </Flex>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Workspace proposals" Class="agent-control-card">
+                            @if (snapshot.PendingWorkspaceProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending workspace proposals</div>
+                            }
+                            else
+                            {
+                                <Collapse>
+                                    @foreach (AgentWorkspacePatchProposal proposal in snapshot.PendingWorkspaceProposals.Take(6))
+                                    {
+                                        <Panel Key="@proposal.Id" Header="@($"{proposal.RelativePath}  {proposal.Id[..Math.Min(8, proposal.Id.Length)]}")">
+                                            <Text Type="TextElementType.Secondary">Created: @proposal.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</Text>
+                                            <pre class="proposal-preview">@proposal.Preview</pre>
+                                            <div class="confirmation-box">
+                                                <Text Type="TextElementType.Secondary">Owner confirmation command</Text>
+                                                <div class="confirmation-text">@AgentControlCenterService.BuildWorkspaceProposalConfirmationText(proposal)</div>
+                                            </div>
+                                        </Panel>
+                                    }
+                                </Collapse>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Maintenance proposals" Class="agent-control-card">
+                            <Space Style="margin-bottom: 10px;">
+                                <SpaceItem>
+                                    <Button Size="@ButtonSize.Small"
+                                            Type="@ButtonType.Primary"
+                                            OnClick="@InspectMaintenance">
+                                        Inspect
+                                    </Button>
+                                </SpaceItem>
+                            </Space>
+                            @if (string.IsNullOrWhiteSpace(lastMaintenanceActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastMaintenanceActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
+                            @if (snapshot.PendingMaintenanceProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending maintenance proposals</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentMaintenanceProposal proposal in snapshot.PendingMaintenanceProposals.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@proposal.Title</Text>
+                                                <div class="muted">@Truncate(proposal.Evidence, 140)</div>
+                                                @foreach (AgentMaintenanceRepairEvidence evidence in GetMaintenanceEvidence(proposal.Id).Take(2))
+                                                {
+                                                    <div class="maintenance-evidence">
+                                                        <div>Workspace: @Truncate(evidence.WorkspaceProposalId, 48)</div>
+                                                        <div>Verification: @Truncate(evidence.VerificationCommandId, 48) / @Truncate(evidence.VerificationSummary, 72)</div>
+                                                    </div>
+                                                }
+                                                <div class="confirmation-text">Use workspace_propose_replace first; execute workspace_apply_proposal only after owner confirmation.</div>
+                                                <Button Size="@ButtonSize.Small"
+                                                        Style="margin-top: 8px;"
+                                                        OnClick="@(() => ArchiveMaintenance(proposal.Id))">
+                                                    Archive
+                                                </Button>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(proposal.RiskLevel)">
+                                                @proposal.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Proactive suggestions" Class="agent-control-card">
+                            @if (string.IsNullOrWhiteSpace(lastProactiveActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastProactiveActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
+                            @if (snapshot.PendingProactiveSuggestions.Count == 0)
+                            {
+                                <div class="empty-state">No pending proactive suggestions</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentProactivePendingSuggestion pending in snapshot.PendingProactiveSuggestions.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@pending.Suggestion.Kind</Text>
+                                                <div class="muted">@Truncate(pending.Suggestion.Reason, 100)</div>
+                                                @if (string.IsNullOrWhiteSpace(pending.Suggestion.DraftText) == false)
+                                                {
+                                                    <div class="muted">Draft: @Truncate(pending.Suggestion.DraftText, 120)</div>
+                                                }
+                                                <div class="confirmation-text">@AgentProactiveBehaviorService.BuildPendingSuggestionConfirmationText(pending)</div>
+                                                <Space Style="margin-top: 8px;">
+                                                    <SpaceItem>
+                                                        <Button Size="@ButtonSize.Small"
+                                                                Type="@ButtonType.Primary"
+                                                                OnClick="@(() => ConfirmProactive(pending.Id))">
+                                                            Confirm
+                                                        </Button>
+                                                    </SpaceItem>
+                                                    <SpaceItem>
+                                                        <Button Size="@ButtonSize.Small"
+                                                                OnClick="@(() => DismissProactive(pending.Id))">
+                                                            Dismiss
+                                                        </Button>
+                                                    </SpaceItem>
+                                                </Space>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(pending.Suggestion.RiskLevel)">
+                                                @pending.Suggestion.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Proactive history" Class="agent-control-card">
+                            <Space Style="margin-bottom: 10px;">
+                                <SpaceItem>
+                                    <Button Size="@ButtonSize.Small"
+                                            OnClick="@CleanupProactive">
+                                        Cleanup
+                                    </Button>
+                                </SpaceItem>
+                            </Space>
+                            @if (snapshot.CompletedProactiveSuggestions.Count == 0)
+                            {
+                                <div class="empty-state">No completed proactive suggestions</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentProactivePendingSuggestion completed in snapshot.CompletedProactiveSuggestions.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@completed.Suggestion.Kind</Text>
+                                                <div class="muted">@Truncate(completed.Suggestion.Reason, 100)</div>
+                                                @if (string.IsNullOrWhiteSpace(completed.Suggestion.DraftText) == false)
+                                                {
+                                                    <div class="muted">Draft: @Truncate(completed.Suggestion.DraftText, 120)</div>
+                                                }
+                                                @if (completed.Status == AgentProactivePendingStatus.Confirmed)
+                                                {
+                                                    <div class="confirmation-text">@AgentProactiveBehaviorService.BuildConfirmedSuggestionExecutionText(completed)</div>
+                                                    <Button Size="@ButtonSize.Small"
+                                                            Type="@ButtonType.Primary"
+                                                            Style="margin-top: 8px;"
+                                                            OnClick="@(() => ExecuteProactive(completed.Id))">
+                                                        Execute
+                                                    </Button>
+                                                }
+                                            </div>
+                                            <Tag Color="@GetProactiveStatusColor(completed.Status)">
+                                                @completed.Status
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Configuration proposals" Class="agent-control-card">
+                            @if (snapshot.PendingConfigurationProposals.Count == 0)
+                            {
+                                <div class="empty-state">No pending configuration proposals</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentConfigurationChangeProposal proposal in snapshot.PendingConfigurationProposals.Take(6))
+                                    {
+                                        <div class="audit-line">
+                                            <div>
+                                                <Text Strong>@proposal.Key</Text>
+                                                <div class="muted">@Truncate(proposal.Reason, 80)</div>
+                                                <div class="muted">Requested: @Truncate(proposal.RequestedValue, 80)</div>
+                                                <div class="confirmation-text">@AgentControlCenterService.BuildConfigurationProposalConfirmationText(proposal)</div>
+                                            </div>
+                                            <Tag Color="@GetRiskColor(proposal.RiskLevel)">
+                                                @proposal.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+                    </Flex>
+                </GridCol>
+
+                <GridCol Xs="24" Lg="9">
+                    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+                        <Card Size="CardSize.Small" Title="Self-configuration" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div class="command-line">
+                                    <span>Agent self-config</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration)">
+                                        @GetEnabledText(snapshot.Configuration.AllowAgentLowRiskSelfConfiguration)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Mention wakeup</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowMentionWakeup)">
+                                        @GetEnabledText(snapshot.Configuration.AllowMentionWakeup)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Passive group listening</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowPassiveGroupListening)">
+                                        @GetEnabledText(snapshot.Configuration.AllowPassiveGroupListening)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Proactive chat</span>
+                                    <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowProactiveChat)">
+                                        @GetEnabledText(snapshot.Configuration.AllowProactiveChat)
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <div>
+                                        <span>Proactive mode</span>
+                                        <div class="muted">@AgentControlCenterService.GetProactiveChatModeDescription(snapshot.Configuration.ProactiveChatIntensity)</div>
+                                    </div>
+                                    <Tag Color="@GetProactiveChatModeColor(snapshot.Configuration.ProactiveChatIntensity)">
+                                        @AgentControlCenterService.GetProactiveChatModeName(snapshot.Configuration.ProactiveChatIntensity)
+                                        (@snapshot.Configuration.ProactiveChatIntensity)
+                                    </Tag>
+                                </div>
+                            <div class="command-line">
+                                <span>Auto maintenance</span>
+                                <Tag Color="@GetEnabledColor(snapshot.Configuration.AllowAutomaticMaintenanceInspection)">
+                                    @GetEnabledText(snapshot.Configuration.AllowAutomaticMaintenanceInspection)
+                                </Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Maintenance interval</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaintenanceInspectionIntervalMinutes min</Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Duplicate cooldown</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaintenanceDuplicateCooldownMinutes min</Tag>
+                            </div>
+                            <div class="command-line">
+                                <span>Self-config limit</span>
+                                <Tag Color="@("blue")">@snapshot.Configuration.MaxSelfConfigChangesPerHour / hour</Tag>
+                            </div>
+                        </Flex>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Security gateway" Class="agent-control-card">
+                            <div class="command-list">
+                                @foreach (AgentExecutionGatewayDecision decision in snapshot.SecurityGatewayPreview)
+                                {
+                                    <div class="command-line">
+                                        <div>
+                                            <Text Strong>@decision.Action</Text>
+                                            <div class="muted">@Truncate(decision.Reason, 96)</div>
+                                        </div>
+                                        <Tag Color="@GetExecutionStatusColor(decision.Status)">
+                                            @decision.Status
+                                        </Tag>
+                                    </div>
+                                }
+                            </div>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Runtime visibility" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("10")">
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Latency</Text>
+                                        <div class="muted">
+                                            first content @FormatMs(snapshot.RuntimeVisibility.ChatLatency.LastFirstContentLatencyMs),
+                                            duration @FormatMs(snapshot.RuntimeVisibility.ChatLatency.LastChatDurationMs)
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("blue")">stream</Tag>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Memory consistency</Text>
+                                        <div class="muted">
+                                            @snapshot.MemoryConsistency.TotalIssues issue(s):
+                                            @snapshot.MemoryConsistency.MissingArchiveFiles archives /
+                                            @snapshot.MemoryConsistency.MissingIndexRecords indexes /
+                                            @snapshot.MemoryConsistency.ContentMismatches content
+                                        </div>
+                                        <div class="muted">
+                                            repaired @snapshot.MemoryConsistency.RepairedArchiveFiles archives /
+                                            @snapshot.MemoryConsistency.RepairedIndexRecords indexes /
+                                            @snapshot.MemoryConsistency.RepairedContentMismatches content
+                                        </div>
+                                    </div>
+                                    <Space>
+                                        <SpaceItem>
+                                            <Tag Color="@GetMemoryConsistencyColor(snapshot.MemoryConsistency)">
+                                                @(snapshot.MemoryConsistency.HasIssues ? "repairable" : "ok")
+                                            </Tag>
+                                        </SpaceItem>
+                                        <SpaceItem>
+                                            <Button Size="@ButtonSize.Small"
+                                                    Disabled="@(!snapshot.MemoryConsistency.HasIssues)"
+                                                    OnClick="@RepairMemoryConsistency">
+                                                Repair
+                                            </Button>
+                                        </SpaceItem>
+                                    </Space>
+                                </div>
+
+                                <div>
+                                    <Text Strong>Streaming policies</Text>
+                                    <div class="policy-grid">
+                                        @foreach (AgentStreamingPolicyVisibility policy in snapshot.RuntimeVisibility.StreamingPolicies)
+                                        {
+                                            <div class="policy-line">
+                                                <span>@policy.Name</span>
+                                                <Tag Color="@("blue")">@policy.Mode</Tag>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Event pipeline</Text>
+                                        <div class="muted">
+                                            @snapshot.RuntimeVisibility.EventPipeline.MatcherCount matcher(s)
+                                            @if (snapshot.RuntimeVisibility.EventPipeline.Matchers.Count > 0)
+                                            {
+                                                <span>: @string.Join(", ", snapshot.RuntimeVisibility.EventPipeline.Matchers.Take(3).Select(matcher => matcher.Name))</span>
+                                            }
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("purple")">events</Tag>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Action gateway audit</Text>
+                                        <div class="muted">
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.SucceededCount succeeded /
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.BlockedCount blocked /
+                                            @snapshot.RuntimeVisibility.ActionGatewayAudit.FailedCount failed
+                                        </div>
+                                    </div>
+                                    <Tag Color="@("orange")">guard</Tag>
+                                </div>
+
+                                <div class="command-line">
+                                    <div>
+                                        <Text Strong>Self-check scheduler</Text>
+                                        <div class="muted">
+                                            last @FormatTime(snapshot.SelfCheckScheduler.LastCheckedAt),
+                                            next @FormatTime(snapshot.SelfCheckScheduler.NextCheckAt),
+                                            skip @snapshot.SelfCheckScheduler.LastSkipReason
+                                        </div>
+                                    </div>
+                                    <Tag Color="@GetSchedulerColor(snapshot.SelfCheckScheduler.LastSkipReason)">loop</Tag>
+                                </div>
+
+                                <div class="anti-spam-panel">
+                                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")">
+                                        <div>
+                                            <Text Strong>QQ group anti-spam</Text>
+                                            <div class="muted">
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupMessageCount group trigger(s),
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupBufferedCount dispatched,
+                                                @snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressedCount suppressed
+                                            </div>
+                                        </div>
+                                        <Tag Color="@GetAntiSpamColor(snapshot.RuntimeVisibility.QChat.AntiSpam)">
+                                            @GetAntiSpamStatusText(snapshot.RuntimeVisibility.QChat.AntiSpam)
+                                        </Tag>
+                                    </Flex>
+                                    <div class="anti-spam-grid">
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Low info</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentLowInformationSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Cooldown</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentCooldownSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Quiet</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentQuietSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Scope</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentScopeSuppressionCount</div>
+                                        </div>
+                                        <div class="anti-spam-metric">
+                                            <Text Type="TextElementType.Secondary">Media</Text>
+                                            <div>@snapshot.RuntimeVisibility.QChat.AntiSpam.RecentMediaChanceAllowedCount</div>
+                                        </div>
+                                    </div>
+                                    <div class="muted">
+                                        group scope @FormatAllowedGroups(snapshot.RuntimeVisibility.QChat.AntiSpam.AllowedGroupIds)
+                                    </div>
+                                    <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("8")" Style="margin-top: 10px;">
+                                        <div>
+                                            <Text Strong>Joined groups</Text>
+                                            <div class="muted">
+                                                @(qchatJoinedGroups?.Available == true
+                                                    ? $"{qchatJoinedGroups.Groups.Count} cached from OneBot"
+                                                    : "OneBot group list has not been loaded")
+                                            </div>
+                                        </div>
+                                        <Button Size="@ButtonSize.Small"
+                                                Icon="@IconType.Outline.Reload"
+                                                Disabled="@(Character == null || qchatJoinedGroupRefreshRunning)"
+                                                OnClick="RefreshJoinedQChatGroups">
+                                            Refresh joined groups
+                                        </Button>
+                                    </Flex>
+                                    @if (qchatJoinedGroups?.Groups.Count > 0)
+                                    {
+                                        <div class="joined-group-list">
+                                            @foreach (AgentQChatJoinedGroupVisibility group in qchatJoinedGroups.Groups)
+                                            {
+                                                <div class="joined-group-line">
+                                                    <div>
+                                                        <Text Strong>@group.GroupName</Text>
+                                                        <div class="muted">
+                                                            @group.GroupId · @group.MemberCount/@group.MaxMemberCount members
+                                                        </div>
+                                                    </div>
+                                                    <Space>
+                                                        <SpaceItem>
+                                                            <Tag Color="@(group.IsAllowed ? "green" : "default")">
+                                                                @(group.IsAllowed ? "allowed" : "outside")
+                                                            </Tag>
+                                                        </SpaceItem>
+                                                        <SpaceItem>
+                                                            <Button Size="@ButtonSize.Small"
+                                                                    Disabled="@(Character == null)"
+                                                                    OnClick="@(() => ToggleAllowedQChatGroup(group.GroupId, group.IsAllowed))">
+                                                                @(group.IsAllowed ? "Remove" : "Add")
+                                                            </Button>
+                                                        </SpaceItem>
+                                                    </Space>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else if (qchatJoinedGroups?.Available == true)
+                                    {
+                                        <div class="empty-state compact">No joined groups in cache</div>
+                                    }
+                                    <div class="qchat-policy-editor">
+                                        <div class="policy-field wide">
+                                            <Text Type="TextElementType.Secondary">Allowed groups</Text>
+                                            <Input @bind-Value="qchatPolicyAllowedGroups"
+                                                   Disabled="@(Character == null)"
+                                                   Placeholder="867165927,1072509877" />
+                                        </div>
+                                        <div class="policy-field">
+                                            <Text Type="TextElementType.Secondary">Mode</Text>
+                                            <select class="policy-select" @bind="qchatPolicyMode" disabled="@(Character == null)">
+                                                <option value="silent">silent</option>
+                                                <option value="mention-only">mention only</option>
+                                                <option value="balanced">balanced</option>
+                                                <option value="active">active</option>
+                                            </select>
+                                        </div>
+                                        <div class="policy-field">
+                                            <Text Type="TextElementType.Secondary">Cooldown</Text>
+                                            <AntDesign.InputNumber @bind-Value="qchatPolicyCooldownSeconds"
+                                                                    Min="0"
+                                                                    Max="600"
+                                                                    Disabled="@(Character == null)" />
+                                        </div>
+                                        <div class="policy-field wide">
+                                            <Text Type="TextElementType.Secondary">Media chance @qchatPolicyMediaChance.ToString("P0")</Text>
+                                            <input class="policy-slider"
+                                                   type="range"
+                                                   min="0"
+                                                   max="0.5"
+                                                   step="0.01"
+                                                   @bind="qchatPolicyMediaChance"
+                                                   @bind:event="oninput"
+                                                   disabled="@(Character == null)" />
+                                        </div>
+                                        <div class="policy-field wide">
+                                            <Checkbox Checked="@qchatPolicyAllowMentionOutsideGroups"
+                                                      CheckedChanged="@((bool value) => qchatPolicyAllowMentionOutsideGroups = value)"
+                                                      Disabled="@(Character == null)">
+                                                Allow mentions outside scope
+                                            </Checkbox>
+                                            <div class="muted">off = only allowed groups can wake/reply, owner still wins</div>
+                                        </div>
+                                        <div class="policy-field action">
+                                            <Button Type="@ButtonType.Primary"
+                                                    Size="@ButtonSize.Small"
+                                                    Disabled="@(Character == null)"
+                                                    OnClick="ApplyQChatPolicy">
+                                                Apply QQ policy
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    @if (string.IsNullOrWhiteSpace(lastQChatPolicyMessage) == false)
+                                    {
+                                        <Alert Type="AlertType.Info"
+                                               ShowIcon="true"
+                                               Message="@lastQChatPolicyMessage"
+                                               Style="margin-top: 8px;" />
+                                    }
+                                    <div class="muted">
+                                        passive cooldown @FormatSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.PassiveCooldownSeconds),
+                                        elapsed @FormatNullableSeconds(snapshot.RuntimeVisibility.QChat.AntiSpam.LastPassiveElapsedSeconds),
+                                        proactive probability @FormatProbability(snapshot.RuntimeVisibility.QChat.AntiSpam.ObservedProactiveProbability),
+                                        media chance @FormatProbability(snapshot.RuntimeVisibility.QChat.AntiSpam.ObservedMediaOnlyReplyProbability)
+                                    </div>
+                                    <div class="muted">
+                                        quiet mode @(snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeEnabled ? "enabled" : "disabled")
+                                        @if (string.IsNullOrWhiteSpace(snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeReason) == false)
+                                        {
+                                            <span> / @snapshot.RuntimeVisibility.QChat.AntiSpam.QuietModeReason</span>
+                                        }
+                                    </div>
+                                    @if (string.IsNullOrWhiteSpace(snapshot.RuntimeVisibility.QChat.AntiSpam.LastSuppressionReason) == false)
+                                    {
+                                        <div class="muted">
+                                            last suppression: @snapshot.RuntimeVisibility.QChat.AntiSpam.LastSuppressionReason
+                                            @if (snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons.Count > 0)
+                                            {
+                                                <span> / reasons: @string.Join(", ", snapshot.RuntimeVisibility.QChat.AntiSpam.RecentSuppressionReasons)</span>
+                                            }
+                                        </div>
+                                    }
+                                    @if (snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupDecisions.Count > 0)
+                                    {
+                                        <div class="decision-list">
+                                            @foreach (AgentQChatGroupDecisionVisibility decision in snapshot.RuntimeVisibility.QChat.AntiSpam.RecentGroupDecisions)
+                                            {
+                                                <div class="decision-line">
+                                                    <div>
+                                                        <Text Strong>@decision.Timestamp?.ToString("HH:mm:ss")</Text>
+                                                        <span class="muted"> group @decision.GroupId / user @decision.UserId</span>
+                                                        <div class="muted">
+                                                            @decision.Reason,
+                                                            probability @FormatProbability(decision.SocialAttentionProbability),
+                                                            cooldown @FormatNullableIntSeconds(decision.CooldownRemainingSeconds),
+                                                            active window @FormatNullableIntSeconds(decision.ActiveSoftAttentionRemainingSeconds)
+                                                        </div>
+                                                        @if (string.IsNullOrWhiteSpace(decision.RawMessage) == false)
+                                                        {
+                                                            <div class="decision-message">@Truncate(decision.RawMessage, 96)</div>
+                                                        }
+                                                    </div>
+                                                    <Space>
+                                                        <SpaceItem>
+                                                            <Tag Color="@GetDecisionColor(decision.Decision)">@decision.Decision</Tag>
+                                                        </SpaceItem>
+                                                        @if (decision.IsMentionedOrWoken)
+                                                        {
+                                                            <SpaceItem>
+                                                                <Tag Color="@("blue")">wake</Tag>
+                                                            </SpaceItem>
+                                                        }
+                                                        @if (decision.IsGroupEnabled)
+                                                        {
+                                                            <SpaceItem>
+                                                                <Tag Color="@("green")">active</Tag>
+                                                            </SpaceItem>
+                                                        }
+                                                    </Space>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (snapshot.RuntimeVisibility.BackgroundTasks.Count == 0)
+                                {
+                                    <div class="empty-state compact">No recent background task results</div>
+                                }
+                                else
+                                {
+                                    <div class="audit-list compact-list">
+                                        @foreach (AgentBackgroundTaskResult result in snapshot.RuntimeVisibility.BackgroundTasks.Take(3))
+                                        {
+                                            <div class="summary-line">
+                                                <Tag Color="@(result.Status == AgentBackgroundTaskStatus.Completed ? "green" : "red")">@result.Status</Tag>
+                                                <span>@result.TaskName: @Truncate(result.Error ?? result.ResultText, 90)</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                @if (snapshot.RuntimeVisibility.RecentRunSessions.Count > 0)
+                                {
+                                    <div>
+                                        <Text Strong>Recent run sessions</Text>
+                                        <div class="audit-list compact-list">
+                                            @foreach (AgentRunSnapshot run in snapshot.RuntimeVisibility.RecentRunSessions.Take(3))
+                                            {
+                                                <div class="summary-line">
+                                                    <Tag Color="@GetRunStatusColor(run.Status)">@run.Status</Tag>
+                                                    <span>@run.SourceEventType: @run.ToolSteps.Count tool step(s)</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </Flex>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Runtime cleanup" Class="agent-control-card">
+                            @if (string.IsNullOrWhiteSpace(lastCleanupActionMessage) == false)
+                            {
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="@lastCleanupActionMessage"
+                                       Style="margin-bottom: 10px;" />
+                            }
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div class="command-line">
+                                    <span>Terminal tasks</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.StaleTerminalTaskCount)">
+                                        @snapshot.CleanupPreview.StaleTerminalTaskCount
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>Maintenance proposals</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.StaleMaintenanceProposalCount)">
+                                        @snapshot.CleanupPreview.StaleMaintenanceProposalCount
+                                    </Tag>
+                                </div>
+                                <div class="command-line">
+                                    <span>QChat diagnostics</span>
+                                    <Tag Color="@GetCleanupColor(snapshot.CleanupPreview.ExcessDiagnosticLineCount)">
+                                        @snapshot.CleanupPreview.ExcessDiagnosticLineCount lines
+                                    </Tag>
+                                </div>
+                                <Button Type="@ButtonType.Primary"
+                                        Disabled="@(!snapshot.CleanupPreview.HasWork)"
+                                        OnClick="@CleanupRuntimeNoise">
+                                    Cleanup
+                                </Button>
+                                @if (snapshot.CleanupPreview.RequiresOwnerConfirmation)
+                                {
+                                    <div class="confirmation-text">Local owner-confirmed cleanup: archive stale maintenance, remove old terminal tasks, trim diagnostic noise.</div>
+                                }
+                            </Flex>
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Allowed commands" Class="agent-control-card">
+                            @if (snapshot.AllowedCommands.Count == 0)
+                            {
+                                <div class="empty-state">No commands configured</div>
+                            }
+                            else
+                            {
+                                <div class="command-list">
+                                    @foreach (AgentCommandDefinition command in snapshot.AllowedCommands)
+                                    {
+                                        <div class="command-line">
+                                            <div>
+                                                <Text Strong>@command.Id</Text>
+                                                <div class="muted">@command.Description</div>
+                                            </div>
+                                            <Tag Color="@("blue")">@command.Timeout.TotalSeconds.ToString("0")s</Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Recent audit" Class="agent-control-card">
+                            @if (snapshot.RecentAuditEntries.Count == 0)
+                            {
+                                <div class="empty-state">No audit entries</div>
+                            }
+                            else
+                            {
+                                <div class="audit-list">
+                                    @foreach (AgentAuditLogEntry entry in snapshot.RecentAuditEntries.TakeLast(8).Reverse())
+                                    {
+                                        <div class="audit-line @(entry.Succeeded ? "" : "failed")">
+                                            <div>
+                                                <Text Strong>@entry.Action</Text>
+                                                <div class="muted">@Truncate(entry.Detail, 80)</div>
+                                                @if (string.IsNullOrWhiteSpace(entry.Error) == false)
+                                                {
+                                                    <div class="audit-error">@entry.Error</div>
+                                                }
+                                            </div>
+                                            <Tag Color="@GetRiskColor(entry.RiskLevel)">
+                                                @entry.RiskLevel
+                                            </Tag>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </Card>
+
+                        <Card Size="CardSize.Small" Title="Issue report" Class="agent-control-card">
+                            <Flex Direction="FlexDirection.Vertical" Gap="@("8")">
+                                <div>
+                                    <Text Type="TextElementType.Secondary">Last error</Text>
+                                    <div class="issue-text">@Truncate(snapshot.IssueReport.LastError ?? "none", 100)</div>
+                                </div>
+                                <Divider Style="margin: 4px 0;" />
+                                <div>
+                                    <Text Type="TextElementType.Secondary">Unhealthy modules</Text>
+                                    @if (snapshot.IssueReport.UnhealthyModules.Count == 0)
+                                    {
+                                        <div class="muted">none</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (ModuleHealth health in snapshot.IssueReport.UnhealthyModules.Take(5))
+                                        {
+                                            <div class="issue-text">[@health.Status] @health.Name: @health.Summary</div>
+                                        }
+                                    }
+                                </div>
+                            </Flex>
+                        </Card>
+                    </Flex>
+                </GridCol>
+            </GridRow>
+        </Flex>
+    }
+</div>
+
+@code {
+    AgentControlCenterSnapshot? snapshot;
+    string? lastProactiveActionMessage;
+    string? lastMaintenanceActionMessage;
+    string? lastCleanupActionMessage;
+    string? lastQChatPolicyMessage;
+    string qchatPolicyAllowedGroups = "";
+    string qchatPolicyMode = "balanced";
+    int qchatPolicyCooldownSeconds = 120;
+    double qchatPolicyMediaChance = 0.12;
+    bool qchatPolicyAllowMentionOutsideGroups = true;
+    string? qchatPolicyLoadedRoot;
+    AgentQChatJoinedGroupSnapshot? qchatJoinedGroups;
+    bool qchatJoinedGroupRefreshRunning;
+
+    int HighRiskAuditCount => snapshot?.RecentAuditEntries.Count(entry => entry.RiskLevel == AgentAuditRiskLevel.High) ?? 0;
+
+    protected override void OnParametersSet()
+    {
+        RefreshSnapshot();
+    }
+
+    void Refresh()
+    {
+        RefreshSnapshot();
+        StateHasChanged();
+    }
+
+    void StartTask(string taskId)
+    {
+        if (Module == null)
+            return;
+
+        Module.StartTaskFromControlCenter(taskId);
+        Refresh();
+    }
+
+    void CompleteTask(string taskId)
+    {
+        if (Module == null)
+            return;
+
+        Module.CompleteTaskFromControlCenter(taskId);
+        Refresh();
+    }
+
+    Task ConfirmProactive(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactivePendingSuggestion pending = Module.ConfirmProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = $"Confirmed {pending.Suggestion.Kind}.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task DismissProactive(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactivePendingSuggestion pending = Module.DismissProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = $"Dismissed {pending.Suggestion.Kind}.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    async Task ExecuteProactive(string id)
+    {
+        if (Module == null)
+            return;
+
+        AgentProactiveExternalExecutionResult result = await Module.ExecuteProactiveSuggestionFromControlCenter(id);
+        lastProactiveActionMessage = result.Message;
+        Refresh();
+    }
+
+    Task CleanupProactive()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentProactiveCleanupResult result = Module.CleanupProactiveSuggestionsFromControlCenter(
+            TimeSpan.FromHours(24),
+            TimeSpan.FromDays(30));
+        lastProactiveActionMessage =
+            $"Cleanup expired {result.ExpiredPendingCount} pending and removed {result.RemovedCompletedCount} completed.";
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task ArchiveMaintenance(string id)
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentMaintenanceArchiveResult result = Module.ArchiveMaintenanceProposalFromControlCenter(
+            id,
+            "archived from Agent Control Center");
+        lastMaintenanceActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task InspectMaintenance()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        int cooldownMinutes = Module.Configuration?.MaintenanceDuplicateCooldownMinutes ?? 120;
+        AgentMaintenanceInspectionResult result = Module.InspectMaintenanceFromControlCenter(
+            runtime,
+            TimeSpan.FromMinutes(Math.Max(1, cooldownMinutes)));
+        lastMaintenanceActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task CleanupRuntimeNoise()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        AgentControlCenterCleanupResult result = Module.CleanupRuntimeNoiseFromControlCenter(
+            maxTerminalTaskAge: TimeSpan.FromDays(30),
+            maxPendingMaintenanceAge: TimeSpan.FromDays(14),
+            maxDiagnosticLines: 500);
+        lastCleanupActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task ApplyQChatPolicy()
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "QChat policy requires an active character.";
+            return Task.CompletedTask;
+        }
+
+        AgentQChatPolicyChangeResult result = Module.ApplyQChatPolicyFromControlCenter(
+            Character.StorageKey,
+            qchatPolicyAllowedGroups,
+            qchatPolicyMode,
+            qchatPolicyCooldownSeconds,
+            (float)qchatPolicyMediaChance,
+            "agent-control-ui",
+            qchatPolicyAllowMentionOutsideGroups);
+        lastQChatPolicyMessage = result.Message;
+        if (result.Snapshot != null)
+            LoadQChatPolicyEditor(result.Snapshot);
+        RefreshQChatJoinedGroupsCache();
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    async Task RefreshJoinedQChatGroups()
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "Joined group refresh requires an active character.";
+            return;
+        }
+
+        qchatJoinedGroupRefreshRunning = true;
+        try
+        {
+            qchatJoinedGroups = await Module.RefreshJoinedQChatGroupsFromControlCenter(Character.StorageKey);
+            lastQChatPolicyMessage = qchatJoinedGroups.Message;
+            RefreshQChatPolicyEditor();
+        }
+        finally
+        {
+            qchatJoinedGroupRefreshRunning = false;
+        }
+    }
+
+    Task ToggleAllowedQChatGroup(long groupId, bool isAllowed)
+    {
+        if (Module == null || Character == null)
+        {
+            lastQChatPolicyMessage = "QChat group scope editing requires an active character.";
+            return Task.CompletedTask;
+        }
+
+        AgentQChatPolicyChangeResult result = isAllowed
+            ? Module.RemoveAllowedQChatGroupFromControlCenter(Character.StorageKey, groupId, "agent-control-ui")
+            : Module.AddAllowedQChatGroupFromControlCenter(Character.StorageKey, groupId, "agent-control-ui");
+        lastQChatPolicyMessage = result.Message;
+        if (result.Snapshot != null)
+            LoadQChatPolicyEditor(result.Snapshot);
+        RefreshQChatJoinedGroupsCache();
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    Task RepairMemoryConsistency()
+    {
+        if (Module == null)
+            return Task.CompletedTask;
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        AgentControlCenterSelfCheckActionResult result = Module.ApplySelfCheckAction(
+            "repair-memory-storage-consistency",
+            runtime,
+            "agent-control-ui");
+        lastMaintenanceActionMessage = result.Message;
+        Refresh();
+        return Task.CompletedTask;
+    }
+
+    void RefreshSnapshot()
+    {
+        if (Module == null)
+        {
+            snapshot = null;
+            return;
+        }
+
+        ChatRuntimeState runtime = ChatActivity?.ChatBot.GetRuntimeState()
+                                   ?? new ChatRuntimeState(false, 0, 0, null, []);
+        string characterName = Character?.Name ?? "Agent";
+        AgentControlCenterSelfCheckLoopResult? automaticSelfCheck = Module.TryAutomaticSelfCheck(
+            runtime,
+            characterName,
+            "agent:control-center");
+        if (automaticSelfCheck?.MaintenanceInspection is { Created: true } or { Proposal: not null })
+            lastMaintenanceActionMessage = $"Automatic inspection: {automaticSelfCheck.MaintenanceInspection.Message}";
+        else if (automaticSelfCheck?.WakeRecommended == true)
+            lastMaintenanceActionMessage = "Automatic self-check found new items for agent attention.";
+
+        snapshot = Module.BuildSnapshot(runtime, characterName);
+        RefreshQChatPolicyEditor();
+        RefreshQChatJoinedGroupsCache();
+    }
+
+    void RefreshQChatPolicyEditor()
+    {
+        if (Module == null || Character == null)
+            return;
+
+        AgentQChatPolicySnapshot? policy = Module.GetQChatPolicySnapshotFromControlCenter(Character.StorageKey);
+        if (policy == null)
+            return;
+
+        LoadQChatPolicyEditor(policy);
+    }
+
+    void RefreshQChatJoinedGroupsCache()
+    {
+        if (Module == null || Character == null)
+            return;
+
+        qchatJoinedGroups = Module.GetJoinedQChatGroupsFromControlCenter(Character.StorageKey);
+    }
+
+    void LoadQChatPolicyEditor(AgentQChatPolicySnapshot policy)
+    {
+        qchatPolicyLoadedRoot = policy.CharacterRoot;
+        qchatPolicyAllowedGroups = policy.AllowedGroupIds;
+        qchatPolicyMode = string.IsNullOrWhiteSpace(policy.Mode) ? "balanced" : policy.Mode;
+        qchatPolicyCooldownSeconds = policy.PassiveCooldownSeconds;
+        qchatPolicyMediaChance = Math.Round(policy.MediaOnlyReplyProbability, 2);
+        qchatPolicyAllowMentionOutsideGroups = policy.AllowMentionOutsideAllowedGroups;
+    }
+
+    BadgeStatus GetRuntimeBadgeStatus()
+    {
+        if (snapshot == null)
+            return BadgeStatus.Default;
+        return snapshot.AgentState.LastError == null
+            ? (snapshot.AgentState.IsChatting ? BadgeStatus.Processing : BadgeStatus.Success)
+            : BadgeStatus.Error;
+    }
+
+    string GetRuntimeText()
+    {
+        if (snapshot == null)
+            return "unavailable";
+        if (snapshot.AgentState.LastError != null)
+            return "attention";
+        return snapshot.AgentState.IsChatting ? "chatting" : "idle";
+    }
+
+    string GetTaskText()
+    {
+        if (snapshot?.LatestTask == null)
+            return "none";
+        return $"{snapshot.LatestTask.Status}";
+    }
+
+    IReadOnlyList<AgentMaintenanceRepairEvidence> GetMaintenanceEvidence(string proposalId)
+    {
+        if (snapshot == null)
+            return [];
+
+        return snapshot.MaintenanceRepairEvidenceByProposalId.TryGetValue(proposalId, out IReadOnlyList<AgentMaintenanceRepairEvidence>? evidence)
+            ? evidence
+            : [];
+    }
+
+    static string GetTaskColor(AgentTaskStatus status) => status switch
+    {
+        AgentTaskStatus.Running => "processing",
+        AgentTaskStatus.Completed => "success",
+        AgentTaskStatus.Failed => "error",
+        AgentTaskStatus.Cancelled => "default",
+        _ => "blue"
+    };
+
+    static string GetRiskColor(AgentAuditRiskLevel riskLevel) => riskLevel switch
+    {
+        AgentAuditRiskLevel.High => "red",
+        AgentAuditRiskLevel.Medium => "orange",
+        _ => "green"
+    };
+
+    static string GetMemoryConsistencyColor(MemoryConsistencySnapshot memoryConsistency)
+    {
+        return memoryConsistency.HasIssues ? "orange" : "green";
+    }
+
+    static string GetAntiSpamColor(AgentQChatAntiSpamVisibility antiSpam)
+    {
+        if (antiSpam.QuietModeEnabled)
+            return "blue";
+        if (antiSpam.RecentSuppressedCount > 0)
+            return "orange";
+        return "green";
+    }
+
+    static string GetAntiSpamStatusText(AgentQChatAntiSpamVisibility antiSpam)
+    {
+        if (antiSpam.QuietModeEnabled)
+            return "quiet";
+        if (antiSpam.RecentSuppressedCount > 0)
+            return "filtering";
+        return "normal";
+    }
+
+    static string FormatSeconds(int seconds)
+    {
+        return seconds <= 0 ? "none" : $"{seconds}s";
+    }
+
+    static string FormatNullableSeconds(double? seconds)
+    {
+        return seconds == null ? "unknown" : $"{seconds.Value:0.#}s";
+    }
+
+    static string FormatNullableIntSeconds(int? seconds)
+    {
+        return seconds == null ? "unknown" : FormatSeconds(seconds.Value);
+    }
+
+    static string FormatAllowedGroups(string allowedGroupIds)
+    {
+        return string.IsNullOrWhiteSpace(allowedGroupIds)
+            ? "all groups"
+            : allowedGroupIds;
+    }
+
+    static string FormatProbability(double? probability)
+    {
+        return probability == null ? "unknown" : $"{probability.Value:P0}";
+    }
+
+    static string GetDecisionColor(string decision)
+    {
+        return decision.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+            ? "green"
+            : decision.Equals("suppressed", StringComparison.OrdinalIgnoreCase)
+                ? "orange"
+                : "default";
+    }
+
+    static string GetEnabledColor(bool enabled) => enabled ? "green" : "default";
+
+    static string GetEnabledText(bool enabled) => enabled ? "enabled" : "disabled";
+
+    static string GetProactiveChatModeColor(int intensity) => intensity switch
+    {
+        <= 0 => "default",
+        1 => "cyan",
+        2 => "blue",
+        <= 4 => "orange",
+        _ => "red"
+    };
+
+    static string GetSelfCheckHandlingColor(bool canAgentHandleAutonomously) =>
+        canAgentHandleAutonomously ? "green" : "orange";
+
+    static string GetProactiveStatusColor(AgentProactivePendingStatus status) => status switch
+    {
+        AgentProactivePendingStatus.Confirmed => "blue",
+        AgentProactivePendingStatus.Executed => "green",
+        AgentProactivePendingStatus.Dismissed => "default",
+        _ => "orange"
+    };
+
+    static string GetExecutionStatusColor(AgentExecutionDecisionStatus status) => status switch
+    {
+        AgentExecutionDecisionStatus.AllowedAutomatically => "green",
+        AgentExecutionDecisionStatus.OwnerConfirmationRequired => "orange",
+        _ => "red"
+    };
+
+    static string FormatMs(long? milliseconds)
+    {
+        return milliseconds == null ? "n/a" : $"{milliseconds.Value} ms";
+    }
+
+    static string FormatTime(DateTimeOffset? timestamp)
+    {
+        return timestamp?.ToString("HH:mm:ss") ?? "n/a";
+    }
+
+    static string GetSchedulerColor(string reason) => reason switch
+    {
+        "none" => "green",
+        "interval" => "blue",
+        "chatting" => "orange",
+        "disabled" => "default",
+        _ => "default"
+    };
+
+    static string GetRunStatusColor(AgentRunStatus status) => status switch
+    {
+        AgentRunStatus.Completed => "green",
+        AgentRunStatus.Failed => "red",
+        AgentRunStatus.Cancelled => "default",
+        _ => "blue"
+    };
+
+    static string GetCleanupColor(int count) => count > 0 ? "orange" : "green";
+
+    static string Truncate(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "none";
+        string trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength] + "...";
+    }
+}
+
+<style>
+    .agent-control-shell {
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    .agent-control-card {
+        border-radius: 8px;
+    }
+
+    .metric-card {
+        min-height: 92px;
+    }
+
+    .triage-metric {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        min-height: 76px;
+    }
+
+    .anti-spam-panel {
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        overflow-wrap: anywhere;
+    }
+
+    .anti-spam-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 8px 0;
+    }
+
+    .anti-spam-metric {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 7px 8px;
+        min-height: 58px;
+    }
+
+    .anti-spam-metric div {
+        font-size: 18px;
+        font-weight: 650;
+        color: #1f2937;
+    }
+
+    .qchat-policy-editor {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+        align-items: end;
+    }
+
+    .joined-group-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .joined-group-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 8px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        overflow-wrap: anywhere;
+    }
+
+    .policy-field {
+        min-width: 0;
+    }
+
+    .policy-field.wide {
+        grid-column: span 2;
+    }
+
+    .policy-field.action {
+        display: flex;
+        align-items: end;
+    }
+
+    .policy-select,
+    .policy-slider {
+        width: 100%;
+    }
+
+    .policy-select {
+        height: 32px;
+        border: 1px solid #d9d9d9;
+        border-radius: 6px;
+        background: #fff;
+        padding: 0 8px;
+    }
+
+    .decision-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .decision-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        overflow-wrap: anywhere;
+    }
+
+    .decision-message {
+        margin-top: 4px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        color: #334155;
+        overflow-wrap: anywhere;
+    }
+
+    .metric-value {
+        font-size: 20px;
+        font-weight: 650;
+        margin-top: 6px;
+        overflow-wrap: anywhere;
+    }
+
+    .metric-value.compact {
+        font-size: 16px;
+    }
+
+    .metric-caption,
+    .muted {
+        color: #64748b;
+        font-size: 12px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .step-list,
+    .event-list,
+    .command-list,
+    .audit-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .step-line,
+    .event-line,
+    .command-line,
+    .audit-line {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .event-line,
+    .command-line,
+    .audit-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+    }
+
+    .event-time {
+        color: #64748b;
+        font-family: Consolas, monospace;
+        min-width: 54px;
+    }
+
+    .audit-line.failed {
+        border-color: #ffccc7;
+        background: #fff2f0;
+    }
+
+    .compact-list {
+        margin-top: 8px;
+    }
+
+    .summary-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .notification-line {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        border: 1px solid #ffe7ba;
+        border-radius: 6px;
+        background: #fffaf0;
+        padding: 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .policy-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .policy-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 7px 8px;
+        overflow-wrap: anywhere;
+    }
+
+    .task-queue-item {
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        overflow-wrap: anywhere;
+    }
+
+    .task-queue-item + .task-queue-item {
+        margin-top: 8px;
+    }
+
+    .audit-error {
+        color: #cf1322;
+        font-size: 12px;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .proposal-preview {
+        margin-top: 10px;
+        max-height: 240px;
+        overflow: auto;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        background: #fff;
+        padding: 10px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+    }
+
+    .confirmation-box {
+        margin-top: 10px;
+        border: 1px solid #d9d9d9;
+        border-radius: 6px;
+        background: #fafafa;
+        padding: 10px;
+    }
+
+    .confirmation-text {
+        margin-top: 6px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+        color: #1d4ed8;
+    }
+
+    .maintenance-evidence {
+        margin-top: 8px;
+        border-left: 3px solid #1677ff;
+        padding: 6px 8px;
+        background: #f0f7ff;
+        color: #334155;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+    }
+
+    .issue-text {
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+    }
+
+    .empty-state {
+        color: #64748b;
+        padding: 24px;
+        text-align: center;
+        border: 1px dashed #d9d9d9;
+        border-radius: 6px;
+        background: #fff;
+    }
+
+    .empty-state.compact {
+        padding: 12px;
+        font-size: 12px;
+    }
+</style>

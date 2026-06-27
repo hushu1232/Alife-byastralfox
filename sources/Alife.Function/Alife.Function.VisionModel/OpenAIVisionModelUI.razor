@@ -1,0 +1,22 @@
+@namespace Alife.Function.Vision
+@using AntDesign
+@inherits Alife.Framework.ModuleUIBase<OpenAIVisionModel, OpenAIVisionModelConfig>
+
+<Form TModel="OpenAIVisionModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+    <FormItem>
+        <Text Type="TextElementType.Secondary">
+            该模型是基于 OpenAI 标准的的在线模型，只要是兼容该标准的在线API，都可以通过配置接入。
+        </Text>
+    </FormItem>
+
+    <FormItem Label="API Base URL">
+        <Input @bind-Value="@Configuration.BaseUrl"/>
+    </FormItem>
+    <FormItem Label="模型名称">
+        <Input @bind-Value="@Configuration.ModelName"/>
+    </FormItem>
+    <FormItem Label="API Key">
+        <InputPassword @bind-Value="@Configuration.ApiKey"/>
+    </FormItem>
+</Form>
+

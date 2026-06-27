@@ -1,0 +1,20 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.ModuleUIBase<EdgeSpeechModel, EdgeSpeechModelConfig>
+@using AntDesign
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">Edge语音合成配置</Title>
+    
+    <Text Type="TextElementType.Secondary" Style="display: block; margin-bottom: 16px;">
+        基于Edge-TTS的在线语音合成引擎。
+    </Text>
+
+    <Form TModel="EdgeSpeechModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+        <FormItem Label="语音音色">
+            <Input @bind-Value="@Configuration.VoiceTone" placeholder="例如: zh-CN-XiaoyiNeural"/>
+            <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                支持的音色包括：zh-CN-XiaoyiNeural、zh-CN-YunxiNeural、zh-CN-XiaoxiaoNeural等。
+            </Text>
+        </FormItem>
+    </Form>
+</div>

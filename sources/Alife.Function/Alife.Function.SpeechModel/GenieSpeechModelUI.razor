@@ -1,0 +1,52 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.ModuleUIBase<GenieSpeechModel, GenieSpeechModelConfig>
+@using AntDesign
+@using System.IO
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">Genie语音合成配置</Title>
+
+    @if (!Directory.Exists(GenieSpeechModel.RuntimeFolder))
+    {
+        <Alert Type="@AlertType.Warning"
+               Message="Runtime/Genie 目录不存在"
+               Description="提示：使用默认支持的角色，启动时会自动下载"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+    else
+    {
+        <Alert Type="@AlertType.Success"
+               Message="Runtime 环境已就绪"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+
+    <Divider>角色设置</Divider>
+
+    <Form TModel="GenieSpeechModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+        <GridRow Gutter="16">
+            <GridCol Span="16">
+                <FormItem Label="角色名称">
+                    <Input @bind-Value="Configuration!.CharacterName"
+                           Placeholder="feibi / mika / thirtyseven / 自定义角色名"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="8">
+                <FormItem Label="语言">
+                    <RadioGroup @bind-Value="Configuration!.Language">
+                        <Radio RadioButton Value="@("Chinese")">中文</Radio>
+                        <Radio RadioButton Value="@("Japanese")">日语</Radio>
+                        <Radio RadioButton Value="@("English")">英语</Radio>
+                    </RadioGroup>
+                </FormItem>
+            </GridCol>
+        </GridRow>
+    </Form>
+
+    <Alert Type="@AlertType.Info"
+           Message="使用说明"
+           Description="（注意！该模型依赖 Microsoft Visual C++ 14.0 环境，使用前需安装）内置角色：feibi（中文）、mika（日语）、thirtyseven（英语）。自定义角色：将模型放入 Runtime/Genie/CharacterModels/v2ProPlus/你的角色名/，需包含 tts_models/、prompt_wav.json、prompt_wav/。"
+           ShowIcon="true"
+           Style="margin-top: 8px;"/>
+</div>

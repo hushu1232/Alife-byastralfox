@@ -1,0 +1,13 @@
+@namespace Alife.Function.Vision
+@using AntDesign
+@inherits Alife.Framework.ModuleUIBase<QwenVisionModel, QwenVisionModelConfig>
+
+<Form TModel="QwenVisionModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+    <FormItem>
+        <Text Type="TextElementType.Secondary">
+            该模型是基于 Qwen2.5-VL-3B 的本地模型，首次启用需要下载环境，时间会非常久，能从半小时到两小时之间。
+        </Text>
+    </FormItem>
+</Form>
+
+@DefaultUI

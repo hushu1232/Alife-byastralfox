@@ -1,0 +1,37 @@
+@namespace Alife.Function.Vision
+@using AntDesign
+@inherits Alife.Framework.ModuleUIBase<MiniCPMVisionModel, MiniCPMVisionModelConfig>
+
+<Form TModel="MiniCPMVisionModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+    <FormItem>
+        <Text Type="TextElementType.Secondary">
+            该模型是基于 MiniCPM-V 4.6 (1.3B) 的本地视觉分析引擎，相比 Qwen2.5-VL-3B 更轻量、速度更快、显存占用更低。
+            首次启用需要从 ModelScope 下载模型，1.3B 参数量通常下载耗时约 5-15 分钟。
+        </Text>
+    </FormItem>
+
+    <FormItem Label="模型加载精度">
+        <RadioGroup @bind-Value="@Configuration.Precision">
+            <Radio Value="@("int4")">int4（NF4量化，省显存，默认）</Radio>
+            <Radio Value="@("bf16")">bf16（半精度，更快更准）</Radio>
+        </RadioGroup>
+        <Text Type="TextElementType.Secondary" Style="font-size: 12px; margin-top: 4px; display: block;">
+            int4 模式：NF4量化，显存占用约 0.8GB，适合显存有限的场景。
+            bf16 模式：半精度加载，推理速度更快、输出质量更高，需要约 2.5GB 显存。
+            切换精度后需重启模块生效。
+        </Text>
+    </FormItem>
+
+    <FormItem Label="视觉Token降采样模式">
+        <RadioGroup @bind-Value="@Configuration.DownsampleMode">
+            <Radio Value="@("16x")">16x（更快，默认）</Radio>
+            <Radio Value="@("4x")">4x（保留更多细节）</Radio>
+        </RadioGroup>
+        <Text Type="TextElementType.Secondary" Style="font-size: 12px; margin-top: 4px; display: block;">
+            16x 模式：视觉token压缩率高，推理速度快，适合常规任务。
+            4x 模式：保留更多视觉细节，适合密集OCR、小文字识别等高精度场景。
+        </Text>
+    </FormItem>
+</Form>
+
+@DefaultUI

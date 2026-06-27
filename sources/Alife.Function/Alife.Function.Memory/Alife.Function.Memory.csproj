@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+    <ItemGroup>
+        <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.3" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
+    </ItemGroup>
+</Project>

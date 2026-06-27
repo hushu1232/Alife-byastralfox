@@ -1,0 +1,157 @@
+using System;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using Alife.Platform;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+
+namespace Alife.Function.Browser;
+
+/// <summary>
+/// 在独立的 STA 线程中管理 WebView2，以支持后台执行浏览器任务。
+/// 浏览器窗口默认可见，用户可实时观察 AI 的浏览行为并手动介入。
+/// </summary>
+public class WebViewWorker : IDisposable
+{
+    public bool IsNavigating => isNavigating;
+    public bool IsLoaded => isLoaded;
+    public Exception? InitializationError => initializationError;
+    public Exception? ProcessFailureError => processFailureError;
+
+    public Task<T> AddFormTask<T>(Func<WebView2, Task<T>> action)
+    {
+        if (window == null)
+            throw new ObjectDisposedException(nameof(WebViewWorker));
+
+        TaskCompletionSource<T> tcs = new();
+
+        formTasks.Add(async () => {
+            try
+            {
+                if (webView == null)
+                    throw new ArgumentNullException(nameof(webView));
+                T result = await action(webView);
+                tcs.SetResult(result);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        return tcs.Task;
+    }
+
+    Window? window;
+    BrowserWindowContent? browserContent;
+    WebView2? webView;
+    readonly BlockingCollection<Func<Task>> formTasks = new();
+    readonly string? userDataFolderOverride;
+    bool isNavigating;
+    bool isLoaded;
+    Exception? initializationError;
+    Exception? processFailureError;
+
+    public WebViewWorker(string? userDataFolder = null)
+    {
+        userDataFolderOverride = userDataFolder;
+        var thread = new Thread(() => {
+            try
+            {
+                window = new UnclosableWindow {
+                    Title = "astralfox-alife Browser",
+                    Width = 1024,
+                    Height = 768,
+                    WindowState = WindowState.Minimized,
+                    ShowInTaskbar = true,
+                    ResizeMode = ResizeMode.CanResize,
+                };
+                browserContent = new BrowserWindowContent();
+                webView = browserContent.WebView;
+                window.Content = browserContent;
+                window.Loaded += OnWindowLoaded;
+                window.Closing += (_, _) => System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown();
+
+                window.Show();
+                System.Windows.Threading.Dispatcher.Run();
+            }
+            catch (Exception ex)
+            {
+                initializationError = ex;
+                AlifeTerminal.LogError(ex.ToString());
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+    }
+
+    public void Dispose()
+    {
+        formTasks.CompleteAdding();
+        if (window != null)
+            window.Dispatcher.Invoke(() => window.Close());
+    }
+
+    async void OnWindowLoaded(object? s, RoutedEventArgs e)
+    {
+        try
+        {
+            string userDataFolder = userDataFolderOverride ?? Path.Combine(AlifePath.RuntimeFolderPath, "WebView2Data");
+            if (!Directory.Exists(userDataFolder))
+                Directory.CreateDirectory(userDataFolder);
+            CoreWebView2EnvironmentOptions options = new(
+                "--disable-gpu --disable-gpu-compositing --disable-gpu-sandbox --disable-features=RendererCodeIntegrity --no-sandbox");
+            var env = await CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder, options: options);
+
+            await webView!.EnsureCoreWebView2Async(env);
+            webView.CoreWebView2.Settings.UserAgent =
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edge/122.0.0.0";
+            webView.CoreWebView2.NewWindowRequested += (_, ev) => {
+                ev.Handled = true;
+                webView.CoreWebView2.Navigate(ev.Uri);
+            };
+            webView.CoreWebView2.ProcessFailed += (_, ev) => {
+                string message =
+                    $"Browser WebView process failed: kind={ev.ProcessFailedKind}, reason={ev.Reason}, " +
+                    $"exitCode={ev.ExitCode}, description={ev.ProcessDescription}, source={ev.FailureSourceModulePath}";
+                processFailureError = new InvalidOperationException(message);
+                AlifeTerminal.LogError(message);
+            };
+            webView.CoreWebView2.NavigationStarting += (_, _) => {
+                isNavigating = true;
+                browserContent?.OnNavigationStateChanged();
+            };
+            webView.CoreWebView2.SourceChanged += (_, _) => browserContent?.OnNavigationStateChanged();
+            webView.CoreWebView2.NavigationCompleted += (_, _) => {
+                isNavigating = false;
+                browserContent?.OnNavigationStateChanged();
+            };
+            browserContent?.OnBrowserReady();
+
+            isLoaded = true;
+            await Task.Run(() => {
+                foreach (Func<Task> formTask in formTasks.GetConsumingEnumerable())
+                {
+                    try
+                    {
+                        Task task = window!.Dispatcher.Invoke(formTask);
+                        task.Wait();
+                    }
+                    catch (Exception ex)
+                    {
+                        AlifeTerminal.LogError(ex.ToString());
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            initializationError = ex;
+            AlifeTerminal.LogError(ex.ToString());
+        }
+    }
+}

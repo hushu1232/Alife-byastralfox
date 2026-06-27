@@ -1,0 +1,77 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.ModuleUIBase<SenseVoiceAuditoryModel, SenseVoiceAuditoryModelConfig>
+@using AntDesign
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">SenseVoice语音识别配置</Title>
+
+    @if (!SenseVoiceAuditoryModel.ModelsExists)
+    {
+        <Alert Type="AlertType.Warning"
+               Message="语音识别模型未下载"
+               Description="SenseVoice 和 VAD 模型尚未下载，首次使用时将自动从 ModelScope 下载。"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+    else
+    {
+        <Alert Type="AlertType.Success"
+               Message="模型环境已就绪"
+               ShowIcon="true"
+               Style="margin-bottom: 16px;"/>
+    }
+
+    <Form TModel="SenseVoiceAuditoryModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+        <Title Level="5" Style="margin-top: 16px;">识别参数</Title>
+        <GridRow Gutter="16">
+            <GridCol Span="12">
+                <FormItem Label="识别语言">
+                    <Select TItemValue="string" TItem="string" @bind-Value="@Configuration.Language" Style="width: 100%;">
+                        <SelectOption TItemValue="string" TItem="string" Value="@("auto")" Label="自动检测"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("zh")" Label="中文"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("en")" Label="英语"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("ja")" Label="日语"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("ko")" Label="韩语"/>
+                        <SelectOption TItemValue="string" TItem="string" Value="@("yue")" Label="粤语"/>
+                    </Select>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="逆文本正则化">
+                    <Switch @bind-Value="@Configuration.UseInverseTextNormalization"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="线程数">
+                    <InputNumber @bind-Value="@Configuration.NumThreads" Min="1" Max="8" Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+        </GridRow>
+
+        <Title Level="5" Style="margin-top: 16px;">语音检测 (VAD) 参数</Title>
+        <GridRow Gutter="16">
+            <GridCol Span="12">
+                <FormItem Label="VAD 阈值">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.VadThreshold" Min="@(0f)" Max="@(1f)" Step="@(0.05f)"
+                                 Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="最小静音时长 (秒)">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.VadMinSilenceDuration" Min="@(0.1f)" Max="@(3f)" Step="@(0.1f)"
+                                 Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+            <GridCol Span="12">
+                <FormItem Label="最小语音时长 (秒)">
+                    <InputNumber TValue="float" @bind-Value="@Configuration.VadMinSpeechDuration" Min="@(0.05f)" Max="@(2f)" Step="@(0.05f)"
+                                 Style="width: 100%;"/>
+                </FormItem>
+            </GridCol>
+        </GridRow>
+    </Form>
+
+    <Text Type="TextElementType.Secondary" Style="margin-top: 8px; display: block;">
+        SenseVoice 是阿里的多语言语音识别模型，支持中英日韩粤语。参数修改后需重启插件生效。
+    </Text>
+</div>

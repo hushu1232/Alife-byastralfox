@@ -1,0 +1,176 @@
+@namespace Alife.Function.Speech
+@inherits Alife.Framework.ModuleUIBase<GptSoVitsSpeechModel, GptSoVitsSpeechModelConfig>
+@using AntDesign
+@using System
+@using System.Net.Http
+@using System.Threading
+@implements IDisposable
+
+<div style="background: #fff; padding: 20px; border-radius: 8px;">
+    <Title Level="4" Style="margin-bottom: 24px;">GPT-SoVITS 语音克隆配置</Title>
+
+    <Alert Type="@AlertType.Info"
+           Message="本页只保存调用参数，不探测运行状态，也不会写入模型文件。"
+           Description="默认连接本机 GPT-SoVITS API：http://127.0.0.1:9880。模型本体可放在 D:\GPT-SoVITS，夏羽参考音频建议放在 D:\Alife\Runtime\TTS\voices\xiayu\ref.wav。"
+           ShowIcon="true"
+           Style="margin-bottom: 16px;" />
+
+    <Alert Type="@TtsReadinessAlertType"
+           Message="@TtsReadinessMessage"
+           Description="@TtsReadinessDescription"
+           ShowIcon="true"
+           Style="margin-bottom: 16px;" />
+
+    <Button Type="@ButtonType.Primary"
+            Icon="@IconType.Outline.Reload"
+            Loading="@isCheckingReadiness"
+            OnClick="CheckRuntimeReadiness"
+            Style="margin-bottom: 16px;">
+        Check runtime
+    </Button>
+
+    <Form TModel="GptSoVitsSpeechModelConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+        <GridRow Gutter="16">
+            <GridCol Xs="24" Md="12">
+                <FormItem Label="API 地址">
+                    <Input @bind-Value="@Configuration.ApiBaseUrl"
+                           Placeholder="http://127.0.0.1:9880" />
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                        本地 GPT-SoVITS HTTP API，默认端口通常是 http://127.0.0.1:9880。
+                    </Text>
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="12">
+                <FormItem Label="音色根目录">
+                    <Input @bind-Value="@Configuration.VoiceRootPath"
+                           Placeholder="D:\Alife\Runtime\TTS\voices\xiayu" />
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                        留空时使用 Alife Runtime 下的 TTS voice 目录；也可以指向 D:\GPT-SoVITS 中准备好的音色目录。
+                    </Text>
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="12">
+                <FormItem Label="参考音频">
+                    <Input @bind-Value="@Configuration.ReferenceAudioPath"
+                           Placeholder="D:\Alife\Runtime\TTS\voices\xiayu\ref.wav" />
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                        留空时默认读取音色根目录下的 ref.wav。
+                    </Text>
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="12">
+                <FormItem Label="提示文本">
+                    <TextArea @bind-Value="@Configuration.PromptText"
+                              Rows="3"
+                              Placeholder="参考音频对应的原文；留空时读取 ref.txt" />
+                    <Text Type="TextElementType.Secondary" Style="font-size: 11px;">
+                        建议与参考音频内容一致；留空时尝试读取音色目录下的 ref.txt。
+                    </Text>
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="8">
+                <FormItem Label="最大文本字数">
+                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxTextChars"
+                                           Min="1"
+                                           Max="1000"
+                                           Style="width: 100%;" />
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="8">
+                <FormItem Label="超时秒数">
+                    <AntDesign.InputNumber @bind-Value="@Configuration.TimeoutSeconds"
+                                           Min="1"
+                                           Max="600"
+                                           Style="width: 100%;" />
+                </FormItem>
+            </GridCol>
+            <GridCol Xs="24" Md="8">
+                <FormItem Label="启用缓存">
+                    <Switch @bind-Value="@Configuration.EnableCache" />
+                    <Text Type="TextElementType.Secondary" Style="display: block; font-size: 11px; margin-top: 6px;">
+                        同一文本、参考音频和采样参数命中时复用已生成的 wav。
+                    </Text>
+                </FormItem>
+            </GridCol>
+        </GridRow>
+    </Form>
+</div>
+
+@code {
+    readonly HttpClient readinessHttpClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(3)
+    };
+    GptSoVitsRuntimeReadinessStatus? ttsReadiness;
+    bool isCheckingReadiness;
+
+    AlertType TtsReadinessAlertType => ttsReadiness?.Status switch
+    {
+        "ready" => AlertType.Success,
+        "invalid_api_base_url" => AlertType.Error,
+        "missing_reference_audio" => AlertType.Warning,
+        "endpoint_unreachable" => AlertType.Warning,
+        _ => AlertType.Info
+    };
+
+    string TtsReadinessMessage => ttsReadiness?.Status switch
+    {
+        "ready" => "GPT-SoVITS ready",
+        "invalid_api_base_url" => "GPT-SoVITS API URL invalid",
+        "missing_reference_audio" => "GPT-SoVITS reference audio missing",
+        "endpoint_unreachable" => "GPT-SoVITS endpoint unreachable",
+        null => "GPT-SoVITS runtime not checked",
+        _ => $"GPT-SoVITS {ttsReadiness.Status}"
+    };
+
+    string TtsReadinessDescription
+    {
+        get
+        {
+            if (ttsReadiness == null)
+                return "Click Check runtime to verify reference audio, prompt text and the configured HTTP API endpoint.";
+
+            string referenceState = ttsReadiness.ReferenceAudioExists ? "exists" : "missing";
+            string promptState = ttsReadiness.PromptTextConfigured ? "configured" : "missing";
+            string endpointState = ttsReadiness.EndpointReachable ? "reachable" : "unreachable";
+            return $"api={ttsReadiness.ApiBaseUrl}; refAudio={referenceState}; prompt={promptState}; endpoint={endpointState}; reason={ttsReadiness.Reason}; refPath={ttsReadiness.ReferenceAudioPath}";
+        }
+    }
+
+    async Task CheckRuntimeReadiness()
+    {
+        if (isCheckingReadiness)
+            return;
+
+        isCheckingReadiness = true;
+        try
+        {
+            ttsReadiness = await GptSoVitsRuntimeReadiness.EvaluateAsync(
+                Configuration,
+                ProbeEndpoint);
+        }
+        finally
+        {
+            isCheckingReadiness = false;
+        }
+    }
+
+    async Task<bool> ProbeEndpoint(Uri endpoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, endpoint);
+            using HttpResponseMessage response = await readinessHttpClient.SendAsync(request, cancellationToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public void Dispose()
+    {
+        readinessHttpClient.Dispose();
+    }
+}

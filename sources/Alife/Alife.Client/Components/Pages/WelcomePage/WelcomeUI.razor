@@ -1,0 +1,155 @@
+@inject CharacterSystem CharacterSystem
+@inject ModuleSystem ModuleSystem
+@inject ConfigurationSystem ConfigurationSystem
+@inject NavigationManager Navigation
+@inject INotificationService NotificationService
+
+<div class="welcome-container">
+    <div class="welcome-card">
+        <div class="welcome-icon">
+            <Icon Type="@IconType.Outline.Rocket" Style="font-size: 64px; color: #1890ff;"/>
+        </div>
+
+        <Title Level="1" Style="margin-top: 24px; color: #1a1a1a;">欢迎使用 astralfox-alife</Title>
+        <Paragraph Style="font-size: 16px; color: rgba(0,0,0,0.45); max-width: 560px; margin: 0 auto 40px auto;">
+            astralfox-alife 是面向个人 Agent 的独立运行时，整合角色配置、QQ 聊天、记忆、联网、浏览器和本地工具能力。这里可以创建角色、配置模型、管理存储路径，并逐步接入桌面与 Web 平台。
+        </Paragraph>
+
+        <Flex Gap="@FlexGap.Large" Align="@FlexAlign.Center" Justify="@FlexJustify.Center">
+            <Button Type="@ButtonType.Primary"
+                    Size="@ButtonSize.Large"
+                    Icon="@IconType.Outline.Thunderbolt"
+                    OnClick="@(() => isQuickSetupVisible = true)"
+                    Style="height: 48px; border-radius: 24px; padding: 0 32px; font-weight: bold; box-shadow: 0 4px 12px rgba(24,144,255,0.3)">
+                创建第一个角色
+            </Button>
+        </Flex>
+
+        <div
+            style="margin-top: 40px; text-align: left; background: rgba(0,0,0,0.02); border-radius: 12px; padding: 16px; border: 1px solid rgba(0,0,0,0.05);">
+            <Text Strong style="display: block; margin-bottom: 8px;">全局数据存储目录 (StorageFolderPath)</Text>
+            <Flex Gap="@("small")">
+                <Input @bind-Value="storageFolderPath" Placeholder="默认为应用数据目录"
+                       Style="flex: 1;"/>
+                <Button Icon="@IconType.Outline.FolderOpen" OnClick="@(OnPickFolder)"></Button>
+                <Button Type="@ButtonType.Default" OnClick="@(SaveStoragePath)">保存修改</Button>
+            </Flex>
+            <Text Type="@TextElementType.Secondary" Style="font-size: 12px; margin-top: 8px; display: block;">
+                提示：存储目录会影响角色、插件、记忆和运行状态数据的位置，修改后重启生效。
+            </Text>
+        </div>
+
+        <div style="margin-top: 40px; color: rgba(0,0,0,0.25); font-size: 12px;">
+            <p>astralfox-alife Project - Personal Agent Runtime</p>
+        </div>
+    </div>
+</div>
+<Modal Title="快速配置助手"
+       Visible="@isQuickSetupVisible"
+       OnOk="@OnQuickSetupConfirm"
+       OnCancel="@(() => isQuickSetupVisible = false)"
+       Width="500">
+    <div style="margin-bottom: 24px;">
+        <Text>请输入 OpenAI 兼容协议接口信息。确认后系统会保存模型配置，并创建或更新默认角色。</Text>
+    </div>
+    <Form TModel="OpenAILanguageModelConfig" Model="quickConfig" Layout="@FormLayout.Vertical">
+        <FormItem Label="API Base URL (端点)">
+            <Input @bind-Value="quickConfig.endpoint" Placeholder="例如: https://api.deepseek.com/v1"/>
+        </FormItem>
+        <FormItem Label="Model ID (模型名称)">
+            <Input @bind-Value="quickConfig.modelId" Placeholder="例如: deepseek-chat"/>
+        </FormItem>
+        <FormItem Label="API Key (密钥)">
+            <InputPassword @bind-Value="quickConfig.apiKey" Placeholder="填入你的 API Key"/>
+        </FormItem>
+    </Form>
+</Modal>
+
+@code {
+    bool isQuickSetupVisible;
+    readonly OpenAILanguageModelConfig quickConfig = new();
+    string storageFolderPath = Platform.AlifePath.StorageFolderPath;
+
+    void OnPickFolder()
+    {
+        var result = Platform.AlifePlatform.PickFolder();
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            storageFolderPath = result;
+        }
+    }
+
+    void SaveStoragePath()
+    {
+        if (!string.IsNullOrWhiteSpace(storageFolderPath))
+        {
+            Platform.AlifePath.SetStorageFolderPath(storageFolderPath);
+            _ = NotificationService.Success(new NotificationConfig() { Message = "存储路径已保存，重启后启用新路径。" });
+        }
+    }
+
+    void OnQuickSetupConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(quickConfig.apiKey) || string.IsNullOrWhiteSpace(quickConfig.endpoint)) return;
+
+        if (!string.IsNullOrWhiteSpace(storageFolderPath))
+            Platform.AlifePath.SetStorageFolderPath(storageFolderPath);
+
+        ConfigurationSystem.SetConfiguration(typeof(OpenAILanguageModel), quickConfig);
+
+        Character character = CharacterSystem.GetAllCharacters().FirstOrDefault(c => c.Name == "真央") ??
+                              CharacterSystem.CreateCharacter("真央");
+        character.Modules.Add(ModuleSystem.GetModuleID(typeof(OpenAILanguageModel)));
+        CharacterSystem.SaveCharacter(character);
+
+        isQuickSetupVisible = false;
+
+        Navigation.NavigateTo($"/agent/{character.Name}");
+    }
+}
+
+<style>
+    .welcome-container {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at top right, rgba(24, 144, 255, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at bottom left, rgba(24, 144, 255, 0.05) 0%, transparent 40%);
+        animation: fadeIn 0.8s ease-out;
+    }
+
+    .welcome-card {
+        text-align: center;
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(20px);
+        padding: 60px 40px;
+        border-radius: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.05);
+    }
+
+    .welcome-icon {
+        animation: float 3s ease-in-out infinite;
+    }
+
+    @@keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @@keyframes float {
+        0%, 100% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(-15px);
+        }
+    }
+</style>

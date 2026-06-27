@@ -1,0 +1,335 @@
+@using System.Reflection
+@using System.Text.RegularExpressions
+@using Alife.Components
+@using Alife.Components.Elements.Utility
+@using Autofac.Core
+@inject ModuleSystem ModuleSystem
+@inject ChatActivitySystem ChatActivitySystem
+@inject CharacterSystem CharacterSystem
+@inject INotificationService NotificationService
+@implements IDisposable
+
+<ErrorWindowUI Title="角色激活失败" @bind-Value="@activityException"></ErrorWindowUI>
+
+<CharacterLoadingUI Visible="@isLoading"
+                    Title=@($"正在激活 {Character?.Name}")
+                    TaskDescription="@loadingTask"
+                    Progress="@loadingProgress"/>
+
+@if (Visibility)
+{
+    <div class="character-home-shell">
+        @if (Character != null)
+        {
+            <Card Size="CardSize.Small" Class="character-home-header">
+                <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                    <div>
+                        <Title Level="3" Style="margin: 0;">角色工作台</Title>
+                        <Text Type="TextElementType.Secondary">集中管理角色设定、模块能力和启动状态。</Text>
+                    </div>
+                    <AstralFoxDevMark />
+                </Flex>
+            </Card>
+
+            <GridRow Gutter="16">
+                <!-- 第一列：状态与启动 -->
+                <GridCol Span="8">
+                    <Card Title="状态与启动" Style="border-radius: 12px; height: 100%;">
+                        <Flex Direction="@FlexDirection.Vertical"
+                              Align="@FlexAlign.Center" Justify="@FlexJustify.Center"
+                              Style="padding: 24px 0;">
+                            <Avatar Size="@AvatarSize.Large"
+                                    Style="background: #1890ff; width: 80px; height: 80px; line-height: 80px; font-size: 32px; margin-bottom: 24px;">
+                                @(Character.Name.FirstOrDefault())
+                            </Avatar>
+                            <Title Level="2">@Character.Name</Title>
+
+                            <div style="margin: 24px 0;">
+                                @if (activity != null)
+                                {
+                                    <Tag Color="@("green")" Style="padding: 4px 12px; font-size: 14px;">
+                                        正在活跃中
+                                    </Tag>
+                                    <div style="margin-top: 16px;">
+                                        <Button Danger Type="@ButtonType.Primary" Block
+                                                Size="@ButtonSize.Large"
+                                                Icon="@IconType.Outline.Poweroff" OnClick="@(StopActivity)">停止运行
+                                        </Button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <Tag Color="default" Style="padding: 4px 12px; font-size: 14px;">
+                                        待机中
+                                    </Tag>
+                                    <div style="margin-top: 16px;">
+                                        <Button id="btn-activate-character"
+                                                Type="@ButtonType.Primary" Block
+                                                Size="@ButtonSize.Large"
+                                                Icon="@IconType.Outline.Rocket" Loading="isLoading"
+                                                OnClick="@(StartActivity)">激活角色
+                                        </Button>
+                                    </div>
+                                }
+                            </div>
+                        </Flex>
+                    </Card>
+                </GridCol>
+
+                <!-- 第二列：核心设定与插件 -->
+                <GridCol Span="16">
+                    <Card Title="角色配置" Style="border-radius: 12px;">
+                        <Alert Message="正在运行" Description="角色运行中无法修改配置，请先停止运行后再编辑。" Type="@AlertType.Info"
+                               ShowIcon="true"
+                               Style="@($"margin-bottom: 12px; display: {(activity != null ? "block" : "none")}")"/>
+
+                        <Title Level="5">人格简介</Title>
+                        <Input @bind-Value="Character.Description"
+                               Placeholder="用一句话描述角色定位，例如：负责群聊陪伴和日程提醒的助手。"
+                               Disabled="@(activity != null)"
+                               Style="margin-bottom: 16px; border-radius: 8px;"/>
+
+                        <Title Level="5">系统设定</Title>
+                        <TextArea MinRows="6" MaxRows="12" @bind-Value="Character.Prompt"
+                                  Disabled="@(activity != null)"
+                                  Style="margin-bottom: 24px; border-radius: 8px;"></TextArea>
+
+                        <Title Level="5">模块能力</Title>
+                        <div
+                            style="max-height: 400px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 8px; padding: 12px; background: @(activity != null ? "#fafafa" : "#fff")">
+                            <StringFolderSelectorUI
+                                Context="@(ModuleSystem.GetModuleFolder())"
+                                ItemTitleFilter="@(fullName => GetModuleName(fullName))"
+                                IsChecking="moduleIDs"
+                                IsReadOnly="@(activity != null)"
+
+                                IsCheckingChanged="OnModuleCheckingChanged">
+                            </StringFolderSelectorUI>
+                        </div>
+                        @if (activity == null)
+                        {
+                            <div style="margin-top: 24px; text-align: right;">
+                                <Button id="btn-save-character-settings"
+                                        Type="@ButtonType.Primary"
+                                        Size="@ButtonSize.Large" Icon="@IconType.Outline.Save"
+                                        Loading="isSaving" OnClick="@(SaveSettings)">保存变更
+                                </Button>
+                            </div>
+                        }
+                    </Card>
+                </GridCol>
+            </GridRow>
+        }
+        else
+        {
+            <Empty Description="@("请选择角色")"/>
+        }
+
+        @if (activity != null)
+        {
+            <Divider>当前可用能力</Divider>
+            <Card Title="模型可见的工具上下文" Style="border-radius: 12px; margin-top: 16px;">
+                @foreach (var sysPrompt in activity.GetImplicitFunctionContext())
+                {
+                    <Paragraph Copyable
+                               style="white-space: pre-wrap; background: #fafafa; padding: 12px; border-radius: 4px; border: 1px solid #f0f0f0; margin-bottom: 12px;">
+                        @sysPrompt
+                    </Paragraph>
+                }
+            </Card>
+        }
+    </div>
+}
+
+<style>
+    .character-home-shell {
+        padding: 24px;
+        height: 100%;
+        overflow-y: auto;
+        background: #fafafa;
+    }
+
+    .character-home-header {
+        border-radius: 8px;
+        margin-bottom: 16px;
+    }
+</style>
+
+@code
+{
+
+    public ChatActivity? Activity => activity;
+    public bool IsLoading => isLoading;
+    public HashSet<string> ModuleIDs => moduleIDs;
+
+    public Task StartActivity()
+    {
+        if (Character == null || isLoading || activity != null)
+            return Task.CompletedTask;
+
+        activityException = null;
+
+        _ = Task.Run(async () => {
+            try
+            {
+                SaveSettings();
+                await ChatActivitySystem.Activate(Character);
+            }
+            catch (Exception ex)
+            {
+                activityException = ex;
+                isLoading = false;
+                await InvokeAsync(UpdateState);
+            }
+        });
+
+        return Task.CompletedTask;
+    }
+
+    public async Task StopActivity()
+    {
+        if (Character == null)
+            return;
+
+        await ChatActivitySystem.Deactivate(Character);
+    }
+
+    [Parameter] public Character? Character { get; set; }
+    [Parameter] public bool Visibility { get; set; }
+    [Parameter] public EventCallback StateChanged { get; set; }
+
+    ChatActivity? activity;
+    Exception? activityException;
+    bool isLoading;
+    string loadingTask = "正在初始化环境...";
+    float loadingProgress;
+    bool isSaving;
+    HashSet<string> moduleIDs = new();
+
+    protected override void OnInitialized()
+    {
+        if (Character != null)
+        {
+            moduleIDs = Character.Modules.ToHashSet();
+            activity = ChatActivitySystem.GetChatActivity(Character);
+        }
+
+        ChatActivitySystem.Activating += OnActivating;
+        ChatActivitySystem.Activated += OnActivated;
+        ChatActivitySystem.ActivationFailed += OnActivationFailed;
+        ChatActivitySystem.ActivatingProcess += OnActivatingProcess;
+        ChatActivitySystem.Destroyed += OnChatActivityDestroyed;
+        UpdateState();
+    }
+
+    public void Dispose()
+    {
+        ChatActivitySystem.Activating -= OnActivating;
+        ChatActivitySystem.Activated -= OnActivated;
+        ChatActivitySystem.ActivationFailed -= OnActivationFailed;
+        ChatActivitySystem.ActivatingProcess -= OnActivatingProcess;
+        ChatActivitySystem.Destroyed -= OnChatActivityDestroyed;
+    }
+
+    void OnActivating(Character character)
+    {
+        if (character.Name != Character?.Name) return;
+        isLoading = true;
+        loadingProgress = 0;
+        loadingTask = "正在初始化环境...";
+        InvokeAsync(UpdateState);
+    }
+    void OnActivationFailed(Character character, Exception ex)
+    {
+        if (character.Name != Character?.Name) return;
+        if (ex.InnerException is DependencyResolutionException dependencyResolutionException)
+        {
+            Exception? exception = dependencyResolutionException.InnerException;
+            if (exception != null)
+            {
+                Match match1 = Regex.Match(exception.Message, "on type '([^']+)'");
+                Match match2 = Regex.Match(exception.Message, @"Cannot resolve parameter\s+'(\S+)\s+\w+'");
+                if (match1.Success && match2.Success)
+                {
+                    string typeName = match2.Groups[1].Value;
+                    Type? type = ModuleSystem.GetModule(typeName);
+                    ModuleAttribute? moduleAttribute = type?.GetCustomAttribute<ModuleAttribute>();
+                    ex = new Exception(
+                        $"你需要在模块界面寻找并勾选“{moduleAttribute?.Name ?? typeName}”模块，因为模块 {match1.Groups[1].Value} 依赖于 {match2.Groups[1].Value}，"
+                        , exception
+                    );
+                }
+            }
+        }
+
+        activityException = ex;
+        isLoading = false;
+        activity = null;
+        InvokeAsync(UpdateState);
+    }
+    void OnActivatingProcess(Character character, (string Task, float Progress) tuple)
+    {
+        if (character.Name != Character?.Name) return;
+        loadingTask = tuple.Task;
+        loadingProgress = tuple.Progress;
+        InvokeAsync(UpdateState);
+    }
+    void OnActivated(ChatActivity chatActivity)
+    {
+        if (chatActivity.Character.Name != Character?.Name) return;
+        isLoading = false;
+        activityException = null;
+        activity = chatActivity;
+        InvokeAsync(UpdateState);
+    }
+    void OnChatActivityDestroyed(ChatActivity obj)
+    {
+        if (activity == obj)
+        {
+            activity = null;
+            InvokeAsync(UpdateState);
+        }
+    }
+
+    void UpdateState()
+    {
+        StateHasChanged();
+        StateChanged.InvokeAsync();
+    }
+
+    void OnModuleCheckingChanged(HashSet<string> ids)
+    {
+        if (activity != null)
+            return;
+
+        moduleIDs = ids;
+    }
+
+    string GetModuleName(string fullName)
+    {
+        Type? type = ModuleSystem.GetModule(fullName);
+        if (type == null) return "[未知模块] " + fullName;
+        ModuleAttribute? attr = type.GetCustomAttribute<ModuleAttribute>();
+        return attr?.Name ?? type.Name;
+    }
+
+    void SaveSettings()
+    {
+        if (isSaving || Character == null || activity != null) return;
+        isSaving = true;
+        try
+        {
+            Character.Modules = moduleIDs.ToHashSet();
+            CharacterSystem.SaveCharacter(Character);
+
+            _ = NotificationService.Success(new NotificationConfig { Message = "角色配置已成功保存！" });
+        }
+        finally
+        {
+            isSaving = false;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+
+}

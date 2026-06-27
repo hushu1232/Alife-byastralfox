@@ -1,0 +1,79 @@
+@using Newtonsoft.Json
+@using System.Reflection
+@inject ConfigurationSystem ConfigurationSystem
+
+<Modal
+    Title=@($"配置模块：{ModuleType.FullName}")
+    Visible="Visible"
+    BodyStyle="height: 50vh;"
+    OnCancel="@(OnCancel)"
+    Footer=@(footerUI(this))>
+    @if (customUIType != null)
+    {
+        <DynamicComponent Type="customUIType" Parameters="customUIParameters"/>
+    }
+    else
+    {
+        <TextArea
+            Style="height: 100%; border-radius: 8px; font-family: Consolas, monospace;"
+            @bind-Value="moduleConfiguration">
+        </TextArea>
+    }
+</Modal>
+
+@code {
+    [Parameter] public Type ModuleType { get; set; } = null!;
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public EventCallback<bool> VisibleChanged { get; set; }
+
+    string moduleConfiguration = null!;
+    Type? customUIType;
+    Dictionary<string, object> customUIParameters = new();
+    RenderFragment<ModuleEditorUI> footerUI = null!;
+
+    void OnConfirm()
+    {
+        Type type = ConfigurationSystem.GetConfigurationType(ModuleType)!;
+        object configuration = JsonConvert.DeserializeObject(moduleConfiguration, type)!;
+        ConfigurationSystem.SetConfiguration(ModuleType, configuration);
+        VisibleChanged.InvokeAsync(false);
+    }
+    void OnCancel()
+    {
+        moduleConfiguration = ConfigurationSystem.GetConfigurationJson(ModuleType)!.ToString(Formatting.Indented);
+        VisibleChanged.InvokeAsync(false);
+    }
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+
+        ModuleAttribute? attr = ModuleType.GetCustomAttribute<ModuleAttribute>();
+
+        if (attr?.EditorUI != null)
+        {
+            customUIType = attr.EditorUI;
+            customUIParameters = new Dictionary<string, object> {
+                { "ModuleType", ModuleType }
+            };
+        }
+        else
+        {
+            moduleConfiguration = ConfigurationSystem.GetConfigurationJson(ModuleType)?.ToString(Formatting.Indented) ?? "{}";
+        }
+
+        footerUI = value => {
+            if (value.customUIType == null)
+                return @<Space>
+                    <SpaceItem>
+                        <Button OnClick="@(() => value.OnCancel())">取消</Button>
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Button Type="@(ButtonType.Primary)" OnClick="@(() => value.OnConfirm())">保存配置</Button>
+                    </SpaceItem>
+                </Space>;
+            else
+                return @<div></div>;
+        };
+    }
+}

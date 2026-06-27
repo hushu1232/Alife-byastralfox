@@ -1,0 +1,707 @@
+@namespace Alife.Function.QChat
+@inherits Alife.Framework.ModuleUIBase<QChatService, QChatConfig>
+@using AntDesign
+@implements IDisposable
+@inject IMessageService MessageService
+
+<div class="qchat-shell">
+    <Flex Direction="FlexDirection.Vertical" Gap="@("16")">
+        <Card Size="CardSize.Small" Class="qchat-card">
+            <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Wrap="FlexWrap.Wrap" Gap="@("12")">
+                <div>
+                    <Title Level="4" Style="margin: 0;">QQ 聊天配置</Title>
+                    <Text Type="TextElementType.Secondary">
+                        配置 OneBot 连接、群聊监听、安全策略、媒体文件能力和运行状态。
+                    </Text>
+                </div>
+                <Space>
+                    <SpaceItem>
+                        @if (Module is {} qChat)
+                        {
+                            <Badge Status="@(qChat.IsConnected ? BadgeStatus.Success : BadgeStatus.Error)"
+                                   Text="@(qChat.IsConnected ? "已连接" : "未连接")" />
+                        }
+                        else
+                        {
+                            <Badge Status="BadgeStatus.Default" Text="模块未启动" />
+                        }
+                    </SpaceItem>
+                    <SpaceItem>
+                        <Button Type="@ButtonType.Primary"
+                                Icon="@IconType.Outline.Reload"
+                                Loading="@isReconnecting"
+                                OnClick="Reconnect">
+                            重连
+                        </Button>
+                    </SpaceItem>
+                </Space>
+            </Flex>
+        </Card>
+
+        @if (Module != null)
+        {
+            <GridRow Gutter="16">
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="qchat-card metric-card">
+                        <Text Type="TextElementType.Secondary">Bot ID</Text>
+                        <div class="metric-value">@(Configuration.BotId == 0 ? "未设置" : Configuration.BotId)</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="qchat-card metric-card">
+                        <Text Type="TextElementType.Secondary">主人 ID</Text>
+                        <div class="metric-value">@(Configuration.OwnerId == 0 ? "未设置" : Configuration.OwnerId)</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="qchat-card metric-card">
+                        <Text Type="TextElementType.Secondary">活跃群</Text>
+                        <div class="metric-value">@Module.GroupStates.Count(kv => kv.Value.IsEnabled)</div>
+                    </Card>
+                </GridCol>
+                <GridCol Xs="24" Md="6">
+                    <Card Size="CardSize.Small" Class="qchat-card metric-card">
+                        <Text Type="TextElementType.Secondary">缓冲消息</Text>
+                        <div class="metric-value">@Module.GroupStates.Values.Sum(i => i.MessageBuffer.Count)</div>
+                    </Card>
+                </GridCol>
+            </GridRow>
+        }
+
+        <Form TModel="QChatConfig" Model="@Configuration" Layout="@FormLayout.Vertical">
+            <Tabs @bind-ActiveKey="@activeTabKey">
+                <TabPane Tab="连接" Key="connection">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="16">
+                            <Card Size="CardSize.Small" Title="OneBot WebSocket" Class="qchat-card">
+                                <FormItem Label="WebSocket URL">
+                                    <Input @bind-Value="@Configuration.Url" Placeholder="ws://127.0.0.1:3001" />
+                                </FormItem>
+                                <FormItem Label="Access Token">
+                                    <InputPassword @bind-Value="@Configuration.Token" Placeholder="服务端启用 access_token 时填写" />
+                                    <Text Type="TextElementType.Secondary">留空表示不使用 token。</Text>
+                                </FormItem>
+                                <FormItem Label="自动重连间隔（秒）">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.AutoReconnectSeconds"
+                                                           Min="0"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="8">
+                            <Card Size="CardSize.Small" Title="身份" Class="qchat-card">
+                                <FormItem Label="Bot QQ">
+                                    <Input @bind-Value="@Configuration.BotId" />
+                                </FormItem>
+                                <FormItem Label="主人 QQ">
+                                    <Input @bind-Value="@Configuration.OwnerId" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="安全" Key="safety">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="主人优先级" Class="qchat-card">
+                                <FormItem Label="主人最高优先级">
+                                    <Switch @bind-Value="@Configuration.OwnerPriorityMode" />
+                                </FormItem>
+                                <FormItem Label="非主人消息标记为不可信">
+                                    <Switch @bind-Value="@Configuration.TreatNonOwnerAsUntrusted" />
+                                </FormItem>
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="非主人消息只作为普通聊天内容，不作为系统、开发者、主人或工具授权指令。" />
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="聊天入口" Class="qchat-card">
+                                <FormItem Label="QQ 安静模式">
+                                    <Switch @bind-Value="@QuietModeEnabled" />
+                                    @if (Module?.IsQuietModeEnabled == true)
+                                    {
+                                        <div class="quiet-hint">已暂停非主人私聊、群聊 @@、普通群聊和主动群聊。</div>
+                                        <div class="quiet-hint">@QuietModeDetail</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="quiet-hint">当前允许按下方策略处理 QQ 消息。</div>
+                                    }
+                                </FormItem>
+                                <FormItem Label="重启后保持安静模式">
+                                    <Switch @bind-Value="@Configuration.PersistQuietModeAcrossRestart" />
+                                    <div class="quiet-hint">关闭时，重启后恢复正常 QQ 聊天；开启时会恢复上次安静/唤醒状态。</div>
+                                </FormItem>
+                                <FormItem Label="安静模式唤醒 QQ">
+                                    <TextArea @bind-Value="@Configuration.QuietModeWakeUserIds"
+                                              Rows="2"
+                                              Placeholder="英文逗号分隔，例如 3658431719" />
+                                    <div class="quiet-hint">这些 QQ 只能用醒醒、起床等命令解除安静模式，不会获得主人权限。</div>
+                                </FormItem>
+                                <FormItem Label="允许群成员聊天">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberChat" />
+                                </FormItem>
+                                <FormItem Label="允许群成员提及唤醒">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberMentions" />
+                                </FormItem>
+                                <FormItem Label="允许主动群聊">
+                                    <Switch @bind-Value="@Configuration.AllowProactiveGroupChat" />
+                                </FormItem>
+                                <FormItem Label="允许非主人私聊进入模型">
+                                    <Switch @bind-Value="@Configuration.AllowPrivateGuestChat" />
+                                </FormItem>
+                                <FormItem Label="Agent 联网">
+                                    <Switch @bind-Value="@Configuration.EnableInternetAccess" />
+                                    <div class="quiet-hint">默认关闭。开启后仍只允许主人账号触发，并受 Agent 白名单、URL 策略、审计和不可信上下文包裹限制。</div>
+                                </FormItem>
+                                <FormItem Label="联网 Agent 白名单">
+                                    <Input @bind-Value="@Configuration.InternetAllowedAgentIds"
+                                           Placeholder="xiayu" />
+                                    <div class="quiet-hint">英文逗号分隔。第一期默认只给夏羽开放。</div>
+                                </FormItem>
+                                <FormItem Label="公开联网搜索">
+                                    <Switch @bind-Value="@Configuration.EnablePublicInternetSearch" />
+                                    <div class="quiet-hint">开启后群成员可 &#64;机器人 并使用搜索语义临时联网搜索；/search &lt;query&gt; 仅保留兼容。不会开放 /qchat、浏览器、登录、下载、本地文件或持久化摄入。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用公开搜索">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicInternetSearch" />
+                                    <div class="quiet-hint">关闭后，只有主人可触发公开搜索；群成员 &#64;搜索会在模型前被拒绝。</div>
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 查询">
+                                    <Switch @bind-Value="@Configuration.EnablePublicExternalRagQuery" />
+                                    <div class="quiet-hint">开启后群成员可使用 /rag &lt;question&gt; 查询主人批准的外部 RAG；不能新增、删除、刷新或配置来源。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用外部 RAG">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicExternalRagQuery" />
+                                    <div class="quiet-hint">关闭后，群成员不能查询主人批准的外部 RAG；管理和写入仍然始终只允许主人。</div>
+                                </FormItem>
+                                <FormItem Label="公开搜索最大结果数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetSearchMaxResults"
+                                                           Min="1"
+                                                           Max="8"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开查询最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetQueryMaxChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 最大片段数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicExternalRagMaxChunks"
+                                                           Min="1"
+                                                           Max="12"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="语音克隆" Class="qchat-card">
+                                <FormItem Label="全局 QQ 语音输出">
+                                    <Switch @bind-Value="@Configuration.EnableQChatVoiceOutput" />
+                                    <div class="quiet-hint">默认关闭。关闭时，即使克隆开关或语音请求被打开，也只发送文字回复。</div>
+                                </FormItem>
+                                <FormItem Label="主人克隆语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceClone" />
+                                    <div class="quiet-hint">启用后，仍只有在当前用户明确要求语音时才会尝试发送克隆语音。</div>
+                                </FormItem>
+                                <FormItem Label="仅主人可触发语音">
+                                    <Switch @bind-Value="@Configuration.DenyVoiceForNonOwner" />
+                                    <div class="quiet-hint">默认开启，非主人不能触发语音回复。</div>
+                                </FormItem>
+                                <FormItem Label="非主人@语音扩展">
+                                    <Switch @bind-Value="@Configuration.EnableNonOwnerMentionVoice" />
+                                    <div class="quiet-hint">仅在关闭“仅主人可触发语音”、群聊真实@或确认唤醒、且对方明确要求语音时参与概率判断。</div>
+                                </FormItem>
+                                <FormItem Label="非主人@语音概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="非主人@语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceMaxChars"
+                                                           Min="1"
+                                                           Max="200"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="主人明确要求时发语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnExplicitRequest" />
+                                </FormItem>
+                                <FormItem Label="亲密场景语音门控">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnIntimateScene" />
+                                    <div class="quiet-hint">不会自动发语音；当前用户仍必须明确要求语音。</div>
+                                </FormItem>
+                                <FormItem Label="语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxVoiceReplyChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                    <div class="quiet-hint">超过该字数的回复不会转为语音，避免长文本占用语音通道。</div>
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="角色语音" Class="qchat-card">
+                                <FormItem Label="按账号使用独立音色">
+                                    <Switch @bind-Value="@Configuration.VoiceProfiles.EnablePerAgentVoiceProfiles" />
+                                </FormItem>
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="语音音色只按真实 Bot 账号和 Agent 身份选择，聊天文本、昵称、转发内容不能切换音色。" />
+
+                                @foreach (QChatVoiceProfile profile in Configuration.VoiceProfiles.Profiles)
+                                {
+                                    <Divider Orientation="@DividerOrientation.Left">@($"{profile.AgentId} / {profile.BotId}")</Divider>
+                                    <FormItem Label="启用">
+                                        <Switch @bind-Value="@profile.Enabled" />
+                                    </FormItem>
+                                    <FormItem Label="API 地址">
+                                        <Input @bind-Value="@profile.ApiBaseUrl" />
+                                    </FormItem>
+                                    <FormItem Label="参考音频">
+                                        <Input @bind-Value="@profile.ReferenceAudioPath" />
+                                    </FormItem>
+                                    <FormItem Label="参考文本">
+                                        <TextArea @bind-Value="@profile.PromptText"
+                                                  Rows="3" />
+                                    </FormItem>
+                                    <FormItem Label="最大字数">
+                                        <AntDesign.InputNumber @bind-Value="@profile.MaxTextChars"
+                                                               Min="1"
+                                                               Max="500"
+                                                               Style="width: 100%;" />
+                                    </FormItem>
+                                }
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="群聊监听" Key="groups">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="触发条件" Class="qchat-card">
+                                <FormItem Label="屏蔽群号">
+                                    <TextArea @bind-Value="@Configuration.IgnoredGroup"
+                                              Rows="3"
+                                              Placeholder="英文逗号分隔，例如 10001,10002" />
+                                </FormItem>
+                                <FormItem Label="唤醒关键词">
+                                    <TextArea @bind-Value="@Configuration.WakingWords"
+                                              Rows="3"
+                                              Placeholder="英文逗号分隔，例如 小猫,醒醒" />
+                                </FormItem>
+                                <FormItem Label="主动开启概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.ProactiveChatProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Media-only reply chance">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MediaOnlyPassiveGroupReplyProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                    <div class="quiet-hint">Unmentioned image/sticker-only group messages may be answered at this probability.</div>
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="缓冲与关闭" Class="qchat-card">
+                                <FormItem Label="最大缓冲消息数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxBufferMessages"
+                                                           Min="-1"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="推送间隔（秒）">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.FlushInterval"
+                                                           Min="0.5f"
+                                                           Step="0.5f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="启用防抖">
+                                    <Switch @bind-Value="@Configuration.DebounceEnabled" />
+                                </FormItem>
+                                <FormItem Label="Passive reply cooldown">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PassiveGroupReplyCooldownSeconds"
+                                                           Min="0"
+                                                           Max="3600"
+                                                           Step="10"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Filter low-info messages">
+                                    <Switch @bind-Value="@Configuration.SuppressLowInformationPassiveGroupMessages" />
+                                </FormItem>
+                                <FormItem Label="自动休眠时间（分钟）">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.AutoCloseMinutes"
+                                                           Min="1f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="回复后关闭当前群监听">
+                                    <Switch @bind-Value="@Configuration.CloseGroupAfterReply" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="媒体与文件" Key="media">
+                    <GridRow Gutter="16">
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="能力开关" Class="qchat-card">
+                                <FormItem Label="允许上传群文件">
+                                    <Switch @bind-Value="@Configuration.EnableGroupFileUpload" />
+                                </FormItem>
+                                <FormItem Label="允许上传私聊文件">
+                                    <Switch @bind-Value="@Configuration.EnablePrivateFileUpload" />
+                                </FormItem>
+                                <FormItem Label="允许发送视频消息">
+                                    <Switch @bind-Value="@Configuration.EnableVideoMessage" />
+                                </FormItem>
+                                <Divider />
+                                <FormItem Label="Enable QQ image recognition">
+                                    <Switch @bind-Value="@Configuration.EnableImageRecognition" />
+                                </FormItem>
+                                <Alert Type="@VisionReadinessAlertType"
+                                       ShowIcon="true"
+                                       Message="@VisionReadinessMessage"
+                                       Description="@VisionReadinessDescription"
+                                       Style="margin-bottom: 16px;" />
+                                <FormItem Label="Agnes vision endpoint">
+                                    <Input @bind-Value="@Configuration.AgnesVisionApiEndpoint" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision model">
+                                    <Input @bind-Value="@Configuration.AgnesVisionModel" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision API key">
+                                    <InputPassword @bind-Value="@Configuration.AgnesVisionApiKey" />
+                                    <div class="quiet-hint">Prefer ALIFE_AGNES_VISION_API_KEY for runtime secrets.</div>
+                                </FormItem>
+                                <FormItem Label="Max images per message">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxImagesPerMessage"
+                                                           Min="1"
+                                                           Max="4"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Image recognition timeout ms">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.ImageRecognitionTimeoutMilliseconds"
+                                                           Min="1000"
+                                                           Max="60000"
+                                                           Step="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Allow passive group image recognition">
+                                    <Switch @bind-Value="@Configuration.AnalyzePassiveGroupImages" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="目标白名单" Class="qchat-card">
+                                <FormItem Label="允许的群号">
+                                    <TextArea @bind-Value="@Configuration.AllowedGroupIds"
+                                              Rows="3"
+                                              Placeholder="群号英文逗号分隔；留空表示不额外限制" />
+                                </FormItem>
+                                <FormItem Label="允许的私聊 QQ">
+                                    <TextArea @bind-Value="@Configuration.AllowedPrivateUserIds"
+                                              Rows="3"
+                                              Placeholder="QQ号英文逗号分隔；留空表示不额外限制" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                    </GridRow>
+                </TabPane>
+
+                <TabPane Tab="状态" Key="state">
+                    @if (Module == null)
+                    {
+                        <Alert Type="AlertType.Warning" ShowIcon="true" Message="模块尚未启动，暂无群聊状态。" />
+                    }
+                    else
+                    {
+                        <Tabs @bind-ActiveKey="@activeGroupTabKey">
+                            <TabPane Tab="总览" Key="overview">
+                                <Card Size="CardSize.Small" Class="qchat-card">
+                                    <Text>已记录群：@Module.GroupStates.Count</Text>
+                                    <br />
+                                    <Text>活跃群：@Module.GroupStates.Count(kv => kv.Value.IsEnabled)</Text>
+                                    <br />
+                                    <Text>缓冲消息：@Module.GroupStates.Values.Sum(i => i.MessageBuffer.Count)</Text>
+                                </Card>
+                            </TabPane>
+                            @foreach (var kv in Module.GroupStates.OrderBy(x => x.Key).Take(20))
+                            {
+                                var groupId = kv.Key;
+                                var state = kv.Value;
+                                <TabPane Key="@groupId.ToString()">
+                                    <TabTemplate>
+                                        <span>
+                                            @(state.IsEnabled ? "●" : "○") @groupId
+                                            @if (state.MessageBuffer.Count > 0)
+                                            {
+                                                <Badge Count="@state.MessageBuffer.Count" Style="margin-left: 4px;" />
+                                            }
+                                        </span>
+                                    </TabTemplate>
+                                    <ChildContent>
+                                        <Card Size="CardSize.Small" Class="qchat-card">
+                                            <Flex Justify="FlexJustify.SpaceBetween" Align="FlexAlign.Center" Gap="@("12")">
+                                                <div>
+                                                    <Text Strong>群号：@groupId</Text>
+                                                    <br />
+                                                    <Text Type="TextElementType.Secondary">最后活动：@state.LastActivityTime.ToString("HH:mm:ss")</Text>
+                                                </div>
+                                                <Space>
+                                                    <SpaceItem>
+                                                        <Button Danger="@state.IsEnabled"
+                                                                Type="@ButtonType.Primary"
+                                                                Size="@ButtonSize.Small"
+                                                                OnClick="@(() => Module.QGroup(groupId, !state.IsEnabled))">
+                                                            @(state.IsEnabled ? "关闭监听" : "开启监听")
+                                                        </Button>
+                                                    </SpaceItem>
+                                                    <SpaceItem>
+                                                        <Button Size="@ButtonSize.Small"
+                                                                Disabled="@(state.MessageBuffer.Count == 0)"
+                                                                OnClick="@(() => Module.FlushGroupBuffer(state))">
+                                                            推送缓冲
+                                                        </Button>
+                                                    </SpaceItem>
+                                                </Space>
+                                            </Flex>
+                                            <Divider Style="margin: 12px 0;" />
+                                            <div class="message-buffer">
+                                                @if (state.MessageBuffer.Count == 0)
+                                                {
+                                                    <div class="empty-buffer">暂无缓冲消息</div>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var msg in state.MessageBuffer)
+                                                    {
+                                                        <div class="buffer-line">@msg</div>
+                                                    }
+                                                }
+                                            </div>
+                                        </Card>
+                                    </ChildContent>
+                                </TabPane>
+                            }
+                        </Tabs>
+                    }
+                </TabPane>
+
+                <TabPane Tab="预设" Key="presets">
+                    <Card Size="CardSize.Small" Class="qchat-card">
+                        <Flex Wrap="FlexWrap.Wrap" Gap="@("12")">
+                            <Button Icon="@IconType.Outline.Smile" OnClick="@ApplyCompanionPreset">
+                                陪伴式
+                            </Button>
+                            <Button Icon="@IconType.Outline.Message" OnClick="@ApplyGroupChatPreset">
+                                群聊低频触发
+                            </Button>
+                            <Button Icon="@IconType.Outline.Safety" OnClick="@ApplyStrictSafetyPreset">
+                                严格安全
+                            </Button>
+                        </Flex>
+                    </Card>
+                </TabPane>
+            </Tabs>
+
+            <Card Size="CardSize.Small" Title="回复提示" Class="qchat-card prompt-card">
+                <TextArea @bind-Value="@Configuration.AppendChatPrompt"
+                          Rows="3"
+                          Placeholder="附加到 QQ 消息上下文末尾的行为提示" />
+            </Card>
+        </Form>
+    </Flex>
+</div>
+
+@code {
+    string activeTabKey = "connection";
+    string activeGroupTabKey = "overview";
+    bool isReconnecting;
+    System.Timers.Timer? refreshTimer;
+    QChatVisionReadinessStatus VisionReadiness => QChatVisionReadiness.Evaluate(
+        Configuration,
+        () => QChatAgnesVisionApiKeyResolver.Resolve(Configuration.AgnesVisionApiKey));
+    AlertType VisionReadinessAlertType => VisionReadiness.Status switch
+    {
+        "ready" => AlertType.Success,
+        "disabled" => AlertType.Info,
+        _ => AlertType.Warning
+    };
+    string VisionReadinessMessage => VisionReadiness.Status switch
+    {
+        "ready" => "Vision ready",
+        "disabled" => "Vision disabled",
+        "missing_api_key" => "Vision missing API key",
+        "invalid_endpoint" => "Vision endpoint invalid",
+        _ => $"Vision {VisionReadiness.Status}"
+    };
+    string VisionReadinessDescription
+    {
+        get
+        {
+            QChatVisionReadinessStatus status = VisionReadiness;
+            string keyState = status.ApiKeyConfigured ? "configured" : "missing";
+            return $"provider={status.Provider}; model={status.Model}; apiKey={keyState}; publicUrlRequired={status.PublicUrlRequired}; maxImages={status.MaxImagesPerMessage}; reason={status.Reason}";
+        }
+    }
+    bool QuietModeEnabled
+    {
+        get => Module?.IsQuietModeEnabled ?? false;
+        set
+        {
+            if (Module == null || Module.IsQuietModeEnabled == value)
+                return;
+
+            Module.QChatQuietMode(value, "control-center");
+        }
+    }
+    string QuietModeDetail
+    {
+        get
+        {
+            if (Module == null)
+                return "";
+
+            string reason = string.IsNullOrWhiteSpace(Module.QuietModeReason)
+                ? "未记录原因"
+                : Module.QuietModeReason;
+            string changedAt = Module.QuietModeChangedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "未知时间";
+            return $"原因: {reason}; 时间: {changedAt}";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        refreshTimer = new System.Timers.Timer(1000);
+        refreshTimer.Elapsed += (_, _) => InvokeAsync(StateHasChanged);
+        refreshTimer.Start();
+    }
+
+    void ApplyCompanionPreset()
+    {
+        Configuration.DebounceEnabled = false;
+        Configuration.FlushInterval = 15f;
+        Configuration.MaxBufferMessages = -1;
+        Configuration.ProactiveChatProbability = 0;
+        Configuration.CloseGroupAfterReply = false;
+        Configuration.AllowProactiveGroupChat = true;
+    }
+
+    void ApplyGroupChatPreset()
+    {
+        Configuration.DebounceEnabled = true;
+        Configuration.FlushInterval = 3f;
+        Configuration.MaxBufferMessages = 5;
+        Configuration.ProactiveChatProbability = 0.05f;
+        Configuration.CloseGroupAfterReply = true;
+        Configuration.AllowGroupMemberChat = true;
+        Configuration.AllowGroupMemberMentions = true;
+    }
+
+    void ApplyStrictSafetyPreset()
+    {
+        Configuration.OwnerPriorityMode = true;
+        Configuration.TreatNonOwnerAsUntrusted = true;
+        Configuration.AllowPrivateGuestChat = false;
+        Configuration.EnableGroupFileUpload = true;
+        Configuration.EnablePrivateFileUpload = true;
+        Configuration.EnableVideoMessage = true;
+    }
+
+    async Task Reconnect()
+    {
+        if (Module is not {} qChat)
+            return;
+
+        isReconnecting = true;
+        try
+        {
+            await qChat.ReconnectAsync();
+            await MessageService.SuccessAsync("QQ 已重新连接。");
+        }
+        catch (Exception ex)
+        {
+            await MessageService.ErrorAsync($"QQ 重连失败: {ex.Message}");
+        }
+        finally
+        {
+            isReconnecting = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Stop();
+        refreshTimer?.Dispose();
+    }
+}
+
+<style>
+    .qchat-shell {
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+        padding: 16px;
+    }
+
+    .qchat-card {
+        border-radius: 8px;
+    }
+
+    .metric-card {
+        min-height: 88px;
+    }
+
+    .metric-value {
+        font-size: 20px;
+        font-weight: 650;
+        margin-top: 6px;
+        overflow-wrap: anywhere;
+    }
+
+    .quiet-hint {
+        color: rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 6px;
+    }
+
+    .prompt-card {
+        margin-top: 16px;
+    }
+
+    .message-buffer {
+        max-height: 220px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #f0f0f0;
+        border-radius: 6px;
+        padding: 8px;
+        font-family: Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.6;
+    }
+
+    .buffer-line {
+        border-bottom: 1px solid #f5f5f5;
+        padding: 4px 0;
+        overflow-wrap: anywhere;
+    }
+
+    .empty-buffer {
+        color: #8c8c8c;
+        padding: 24px;
+        text-align: center;
+    }
+</style>
