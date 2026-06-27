@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace Alife.Test.QChat;
 
@@ -90,7 +91,11 @@ public sealed class QChatRuntimeReadinessScriptTests
             "-Live",
             "-Strict",
             "-VoiceRootPath",
-            missingVoiceRoot);
+            missingVoiceRoot,
+            "-XiayuTtsPort",
+            "1",
+            "-MixuTtsPort",
+            "2");
 
         Assert.Multiple(() =>
         {
@@ -102,6 +107,11 @@ public sealed class QChatRuntimeReadinessScriptTests
     }
 
     static ScriptResult RunPowerShellScript(string scriptPath, params string[] arguments)
+    {
+        return RunPowerShellScriptAsync(scriptPath, arguments).GetAwaiter().GetResult();
+    }
+
+    static async Task<ScriptResult> RunPowerShellScriptAsync(string scriptPath, params string[] arguments)
     {
         string powerShell = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.System),
@@ -131,16 +141,58 @@ public sealed class QChatRuntimeReadinessScriptTests
         using Process process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start PowerShell.");
 
-        string stdout = process.StandardOutput.ReadToEnd();
-        string stderr = process.StandardError.ReadToEnd();
+        Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = process.StandardError.ReadToEndAsync();
 
-        if (process.WaitForExit(15000) == false)
+        Task<bool> exitedTask = WaitForExitAsync(process, 15000);
+        if (await exitedTask.ConfigureAwait(false) == false)
         {
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException("Runtime readiness script did not exit within 15 seconds.");
+            try
+            {
+                if (process.HasExited == false)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // The process can exit between the timeout branch and Kill.
+            }
+
+            string timedOutStdout = await CompleteReadAfterKill(stdoutTask).ConfigureAwait(false);
+            string timedOutStderr = await CompleteReadAfterKill(stderrTask).ConfigureAwait(false);
+
+            throw new TimeoutException(
+                "Runtime readiness script did not exit within 15 seconds." +
+                $"{Environment.NewLine}Standard output:{Environment.NewLine}{timedOutStdout}" +
+                $"{Environment.NewLine}Standard error:{Environment.NewLine}{timedOutStderr}");
         }
 
+        string stdout = await stdoutTask.ConfigureAwait(false);
+        string stderr = await stderrTask.ConfigureAwait(false);
+
         return new ScriptResult(process.ExitCode, stdout, stderr);
+    }
+
+    static async Task<bool> WaitForExitAsync(Process process, int timeoutMilliseconds)
+    {
+        Task processExitTask = process.WaitForExitAsync();
+        Task timeoutTask = Task.Delay(timeoutMilliseconds);
+
+        Task completedTask = await Task.WhenAny(processExitTask, timeoutTask).ConfigureAwait(false);
+        if (completedTask == processExitTask)
+        {
+            await processExitTask.ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
+    }
+
+    static async Task<string> CompleteReadAfterKill(Task<string> readTask)
+    {
+        Task completedTask = await Task.WhenAny(readTask, Task.Delay(5000)).ConfigureAwait(false);
+        return completedTask == readTask
+            ? await readTask.ConfigureAwait(false)
+            : "<stream read did not complete after process kill>";
     }
 
     static string FindAddCheckDeclaration(string script, string checkName)
