@@ -10,6 +10,9 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     [
         "Vision readiness tests",
         "Voice warmup coordinator tests",
+        "Model reply loop live tests",
+        "Prompt leak contract tests",
+        "Runtime readiness script",
         "Voice warmup retry coordinator",
         "Semantic settle window contract tests",
         "Voice warmup contract tests",
