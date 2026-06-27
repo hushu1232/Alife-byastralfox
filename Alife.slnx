@@ -54,6 +54,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Alife.Test.Browser/Alife.Test.Browser.csproj" />
+    <Project Path="Tests/Alife.Test.DataAgent/Alife.Test.DataAgent.csproj" />
     <Project Path="Tests/Alife.Test.DesktopControl/Alife.Test.DesktopControl.csproj" />
     <Project Path="Tests/Alife.Test.DeskPet/Alife.Test.DeskPet.csproj" />
     <Project Path="Tests/Alife.Test.Framework/Alife.Test.Framework.csproj" />
@@ -65,4 +66,7 @@
   </Folder>
   <Folder Name="/Sources/" />
   <Folder Name="/Sources/Alife.Function/" />
+  <Folder Name="/Sources/Alife.Function/Data/">
+    <Project Path="Sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj" />
+  </Folder>
 </Solution>
