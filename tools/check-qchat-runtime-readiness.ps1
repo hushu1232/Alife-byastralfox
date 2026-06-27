@@ -108,6 +108,7 @@ if ($Live) {
 }
 
 $xiayuZhRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePaths @(
+    'xiayu\zh\ref.wav',
     'xiayu\zh.wav',
     'xiayu\zh_ref.wav',
     'xiayu\reference_zh.wav',
@@ -118,6 +119,7 @@ $xiayuZhRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePat
     'XiaYu\zh\reference.wav'
 )
 $xiayuJaRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePaths @(
+    'xiayu\ja\ref.wav',
     'xiayu\ja.wav',
     'xiayu\ja_ref.wav',
     'xiayu\reference_ja.wav',
@@ -128,6 +130,7 @@ $xiayuJaRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePat
     'XiaYu\ja\reference.wav'
 )
 $mixuZhRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePaths @(
+    'mixu\zh\ref.wav',
     'mixu\zh.wav',
     'mixu\zh_ref.wav',
     'mixu\reference_zh.wav',
@@ -138,6 +141,7 @@ $mixuZhRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePath
     'MiXu\zh\reference.wav'
 )
 $mixuJaRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePaths @(
+    'mixu\ja\ref.wav',
     'mixu\ja.wav',
     'mixu\ja_ref.wav',
     'mixu\reference_ja.wav',
