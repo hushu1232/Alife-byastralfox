@@ -17,7 +17,7 @@ public enum DocumentMode
 }
 
 [Module("Xml函数执行器", "提供一种Xml函数调用框架，可以将注册其中的函数，暴露给AI，并指导其用Xml标签调用。",
-    defaultCategory: "Alife 官方/功能底座",
+    defaultCategory: "astralfox-alife/功能底座",
     launchOrder: -1000)]
 public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveModule<XmlFunctionCaller>
 {

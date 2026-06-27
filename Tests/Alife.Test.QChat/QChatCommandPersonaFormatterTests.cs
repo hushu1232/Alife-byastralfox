@@ -24,7 +24,7 @@ public sealed class QChatCommandPersonaFormatterTests
     }
 
     [Test]
-    public void FormatForDenialKeepsReasonClear()
+    public void FormatForXiayuDenialUsesXiayuOwnerAddress()
     {
         string formatted = QChatCommandPersonaFormatter.Format(
             "xiayu",
@@ -33,8 +33,27 @@ public sealed class QChatCommandPersonaFormatterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(formatted, Does.Contain("Only the owner can use desktop diagnostics."));
+            Assert.That(formatted, Does.StartWith("状态如下。"));
+            Assert.That(formatted, Does.Contain("只认术术账号"));
+            Assert.That(formatted, Does.Not.Contain("主人"));
+            Assert.That(formatted, Does.Not.Contain("Only the owner"));
             Assert.That(formatted, Does.Not.Contain("file_policy=enabled"));
+        });
+    }
+
+    [Test]
+    public void FormatForMixuDenialKeepsMixuOwnerAddress()
+    {
+        string formatted = QChatCommandPersonaFormatter.Format(
+            "mixu",
+            QChatSenderRole.PrivateGuest,
+            "Only the owner can use desktop diagnostics.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("只认主人账号"));
+            Assert.That(formatted, Does.Not.Contain("只认术术账号"));
+            Assert.That(formatted, Does.Not.Contain("Only the owner"));
         });
     }
 

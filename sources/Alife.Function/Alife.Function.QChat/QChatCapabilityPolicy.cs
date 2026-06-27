@@ -17,7 +17,8 @@ public enum QChatCapability
     RiskLocalBlock,
     RiskFriendDelete,
     DesktopBusinessTask,
-    QZoneProactiveAction
+    QZoneProactiveAction,
+    InternetLookup
 }
 
 public enum QChatCapabilityRiskLevel
@@ -99,13 +100,16 @@ public static class QChatCapabilityPolicy
             or QChatCapability.ManagedFileRead
             or QChatCapability.GroupFileUpload
             or QChatCapability.QuietModeControl
-            or QChatCapability.DesktopBusinessTask;
+            or QChatCapability.DesktopBusinessTask
+            or QChatCapability.InternetLookup;
     }
 
     static bool RequiresAllowedAgent(QChatCapability capability)
     {
         return capability is QChatCapability.RiskFriendDelete
-            or QChatCapability.DesktopBusinessTask;
+            or QChatCapability.GroupFileUpload
+            or QChatCapability.DesktopBusinessTask
+            or QChatCapability.InternetLookup;
     }
 
     static QChatCapabilityRiskLevel GetRiskLevel(QChatCapability capability)
@@ -119,6 +123,7 @@ public static class QChatCapabilityPolicy
             QChatCapability.RecallMessage => QChatCapabilityRiskLevel.Medium,
             QChatCapability.ManagedFileRead => QChatCapabilityRiskLevel.Medium,
             QChatCapability.QuietModeControl => QChatCapabilityRiskLevel.Medium,
+            QChatCapability.InternetLookup => QChatCapabilityRiskLevel.Medium,
             QChatCapability.QZoneProactiveAction => QChatCapabilityRiskLevel.High,
             QChatCapability.ApprovalDecision => QChatCapabilityRiskLevel.High,
             QChatCapability.GroupFileUpload => QChatCapabilityRiskLevel.High,

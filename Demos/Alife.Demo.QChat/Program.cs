@@ -10,7 +10,7 @@ public class Program
     public static async Task Main(string[] args)
     {
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
-        AlifeTerminal.Log("   Alife.Client OneBot AI Module 集成验证 Demo", ConsoleColor.Magenta);
+        AlifeTerminal.Log("   astralfox-alife OneBot AI Module 集成验证 Demo", ConsoleColor.Magenta);
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 
         // 1. 配置角色 (真央)

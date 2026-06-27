@@ -4,7 +4,7 @@ using Alife.Framework;
 
 namespace Alife.Function.Emotion;
 
-[Module("PAD情绪引擎", "基于愉悦度/唤醒度/支配度的三维情绪模型", defaultCategory: "Alife 官方/智能体")]
+[Module("PAD情绪引擎", "基于愉悦度/唤醒度/支配度的三维情绪模型", defaultCategory: "astralfox-alife/智能体")]
 public class PADEmotionEngine : InteractiveModule<PADEmotionEngine>, IConfigurable<EmotionConfig>, ITimeIterative
 {
     public EmotionConfig? Configuration

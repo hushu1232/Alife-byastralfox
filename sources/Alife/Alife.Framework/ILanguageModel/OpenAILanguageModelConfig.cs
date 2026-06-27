@@ -15,4 +15,9 @@ public class OpenAILanguageModelConfig
                                 "thinking": {"type": "enabled"}
                               }
                               """;
+    public string fallbackEndpoint = "";
+    public string fallbackModelId = "";
+    public string fallbackApiKey = "";
+    public string fallbackExtraHeaders = "";
+    public string fallbackExtraBody = "{}";
 }

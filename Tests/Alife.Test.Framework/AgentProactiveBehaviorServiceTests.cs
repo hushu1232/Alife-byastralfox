@@ -124,6 +124,67 @@ public class AgentProactiveBehaviorServiceTests
     }
 
     [Test]
+    public void ProactiveBehaviorFiltersLowValueMechanicalChatSuggestionByDefault()
+    {
+        AgentControlCenterService control = new()
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowProactiveChat = true,
+                ProactiveChatIntensity = 3
+            }
+        };
+        AgentProactiveBehaviorService service = new(
+            controlCenter: control,
+            suggestionProviders: [
+                new StubSuggestionProvider(new AgentProactiveSuggestion(
+                    AgentProactiveActionKind.Chat,
+                    "Send a warm check-in even though nothing happened.",
+                    AgentAuditRiskLevel.Low,
+                    RequiresOwnerConfirmation: false,
+                    TargetType: "companionship",
+                    DraftText: "我在。想你了。"))
+            ]);
+
+        IReadOnlyList<AgentProactiveSuggestion> suggestions = service.BuildSuggestions(CreateSnapshot());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(suggestions, Has.Count.EqualTo(1));
+            Assert.That(suggestions[0].Kind, Is.EqualTo(AgentProactiveActionKind.None));
+            Assert.That(suggestions[0].Reason, Does.Contain("No proactive action"));
+        });
+    }
+
+    [Test]
+    public void ProactiveBehaviorKeepsEventAnchoredOwnerReminderSuggestion()
+    {
+        AgentControlCenterService control = new()
+        {
+            Configuration = new AgentControlCenterConfig
+            {
+                AllowProactiveChat = true,
+                ProactiveChatIntensity = 3
+            }
+        };
+        AgentProactiveBehaviorService service = new(
+            controlCenter: control,
+            suggestionProviders: [
+                new StubSuggestionProvider(new AgentProactiveSuggestion(
+                    AgentProactiveActionKind.OwnerReminder,
+                    "A background task failed and owner should be told.",
+                    AgentAuditRiskLevel.Low,
+                    RequiresOwnerConfirmation: false,
+                    TargetType: "task-failure",
+                    DraftText: "刚才任务失败了，我需要告诉术术。"))
+            ]);
+
+        IReadOnlyList<AgentProactiveSuggestion> suggestions = service.BuildSuggestions(CreateSnapshot());
+
+        Assert.That(suggestions.Single().Kind, Is.EqualTo(AgentProactiveActionKind.OwnerReminder));
+    }
+
+    [Test]
     public void ProactiveBehaviorAuditsSuggestionsWhenAuditLogIsAvailable()
     {
         string root = CreateTempWorkspace();

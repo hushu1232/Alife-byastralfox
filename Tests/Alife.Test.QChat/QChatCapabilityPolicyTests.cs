@@ -46,18 +46,29 @@ public sealed class QChatCapabilityPolicyTests
     }
 
     [Test]
-    public void GroupFileUploadRequiresOwner()
+    public void GroupFileUploadRequiresOwnerAndXiaYu()
     {
-        QChatCapabilityDecision decision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
+        QChatCapabilityDecision memberDecision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
             Capability: QChatCapability.GroupFileUpload,
             SenderRole: QChatSenderRole.GroupMember,
             AgentId: "xiayu"));
+        QChatCapabilityDecision ownerDecision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
+            Capability: QChatCapability.GroupFileUpload,
+            SenderRole: QChatSenderRole.Owner,
+            AgentId: "xiayu"));
+        QChatCapabilityDecision mixuDecision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
+            Capability: QChatCapability.GroupFileUpload,
+            SenderRole: QChatSenderRole.Owner,
+            AgentId: "mixu"));
 
         Assert.Multiple(() =>
         {
-            Assert.That(decision.Allowed, Is.False);
-            Assert.That(decision.Reason, Is.EqualTo("owner_required"));
-            Assert.That(decision.RiskLevel, Is.EqualTo(QChatCapabilityRiskLevel.High));
+            Assert.That(memberDecision.Allowed, Is.False);
+            Assert.That(memberDecision.Reason, Is.EqualTo("owner_required"));
+            Assert.That(memberDecision.RiskLevel, Is.EqualTo(QChatCapabilityRiskLevel.High));
+            Assert.That(ownerDecision.Allowed, Is.True);
+            Assert.That(mixuDecision.Allowed, Is.False);
+            Assert.That(mixuDecision.Reason, Is.EqualTo("agent_not_allowed"));
         });
     }
 

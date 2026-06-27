@@ -21,7 +21,8 @@ public sealed class QChatGroupGateService
         QChatAgentRoute route,
         string rawText,
         bool isMentionedOrWoken,
-        bool isAggressive)
+        bool isAggressive,
+        bool isSemanticReply = false)
     {
         ArgumentNullException.ThrowIfNull(route);
 
@@ -36,11 +37,11 @@ public sealed class QChatGroupGateService
                 string.Empty);
         }
 
-        if (route.IsOwner || isMentionedOrWoken || isAggressive)
+        if (route.IsOwner || isMentionedOrWoken || isAggressive || isSemanticReply)
         {
             return new QChatGroupGateDecision(
                 QChatInboundDecisionKind.DispatchToModel,
-                CreateDispatchReason(route, isMentionedOrWoken, isAggressive),
+                CreateDispatchReason(route, isMentionedOrWoken, isAggressive, isSemanticReply),
                 string.Empty,
                 DrainPending(route.SessionKey));
         }
@@ -55,7 +56,7 @@ public sealed class QChatGroupGateService
             string.Empty);
     }
 
-    static string CreateDispatchReason(QChatAgentRoute route, bool isMentionedOrWoken, bool isAggressive)
+    static string CreateDispatchReason(QChatAgentRoute route, bool isMentionedOrWoken, bool isAggressive, bool isSemanticReply)
     {
         if (route.IsOwner)
             return "owner group message";
@@ -65,6 +66,9 @@ public sealed class QChatGroupGateService
 
         if (isMentionedOrWoken)
             return "mentioned or woken group message";
+
+        if (isSemanticReply)
+            return "semantic group reply";
 
         return "group message dispatch";
     }

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Newtonsoft.Json;
 using Alife.Framework;
@@ -23,7 +24,7 @@ public record MemoryMeta(int Level, DateTime StartTime, DateTime EndTime)
 /// </summary>
 public class MemoryManager
 {
-    public MemoryManager(HistoryCompressor compressor, TextVectorizer vectorizer, string storagePath,
+    public MemoryManager(HistoryCompressor compressor, ITextVectorizer vectorizer, string storagePath,
         int compressionThreshold, int compressionCount, int maxCompressionLevel)
     {
         this.compressionThreshold = compressionThreshold;
@@ -38,8 +39,10 @@ public class MemoryManager
             Directory.CreateDirectory(storagePath);
     }
 
-    public async Task<bool> Filter(ChatHistory chatHistory)
+    public async Task<bool> Filter(ChatHistoryAgentThread chatHistoryAgentThread)
     {
+        ChatHistory chatHistory = chatHistoryAgentThread.ChatHistory;
+
         //跳过系统提示词
         int contentIndex = 0;
         for (; contentIndex < chatHistory.Count; contentIndex++)
@@ -82,7 +85,7 @@ public class MemoryManager
                 string fullContent = PickContent(chatHistory, areaStart, areaStart + areaCompressionCount);
 
                 string range = $"当前上下文中，{(areaLevel == 0 ? "非记忆存档" : $"{areaLevel}级记忆存档")}，从 {startTime} 到 {endTime} 期间的内容";
-                string? summary = await compressor.Compress(chatHistory, range);
+                string? summary = await compressor.Compress(chatHistoryAgentThread, range);
                 if (summary == null)
                     return false;
 

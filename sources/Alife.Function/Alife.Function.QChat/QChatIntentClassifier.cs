@@ -119,16 +119,39 @@ public static class QChatIntentClassifier
 
     public static QChatIntentDecision ClassifyAllowlist(QChatIntentInput input, long currentGroupId)
     {
-        string text = Merge(input.PlainText, input.ReadableText);
-        bool candidate = ContainsAny(text, "白名单", "allowlist", "qchat_allowlist_update");
+        string candidateText = Merge(input.PlainText, input.ReadableText);
+        bool candidate = ContainsAny(candidateText, "白名单", "allowlist", "qchat_allowlist_update");
         if (candidate == false)
             return None(QChatIntentKind.AllowlistUpdate, "no allowlist keyword");
 
-        string action = ContainsAny(text, "移除", "删除", "remove") ? "remove" : "add";
-        long id = ExtractFirstId(text);
-        if (id == 0 && ContainsAny(text, "这个群", "本群", "当前群"))
+        string commandText = input.PlainText ?? string.Empty;
+        bool forwardedOrReadableOnly = string.IsNullOrWhiteSpace(commandText) ||
+                                       ContainsAny(input.RawMessage, "[CQ:forward") ||
+                                       ContainsAny(input.ReadableText, "转发消息内容");
+        bool commandContainsAllowlist = ContainsAny(commandText, "白名单", "allowlist", "qchat_allowlist_update");
+        if (commandContainsAllowlist == false)
+        {
+            return new QChatIntentDecision(
+                QChatIntentKind.AllowlistUpdate,
+                true,
+                false,
+                forwardedOrReadableOnly ? 0.18 : 0.3,
+                QChatIntentTargetKind.None,
+                null,
+                null,
+                null,
+                false,
+                false,
+                forwardedOrReadableOnly
+                    ? "allowlist keyword came from forward/readable content"
+                    : "allowlist keyword is not in the current command text");
+        }
+
+        string action = ContainsAny(commandText, "移除", "删除", "remove") ? "remove" : "add";
+        long id = ExtractFirstId(commandText);
+        if (id == 0 && ContainsAny(commandText, "这个群", "本群", "当前群"))
             id = currentGroupId;
-        bool confirmed = id > 0 && ContainsAny(text, "群", "group", "target=\"group\"");
+        bool confirmed = id > 0 && ContainsAny(commandText, "群", "group", "target=\"group\"");
 
         return new QChatIntentDecision(
             QChatIntentKind.AllowlistUpdate,
@@ -148,8 +171,8 @@ public static class QChatIntentClassifier
     {
         string text = Merge(input.PlainText, input.ReadableText);
         bool sleep = ContainsDirectQuietModeSleepCommand(text);
-        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "wake", "resume");
-        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "quiet", "silent", "wake", "resume");
+        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "恢复正常", "wake", "resume");
+        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "恢复正常", "quiet", "silent", "wake", "resume");
         bool meta = ContainsAny(text, "是什么", "会不会", "为什么", "怎么", "失败", "测试", "验证", "演示", "试试", "能不能", "是不是", "是否");
         bool candidate = sleep || wake || (quietModeMention && meta);
         if (candidate == false)
@@ -178,6 +201,7 @@ public static class QChatIntentClassifier
             text,
             "先安静",
             "安静一下",
+            "安静一点",
             "安静一会",
             "安静一阵",
             "安静点",

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
         xmlns:alife="clr-namespace:Alife"
-        Title="Alife" Height="800" Width="1200"
+        Title="astralfox-alife" Height="800" Width="1200"
         WindowStartupLocation="CenterScreen"
         WindowStyle="SingleBorderWindow"
         Background="White"
@@ -77,9 +77,9 @@
 
                 <!-- 标题与拖拽区 -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                    <TextBlock Text="Alife" IsHitTestVisible="False" FontWeight="Bold" Foreground="#1890ff"
+                    <TextBlock Text="astralfox-alife" IsHitTestVisible="False" FontWeight="Bold" Foreground="#1890ff"
                                FontSize="14" />
-                    <TextBlock Text=" - 创造赛博生命" IsHitTestVisible="False" Foreground="#666" FontSize="12"
+                    <TextBlock Text=" - 独立 Agent 运行时" IsHitTestVisible="False" Foreground="#666" FontSize="12"
                                Margin="4,0,0,0" VerticalAlignment="Bottom" />
                 </StackPanel>
 

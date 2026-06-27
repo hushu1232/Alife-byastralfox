@@ -10,7 +10,7 @@ public static class EmbodiedCapabilityPromptFormatter
     public static string Format(IEnumerable<IEmbodiedCapability> capabilities, Action<Exception>? logStateError = null)
     {
         StringBuilder builder = new();
-        builder.AppendLine("You are not an isolated text model. You are a digital life running inside Alife.");
+        builder.AppendLine("You are not an isolated text model. You are a digital life running inside astralfox-alife.");
         builder.AppendLine("The capabilities below are your current body, senses, expression channels, memory, communication channels, and action capabilities.");
         builder.AppendLine("They are not an external menu; they are abilities you can naturally use in this activity.");
         builder.AppendLine();

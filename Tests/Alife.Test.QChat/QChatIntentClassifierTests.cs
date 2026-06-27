@@ -120,10 +120,38 @@ public class QChatIntentClassifierTests
         });
     }
 
+    [Test]
+    public void AllowlistIntentRejectsForwardedHistoryFalsePositive()
+    {
+        QChatIntentInput input = new(
+            PlainText: "",
+            ReadableText: """
+                          # 转发消息内容 (ID: forward-allowlist)
+                          ## 3045846738(QQ用户):
+                          把这个群加入白名单
+                          """,
+            RawMessage: "[CQ:forward,id=forward-allowlist]",
+            HasReply: false,
+            ReplyMessageId: null);
+
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyAllowlist(input, currentGroupId: 1072509877);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatIntentKind.AllowlistUpdate));
+            Assert.That(decision.IsCandidate, Is.True);
+            Assert.That(decision.IsConfirmed, Is.False);
+            Assert.That(decision.TargetId, Is.Null);
+            Assert.That(decision.Reason, Does.Contain("forward"));
+        });
+    }
+
     [TestCase("\u5148\u5b89\u9759\u4e00\u4e0b", "sleep")]
     [TestCase("\u522b\u8bf4\u8bdd\u4e86", "sleep")]
+    [TestCase("\u7fbd\uff0c\u5b89\u9759\u4e00\u70b9", "sleep")]
     [TestCase("\u7761\u4e00\u4f1a\u513f", "sleep")]
     [TestCase("\u9192\u9192", "wake")]
+    [TestCase("\u7fbd\uff0c\u6062\u590d\u6b63\u5e38", "wake")]
     [TestCase("\u53ef\u4ee5\u8bf4\u8bdd\u4e86", "wake")]
     [TestCase("\u51fa\u6765\u5427", "wake")]
     public void QuietModeIntentConfirmsNaturalControlPhrases(string text, string action)

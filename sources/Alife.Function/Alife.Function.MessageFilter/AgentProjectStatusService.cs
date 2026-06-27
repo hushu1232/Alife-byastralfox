@@ -22,7 +22,7 @@ public sealed record AgentProjectStatusSnapshot(
 [Module(
     "Agent Project Status",
     "Summarizes the agent workspace, allowed maintenance commands, and recent audit activity before code work.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -61)]
 public class AgentProjectStatusService(
     AgentWorkspacePolicy? workspacePolicy = null,
@@ -137,8 +137,8 @@ public class AgentProjectStatusService(
         return new AgentCommandPolicy([
             new AgentCommandDefinition("git-status", "Show repository status.", "git", "status --short", cwd, TimeSpan.FromSeconds(20)),
             new AgentCommandDefinition("git-diff", "Show unstaged repository diff.", "git", "diff --", cwd, TimeSpan.FromSeconds(20)),
-            new AgentCommandDefinition("dotnet-build-solution", "Build the Alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
-            new AgentCommandDefinition("dotnet-test-solution", "Run the Alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
+            new AgentCommandDefinition("dotnet-build-solution", "Build the astralfox-alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
+            new AgentCommandDefinition("dotnet-test-solution", "Run the astralfox-alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
         ]);
     }
 }

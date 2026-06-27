@@ -18,7 +18,7 @@ public record VisionServiceConfig
 }
 
 [Module("视觉感知", "让 AI 能够看到屏幕内容，理解图片，观察世界。",
-    defaultCategory: "Alife 官方/实用工具",
+    defaultCategory: "astralfox-alife/实用工具",
     EditorUI = typeof(VisionServiceUI))]
 [Description($"此服务让你拥有视觉感知能力，你可以通过<{nameof(GetWindows)}>获取当前系统运行的窗口，然后传入到<{nameof(LookWindow)}>中进行视觉分析。或则直接将图片链接或地址，传入到<{nameof(LookImage)}>中分析")]
 public class VisionService(XmlFunctionCaller functionService, IVisionModel? visionModel = null)

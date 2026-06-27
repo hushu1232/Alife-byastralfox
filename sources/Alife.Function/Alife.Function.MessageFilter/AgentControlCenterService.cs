@@ -22,13 +22,14 @@ public sealed class AgentControlCenterConfig
     public bool AllowMentionWakeup { get; set; } = true;
     public bool AllowPassiveGroupListening { get; set; } = true;
     public bool AllowProactiveChat { get; set; } = true;
+    public bool SuppressLowValueProactiveChat { get; set; } = true;
     public bool AllowAutomaticMaintenanceInspection { get; set; } = true;
     public int ProactiveChatIntensity { get; set; } = 2;
     public int MaxSelfConfigChangesPerHour { get; set; } = 6;
     public int MaintenanceInspectionIntervalMinutes { get; set; } = 15;
     public int MaintenanceDuplicateCooldownMinutes { get; set; } = 120;
     public string LowRiskConfigurationKeys { get; set; } =
-        "AllowMentionWakeup;AllowPassiveGroupListening;AllowProactiveChat;AllowAutomaticMaintenanceInspection;ProactiveChatIntensity;MaxSelfConfigChangesPerHour;MaintenanceInspectionIntervalMinutes;MaintenanceDuplicateCooldownMinutes";
+        "AllowMentionWakeup;AllowPassiveGroupListening;AllowProactiveChat;SuppressLowValueProactiveChat;AllowAutomaticMaintenanceInspection;ProactiveChatIntensity;MaxSelfConfigChangesPerHour;MaintenanceInspectionIntervalMinutes;MaintenanceDuplicateCooldownMinutes";
     public string ProtectedConfigurationKeys { get; set; } =
         "OwnerUserIds;AllowedWorkspaceRoots;AllowedCommands;RequireOwnerConfirmationForHighRiskConfiguration;ProtectedConfigurationKeys;GitHubUpload;QZonePost;QZoneComment;QZoneLike;GroupFileUpload;CodeExecution";
 }
@@ -317,7 +318,7 @@ public sealed record AgentControlCenterSnapshot(
 [Module(
     "Agent Control Center",
     "Shows the agent runtime state, task status, audit trail, allowed commands, issue report, and workspace proposals.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     editorUI: typeof(AgentControlCenterServiceUI),
     LaunchOrder = -59)]
 public class AgentControlCenterService(
@@ -1380,8 +1381,8 @@ public class AgentControlCenterService(
         return new AgentCommandPolicy([
             new AgentCommandDefinition("git-status", "Show repository status.", "git", "status --short", cwd, TimeSpan.FromSeconds(20)),
             new AgentCommandDefinition("git-diff", "Show unstaged repository diff.", "git", "diff --", cwd, TimeSpan.FromSeconds(20)),
-            new AgentCommandDefinition("dotnet-build-solution", "Build the Alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
-            new AgentCommandDefinition("dotnet-test-solution", "Run the Alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
+            new AgentCommandDefinition("dotnet-build-solution", "Build the astralfox-alife solution without restoring packages.", "dotnet", "build Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(3)),
+            new AgentCommandDefinition("dotnet-test-solution", "Run the astralfox-alife solution tests without restoring packages.", "dotnet", "test Alife.slnx --no-restore", cwd, TimeSpan.FromMinutes(5))
         ]);
     }
 

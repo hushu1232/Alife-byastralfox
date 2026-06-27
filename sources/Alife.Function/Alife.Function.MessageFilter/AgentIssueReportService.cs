@@ -23,7 +23,7 @@ public sealed record AgentIssueReportSnapshot(
 [Module(
     "Agent Issue Report",
     "Collects recent runtime errors, failed audit entries, and unhealthy modules for self-repair workflows.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -60)]
 public class AgentIssueReportService(
     AgentAuditLogService? auditLog = null,

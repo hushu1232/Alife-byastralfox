@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Alife.Function.Vision;
 
 [Module("MiniCPM视觉分析", "基于MiniCPM-V 4.6的轻量本地视觉分析引擎",
-defaultCategory: "Alife 官方/模型接入/视觉模型",
+defaultCategory: "astralfox-alife/模型接入/视觉模型",
 EditorUI = typeof(MiniCPMVisionModelUI))]
 public class MiniCPMVisionModel(
     ILogger<MiniCPMVisionModel> logger

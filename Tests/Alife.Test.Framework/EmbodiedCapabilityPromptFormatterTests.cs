@@ -46,7 +46,7 @@ public class EmbodiedCapabilityPromptFormatterTests
     {
         string prompt = EmbodiedCapabilityPromptFormatter.Format([]);
 
-        Assert.That(prompt, Does.Contain("digital life running inside Alife"));
+        Assert.That(prompt, Does.Contain("digital life running inside astralfox-alife"));
         Assert.That(prompt, Does.Contain("not an external menu"));
         Assert.That(prompt, Does.Contain("body, senses, and actions"));
     }
@@ -62,7 +62,7 @@ public class EmbodiedCapabilityPromptFormatterTests
 
         string prompt = EmbodiedCapabilityPromptFormatter.Format(capabilities);
 
-        Assert.That(prompt.Split("digital life running inside Alife").Length - 1, Is.EqualTo(1));
+        Assert.That(prompt.Split("digital life running inside astralfox-alife").Length - 1, Is.EqualTo(1));
         Assert.That(prompt, Does.Contain("## Body"));
         Assert.That(prompt, Does.Contain("## Expression"));
         Assert.That(prompt, Does.Contain("## Communication"));
@@ -83,7 +83,7 @@ public class EmbodiedCapabilityPromptFormatterTests
 
         Assert.That(contribution.Key, Is.EqualTo("self-context"));
         Assert.That(contribution.Priority, Is.GreaterThan(900));
-        Assert.That(contribution.Content, Does.Contain("digital life running inside Alife"));
+        Assert.That(contribution.Content, Does.Contain("digital life running inside astralfox-alife"));
         Assert.That(contribution.Content, Does.Contain("- Desk pet: A visible body."));
         Assert.That(contribution.Content, Does.Contain("Current state: Ready"));
     }

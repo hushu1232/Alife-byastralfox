@@ -23,7 +23,7 @@ public class McpModuleConfig
 }
 
 [Module("MCP服务", "让AI可以通过Model Context Protocol接入外部工具。",
-defaultCategory: "Alife 官方/功能底座",
+defaultCategory: "astralfox-alife/功能底座",
 editorUI: typeof(McpServiceUI))]
 public class McpService(XmlFunctionCaller functionService, ILoggerFactory loggerFactory)
     : InteractiveModule<McpService>, IConfigurable<McpModuleConfig>

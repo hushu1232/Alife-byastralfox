@@ -79,7 +79,7 @@ public sealed record AgentWorkspacePatchProposal(
 [Module(
     "Agent Workspace",
     "Provides restricted workspace file read, search, generation, and exact text replacement tools.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -64)]
 public class AgentWorkspaceService(
     AgentWorkspacePolicy? policy = null,

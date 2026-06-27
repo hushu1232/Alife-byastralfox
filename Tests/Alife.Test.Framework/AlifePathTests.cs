@@ -5,6 +5,15 @@ namespace Alife.Test.Framework;
 public class AlifePathTests
 {
     [Test]
+    public void TempFolderPathDefaultsInsideProjectRoot()
+    {
+        string expectedPath = Path.Combine(AlifePath.RootFolderPath, ".tmp", "Alife.Client");
+
+        Assert.That(AlifePath.TempFolderPath, Is.EqualTo(expectedPath));
+        Assert.That(Path.GetFullPath(AlifePath.TempFolderPath), Does.StartWith(Path.GetFullPath(AlifePath.RootFolderPath)));
+    }
+
+    [Test]
     public void SetStorageFolderPathCanAvoidPersistingRuntimeStorageOverride()
     {
         string previousStorage = AlifePath.StorageFolderPath;
@@ -12,7 +21,7 @@ public class AlifePathTests
         string? previousFileContent = File.Exists(storageFile)
             ? File.ReadAllText(storageFile)
             : null;
-        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-path-tests", Guid.NewGuid().ToString("N"));
+        string storageRoot = Path.Combine(AlifePath.TempFolderPath, "alife-path-tests", Guid.NewGuid().ToString("N"));
 
         try
         {

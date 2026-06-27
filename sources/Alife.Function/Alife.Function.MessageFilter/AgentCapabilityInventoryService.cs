@@ -23,7 +23,7 @@ public sealed record AgentCapabilityBoundary(
 [Module(
     "Agent Capability Inventory",
     "Describes verified tool capabilities, risk levels, authorization boundaries, and truthfulness rules for agent self-awareness.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -66)]
 public class AgentCapabilityInventoryService(XmlFunctionCaller? functionCaller = null)
     : InteractiveModule<AgentCapabilityInventoryService>

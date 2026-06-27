@@ -6,6 +6,66 @@ namespace Alife.Test.Framework;
 public class AstralFoxBrandingTests
 {
     [Test]
+    public void PublicDocumentationUsesAstralFoxAlifeBranding()
+    {
+        string root = FindRepositoryRoot();
+        string readme = File.ReadAllText(Path.Combine(root, "README.md"));
+
+        Assert.That(readme, Does.Contain("# astralfox-alife"));
+        Assert.That(readme, Does.Not.Contain("github.com/bdffzi/Alife/releases"));
+        Assert.That(readme, Does.Not.Contain("# Alife -"));
+        Assert.That(readme, Does.Not.Contain("![Alife Logo]"));
+    }
+
+    [Test]
+    public void PrimaryFrontendSurfacesUseAstralFoxAlifeBranding()
+    {
+        string root = FindRepositoryRoot();
+        string mainWindow = File.ReadAllText(Path.Combine(root, "sources", "Alife", "Alife.Client", "MainWindow.xaml"));
+        string indexHtml = File.ReadAllText(Path.Combine(root, "sources", "Alife", "Alife.Client", "wwwroot", "index.html"));
+        string welcome = File.ReadAllText(Path.Combine(root, "sources", "Alife", "Alife.Client", "Components", "Pages", "WelcomePage", "WelcomeUI.razor"));
+
+        Assert.That(mainWindow, Does.Contain("Title=\"astralfox-alife\""));
+        Assert.That(mainWindow, Does.Contain("Text=\"astralfox-alife\""));
+        Assert.That(mainWindow, Does.Not.Contain("Title=\"Alife\""));
+        Assert.That(indexHtml, Does.Contain("<title>astralfox-alife</title>"));
+        Assert.That(welcome, Does.Contain("astralfox-alife"));
+        Assert.That(welcome, Does.Not.Contain("Alife.Client Project"));
+    }
+
+    [Test]
+    public void ModuleDisplayCategoriesUseAstralFoxAlifeBranding()
+    {
+        string root = FindRepositoryRoot();
+        string sourcesRoot = Path.Combine(root, "sources");
+
+        foreach (string file in Directory.EnumerateFiles(sourcesRoot, "*.cs", SearchOption.AllDirectories))
+        {
+            string content = File.ReadAllText(file);
+            Assert.That(content, Does.Not.Contain("defaultCategory: \"Alife 官方/"), file);
+            Assert.That(content, Does.Not.Contain("defaultCategory: \"Alife Official/"), file);
+        }
+    }
+
+    [Test]
+    public void FrontendFilesDoNotExposeUpstreamAlifeReleaseLinks()
+    {
+        string root = FindRepositoryRoot();
+        string sourcesRoot = Path.Combine(root, "sources");
+        string[] extensions = [".razor", ".html", ".xaml"];
+
+        foreach (string file in Directory.EnumerateFiles(sourcesRoot, "*.*", SearchOption.AllDirectories)
+                     .Where(file => extensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
+                     .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+                     .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
+        {
+            string content = File.ReadAllText(file);
+            Assert.That(content, Does.Not.Contain("github.com/BDFFZI/Alife/releases"), file);
+            Assert.That(content, Does.Not.Contain("github.com/bdffzi/Alife/releases"), file);
+        }
+    }
+
+    [Test]
     public void DevMarkComponentExistsAndIsUsedInPrimaryConfigurationSurfaces()
     {
         string root = FindRepositoryRoot();

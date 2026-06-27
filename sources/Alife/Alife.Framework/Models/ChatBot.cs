@@ -46,10 +46,13 @@ public class ChatBot : IAsyncDisposable
     public event Action<string>? ChatSent;//消息发送前
     public event Action<string>? ChatReceived;//消息接收到
     public event Action<string>? ReasoningReceived;//思考消息接收到
+    public event Action<string, string>? ChatFinished;
     public event Action? ChatOver;//消息结束
 
     public event Action<ChatMessageContent>? ChatHistoryAdd;
     public event Action<ChatTokenUsage>? TokenUsed;
+    public ChatCompletionAgent? ChatCompletionAgent => llmAgent;
+    public ChatHistoryAgentThread ChatHistoryAgentThread => llmAgentThread;
     public ChatHistory ChatHistory => llmAgentThread.ChatHistory;
     public bool IsChatting => chatSemaphore.CurrentCount == 0;
     public CancellationTokenSource ChatBreakTokenSource => chatBreakSource;
@@ -172,13 +175,15 @@ public class ChatBot : IAsyncDisposable
             }
 
             // 在同步历史记录前，清洗掉可能存入 ChatHistory 的思考内容（防止污染上下文）
+            string aiMessage = cleanResponseBuilder.ToString();
             if (llmAgentThread.ChatHistory.Count > 0)
             {
                 ChatMessageContent lastMsg = llmAgentThread.ChatHistory[^1];
                 if (lastMsg.Role == AuthorRole.Assistant && (lastMsg.Content?.Contains(ThinkContentPrefix) ?? false))
-                    lastMsg.Content = cleanResponseBuilder.ToString();
+                    lastMsg.Content = aiMessage;
             }
 
+            ChatFinished?.Invoke(message, aiMessage);
             ChatOver?.Invoke();
 
             ChaseChatHistory();

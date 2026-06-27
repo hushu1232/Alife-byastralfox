@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.DesktopControl\Alife.Function.DesktopControl.csproj" />
     <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.MessageFilter\Alife.Function.MessageFilter.csproj" />
     <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
+    <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.VirtualWorld\Alife.Function.VirtualWorld.csproj" />
   </ItemGroup>
 
 </Project>

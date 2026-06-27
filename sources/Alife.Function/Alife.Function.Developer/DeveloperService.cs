@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
@@ -11,7 +11,7 @@ using Alife.Platform;
 namespace Alife.Function.Developer;
 
 [Module("开发者模式", "向 AI 暴露项目和系统信息，并提供工具使其可以自制插件和活动管理。",
-    defaultCategory: "Alife 官方/生活环境"
+    defaultCategory: "astralfox-alife/生活环境"
 )]
 public class DeveloperService(
     CharacterSystem characterSystem,

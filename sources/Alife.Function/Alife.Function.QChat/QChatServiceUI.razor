@@ -152,6 +152,130 @@
                                 <FormItem Label="允许非主人私聊进入模型">
                                     <Switch @bind-Value="@Configuration.AllowPrivateGuestChat" />
                                 </FormItem>
+                                <FormItem Label="Agent 联网">
+                                    <Switch @bind-Value="@Configuration.EnableInternetAccess" />
+                                    <div class="quiet-hint">默认关闭。开启后仍只允许主人账号触发，并受 Agent 白名单、URL 策略、审计和不可信上下文包裹限制。</div>
+                                </FormItem>
+                                <FormItem Label="联网 Agent 白名单">
+                                    <Input @bind-Value="@Configuration.InternetAllowedAgentIds"
+                                           Placeholder="xiayu" />
+                                    <div class="quiet-hint">英文逗号分隔。第一期默认只给夏羽开放。</div>
+                                </FormItem>
+                                <FormItem Label="公开联网搜索">
+                                    <Switch @bind-Value="@Configuration.EnablePublicInternetSearch" />
+                                    <div class="quiet-hint">开启后群成员可 &#64;机器人 并使用搜索语义临时联网搜索；/search &lt;query&gt; 仅保留兼容。不会开放 /qchat、浏览器、登录、下载、本地文件或持久化摄入。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用公开搜索">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicInternetSearch" />
+                                    <div class="quiet-hint">关闭后，只有主人可触发公开搜索；群成员 &#64;搜索会在模型前被拒绝。</div>
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 查询">
+                                    <Switch @bind-Value="@Configuration.EnablePublicExternalRagQuery" />
+                                    <div class="quiet-hint">开启后群成员可使用 /rag &lt;question&gt; 查询主人批准的外部 RAG；不能新增、删除、刷新或配置来源。</div>
+                                </FormItem>
+                                <FormItem Label="群成员可用外部 RAG">
+                                    <Switch @bind-Value="@Configuration.AllowGroupMemberPublicExternalRagQuery" />
+                                    <div class="quiet-hint">关闭后，群成员不能查询主人批准的外部 RAG；管理和写入仍然始终只允许主人。</div>
+                                </FormItem>
+                                <FormItem Label="公开搜索最大结果数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetSearchMaxResults"
+                                                           Min="1"
+                                                           Max="8"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开查询最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicInternetQueryMaxChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="公开外部 RAG 最大片段数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.PublicExternalRagMaxChunks"
+                                                           Min="1"
+                                                           Max="12"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="语音克隆" Class="qchat-card">
+                                <FormItem Label="全局 QQ 语音输出">
+                                    <Switch @bind-Value="@Configuration.EnableQChatVoiceOutput" />
+                                    <div class="quiet-hint">默认关闭。关闭时，即使克隆开关或语音请求被打开，也只发送文字回复。</div>
+                                </FormItem>
+                                <FormItem Label="主人克隆语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceClone" />
+                                    <div class="quiet-hint">启用后，仍只有在当前用户明确要求语音时才会尝试发送克隆语音。</div>
+                                </FormItem>
+                                <FormItem Label="仅主人可触发语音">
+                                    <Switch @bind-Value="@Configuration.DenyVoiceForNonOwner" />
+                                    <div class="quiet-hint">默认开启，非主人不能触发语音回复。</div>
+                                </FormItem>
+                                <FormItem Label="非主人@语音扩展">
+                                    <Switch @bind-Value="@Configuration.EnableNonOwnerMentionVoice" />
+                                    <div class="quiet-hint">仅在关闭“仅主人可触发语音”、群聊真实@或确认唤醒、且对方明确要求语音时参与概率判断。</div>
+                                </FormItem>
+                                <FormItem Label="非主人@语音概率">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceProbability"
+                                                           Min="0f"
+                                                           Max="1f"
+                                                           Step="0.05f"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="非主人@语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.NonOwnerMentionVoiceMaxChars"
+                                                           Min="1"
+                                                           Max="200"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="主人明确要求时发语音">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnExplicitRequest" />
+                                </FormItem>
+                                <FormItem Label="亲密场景语音门控">
+                                    <Switch @bind-Value="@Configuration.EnableOwnerVoiceOnIntimateScene" />
+                                    <div class="quiet-hint">不会自动发语音；当前用户仍必须明确要求语音。</div>
+                                </FormItem>
+                                <FormItem Label="语音最大字数">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxVoiceReplyChars"
+                                                           Min="1"
+                                                           Max="1000"
+                                                           Style="width: 100%;" />
+                                    <div class="quiet-hint">超过该字数的回复不会转为语音，避免长文本占用语音通道。</div>
+                                </FormItem>
+                            </Card>
+                        </GridCol>
+                        <GridCol Xs="24" Md="12">
+                            <Card Size="CardSize.Small" Title="角色语音" Class="qchat-card">
+                                <FormItem Label="按账号使用独立音色">
+                                    <Switch @bind-Value="@Configuration.VoiceProfiles.EnablePerAgentVoiceProfiles" />
+                                </FormItem>
+                                <Alert Type="AlertType.Info"
+                                       ShowIcon="true"
+                                       Message="语音音色只按真实 Bot 账号和 Agent 身份选择，聊天文本、昵称、转发内容不能切换音色。" />
+
+                                @foreach (QChatVoiceProfile profile in Configuration.VoiceProfiles.Profiles)
+                                {
+                                    <Divider Orientation="@DividerOrientation.Left">@($"{profile.AgentId} / {profile.BotId}")</Divider>
+                                    <FormItem Label="启用">
+                                        <Switch @bind-Value="@profile.Enabled" />
+                                    </FormItem>
+                                    <FormItem Label="API 地址">
+                                        <Input @bind-Value="@profile.ApiBaseUrl" />
+                                    </FormItem>
+                                    <FormItem Label="参考音频">
+                                        <Input @bind-Value="@profile.ReferenceAudioPath" />
+                                    </FormItem>
+                                    <FormItem Label="参考文本">
+                                        <TextArea @bind-Value="@profile.PromptText"
+                                                  Rows="3" />
+                                    </FormItem>
+                                    <FormItem Label="最大字数">
+                                        <AntDesign.InputNumber @bind-Value="@profile.MaxTextChars"
+                                                               Min="1"
+                                                               Max="500"
+                                                               Style="width: 100%;" />
+                                    </FormItem>
+                                }
                             </Card>
                         </GridCol>
                     </GridRow>
@@ -239,6 +363,41 @@
                                 </FormItem>
                                 <FormItem Label="允许发送视频消息">
                                     <Switch @bind-Value="@Configuration.EnableVideoMessage" />
+                                </FormItem>
+                                <Divider />
+                                <FormItem Label="Enable QQ image recognition">
+                                    <Switch @bind-Value="@Configuration.EnableImageRecognition" />
+                                </FormItem>
+                                <Alert Type="@VisionReadinessAlertType"
+                                       ShowIcon="true"
+                                       Message="@VisionReadinessMessage"
+                                       Description="@VisionReadinessDescription"
+                                       Style="margin-bottom: 16px;" />
+                                <FormItem Label="Agnes vision endpoint">
+                                    <Input @bind-Value="@Configuration.AgnesVisionApiEndpoint" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision model">
+                                    <Input @bind-Value="@Configuration.AgnesVisionModel" />
+                                </FormItem>
+                                <FormItem Label="Agnes vision API key">
+                                    <InputPassword @bind-Value="@Configuration.AgnesVisionApiKey" />
+                                    <div class="quiet-hint">Prefer ALIFE_AGNES_VISION_API_KEY for runtime secrets.</div>
+                                </FormItem>
+                                <FormItem Label="Max images per message">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.MaxImagesPerMessage"
+                                                           Min="1"
+                                                           Max="4"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Image recognition timeout ms">
+                                    <AntDesign.InputNumber @bind-Value="@Configuration.ImageRecognitionTimeoutMilliseconds"
+                                                           Min="1000"
+                                                           Max="60000"
+                                                           Step="1000"
+                                                           Style="width: 100%;" />
+                                </FormItem>
+                                <FormItem Label="Allow passive group image recognition">
+                                    <Switch @bind-Value="@Configuration.AnalyzePassiveGroupImages" />
                                 </FormItem>
                             </Card>
                         </GridCol>
@@ -369,6 +528,32 @@
     string activeGroupTabKey = "overview";
     bool isReconnecting;
     System.Timers.Timer? refreshTimer;
+    QChatVisionReadinessStatus VisionReadiness => QChatVisionReadiness.Evaluate(
+        Configuration,
+        () => QChatAgnesVisionApiKeyResolver.Resolve(Configuration.AgnesVisionApiKey));
+    AlertType VisionReadinessAlertType => VisionReadiness.Status switch
+    {
+        "ready" => AlertType.Success,
+        "disabled" => AlertType.Info,
+        _ => AlertType.Warning
+    };
+    string VisionReadinessMessage => VisionReadiness.Status switch
+    {
+        "ready" => "Vision ready",
+        "disabled" => "Vision disabled",
+        "missing_api_key" => "Vision missing API key",
+        "invalid_endpoint" => "Vision endpoint invalid",
+        _ => $"Vision {VisionReadiness.Status}"
+    };
+    string VisionReadinessDescription
+    {
+        get
+        {
+            QChatVisionReadinessStatus status = VisionReadiness;
+            string keyState = status.ApiKeyConfigured ? "configured" : "missing";
+            return $"provider={status.Provider}; model={status.Model}; apiKey={keyState}; publicUrlRequired={status.PublicUrlRequired}; maxImages={status.MaxImagesPerMessage}; reason={status.Reason}";
+        }
+    }
     bool QuietModeEnabled
     {
         get => Module?.IsQuietModeEnabled ?? false;

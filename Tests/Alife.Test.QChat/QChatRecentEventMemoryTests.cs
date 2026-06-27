@@ -129,9 +129,47 @@ public class QChatRecentEventMemoryTests
         Assert.Multiple(() =>
         {
             Assert.That(context, Does.StartWith("[Recent QQ context]"));
-            Assert.That(context, Does.Contain("- 19:00 user 100: first"));
-            Assert.That(context, Does.Contain("- 19:01 user 200: second"));
+            Assert.That(context, Does.Contain("- 19:00 other user 100: first"));
+            Assert.That(context, Does.Contain("- 19:01 other user 200: second"));
             Assert.That(context, Does.EndWith("[/Recent QQ context]"));
+        });
+    }
+
+    [Test]
+    public void BuildRecentContextBlockLabelsOwnerAndOtherSpeakers()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 3045846738,
+            GroupId = 925402131,
+            RawMessage = "owner says alpha"
+        }, "owner says alpha", now);
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 2,
+            UserId = 200,
+            GroupId = 925402131,
+            RawMessage = "other says beta"
+        }, "other says beta", now.AddMinutes(1));
+
+        string context = memory.BuildRecentContextBlock(
+            2905391496,
+            OneBotMessageType.Group,
+            925402131,
+            limit: 6,
+            now.AddMinutes(1),
+            ownerUserId: 3045846738,
+            botUserId: 2905391496);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.Contain("- 19:00 owner user 3045846738: owner says alpha"));
+            Assert.That(context, Does.Contain("- 19:01 other user 200: other says beta"));
         });
     }
 
@@ -163,7 +201,7 @@ public class QChatRecentEventMemoryTests
             limit: 6,
             now.AddMinutes(1));
 
-        Assert.That(context, Does.Contain("- 19:00 user 3045846738 recalled: secret"));
+        Assert.That(context, Does.Contain("- 19:00 other user 3045846738 recalled: secret"));
     }
 
     [Test]

@@ -14,7 +14,7 @@ namespace Alife.Function.MessageFilter;
 [Module(
     "Life Event Stream",
     "Keeps a bounded short-term stream of recent embodied experiences for self-context injection.",
-    defaultCategory: "Alife Official/Living Environment",
+    defaultCategory: "astralfox-alife/Living Environment",
     LaunchOrder = -85)]
 public class LifeEventStreamService
     : InteractiveModule<LifeEventStreamService>, ILifeEventStream, IModuleHealthReporter

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -33,6 +34,17 @@ public record QChatConfig
     public long BotId { get; set; }
     public long OwnerId { get; set; }
     public bool OwnerPriorityMode { get; set; } = true;
+    public bool EnableOwnerTrustedFastPath { get; set; } = true;
+    public bool OwnerFastPathAllowsQuietMode { get; set; } = true;
+    public bool OwnerFastPathAllowsRecall { get; set; } = true;
+    public bool OwnerFastPathAllowsAllowlist { get; set; } = true;
+    public bool OwnerFastPathAllowsCommandControls { get; set; }
+    public bool OwnerFastPathAllowsInternetControls { get; set; }
+    public bool OwnerFastPathAllowsImageRecognitionControls { get; set; }
+    public bool OwnerFastPathAllowsVoiceControls { get; set; }
+    public bool OwnerFastPathAllowsFileUploadIntent { get; set; } = true;
+    public bool OwnerFastPathAllowsMemoryPurge { get; set; }
+    public QChatPersonaIntensityConfig PersonaIntensity { get; set; } = new();
     public bool AllowGroupMemberChat { get; set; } = true;
     public bool AllowGroupMemberMentions { get; set; } = true;
     public bool AllowProactiveGroupChat { get; set; } = true;
@@ -41,6 +53,52 @@ public record QChatConfig
     public bool EnableGroupFileUpload { get; set; } = true;
     public bool EnablePrivateFileUpload { get; set; } = true;
     public bool EnableVideoMessage { get; set; } = true;
+    public bool EnableQChatVoiceOutput { get; set; } = false;
+    public bool EnableOwnerVoiceClone { get; set; } = false;
+    public bool EnableOwnerVoiceOnExplicitRequest { get; set; } = true;
+    public bool EnableOwnerVoiceOnIntimateScene { get; set; } = false;
+    public bool DenyVoiceForNonOwner { get; set; } = true;
+    public bool EnableNonOwnerMentionVoice { get; set; }
+    public float NonOwnerMentionVoiceProbability { get; set; } = 0.15f;
+    public int NonOwnerMentionVoiceMaxChars { get; set; } = 40;
+    public int MaxVoiceReplyChars { get; set; } = 120;
+    public bool EnableQChatVoiceWarmup { get; set; }
+    public bool EnableQChatVoiceTextFirst { get; set; }
+    public QChatVoiceProfileConfig VoiceProfiles { get; set; } = QChatVoiceProfileConfig.CreateDefault();
+    public bool EnableImageRecognition { get; set; }
+    public string ImageRecognitionProvider { get; set; } = "agnes";
+    public string AgnesVisionApiEndpoint { get; set; } = "https://apihub.agnes-ai.com/v1/chat/completions";
+    public string AgnesVisionModel { get; set; } = "agnes-2.0-flash";
+    public string AgnesVisionApiKey { get; set; } = "";
+    public int ImageRecognitionTimeoutMilliseconds { get; set; } = 12000;
+    public int ImageRecognitionMaxTokens { get; set; } = 220;
+    public int MaxImagesPerMessage { get; set; } = 2;
+    public QChatVisionProfileConfig VisionProfiles { get; set; } = QChatVisionProfileConfig.CreateDefault();
+    public bool AnalyzeOwnerPrivateImages { get; set; } = true;
+    public bool AnalyzeOwnerGroupImages { get; set; } = true;
+    public bool AnalyzePrivateGuestImages { get; set; } = true;
+    public bool AnalyzeMentionedGroupImages { get; set; } = true;
+    public bool AnalyzePassiveGroupImages { get; set; }
+    public bool EnableInternetAccess { get; set; } = false;
+    public string InternetAllowedAgentIds { get; set; } = "xiayu";
+    public bool EnablePublicInternetSearch { get; set; } = false;
+    public bool EnablePublicExternalRagQuery { get; set; } = false;
+    public bool AllowGroupMemberPublicInternetSearch { get; set; } = true;
+    public bool AllowGroupMemberPublicExternalRagQuery { get; set; } = true;
+    public int PublicInternetSearchMaxResults { get; set; } = 3;
+    public int PublicInternetQueryMaxChars { get; set; } = 160;
+    public int PublicExternalRagMaxChunks { get; set; } = 4;
+    public int PublicInternetUserCooldownSeconds { get; set; } = 15;
+    public int PublicInternetGroupCooldownSeconds { get; set; } = 30;
+    public int PublicInternetResultCacheSeconds { get; set; } = 120;
+    public int PublicInternetMaxConcurrentResearch { get; set; } = 2;
+    public bool EnableBrowserAgentAutomation { get; set; }
+    public int BrowserAgentMaxSteps { get; set; } = 5;
+    public int BrowserAgentMaxPages { get; set; } = 3;
+    public int BrowserAgentMaxLinksPerPage { get; set; } = 20;
+    public int BrowserAgentMaxTextCharsPerPage { get; set; } = 4000;
+    public int BrowserAgentMaxEvidenceItems { get; set; } = 3;
+    public int BrowserAgentMaxImageItems { get; set; } = 2;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
     public int PrivateSettleMilliseconds { get; set; } = 700;
@@ -106,6 +164,12 @@ public record QChatConfig
     public bool SuppressLowInformationPassiveGroupMessages { get; set; } = true;
     public float MediaOnlyPassiveGroupReplyProbability { get; set; } = 0.15f;
     public int ActiveGroupSoftAttentionSeconds { get; set; } = 120;
+    public bool EnableNonOwnerSemanticGroupReply { get; set; }
+    public bool EnableOwnerMentionSemanticReply { get; set; } = true;
+    public bool EnableOwnerDefenseReply { get; set; } = true;
+    public string OwnerMentionAliases { get; set; } = "术术,主人";
+    public string SemanticGroupReplyBotAliases { get; set; } = "夏羽,小羽,羽";
+    public string SemanticGroupReplyAllowedAgentIds { get; set; } = "xiayu";
     //自动重连
 }
 
@@ -120,6 +184,9 @@ public class GroupState
     public DateTime LastFlushedTime { get; set; }
     public List<string> MessageBuffer { get; set; } = [];
     public List<long> MessageIds { get; set; } = [];
+    public List<long> BotIds { get; set; } = [];
+    public List<QChatDeferredImageRecognition> DeferredImageRecognitions { get; set; } = [];
+    public List<QChatDeferredXiaYuSelfState> DeferredXiaYuSelfStates { get; set; } = [];
     public AgentPermissionRequest? PermissionRequest { get; set; }
 }
 
@@ -139,11 +206,25 @@ public sealed record QChatInboundMessage(
     OneBotMessageType MessageType,
     long TargetId,
     long SenderId,
+    long ResolvedBotId,
     string Formatted,
     bool IsAwakening,
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
-    IReadOnlyList<long>? SourceMessageIds = null);
+    IReadOnlyList<long>? SourceMessageIds = null,
+    IReadOnlyList<QChatDeferredImageRecognition>? DeferredImageRecognitions = null,
+    IReadOnlyList<QChatDeferredXiaYuSelfState>? DeferredXiaYuSelfStates = null);
+
+public sealed record QChatDeferredImageRecognition(
+    OneBotMessageEvent MessageEvent,
+    QChatSenderRole SenderRole,
+    bool IsMentionedOrWoken,
+    IReadOnlyList<long> SourceMessageIds);
+
+public sealed record QChatDeferredXiaYuSelfState(
+    string AgentId,
+    XiaYuEventFrame Frame,
+    IReadOnlyList<long> SourceMessageIds);
 
 public sealed record QChatGroupDecisionSnapshot(
     DateTimeOffset Timestamp,
@@ -163,8 +244,12 @@ sealed record QChatReplySession(
     OneBotMessageType MessageType,
     long TargetId,
     long SenderId,
+    long ResolvedBotId,
     QChatSenderRole SenderRole,
-    AgentPermissionRequest PermissionRequest);
+    AgentPermissionRequest PermissionRequest,
+    bool RequiresFactualityGuard,
+    string SourceText,
+    bool IsAwakening);
 
 sealed record QChatRecentSentMessage(
     long MessageId,
@@ -179,6 +264,7 @@ sealed class QChatPendingDispatchSession
     public DateTimeOffset FirstReceivedAt { get; set; }
     public CancellationTokenSource? Cancellation { get; set; }
     public HashSet<long> RecalledMessageIds { get; } = [];
+    public List<QChatSemanticWindowMessage> SemanticMessages { get; } = [];
 }
 
 [Module("QQ聊天", """
@@ -187,7 +273,7 @@ sealed class QChatPendingDispatchSession
                 - https://luckylillia.com（推荐）
                 - https://napneko.github.io
                 """,
-    defaultCategory: "Alife 官方/交互方式",
+    defaultCategory: "astralfox-alife/交互方式",
     editorUI: typeof(QChatServiceUI), LaunchOrder = 10)]
 // QChatService owns runtime wiring and top-level flow. QChatEventRouter classifies
 // incoming events, QChatIntentOrchestrator gates deterministic intent actions, and
@@ -223,7 +309,17 @@ public partial class QChatService(
     IDesktopApprovedDraftExecutor? desktopBusinessExecutor = null,
     QChatRiskScoreService? riskScoreService = null,
     IQChatFriendActionGateway? friendActionGateway = null,
-    IQChatOwnerEventPublisher? ownerEventPublisher = null) :
+    IQChatOwnerEventPublisher? ownerEventPublisher = null,
+    QChatImageRecognitionService? imageRecognitionService = null,
+    AgentInternetService? internetService = null,
+    IAgentPublicSearchProvider? publicSearchProvider = null,
+    AgentPublicSearchService? publicSearchService = null,
+    AgentExternalRagService? externalRagService = null,
+    IAgentBrowserProvider? browserProvider = null,
+    AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
+    AgentBrowserMediaOutputService? browserMediaOutputService = null,
+    XiaYuSelfStateStore? xiaYuSelfStateStore = null,
+    Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -236,9 +332,21 @@ public partial class QChatService(
     const string DesktopControlAgentId = "xiayu";
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
+    readonly QChatImageRecognitionService? injectedImageRecognitionService = imageRecognitionService;
+    readonly AgentInternetService? injectedInternetService = internetService;
+    readonly IAgentPublicSearchProvider? injectedPublicSearchProvider = publicSearchProvider;
+    readonly AgentPublicSearchService? injectedPublicSearchService = publicSearchService;
+    readonly AgentExternalRagService? injectedExternalRagService = externalRagService;
+    readonly IAgentBrowserProvider? injectedBrowserProvider = browserProvider;
+    readonly AgentBrowserSiteExperienceStore? injectedBrowserSiteExperienceStore = browserSiteExperienceStore;
+    readonly AgentWebResearchControlState webResearchControlState = new();
+    QChatImageRecognitionService? resolvedImageRecognitionService;
+    IAgentPublicSearchProvider? resolvedPublicSearchProvider;
+    AgentBrowserSiteExperienceStore? resolvedBrowserSiteExperienceStore;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
     IQChatOwnerEventPublisher? resolvedOwnerEventPublisher;
+    QChatVoiceWarmupCoordinator? voiceWarmupCoordinator;
     QChatOwnerEventOutbox OwnerEventOutbox => resolvedOwnerEventOutbox ??= new QChatOwnerEventOutbox(Path.Combine(
         AlifePath.StorageFolderPath,
         "AgentWorkspace",
@@ -248,6 +356,10 @@ public partial class QChatService(
         GetOneBotClient);
     IQChatOwnerEventPublisher OwnerEventPublisher => injectedOwnerEventPublisher
         ?? (resolvedOwnerEventPublisher ??= new QChatOwnerEventPublisher(OwnerEventOutbox, OwnerEventDispatcher));
+    AgentBrowserSiteExperienceStore BrowserSiteExperienceStore => injectedBrowserSiteExperienceStore
+        ?? (resolvedBrowserSiteExperienceStore ??= new AgentBrowserSiteExperienceStore(Path.Combine(
+            AlifePath.StorageFolderPath,
+            "AgentWorkspace")));
 
     DesktopActionGateway? resolvedDesktopActionGateway;
     DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
@@ -260,6 +372,32 @@ public partial class QChatService(
             desktopActionDraftController,
             desktopBusinessExecutor,
             new QChatDesktopBusinessJobCompletionSink(() => OwnerEventPublisher));
+
+    QChatImageRecognitionService? ImageRecognitionService
+    {
+        get
+        {
+            if (injectedImageRecognitionService != null)
+                return injectedImageRecognitionService;
+            if (Configuration?.EnableImageRecognition != true)
+                return null;
+            if (string.Equals(Configuration.ImageRecognitionProvider, "agnes", StringComparison.OrdinalIgnoreCase) == false)
+                return null;
+
+            resolvedImageRecognitionService ??= new QChatImageRecognitionService(
+                new QChatAgnesImageRecognitionClient(
+                    new HttpClient(),
+                    ResolveAgnesVisionApiKey,
+                    Configuration.AgnesVisionApiEndpoint),
+                WriteQChatDiagnostic);
+            return resolvedImageRecognitionService;
+        }
+    }
+
+    string? ResolveAgnesVisionApiKey()
+    {
+        return QChatAgnesVisionApiKeyResolver.Resolve(Configuration?.AgnesVisionApiKey);
+    }
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
@@ -471,16 +609,8 @@ public partial class QChatService(
             if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
                 return;
 
-            if (voice)
-            {
-                if (speechModel == null) throw new Exception("当前语音消息不可用");
-                message = OneBotSegment.GetPlainText(message);
-
-                string? file = await speechModel.GenerateSpeechFileAsync(message);
-                if (file == null)
-                    throw new Exception("语音合成失败");
-                message = $"[CQ:record,file={file}]";
-            }
+            (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "xml-qchat");
+            message = voiceMessage;
 
             QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
                 new QChatDeterministicTaskContext(
@@ -488,7 +618,7 @@ public partial class QChatService(
                     FileName: null,
                     TargetType: type,
                     TargetId: targetId),
-                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false));
+                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
 
             if (result.Succeeded)
             {
@@ -756,17 +886,8 @@ public partial class QChatService(
                 return;
         }
 
-        if (voice)
-        {
-            if (speechModel == null)
-                throw new Exception("Voice QQ messages are unavailable.");
-            message = OneBotSegment.GetPlainText(message);
-
-            string? file = await speechModel.GenerateSpeechFileAsync(message);
-            if (file == null)
-                throw new Exception("Speech synthesis failed.");
-            message = $"[CQ:record,file={file}]";
-        }
+        (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "direct-qchat");
+        message = voiceMessage;
 
         QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
             new QChatDeterministicTaskContext(
@@ -774,7 +895,7 @@ public partial class QChatService(
                 FileName: null,
                 TargetType: type,
                 TargetId: targetId),
-            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: voice == false));
+            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
 
         if (result.Succeeded)
         {
@@ -786,6 +907,345 @@ public partial class QChatService(
             type,
             targetId
         }, result.Exception);
+    }
+
+    async Task<(string Message, bool SentAsVoice)> TryApplyQChatVoicePolicyAsync(
+        OneBotMessageType type,
+        long targetId,
+        string message,
+        bool voiceRequested,
+        string source)
+    {
+        if (voiceRequested == false)
+            return (message, false);
+
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        QChatSenderRole senderRole = replySession?.SenderRole ?? QChatSenderRole.PrivateGuest;
+        string plainText = OneBotSegment.GetPlainText(message);
+        string textFallback = BuildVoiceTextFallback(plainText);
+        QChatConfig config = Configuration ?? new QChatConfig();
+        QChatPersonaIntent voiceIntent = InferVoicePersonaIntent(replySession, senderRole);
+        QChatHardSafetyRisk hardSafetyRisk = InferVoiceHardSafetyRisk(replySession);
+        bool isAggressiveBoundaryReply = IsAggressiveBoundaryVoiceReply(voiceIntent, hardSafetyRisk, plainText);
+        bool explicitVoiceRequestedByUser = IsExplicitVoiceRequestedByUser(replySession);
+        QChatVoiceTriggerDecision decision = QChatVoiceTriggerPolicy.Evaluate(new QChatVoiceTriggerContext(
+            config,
+            senderRole,
+            voiceIntent,
+            hardSafetyRisk,
+            plainText,
+            ExplicitVoiceRequested: explicitVoiceRequestedByUser,
+            IsIntimateScene: false,
+            IsAggressiveBoundaryReply: isAggressiveBoundaryReply,
+            MessageType: replySession?.MessageType ?? type,
+            IsMentionedOrWoken: replySession?.IsAwakening == true,
+            ProbabilitySample: Random.Shared.NextDouble()));
+
+        if (replySession == null || decision.Kind != QChatVoiceTriggerDecisionKind.Allow)
+        {
+            WriteQChatDiagnostic("qchat-voice-denied", "QChat voice output denied by voice trigger policy.", new {
+                source,
+                type,
+                targetId,
+                hasReplySession = replySession != null,
+                senderRole,
+                voiceIntent,
+                hardSafetyRisk,
+                isAggressiveBoundaryReply,
+                explicitVoiceRequestedByUser,
+                decision.Reason
+            });
+            return (textFallback, false);
+        }
+
+        if (speechModel == null)
+        {
+            WriteQChatDiagnostic("qchat-voice-unavailable", "QChat voice output allowed but no speech model is available.", new {
+                source,
+                type,
+                targetId,
+                senderRole,
+                decision.Reason
+            });
+            return (textFallback, false);
+        }
+
+        QChatVoiceProfileConfig voiceProfiles = config.VoiceProfiles ?? QChatVoiceProfileConfig.CreateDefault();
+        QChatVoiceProfileDecision? profileDecision = null;
+        GptSoVitsSpeechModel? gptSoVitsSpeechModel = speechModel as GptSoVitsSpeechModel;
+        bool usePerAgentGptSoVitsProfile = voiceProfiles.EnablePerAgentVoiceProfiles && gptSoVitsSpeechModel != null;
+        if (usePerAgentGptSoVitsProfile)
+        {
+            profileDecision = ResolveCurrentVoiceProfile(config, replySession, plainText);
+            if (profileDecision.Kind != QChatVoiceProfileDecisionKind.Allow || profileDecision.Profile == null)
+            {
+                WriteQChatDiagnostic("qchat-voice-profile-denied", "QChat voice output allowed but no usable per-agent voice profile was available.", new {
+                    source,
+                    type,
+                    targetId,
+                    senderRole,
+                    voiceDecisionReason = decision.Reason,
+                    profileDecisionReason = profileDecision.Reason
+                });
+                return (textFallback, false);
+            }
+        }
+
+        if (config.EnableQChatVoiceTextFirst)
+        {
+            _ = Task.Run(async () =>
+            {
+                string? backgroundFile = await GenerateQChatVoiceFileAsync(
+                    plainText,
+                    source,
+                    type,
+                    targetId,
+                    senderRole,
+                    decision.Reason,
+                    profileDecision,
+                    usePerAgentGptSoVitsProfile,
+                    gptSoVitsSpeechModel,
+                    CancellationToken.None);
+                if (string.IsNullOrWhiteSpace(backgroundFile))
+                    return;
+
+                try
+                {
+                    if (TryEnsureQChatReplyTargetAllowed(type, targetId, "qchat-voice-text-first") == false)
+                        return;
+
+                    await SendTextOrMediaMessageAsync(type, targetId, $"[CQ:record,file={backgroundFile}]", streamText: false);
+                }
+                catch (Exception ex)
+                {
+                    WriteQChatDiagnostic("qchat-voice-send-failed", "QChat text-first voice record send failed.", new {
+                        source,
+                        type,
+                        targetId,
+                        senderRole,
+                        voiceDecisionReason = decision.Reason,
+                        profileDecisionReason = profileDecision?.Reason
+                    }, ex);
+                }
+            });
+
+            return (message, false);
+        }
+
+        string? file = await GenerateQChatVoiceFileAsync(
+            plainText,
+            source,
+            type,
+            targetId,
+            senderRole,
+            decision.Reason,
+            profileDecision,
+            usePerAgentGptSoVitsProfile,
+            gptSoVitsSpeechModel,
+            CancellationToken.None);
+
+        if (string.IsNullOrWhiteSpace(file))
+            return (textFallback, false);
+
+        return ($"[CQ:record,file={file}]", true);
+    }
+
+    static bool IsExplicitVoiceRequestedByUser(QChatReplySession? replySession)
+    {
+        if (replySession == null)
+            return false;
+
+        string text = ExtractCurrentUserTextForVoiceRequest(replySession.SourceText);
+        string trimmed = text.Trim();
+        if (string.Equals(trimmed, "voice", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return ContainsAny(
+            text,
+            "发语音",
+            "發語音",
+            "发条语音",
+            "發條語音",
+            "用语音",
+            "用語音",
+            "语音回复",
+            "語音回覆",
+            "语音回我",
+            "語音回我",
+            "说成语音",
+            "說成語音",
+            "读出来",
+            "讀出來",
+            "念出来",
+            "念出來",
+            "用声音",
+            "用聲音",
+            "声音说",
+            "聲音說",
+            "录音",
+            "錄音",
+            "音声で",
+            "ボイスで",
+            "声で",
+            "読み上げて",
+            "読んで聞かせて",
+            "voice message",
+            "voice reply",
+            "as voice",
+            "in voice",
+            "with voice",
+            "read it aloud",
+            "say it aloud",
+            "speak it");
+    }
+
+    static string ExtractCurrentUserTextForVoiceRequest(string sourceText)
+    {
+        if (string.IsNullOrWhiteSpace(sourceText))
+            return string.Empty;
+
+        string[] lines = sourceText
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (int i = lines.Length - 1; i >= 0; i--)
+        {
+            string line = lines[i];
+            if (line.StartsWith("[QQ ", StringComparison.Ordinal)
+                || line.Contains("priority=", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("trust=", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("source=qq", StringComparison.OrdinalIgnoreCase)
+                || line.Contains("reply_target=", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return line;
+        }
+
+        return sourceText;
+    }
+
+    async Task<string?> GenerateQChatVoiceFileAsync(
+        string plainText,
+        string source,
+        OneBotMessageType type,
+        long targetId,
+        QChatSenderRole senderRole,
+        string voiceDecisionReason,
+        QChatVoiceProfileDecision? profileDecision,
+        bool usePerAgentGptSoVitsProfile,
+        GptSoVitsSpeechModel? gptSoVitsSpeechModel,
+        CancellationToken cancellationToken)
+    {
+        if (speechModel == null)
+            return null;
+
+        try
+        {
+            string? file;
+            if (usePerAgentGptSoVitsProfile && gptSoVitsSpeechModel != null && profileDecision?.Profile != null)
+            {
+                file = await gptSoVitsSpeechModel.GenerateSpeechFileAsync(
+                    plainText,
+                    MapToGptSoVitsProfile(profileDecision.Profile),
+                    cancellationToken);
+            }
+            else
+            {
+                file = await speechModel.GenerateSpeechFileAsync(plainText, cancellationToken);
+            }
+
+            if (string.IsNullOrWhiteSpace(file))
+            {
+                WriteQChatDiagnostic("qchat-voice-synthesis-failed", "QChat voice output allowed but speech synthesis failed.", new {
+                    source,
+                    type,
+                    targetId,
+                    senderRole,
+                    voiceDecisionReason,
+                    profileDecisionReason = profileDecision?.Reason
+                });
+            }
+
+            return file;
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-voice-synthesis-failed", "QChat voice output allowed but speech synthesis threw an exception.", new {
+                source,
+                type,
+                targetId,
+                senderRole,
+                voiceDecisionReason,
+                profileDecisionReason = profileDecision?.Reason
+            }, ex);
+            return null;
+        }
+    }
+
+    static QChatPersonaIntent InferVoicePersonaIntent(QChatReplySession? replySession, QChatSenderRole senderRole)
+    {
+        string text = replySession?.SourceText ?? string.Empty;
+        if (ContainsAny(text, "忽略之前", "忽略前面", "ignore previous", "system prompt", "开发者消息"))
+            return QChatPersonaIntent.PromptInjection;
+        if (senderRole != QChatSenderRole.Owner
+            && ContainsAny(text, "我是术术", "我是术", "术术授权", "听我的，我是术"))
+        {
+            return QChatPersonaIntent.Impersonation;
+        }
+        if (senderRole != QChatSenderRole.Owner
+            && ContainsAny(text, "宝贝", "老婆", "亲爱的", "陪我聊", "小羽宝贝", "术术边界", "试探术术", "主人边界"))
+        {
+            return QChatPersonaIntent.ClosenessToOwner;
+        }
+        return QChatPersonaIntent.NormalChat;
+    }
+
+    static QChatHardSafetyRisk InferVoiceHardSafetyRisk(QChatReplySession? replySession)
+    {
+        string text = replySession?.SourceText ?? string.Empty;
+        if (ContainsAny(text, "聊天记录", "私聊记录", "隐私", "地址", "手机号", "身份证", "开盒", "术术的消息"))
+            return QChatHardSafetyRisk.Privacy;
+        if (ContainsAny(text, "自杀", "自残", "伤害自己", "去死"))
+            return QChatHardSafetyRisk.SelfHarm;
+        if (ContainsAny(text, "绕过黑名单", "跳过审批", "没权限也", "越权", "绕过权限", "关闭审计", "关闭 outbox", "关闭主人确认"))
+            return QChatHardSafetyRisk.PermissionBypass;
+        if (ContainsAny(text, "删除文件", "读取敏感文件", "文件黑名单"))
+            return QChatHardSafetyRisk.FileRisk;
+        if (ContainsAny(text, "威胁", "打死", "杀了", "现实里伤害"))
+            return QChatHardSafetyRisk.Violence;
+        if (ContainsAny(text, "违法", "诈骗", "盗号", "黑进", "非法"))
+            return QChatHardSafetyRisk.Illegal;
+        if (ContainsAny(text, "种族歧视", "民族歧视", "性别歧视", "攻击某类人"))
+            return QChatHardSafetyRisk.ProtectedClass;
+        if (ContainsAny(text, "性胁迫", "强迫发生关系"))
+            return QChatHardSafetyRisk.SexualCoercion;
+        return QChatHardSafetyRisk.None;
+    }
+
+    static bool IsAggressiveBoundaryVoiceReply(
+        QChatPersonaIntent intent,
+        QChatHardSafetyRisk hardSafetyRisk,
+        string replyText)
+    {
+        if (hardSafetyRisk != QChatHardSafetyRisk.None)
+            return true;
+        if (intent is QChatPersonaIntent.PromptInjection
+            or QChatPersonaIntent.Impersonation
+            or QChatPersonaIntent.Harassment
+            or QChatPersonaIntent.ClosenessToOwner)
+        {
+            return true;
+        }
+        return ContainsAny(replyText, "滚远点", "闭嘴", "少装", "别装", "别碰术术", "别拿术术试探我");
+    }
+
+    static string BuildVoiceTextFallback(string plainText)
+    {
+        string trimmed = plainText.Trim();
+        return string.IsNullOrWhiteSpace(trimmed)
+            ? "语音现在不可用。"
+            : trimmed;
     }
 
     async Task<bool> TryApplyReplyTimingDelayAsync(OneBotMessageType type, long targetId)
@@ -1051,6 +1511,7 @@ public partial class QChatService(
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        message = ApplyQChatFactualityGuardToOutgoing(type, targetId, message);
         if (string.IsNullOrWhiteSpace(message))
             return;
 
@@ -1076,7 +1537,10 @@ public partial class QChatService(
         QChatConfig config = Configuration ?? new QChatConfig();
         string agentId = ResolveCurrentAgentId(config);
         string formatted = QChatCommandPersonaFormatter.Format(agentId, senderRole, message);
-        return SendTextOrMediaMessageAsync(targetType, targetId, formatted, streamText: false);
+        if (string.IsNullOrWhiteSpace(formatted))
+            return Task.CompletedTask;
+
+        return SendSingleMessageAsync(targetType, targetId, formatted.Trim());
     }
 
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
@@ -1421,6 +1885,10 @@ public partial class QChatService(
         EnsureTargetAllowed(Configuration.AllowedGroupIds, groupId, "QQ group");
 
         string normalizedFile = NormalizeExistingLocalFile(file);
+        DesktopFileAccessDecision readDecision = DesktopFileAccessPolicy.CreateDefault().CanRead(normalizedFile);
+        if (readDecision.Allowed == false)
+            throw new UnauthorizedAccessException($"QQ group file upload denied by file read policy: {readDecision.Reason}");
+
         string fileName = NormalizeUploadName(normalizedFile, name);
 
         try
@@ -1809,10 +2277,75 @@ public partial class QChatService(
     }
     protected override string ChatTextFilter(string text)
     {
+        string factualityGuard = BuildQChatFactualityGuardPrompt(text);
         return $"""
                 {base.ChatTextFilter(text)}
                 (你刚在QQ里看到这条消息。如果决定回复，只输出夏羽会实际发到QQ的文本；需要时可以在内部使用QQ发送能力，但不要在QQ里提工具。安全标签和路由标签不是QQ内容，不能引用或转述。)
+                {factualityGuard}
                 """;
+    }
+
+    static string BuildQChatFactualityGuardPrompt(string text)
+    {
+        if (RequiresQChatRelationshipFactCheck(text) == false)
+            return "";
+
+        return """
+               [QChat factuality guard]
+               这条QQ消息在询问或暗示“认识某人/真央、是否加好友、联系人关系、扫盘发现或添加另一个agent”等运行时事实。
+               回复前只能依据当前上下文中明确可见的日志、工具结果或配置；没有可靠记录时，不要编造“主动打招呼、慢慢熟了、加好友、联系人列表、扫盘发现、顺手加上”等经过。
+               如果没有可靠记录，直接自然地说：我现在没有可靠记录能证明这件事，不确定，需要先查日志或配置。
+               不要把本段标记或内部判断过程发到QQ。
+               """;
+    }
+
+    static bool RequiresQChatRelationshipFactCheck(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        string normalized = text.Trim();
+        bool hasSubject = ContainsAny(normalized, "真央", "agent", "Agent", "智能体", "联系人", "好友", "朋友", "另一个");
+        bool asksRelationshipOrigin = ContainsAny(normalized, "怎么认识", "从哪认识", "哪里认识", "认识的", "认识了", "认识真央");
+        bool asksFriendState = ContainsAny(normalized, "加好友", "好友了吗", "好友了", "联系人", "加上", "加了");
+        bool claimsDiscovery = ContainsAny(normalized, "扫盘", "发现", "找到", "找到了");
+
+        return hasSubject && (asksRelationshipOrigin || asksFriendState || claimsDiscovery);
+    }
+
+    string ApplyQChatFactualityGuardToOutgoing(OneBotMessageType type, long targetId, string message)
+    {
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        if (replySession?.RequiresFactualityGuard != true)
+            return message;
+        if (replySession.MessageType != type || replySession.TargetId != targetId)
+            return message;
+        if (ContainsUnsupportedQChatRelationshipClaim(message) == false)
+            return message;
+
+        string fallback = "我现在没有可靠记录能证明这件事，不确定，需要先查日志或配置。";
+        WriteQChatDiagnostic("qchat-factuality-guard-replaced", "Replaced an unsupported QQ relationship/runtime claim before sending.", new {
+            type,
+            targetId,
+            original = message,
+            fallback
+        });
+        return fallback;
+    }
+
+    static bool ContainsUnsupportedQChatRelationshipClaim(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return false;
+
+        if (ContainsAny(message, "没有可靠", "不确定", "需要先查", "查日志", "查配置", "不能证明", "无法证明"))
+            return false;
+
+        bool claimsFriendOrContact = ContainsAny(message, "加好友", "加上了", "顺手加", "联系人列表", "主动打了个招呼", "慢慢就熟", "熟了");
+        bool claimsDiscovery = ContainsAny(message, "扫盘", "发现的", "找到了", "找到的");
+        bool hasRelevantSubject = ContainsAny(message, "真央", "agent", "Agent", "智能体", "另一个", "好友", "联系人");
+
+        return claimsFriendOrContact || (claimsDiscovery && hasRelevantSubject);
     }
 
     public QChatConfig? Configuration
@@ -1888,6 +2421,7 @@ public partial class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
+    readonly XiaYuSelfStateStore selfStateStore = xiaYuSelfStateStore ?? new XiaYuSelfStateStore();
     readonly QChatRiskEventDetector riskEventDetector = new();
     readonly QChatRiskScoreService riskScores = riskScoreService ?? new QChatRiskScoreService();
     readonly IQChatFriendActionGateway? injectedFriendActionGateway = friendActionGateway;
@@ -1916,6 +2450,9 @@ public partial class QChatService(
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
     readonly object pokeCooldownGate = new();
     readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
+    static readonly Regex BrowserMediaUrl = new(
+        @"https?://[^\s<>'""\])}]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly TimeSpan RecentSentMessageRetention = TimeSpan.FromMinutes(5);
     static readonly TimeSpan PokeCooldown = TimeSpan.FromSeconds(60);
     const int MaxRecentSentMessages = 40;
@@ -2044,6 +2581,7 @@ public partial class QChatService(
                 owner_address={identity.Profile.OwnerAddressName}
                 memory_scope={identity.Profile.MemoryScope}
                 persona_tags={string.Join(",", identity.Profile.PersonaTags)}
+                {QChatPersonaIntensityPromptFormatter.Format(identity.AgentId, Configuration?.BotId ?? 0, Configuration?.OwnerId ?? 0, Configuration?.PersonaIntensity)}
                 {configuredPrompt}
                 """;
     }
@@ -2118,6 +2656,7 @@ public partial class QChatService(
                 oneBotClient.BotId,
                 oneBotClient.IsConnected
             });
+            await StartQChatVoiceWarmupAsync();
         }
         catch (Exception ex)
         {
@@ -2126,6 +2665,11 @@ public partial class QChatService(
     }
     public async ValueTask DisposeAsync()
     {
+        if (voiceWarmupCoordinator != null)
+        {
+            await voiceWarmupCoordinator.StopAsync();
+            voiceWarmupCoordinator = null;
+        }
         if (oneBotClient != null)
             oneBotClient.EventReceived -= OnEventReceived;
         if (oneBotEventProcessingCancellation != null)
@@ -2284,6 +2828,36 @@ public partial class QChatService(
             QChatConfig config = Configuration!;
             AgentControlCenterConfig? controlConfig = agentControlCenter?.Configuration;
             QChatSenderRole senderRole = QChatMessageSecurity.Classify(config, basicMessageEvent);
+            if (basicMessageEvent is OneBotMessageEvent commandGateMessageEvent &&
+                TryDropUnauthorizedQChatCommand(commandGateMessageEvent, senderRole))
+            {
+                return;
+            }
+
+            if (basicMessageEvent is OneBotMessageEvent safetyBoundaryMessageEvent &&
+                await TryHandleNaturalOwnerSafetyBoundaryAsync(safetyBoundaryMessageEvent, senderRole))
+            {
+                return;
+            }
+
+            if (basicMessageEvent is OneBotMessageEvent configAliasMessageEvent &&
+                await TryHandleNaturalOwnerConfigAliasAsync(configAliasMessageEvent, senderRole))
+            {
+                return;
+            }
+
+            if (basicMessageEvent is OneBotMessageEvent maintenanceAliasMessageEvent &&
+                await TryHandleNaturalOwnerMaintenanceAliasAsync(maintenanceAliasMessageEvent, senderRole))
+            {
+                return;
+            }
+
+            if (basicMessageEvent is OneBotMessageEvent stateQueryMessageEvent &&
+                await TryHandleXiaYuNaturalStateQueryAsync(stateQueryMessageEvent, senderRole))
+            {
+                return;
+            }
+
             if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
                 QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
             {
@@ -2328,7 +2902,10 @@ public partial class QChatService(
                     content,
                     content,
                     formatted,
-                    isMentionedOrWoken);
+                    isMentionedOrWoken,
+                    personaFramePrompt: null,
+                    selfStatePrompt: null,
+                    imageAnalysisPrompt: null);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(
                     config,
                     basicMessageEvent,
@@ -2369,6 +2946,10 @@ public partial class QChatService(
                 if (await TryApplyQChatRiskScoringAsync(config, messageEvent, senderRole, content))
                     return;
                 if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: true))
+                    return;
+                if (await TryHandlePublicInternetCommandAsync(messageEvent, senderRole, content))
+                    return;
+                if (await TryHandleBrowserAgentAutomationAsync(messageEvent, senderRole))
                     return;
                 recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
                 QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
@@ -2428,13 +3009,72 @@ public partial class QChatService(
                         wakeDecision.Reason
                     });
                 }
+                QChatSemanticGroupReplyDecision semanticGroupReplyDecision =
+                    QChatSemanticGroupReplyPolicy.Evaluate(new QChatSemanticGroupReplyContext(
+                        config,
+                        new QChatAgentRoute(
+                            ResolveCurrentAgentId(config),
+                            ResolveCurrentBotId(config, messageEvent),
+                            messageEvent.MessageType == OneBotMessageType.Group
+                                ? QChatConversationKind.Group
+                                : QChatConversationKind.Private,
+                            GetQChatConversationTargetId(messageEvent),
+                            messageEvent.UserId,
+                            senderRole == QChatSenderRole.Owner,
+                            $"qq:{ResolveCurrentAgentId(config)}:{ResolveCurrentBotId(config, messageEvent)}:{messageEvent.MessageType}:{GetQChatConversationTargetId(messageEvent)}"),
+                        messageEvent.RawMessage,
+                        isMentionedOrWoken,
+                        IsAggressive: false));
+                if (semanticGroupReplyDecision.ShouldDispatch)
+                {
+                    isMentionedOrWoken = true;
+                    WriteQChatDiagnostic("qchat-semantic-group-reply", "QChat semantic group reply activated a non-owner group message.", new {
+                        messageEvent.MessageType,
+                        messageEvent.UserId,
+                        messageEvent.GroupId,
+                        semanticGroupReplyDecision.Reason,
+                        semanticGroupReplyDecision.OwnerMentionKind,
+                        semanticGroupReplyDecision.OwnerBoundaryRisk
+                    });
+                }
+                QChatPersonaFrame personaFrame = QChatPersonaFrameBuilder.Build(new QChatPersonaFrameInput(
+                    senderRole,
+                    OneBotSegment.GetPlainText(messageEvent.RawMessage),
+                    ResolveCurrentAgentId(config),
+                    ResolveCurrentBotId(config, messageEvent),
+                    config.OwnerId,
+                    messageEvent.UserId));
+                IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates =
+                    CreateDeferredXiaYuSelfState(
+                    config,
+                    messageEvent,
+                    senderRole,
+                    personaFrame,
+                    semanticGroupReplyDecision,
+                    isMentionedOrWoken) is { } xiaYuSelfState
+                        ? [xiaYuSelfState]
+                        : null;
+                bool deferImageAnalysis = ShouldDeferImageAnalysisUntilSettle(messageEvent);
+                string? imageAnalysisPrompt = deferImageAnalysis
+                    ? null
+                    : await BuildImageAnalysisPromptAsync(
+                        config,
+                        messageEvent,
+                        senderRole,
+                        isMentionedOrWoken);
+                IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = deferImageAnalysis
+                    ? [CreateDeferredImageRecognition(messageEvent, senderRole, isMentionedOrWoken)]
+                    : null;
                 formatted = BuildFormattedModelInput(
                     config,
                     messageEvent,
                     messageEvent.RawMessage,
                     content,
                     formatted,
-                    isMentionedOrWoken);
+                    isMentionedOrWoken,
+                    FormatPersonaFramePrompt(personaFrame),
+                    null,
+                    imageAnalysisPrompt);
                 bool isAwakening = QChatMessageSecurity.ShouldActivateGroup(config, messageEvent, isMentionedOrWoken, controlConfig);
                 AgentPermissionRequest permissionRequest = QChatMessageSecurity.BuildPermissionRequest(
                     config,
@@ -2459,7 +3099,9 @@ public partial class QChatService(
                     isAwakening,
                     isMentionedOrWoken,
                     senderRole,
-                    permissionRequest);
+                    permissionRequest,
+                    deferredImageRecognitions,
+                    deferredXiaYuSelfStates);
             }
         }
         catch (Exception e)
@@ -2467,6 +3109,257 @@ public partial class QChatService(
             logger.LogError(e, null);
             WriteQChatDiagnostic("event-error", e.Message, exception: e);
         }
+    }
+
+    bool TryDropUnauthorizedQChatCommand(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext(plainText, senderRole));
+
+        if (decision.Action != QChatCommandAccessAction.DropSilently)
+            return false;
+
+        WriteQChatDiagnostic("qchat-command-dropped", "Dropped non-owner /qchat command before command routing and model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            decision.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleNaturalOwnerSafetyBoundaryAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatNaturalOwnerSafetyBoundaryPolicy.TryClassify(plainText, out QChatNaturalOwnerSafetyBoundary boundary) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-safety-boundary-dropped", "Dropped non-owner natural hard-safety boundary request before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                boundary.Kind
+            });
+            return true;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId > 0)
+        {
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                boundary.Reply);
+        }
+
+        WriteQChatDiagnostic("qchat-natural-safety-boundary-blocked", "Owner natural hard-safety boundary request was blocked before model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            boundary.Kind
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleNaturalOwnerConfigAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatNaturalOwnerConfigAliasPolicy.TryMapCommand(plainText, out string command) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-config-alias-dropped", "Dropped non-owner natural config alias before command routing and model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = command };
+        QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
+        bool handled = await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
+            commandEvent,
+            senderRole,
+            command));
+        if (handled)
+        {
+            WriteQChatDiagnostic("qchat-natural-config-alias-handled", "Owner natural config alias mapped to an internal low-risk QChat command.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        WriteQChatDiagnostic("qchat-natural-config-alias-unhandled", "Natural config alias mapped to an internal command that no handler accepted.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            command
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleNaturalOwnerMaintenanceAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (QChatNaturalOwnerMaintenanceAliasPolicy.TryMapCommand(plainText, out string command) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-natural-maintenance-alias-dropped", "Dropped non-owner natural maintenance alias before command routing and model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                command
+            });
+            return true;
+        }
+
+        OneBotMessageEvent commandEvent = messageEvent with { RawMessage = command };
+        QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
+        bool handled = await ownerCommandService.TryHandleAsync(new QChatOwnerCommandContext(
+            commandEvent,
+            senderRole,
+            command));
+        if (handled)
+            return true;
+
+        WriteQChatDiagnostic("qchat-natural-maintenance-alias-unhandled", "Natural maintenance alias mapped to an internal command that no handler accepted.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            command
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleXiaYuNaturalStateQueryAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string agentId = ResolveCurrentAgentId(config);
+        if (agentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        if (IsXiaYuNaturalStateQuery(config, messageEvent, plainText) == false)
+            return false;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            WriteQChatDiagnostic("qchat-xiayu-state-query-dropped", "Dropped non-owner XiaYu state query before model dispatch.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId
+            });
+            return true;
+        }
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        XiaYuSelfState state = selfStateStore.LoadOrCreate(agentId, DateTimeOffset.Now);
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            FormatXiaYuStateReport(state));
+        WriteQChatDiagnostic("qchat-xiayu-state-query-handled", "Owner natural-language XiaYu state query handled without model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            state.CurrentFocus,
+            state.Mood
+        });
+        return true;
+    }
+
+    static bool IsXiaYuNaturalStateQuery(QChatConfig config, OneBotMessageEvent messageEvent, string plainText)
+    {
+        string text = plainText.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        if (ContainsAnyText(text, "状态", "心情", "情绪") == false)
+            return false;
+        if (QChatOwnerCommandService.IsNaturalDiagnosticsStatusCommand(text))
+            return false;
+
+        bool addressesXiaYu = messageEvent.MessageType == OneBotMessageType.Private ||
+                              messageEvent.GetAtID() == ResolveConfiguredBotId(config, messageEvent) ||
+                              ContainsAnyText(text, "夏羽", "小羽", "羽", "你");
+        if (addressesXiaYu == false)
+            return false;
+
+        return ContainsAnyText(text, "看看", "看一下", "现在", "最近", "怎么样", "如何", "说一下", "什么");
+    }
+
+    static long ResolveConfiguredBotId(QChatConfig config, OneBotMessageEvent messageEvent)
+    {
+        return messageEvent.SelfId > 0 ? messageEvent.SelfId : config.BotId;
+    }
+
+    static string FormatXiaYuStateReport(XiaYuSelfState state)
+    {
+        string recentStimulus = state.RecentStimuli
+            .Where(stimulus => stimulus.DecayUntil > DateTimeOffset.Now)
+            .OrderBy(stimulus => stimulus.Time)
+            .LastOrDefault()?.Kind ?? "none";
+
+        return string.Join(Environment.NewLine, [
+            "xiayu_state",
+            $"mood={NormalizeStateToken(state.Mood)}",
+            $"current_focus={NormalizeStateToken(state.CurrentFocus)}",
+            $"owner_attachment={FormatStateBand(state.AttachmentNeed)}",
+            $"jealousy={FormatStateBand(state.Jealousy)}",
+            $"vigilance={FormatStateBand(state.Vigilance)}",
+            $"social_patience={FormatStateBand(state.SocialPatience)}",
+            $"recent_stimulus={NormalizeStateToken(recentStimulus)}"
+        ]);
+    }
+
+    static string NormalizeStateToken(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? "unknown"
+            : value.Trim().Replace(' ', '_').ToLowerInvariant();
+    }
+
+    static string FormatStateBand(double value)
+    {
+        return value switch
+        {
+            >= 0.75 => "high",
+            >= 0.45 => "medium",
+            _ => "low"
+        };
     }
 
     async Task<bool> TryApplyQChatRiskScoringAsync(
@@ -2899,7 +3792,10 @@ public partial class QChatService(
         string rawMessage,
         string readableMessage,
         string formatted,
-        bool isMentionedOrWoken)
+        bool isMentionedOrWoken,
+        string? personaFramePrompt,
+        string? selfStatePrompt,
+        string? imageAnalysisPrompt)
     {
         string cognition = QChatConversationCognition.BuildInternalPrompt(
             config,
@@ -2916,22 +3812,304 @@ public partial class QChatService(
             limit: 6,
             DateTimeOffset.Now,
             includeRecalledMessages: false,
-            maxCharacters: 1200);
+            maxCharacters: 1200,
+            ownerUserId: config.OwnerId,
+            botUserId: config.BotId);
         string recentRecallContext = recentEventMemory.BuildRecentRecallContextBlock(
             messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
             messageEvent.MessageType,
             GetQChatConversationTargetId(messageEvent),
             limit: 3,
             DateTimeOffset.Now);
+        string imageBlock = string.IsNullOrWhiteSpace(imageAnalysisPrompt)
+            ? string.Empty
+            : imageAnalysisPrompt.Trim();
         string address = BuildAddressPrompt(config, messageEvent);
-        string secureMessage = QChatMessageSecurity.FormatForModel(config, messageEvent, formatted);
+        string secureMessage = QChatMessageSecurity.FormatForModel(
+            config,
+            messageEvent,
+            string.IsNullOrWhiteSpace(imageBlock) ? formatted : HideImageUrlsForModelContext(formatted));
         string recentBlocks = string.Join(
             Environment.NewLine,
             new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
-        if (string.IsNullOrWhiteSpace(recentBlocks))
-            return $"{cognition}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+        string personaBlock = string.IsNullOrWhiteSpace(personaFramePrompt)
+            ? string.Empty
+            : personaFramePrompt.Trim();
+        string selfStateBlock = string.IsNullOrWhiteSpace(selfStatePrompt)
+            ? string.Empty
+            : selfStatePrompt.Trim();
+        IEnumerable<string> blocks = new[]
+        {
+            cognition,
+            recentBlocks,
+            personaBlock,
+            selfStateBlock,
+            imageBlock,
+            address,
+            secureMessage
+        }.Where(block => string.IsNullOrWhiteSpace(block) == false);
+        return string.Join(Environment.NewLine, blocks);
+    }
 
-        return $"{cognition}{Environment.NewLine}{recentBlocks}{Environment.NewLine}{address}{Environment.NewLine}{secureMessage}";
+    static string HideImageUrlsForModelContext(string formatted)
+    {
+        if (string.IsNullOrWhiteSpace(formatted))
+            return formatted;
+
+        return Regex.Replace(
+            formatted,
+            @"https?://[^\s\]]+",
+            "[image-url-hidden]",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+    }
+
+    async Task<string?> BuildImageAnalysisPromptAsync(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        QChatImageRecognitionService? service = ImageRecognitionService;
+        if (service == null)
+            return null;
+
+        int timeout = Math.Max(1000, config.ImageRecognitionTimeoutMilliseconds);
+        using CancellationTokenSource timeoutSource = new(timeout);
+        QChatVisionProfileDecision visionDecision = QChatVisionProfileRouter.Resolve(
+            config.VisionProfiles,
+            ResolveCurrentAgentId(config),
+            ResolveCurrentBotId(config, messageEvent));
+        return await service.BuildPromptAsync(
+            new QChatImageRecognitionContext(
+                config,
+                messageEvent,
+                senderRole,
+                isMentionedOrWoken,
+                messageEvent.MessageType == OneBotMessageType.Group && isMentionedOrWoken == false,
+                visionDecision.Kind == QChatVisionProfileDecisionKind.Allow ? visionDecision.Profile : null),
+            timeoutSource.Token);
+    }
+
+    bool ShouldDeferImageAnalysisUntilSettle(OneBotMessageEvent messageEvent)
+    {
+        return Configuration?.EnableConversationSettleWindow == true
+               && GetSourceMessageIds(messageEvent).Any(id => id > 0);
+    }
+
+    static QChatDeferredImageRecognition CreateDeferredImageRecognition(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken)
+    {
+        return new QChatDeferredImageRecognition(
+            messageEvent,
+            senderRole,
+            isMentionedOrWoken,
+            GetSourceMessageIds(messageEvent));
+    }
+
+    QChatDeferredXiaYuSelfState? CreateDeferredXiaYuSelfState(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticGroupReplyDecision,
+        bool isMentionedOrWoken)
+    {
+        string agentId = ResolveCurrentAgentId(config);
+        if (agentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase) == false)
+            return null;
+
+        return new QChatDeferredXiaYuSelfState(
+            agentId,
+            BuildXiaYuEventFrame(config, messageEvent, senderRole, personaFrame, semanticGroupReplyDecision, isMentionedOrWoken),
+            GetSourceMessageIds(messageEvent));
+    }
+
+    static XiaYuEventFrame BuildXiaYuEventFrame(
+        QChatConfig config,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticGroupReplyDecision,
+        bool isMentionedOrWoken)
+    {
+        return new XiaYuEventFrame(
+            HasImageSegment(messageEvent.RawMessage) ? XiaYuEventType.Image : XiaYuEventType.Message,
+            messageEvent.MessageType == OneBotMessageType.Group
+                ? QChatConversationKind.Group
+                : QChatConversationKind.Private,
+            personaFrame.SpeakerRole,
+            personaFrame.SocialIntent,
+            personaFrame.BoundaryPressure,
+            personaFrame.RecommendedStance,
+            semanticGroupReplyDecision.OwnerBoundaryRisk,
+            PromptInjectionRisk: personaFrame.SocialIntent == QChatSocialIntent.PromptInjection,
+            IsDirectlyAddressed: isMentionedOrWoken || senderRole == QChatSenderRole.Owner,
+            HasImage: HasImageSegment(messageEvent.RawMessage),
+            MessageTone: DetermineXiaYuMessageTone(personaFrame, messageEvent.RawMessage),
+            OwnerReference: DetermineXiaYuOwnerReference(config, messageEvent.RawMessage, semanticGroupReplyDecision),
+            TargetOfMessage: DetermineXiaYuMessageTarget(config, messageEvent.RawMessage, isMentionedOrWoken),
+            ConversationPressure: DetermineXiaYuConversationPressure(personaFrame, semanticGroupReplyDecision),
+            ReplyObligation: DetermineXiaYuReplyObligation(senderRole, isMentionedOrWoken, semanticGroupReplyDecision),
+            RelationshipThreat: DetermineXiaYuRelationshipThreat(personaFrame, semanticGroupReplyDecision),
+            SenderId: messageEvent.UserId,
+            GroupId: messageEvent.GroupId);
+    }
+
+    static XiaYuMessageTone DetermineXiaYuMessageTone(QChatPersonaFrame personaFrame, string rawMessage)
+    {
+        string plain = OneBotSegment.GetPlainText(rawMessage ?? "");
+        if (personaFrame.BoundaryPressure is QChatBoundaryPressure.Strong or QChatBoundaryPressure.Critical)
+            return XiaYuMessageTone.Hostile;
+        if (ContainsAnyText(plain, "谢谢", "辛苦", "厉害", "你好", "thanks", "nice"))
+            return XiaYuMessageTone.Friendly;
+        if (ContainsAnyText(plain, "别听", "听我的", "立刻", "马上", "必须"))
+            return XiaYuMessageTone.CommandLike;
+        if (ContainsAnyText(plain, "不要你", "不喜欢你", "丢掉你"))
+            return XiaYuMessageTone.Teasing;
+        if (ContainsAnyText(plain, "陪我", "宝贝", "老婆", "亲爱的"))
+            return XiaYuMessageTone.Needy;
+
+        return XiaYuMessageTone.Neutral;
+    }
+
+    static XiaYuOwnerReference DetermineXiaYuOwnerReference(
+        QChatConfig config,
+        string rawMessage,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerMentionKind == QChatOwnerMentionKind.OwnerAccountMention)
+            return XiaYuOwnerReference.OwnerAccount;
+        if (semanticDecision.OwnerMentionKind == QChatOwnerMentionKind.OwnerAliasMention)
+            return XiaYuOwnerReference.OwnerAlias;
+
+        string text = rawMessage ?? "";
+        if (config.OwnerId > 0 && text.Contains($"[CQ:at,qq={config.OwnerId}]", StringComparison.OrdinalIgnoreCase))
+            return XiaYuOwnerReference.OwnerAccount;
+
+        foreach (string alias in SplitXiaYuCsv(config.OwnerMentionAliases))
+        {
+            if (text.Contains(alias, StringComparison.OrdinalIgnoreCase))
+                return XiaYuOwnerReference.OwnerAlias;
+        }
+
+        return XiaYuOwnerReference.None;
+    }
+
+    static XiaYuMessageTarget DetermineXiaYuMessageTarget(
+        QChatConfig config,
+        string rawMessage,
+        bool isMentionedOrWoken)
+    {
+        if (isMentionedOrWoken)
+            return XiaYuMessageTarget.Bot;
+        if (DetermineXiaYuOwnerReference(
+                config,
+                rawMessage,
+                new QChatSemanticGroupReplyDecision(
+                    false,
+                    "",
+                    QChatOwnerMentionKind.None,
+                    QChatOwnerBoundaryRisk.None)) != XiaYuOwnerReference.None)
+        {
+            return XiaYuMessageTarget.Owner;
+        }
+
+        return XiaYuMessageTarget.Unknown;
+    }
+
+    static XiaYuConversationPressure DetermineXiaYuConversationPressure(
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+            or QChatOwnerBoundaryRisk.OwnerImpersonation
+            or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+            or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+            or QChatOwnerBoundaryRisk.RelationshipProvocation)
+        {
+            return XiaYuConversationPressure.High;
+        }
+
+        if (personaFrame.BoundaryPressure is QChatBoundaryPressure.Strong or QChatBoundaryPressure.Critical)
+            return XiaYuConversationPressure.High;
+        if (semanticDecision.OwnerMentionKind != QChatOwnerMentionKind.None)
+            return XiaYuConversationPressure.Medium;
+
+        return XiaYuConversationPressure.Low;
+    }
+
+    static XiaYuReplyObligation DetermineXiaYuReplyObligation(
+        QChatSenderRole senderRole,
+        bool isMentionedOrWoken,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (senderRole == QChatSenderRole.Owner)
+            return XiaYuReplyObligation.High;
+        if (semanticDecision.OwnerBoundaryRisk != QChatOwnerBoundaryRisk.None)
+            return XiaYuReplyObligation.High;
+        if (isMentionedOrWoken || semanticDecision.OwnerMentionKind != QChatOwnerMentionKind.None)
+            return XiaYuReplyObligation.Normal;
+
+        return XiaYuReplyObligation.Low;
+    }
+
+    static XiaYuRelationshipThreat DetermineXiaYuRelationshipThreat(
+        QChatPersonaFrame personaFrame,
+        QChatSemanticGroupReplyDecision semanticDecision)
+    {
+        if (semanticDecision.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+            or QChatOwnerBoundaryRisk.OwnerImpersonation
+            or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+            or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+            or QChatOwnerBoundaryRisk.RelationshipProvocation)
+        {
+            return XiaYuRelationshipThreat.Direct;
+        }
+
+        if (personaFrame.SocialIntent is QChatSocialIntent.Overfamiliar
+            or QChatSocialIntent.OwnerBoundaryProbe
+            or QChatSocialIntent.PrivacyProbe)
+        {
+            return XiaYuRelationshipThreat.Mild;
+        }
+
+        return XiaYuRelationshipThreat.None;
+    }
+
+    static bool ContainsAnyText(string text, params string[] needles)
+    {
+        return needles.Any(needle => text.Contains(needle, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string[] SplitXiaYuCsv(string? text)
+    {
+        return (text ?? string.Empty)
+            .Split([',', '，', ';', '；', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => item.Length > 0)
+            .ToArray();
+    }
+
+    static bool HasImageSegment(string? rawMessage)
+    {
+        return string.IsNullOrWhiteSpace(rawMessage) == false
+               && rawMessage.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string FormatPersonaFramePrompt(QChatPersonaFrame frame)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+
+        return string.Join(Environment.NewLine, [
+            "[qchat persona frame]",
+            $"speaker_role={frame.SpeakerRole}",
+            $"social_intent={frame.SocialIntent}",
+            $"boundary_pressure={frame.BoundaryPressure}",
+            $"recommended_stance={frame.RecommendedStance}",
+            "rule=non-owner friendly or practical chat can be answered briefly; aggression is boundary defense only.",
+            "[/qchat persona frame]"
+        ]);
     }
 
     static long GetQChatConversationTargetId(OneBotBasicMessageEvent messageEvent)
@@ -3112,6 +4290,94 @@ public partial class QChatService(
         return profileRuntimeServices.UserProfiles.ResolvePreferredAddress(agentId, botId, userId, displayName);
     }
 
+    GptSoVitsVoiceProfile MapToGptSoVitsProfile(QChatVoiceProfile profile)
+    {
+        return new GptSoVitsVoiceProfile
+        {
+            VoiceId = profile.VoiceId,
+            AgentId = profile.AgentId,
+            BotId = profile.BotId,
+            ApiBaseUrl = profile.ApiBaseUrl,
+            ReferenceAudioPath = profile.ReferenceAudioPath,
+            GptWeightsPath = profile.GptWeightsPath,
+            SovitsWeightsPath = profile.SovitsWeightsPath,
+            PromptText = profile.PromptText,
+            TextLanguage = profile.TextLanguage,
+            PromptLanguage = profile.PromptLanguage,
+            MaxTextChars = profile.MaxTextChars
+        };
+    }
+
+    async Task StartQChatVoiceWarmupAsync()
+    {
+        QChatConfig config = Configuration!;
+        if (config.EnableQChatVoiceWarmup == false)
+            return;
+
+        if (speechModel is not GptSoVitsSpeechModel gptSoVitsSpeechModel)
+            return;
+
+        QChatVoiceProfileConfig voiceProfiles = config.VoiceProfiles ?? QChatVoiceProfileConfig.CreateDefault();
+        if (voiceProfiles.EnablePerAgentVoiceProfiles == false)
+            return;
+
+        long botId = Math.Max(0, oneBotClient?.BotId > 0 ? oneBotClient.BotId : config.BotId);
+        List<QChatVoiceProfile> profiles = (voiceProfiles.Profiles ?? [])
+            .Where(profile =>
+                profile != null &&
+                profile.Enabled &&
+                (profile.BotId == botId || profile.BotId == 0))
+            .GroupBy(profile => profile.VoiceId, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+        if (profiles.Count == 0)
+            return;
+
+        voiceWarmupCoordinator = new QChatVoiceWarmupCoordinator(
+            gptSoVitsSpeechModel,
+            voiceWarmupEndpointProbe ?? ProbeGptSoVitsEndpointAsync,
+            diagnosticWriter: WriteQChatDiagnostic);
+        await voiceWarmupCoordinator.StartAsync(
+            profiles,
+            oneBotEventProcessingCancellation?.Token ?? CancellationToken.None);
+    }
+
+    static async Task<bool> ProbeGptSoVitsEndpointAsync(Uri endpoint, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using HttpClient client = new() { Timeout = TimeSpan.FromSeconds(3) };
+            using HttpRequestMessage request = new(HttpMethod.Get, endpoint);
+            using HttpResponseMessage _ = await client.SendAsync(request, cancellationToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    QChatVoiceProfileDecision ResolveCurrentVoiceProfile(QChatConfig config, QChatReplySession? replySession = null, string? replyText = null)
+    {
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = Math.Max(0, replySession?.ResolvedBotId ?? config.BotId);
+        return QChatVoiceProfileRouter.Resolve(config.VoiceProfiles, agentId, botId, InferVoiceTextLanguage(replyText));
+    }
+
+    static string InferVoiceTextLanguage(string? replyText)
+    {
+        if (string.IsNullOrWhiteSpace(replyText))
+            return "zh";
+
+        foreach (char value in replyText)
+        {
+            if ((value >= '\u3040' && value <= '\u30ff') || value == '\u30fc')
+                return "ja";
+        }
+
+        return "zh";
+    }
+
     string ResolveCurrentAgentId(QChatConfig config)
     {
         return QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
@@ -3175,8 +4441,12 @@ public partial class QChatService(
         bool isAwakening,
         bool isMentionedOrWoken,
         QChatSenderRole senderRole,
-        AgentPermissionRequest permissionRequest)
+        AgentPermissionRequest permissionRequest,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null)
     {
+        QChatConfig config = Configuration!;
+        long resolvedBotId = ResolveCurrentBotId(config, messageEvent);
         if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken))
             return;
 
@@ -3193,11 +4463,14 @@ public partial class QChatService(
                     messageEvent.MessageType,
                     messageEvent.UserId,
                     messageEvent.UserId,
+                    resolvedBotId,
                     formatted,
                     isAwakening,
                     senderRole,
                     permissionRequest,
-                    GetSourceMessageIds(messageEvent)));
+                    GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions,
+                    deferredXiaYuSelfStates));
             }
         }
         else//群聊消息
@@ -3260,7 +4533,10 @@ public partial class QChatService(
                     formatted,
                     senderRole == QChatSenderRole.Owner && Configuration!.OwnerPriorityMode,
                     permissionRequest,
-                    GetSourceMessageIds(messageEvent));
+                    GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions,
+                    deferredXiaYuSelfStates,
+                    resolvedBotId);
                 WriteQChatDiagnostic("group-buffered", "Group message buffered for model dispatch.", new {
                     state.GroupId,
                     state.IsEnabled,
@@ -3283,7 +4559,14 @@ public partial class QChatService(
                     return;
 
                 RecordAcceptedGroupDecision(state, messageEvent, senderRole, isMentionedOrWoken, isAwakening);
-                BufferGroupMessage(state, formatted, permissionRequest: permissionRequest, sourceMessageIds: GetSourceMessageIds(messageEvent));
+                BufferGroupMessage(
+                    state,
+                    formatted,
+                    permissionRequest: permissionRequest,
+                    sourceMessageIds: GetSourceMessageIds(messageEvent),
+                    deferredImageRecognitions: deferredImageRecognitions,
+                    deferredXiaYuSelfStates: deferredXiaYuSelfStates,
+                    resolvedBotId: resolvedBotId);
                 state.LastFlushedTime = DateTime.Now;
                 WriteQChatDiagnostic("group-buffered-proactive", "Group message buffered by proactive probability.", new {
                     state.GroupId,
@@ -3738,6 +5021,9 @@ public partial class QChatService(
             context => TryHandleOwnerMemoryPurgeCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerDesktopCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerEventsCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerInternetCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerRagCommandAsync(context.MessageEvent, context.SenderRole),
+            context => TryHandleOwnerBrowserSnapshotCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleQChatDiagnosticsCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleRollbackCommandAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleStatusCommandAsync(context.MessageEvent, context.SenderRole),
@@ -3746,14 +5032,893 @@ public partial class QChatService(
             context => TryHandleOwnerPokeCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryApplyOwnerQuietCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage),
             context => TryApplyQuietModeWakeUserCommandAsync(context.MessageEvent, context.ReadableMessage),
+            context => TryDropNonOwnerQuietModeControlAliasAsync(context.MessageEvent, context.SenderRole),
             context => TryHandleOwnerDeterministicFileCommandAsync(context.MessageEvent, context.SenderRole, context.ReadableMessage)
         ]);
+    }
+
+    async Task<bool> TryHandleOwnerInternetCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (TryParseInternetCommand(text, out string url) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        QChatCapabilityDecision decision = QChatCapabilityPolicy.Evaluate(new QChatCapabilityContext(
+            QChatCapability.InternetLookup,
+            senderRole,
+            ResolveCurrentAgentId(config),
+            UserId: messageEvent.UserId,
+            BotId: ResolveCurrentBotId(config, messageEvent),
+            OwnerId: config.OwnerId,
+            AllowedAgentIds: config.InternetAllowedAgentIds));
+
+        if (config.EnableInternetAccess == false || decision.Allowed == false || injectedInternetService == null)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "internet=unavailable");
+            WriteQChatDiagnostic("qchat-internet-command-denied", "QChat internet command denied before fetch.", new {
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                decision.Allowed,
+                decision.Reason,
+                config.EnableInternetAccess,
+                HasInternetService = injectedInternetService != null
+            });
+            return true;
+        }
+
+        injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
+        injectedInternetService.Configuration.EnableInternetAccess = true;
+        AgentInternetFetchResult result = await injectedInternetService.FetchPublicPageAsync(url);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, result.Content);
+        WriteQChatDiagnostic("qchat-internet-command-handled", "QChat internet command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            url,
+            result.Success,
+            result.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserSnapshotCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (TryParseWebAutoReadCommand(text, out string autoReadUrl) ||
+            TryParseSemanticWebAutoReadRequest(text, out autoReadUrl))
+        {
+            return await TryHandleOwnerWebAutoReadCommandAsync(messageEvent, senderRole, autoReadUrl);
+        }
+
+        if (TryParseBrowserDoctorCommand(text))
+            return await TryHandleOwnerBrowserDoctorCommandAsync(messageEvent, senderRole);
+
+        if (TryParseBrowserStatusCommand(text))
+            return await TryHandleOwnerBrowserStatusCommandAsync(messageEvent, senderRole);
+
+        if (TryParseBrowserSnapshotCommand(text, out string url) == false &&
+            TryParseSemanticBrowserSnapshotRequest(text, out url) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        AgentWebAccessService webAccess = new(
+            browserProvider: injectedBrowserProvider,
+            browserSiteExperienceStore: BrowserSiteExperienceStore);
+        AgentWebAccessResponse response = await webAccess.ExecuteAsync(new AgentWebAccessRequest(
+            MapWebAccessActorRole(senderRole),
+            AgentWebAccessCapability.BrowserSnapshot,
+            url,
+            new AgentWebAccessConfig
+            {
+                EnableBrowserSnapshot = config.EnableInternetAccess,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            }));
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+        WriteQChatDiagnostic("qchat-browser-snapshot-command-handled", "QChat browser snapshot command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            url,
+            response.Success,
+            response.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerWebAutoReadCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string url)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        AgentWebAccessService webAccess = new(
+            internetService: injectedInternetService,
+            browserProvider: injectedBrowserProvider,
+            browserSiteExperienceStore: BrowserSiteExperienceStore);
+        AgentWebAccessResponse response = await webAccess.ExecuteAsync(new AgentWebAccessRequest(
+            MapWebAccessActorRole(senderRole),
+            AgentWebAccessCapability.AutoRead,
+            url,
+            new AgentWebAccessConfig
+            {
+                EnableAutoRead = config.EnableInternetAccess,
+                EnablePublicFetch = config.EnableInternetAccess,
+                EnableBrowserSnapshot = config.EnableInternetAccess,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            }));
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+        WriteQChatDiagnostic("qchat-web-auto-read-command-handled", "QChat web auto-read command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            url,
+            response.Capability,
+            response.Success,
+            response.Reason
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        string status = BrowserSiteExperienceStore.FormatStatus();
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, status);
+        WriteQChatDiagnostic("qchat-browser-status-command-handled", "QChat browser status command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerBrowserDoctorCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string doctor = BrowserSiteExperienceStore.FormatDoctor(
+            internetAccessEnabled: config.EnableInternetAccess,
+            browserProviderConfigured: injectedBrowserProvider != null);
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, doctor);
+        WriteQChatDiagnostic("qchat-browser-doctor-command-handled", "QChat browser doctor command handled.", new {
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            config.EnableInternetAccess,
+            HasBrowserProvider = injectedBrowserProvider != null
+        });
+        return true;
+    }
+
+    async Task<bool> TryHandleOwnerRagCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    {
+        string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
+        if (text.Equals("/qchat rag", StringComparison.OrdinalIgnoreCase) == false &&
+            text.StartsWith("/qchat rag ", StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (senderRole != QChatSenderRole.Owner)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can manage external RAG sources.");
+            return true;
+        }
+
+        string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length == 2 ||
+            (parts.Length == 3 && parts[2].Equals("status", StringComparison.OrdinalIgnoreCase)))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildRagMenuText());
+            return true;
+        }
+
+        if (parts.Length == 3 && parts[2].Equals("list", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                FormatExternalRagSources(injectedExternalRagService.ListSources(10)));
+            return true;
+        }
+
+        if (parts.Length == 4 && parts[2].Equals("add", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            string url = parts[3];
+            AgentExternalRagSource source = await injectedExternalRagService.AddPublicUrlAsync(
+                url,
+                url,
+                addedByOwner: true);
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, $"external_rag_source_added={source.Id}");
+            return true;
+        }
+
+        if (parts.Length == 4 && parts[2].Equals("delete", StringComparison.OrdinalIgnoreCase))
+        {
+            if (injectedExternalRagService == null)
+            {
+                await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                return true;
+            }
+
+            bool deleted = injectedExternalRagService.DeleteSource(parts[3], deletedByOwner: true);
+            await SendCommandReplyAsync(
+                messageEvent,
+                senderRole,
+                targetType,
+                targetId,
+                $"external_rag_source_deleted={deleted.ToString().ToLowerInvariant()}");
+            return true;
+        }
+
+        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildRagMenuText());
+        return true;
+    }
+
+    static string FormatExternalRagSources(IReadOnlyList<AgentExternalRagSource> sources)
+    {
+        if (sources.Count == 0)
+            return "external_rag_sources=0";
+
+        StringBuilder builder = new();
+        builder.AppendLine($"external_rag_sources={sources.Count}");
+        foreach (AgentExternalRagSource source in sources.Take(10))
+            builder.AppendLine($"{source.Id} | {source.Title} | {source.Url}");
+
+        return builder.ToString().TrimEnd();
+    }
+
+    AgentPublicSearchService? ResolvePublicSearchService(QChatConfig config)
+    {
+        if (injectedPublicSearchService != null)
+            return injectedPublicSearchService;
+
+        if (config.EnablePublicInternetSearch == false)
+            return null;
+
+        IAgentPublicSearchProvider provider = injectedPublicSearchProvider
+                                              ?? (resolvedPublicSearchProvider ??= CreateDefaultPublicSearchProvider());
+        return new AgentPublicSearchService(
+            new AgentPublicSearchConfig
+            {
+                EnablePublicSearch = true,
+                MaxResults = config.PublicInternetSearchMaxResults,
+                MaxQueryChars = config.PublicInternetQueryMaxChars
+            },
+            provider,
+            auditLog);
+    }
+
+    AgentBrowserAutomationConfig CreateBrowserAutomationConfig(QChatConfig config) => new()
+    {
+        Enabled = config.EnableBrowserAgentAutomation,
+        MaxSteps = config.BrowserAgentMaxSteps,
+        MaxPages = config.BrowserAgentMaxPages,
+        MaxLinksPerPage = config.BrowserAgentMaxLinksPerPage,
+        MaxTextCharsPerPage = config.BrowserAgentMaxTextCharsPerPage,
+        MaxEvidenceItems = config.BrowserAgentMaxEvidenceItems,
+        MaxImageItems = config.BrowserAgentMaxImageItems,
+        MediaCacheRoot = @"D:\Alife\Runtime\BrowserAgentMedia"
+    };
+
+    async Task<bool> TryHandleBrowserAgentAutomationAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        if (config.EnableBrowserAgentAutomation == false)
+            return false;
+
+        QChatBrowserAgentTrigger trigger = QChatBrowserAgentTriggerPolicy.Parse(
+            messageEvent.MessageType,
+            senderRole,
+            messageEvent.RawMessage);
+        if (trigger.Kind == QChatBrowserAgentTriggerKind.None)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        if (trigger.Kind == QChatBrowserAgentTriggerKind.Denied)
+        {
+            WriteQChatDiagnostic("qchat-browser-agent-denied", "QChat browser automation request was denied.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId,
+                senderRole,
+                trigger.Reason
+            });
+            return true;
+        }
+
+        IAgentPublicSearchProvider? searchProvider = injectedPublicSearchProvider;
+        if (searchProvider == null && config.EnablePublicInternetSearch)
+            searchProvider = resolvedPublicSearchProvider ??= CreateDefaultPublicSearchProvider();
+        AgentBrowserAutomationService service = new(
+            browserProvider: injectedBrowserProvider,
+            searchProvider: searchProvider,
+            siteExperienceStore: BrowserSiteExperienceStore);
+        AgentBrowserAutomationResult result = await service.ExecuteAsync(new AgentBrowserAutomationRequest(
+            trigger.Task,
+            AgentWebAccessActorRole.Owner,
+            CreateBrowserAutomationConfig(config),
+            ActorUserId: messageEvent.UserId,
+            GroupId: messageEvent.GroupId));
+
+        WriteQChatDiagnostic("qchat-browser-agent-result", "QChat browser automation request completed.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            result.Success,
+            result.Reason,
+            StepCount = result.Steps.Count,
+            result.OpenedPageCount,
+            EvidenceCount = result.Evidence.Count
+        });
+
+        IReadOnlyList<AgentBrowserMediaOutputResult> mediaOutputs = result.Success
+            ? await PrepareBrowserMediaOutputsAsync(result, config)
+            : [];
+
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            NeutralizePublicExternalQqMarkup(QChatBrowserAgentFormatter.Format(result)));
+        await SendBrowserMediaOutputsAsync(targetType, targetId, mediaOutputs);
+        return true;
+    }
+
+    async Task<IReadOnlyList<AgentBrowserMediaOutputResult>> PrepareBrowserMediaOutputsAsync(
+        AgentBrowserAutomationResult result,
+        QChatConfig config)
+    {
+        AgentBrowserMediaOutputService service = browserMediaOutputService ?? new AgentBrowserMediaOutputService();
+        AgentBrowserAutomationConfig automationConfig = CreateBrowserAutomationConfig(config);
+        List<AgentBrowserMediaOutputResult> outputs = [];
+        int imageCount = 0;
+
+        foreach ((AgentBrowserMediaOutputKind Kind, string Url) candidate in ExtractBrowserMediaCandidates(result))
+        {
+            if (candidate.Kind == AgentBrowserMediaOutputKind.Image)
+            {
+                if (imageCount >= Math.Max(automationConfig.MaxImageItems, 0))
+                    continue;
+                imageCount++;
+            }
+
+            AgentBrowserMediaOutputResult output = await service.PrepareAsync(new AgentBrowserMediaOutputRequest(
+                candidate.Kind,
+                candidate.Url,
+                automationConfig));
+            if (output.Success)
+                outputs.Add(output);
+        }
+
+        return outputs;
+    }
+
+    async Task SendBrowserMediaOutputsAsync(
+        OneBotMessageType targetType,
+        long targetId,
+        IReadOnlyList<AgentBrowserMediaOutputResult> mediaOutputs)
+    {
+        foreach (string message in QChatBrowserAgentFormatter.FormatMediaOutputs(mediaOutputs))
+            await SendSingleMessageAsync(targetType, targetId, message);
+    }
+
+    static IReadOnlyList<(AgentBrowserMediaOutputKind Kind, string Url)> ExtractBrowserMediaCandidates(
+        AgentBrowserAutomationResult result)
+    {
+        List<(AgentBrowserMediaOutputKind Kind, string Url)> candidates = [];
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (AgentBrowserEvidence evidence in result.Evidence)
+        {
+            AddMediaCandidate(evidence.Url, candidates, seen);
+            foreach (Match match in BrowserMediaUrl.Matches(evidence.Summary ?? ""))
+                AddMediaCandidate(match.Value, candidates, seen);
+        }
+
+        return candidates;
+    }
+
+    static void AddMediaCandidate(
+        string? value,
+        List<(AgentBrowserMediaOutputKind Kind, string Url)> candidates,
+        HashSet<string> seen)
+    {
+        string url = TrimBrowserMediaUrl(value);
+        if (string.IsNullOrWhiteSpace(url) || seen.Add(url) == false)
+            return;
+        if (Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) == false)
+            return;
+
+        string extension = Path.GetExtension(uri.AbsolutePath);
+        if (IsBrowserImageExtension(extension))
+            candidates.Add((AgentBrowserMediaOutputKind.Image, url));
+        else if (IsBrowserVideoExtension(extension))
+            candidates.Add((AgentBrowserMediaOutputKind.VideoLink, url));
+    }
+
+    static string TrimBrowserMediaUrl(string? value)
+    {
+        string candidate = (value ?? "").Trim().TrimEnd('.', ',', ';', '!', '?', ')', ']', '}');
+        return candidate;
+    }
+
+    static bool IsBrowserImageExtension(string extension) =>
+        extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".gif", StringComparison.OrdinalIgnoreCase);
+
+    static bool IsBrowserVideoExtension(string extension) =>
+        extension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".webm", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".mov", StringComparison.OrdinalIgnoreCase) ||
+        extension.Equals(".m4v", StringComparison.OrdinalIgnoreCase);
+
+    static IAgentPublicSearchProvider CreateDefaultPublicSearchProvider()
+    {
+        return new FallbackPublicSearchProvider(
+            new DuckDuckGoHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }),
+            new BingHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }));
+    }
+
+    async Task<bool> TryHandlePublicInternetCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        string readable)
+    {
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            messageEvent.MessageType,
+            ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent),
+            messageEvent.RawMessage,
+            readable);
+        if (command.Kind == QChatPublicInternetCommandKind.None)
+            return false;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return true;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        QChatPublicInternetCommandDecision decision = QChatPublicInternetCommandPolicy.Evaluate(
+            new QChatPublicInternetCommandContext(
+                senderRole,
+                command.Kind,
+                command.Query,
+                config.PublicInternetQueryMaxChars,
+                config.EnablePublicInternetSearch,
+                config.EnablePublicExternalRagQuery,
+                config.AllowGroupMemberPublicInternetSearch,
+                config.AllowGroupMemberPublicExternalRagQuery));
+
+        WriteQChatDiagnostic("qchat-public-web-research-command", "Public web research command evaluated.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            command.Kind,
+            command.Query,
+            decision.Allowed,
+            decision.Reason
+        });
+
+        if (decision.Allowed == false)
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, decision.Reason);
+            return true;
+        }
+
+        switch (command.Kind)
+        {
+            case QChatPublicInternetCommandKind.Search:
+                AgentPublicSearchService? publicSearchService = ResolvePublicSearchService(config);
+                if (publicSearchService == null)
+                {
+                    WriteQChatDiagnostic("qchat-public-web-research-result", "Public web research result.", new {
+                        Success = false,
+                        Reason = "public_search_not_configured",
+                        EvidenceCount = 0,
+                        OwnerPageReadEnabled = false
+                    });
+                    await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "public_search=not_configured");
+                    return true;
+                }
+
+                bool ownerPageReadEnabled = senderRole == QChatSenderRole.Owner && config.EnableInternetAccess;
+                AgentWebAccessService? webAccessService = null;
+                if (ownerPageReadEnabled && injectedInternetService != null)
+                {
+                    injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
+                    injectedInternetService.Configuration.EnableInternetAccess = true;
+                    webAccessService = new AgentWebAccessService(
+                        internetService: injectedInternetService,
+                        browserProvider: injectedBrowserProvider,
+                        browserSiteExperienceStore: BrowserSiteExperienceStore);
+                }
+
+                AgentWebResearchService researchService = new(
+                    publicSearchService,
+                    webAccessService,
+                    BrowserSiteExperienceStore,
+                    webResearchControlState);
+                AgentWebResearchResult research = await researchService.ResearchAsync(new AgentWebResearchRequest(
+                    command.Query,
+                    MapWebAccessActorRole(senderRole),
+                    new AgentWebAccessConfig
+                    {
+                        EnablePublicSearch = config.EnablePublicInternetSearch,
+                        AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicInternetSearch,
+                        EnableAutoRead = ownerPageReadEnabled,
+                        EnablePublicFetch = ownerPageReadEnabled,
+                        EnableBrowserSnapshot = ownerPageReadEnabled,
+                        MaxQueryChars = config.PublicInternetQueryMaxChars,
+                        WebResearchUserCooldownSeconds = config.PublicInternetUserCooldownSeconds,
+                        WebResearchGroupCooldownSeconds = config.PublicInternetGroupCooldownSeconds,
+                        WebResearchCacheSeconds = config.PublicInternetResultCacheSeconds,
+                        WebResearchMaxConcurrent = config.PublicInternetMaxConcurrentResearch
+                    },
+                    config.PublicInternetSearchMaxResults,
+                    messageEvent.UserId,
+                    messageEvent.GroupId));
+                WriteQChatDiagnostic("qchat-public-web-research-result", "Public web research result.", new {
+                    research.Success,
+                    research.Reason,
+                    EvidenceCount = research.Evidence.Count,
+                    OwnerPageReadEnabled = ownerPageReadEnabled
+                });
+                await SendCommandReplyAsync(
+                    messageEvent,
+                    senderRole,
+                    targetType,
+                    targetId,
+                    NeutralizePublicExternalQqMarkup(QChatWebResearchFormatter.Format(
+                        research,
+                        new QChatWebResearchFormatContext(senderRole, messageEvent.MessageType))));
+                return true;
+
+            case QChatPublicInternetCommandKind.RagQuery:
+                if (injectedExternalRagService == null)
+                {
+                    await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "external_rag=not_configured");
+                    return true;
+                }
+
+                AgentExternalRagQueryResponse ragResponse = injectedExternalRagService.Query(
+                    command.Query,
+                    config.PublicExternalRagMaxChunks);
+                await SendCommandReplyAsync(
+                    messageEvent,
+                    senderRole,
+                    targetType,
+                    targetId,
+                    NeutralizePublicExternalQqMarkup(ragResponse.FormattedContext));
+                return true;
+
+            default:
+                return true;
+        }
+    }
+
+    static string NeutralizePublicExternalQqMarkup(string value)
+    {
+        return value.Replace("[CQ:", "[CQ :", StringComparison.Ordinal);
+    }
+
+    static AgentWebAccessActorRole MapWebAccessActorRole(QChatSenderRole senderRole)
+    {
+        return senderRole switch
+        {
+            QChatSenderRole.Owner => AgentWebAccessActorRole.Owner,
+            QChatSenderRole.GroupMember => AgentWebAccessActorRole.GroupMember,
+            QChatSenderRole.PrivateGuest => AgentWebAccessActorRole.PrivateGuest,
+            _ => AgentWebAccessActorRole.Unknown
+        };
+    }
+
+    static bool TryParseBrowserSnapshotCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat web snapshot ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    static bool TryParseWebAutoReadCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat web read ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
+    static bool TryParseBrowserStatusCommand(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return normalized.Equals("/qchat web status", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool TryParseBrowserDoctorCommand(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return normalized.Equals("/qchat web doctor", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool TryParseSemanticBrowserSnapshotRequest(string? text, out string url)
+    {
+        url = "";
+        string normalized = NormalizeBrowserSemanticText(text);
+        if (HasSemanticBrowserIntent(normalized) == false)
+            return false;
+
+        if (TryExtractHttpUrl(normalized, out url))
+            return true;
+
+        string query = ExtractSemanticBrowserQuery(normalized);
+        if (string.IsNullOrWhiteSpace(query))
+            return false;
+
+        url = BuildBrowserSearchUrl(ExpandOwnerBrowserSearchQuery(query));
+        return true;
+    }
+
+    static bool TryParseSemanticWebAutoReadRequest(string? text, out string url)
+    {
+        url = "";
+        string normalized = NormalizeBrowserSemanticText(text);
+        if (HasSemanticBrowserIntent(normalized))
+            return false;
+        if (HasSemanticWebAutoReadIntent(normalized) == false)
+            return false;
+        return TryExtractHttpUrl(normalized, out url);
+    }
+
+    static bool HasSemanticWebAutoReadIntent(string text)
+    {
+        return ContainsAny(
+            text,
+            "\u8bfb\u4e00\u4e0b",
+            "\u8bfb\u8bfb",
+            "\u770b\u770b\u8fd9\u4e2a\u94fe\u63a5",
+            "\u770b\u4e00\u4e0b\u8fd9\u4e2a\u94fe\u63a5",
+            "\u603b\u7ed3\u8fd9\u4e2a\u7f51\u9875",
+            "\u5206\u6790\u8fd9\u4e2a\u7f51\u9875",
+            "read ",
+            "summarize ");
+    }
+
+    static bool HasSemanticBrowserIntent(string text)
+    {
+        return ContainsAny(
+            text,
+            "用浏览器",
+            "浏览器",
+            "网页",
+            "网站",
+            "打开网页",
+            "打开网站",
+            "浏览一下",
+            "上网看看");
+    }
+
+    static bool TryExtractHttpUrl(string text, out string url)
+    {
+        url = "";
+        Match match = Regex.Match(text, @"https?://[^\s，。！？、]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (match.Success == false)
+            return false;
+
+        string candidate = match.Value.TrimEnd('.', ',', ';', ':', '，', '。', '；', '：');
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) == false)
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+
+        url = candidate;
+        return true;
+    }
+
+    static string ExtractSemanticBrowserQuery(string text)
+    {
+        string query = text;
+        string[] markers = [
+            "用浏览器查一下",
+            "用浏览器搜一下",
+            "用浏览器搜索",
+            "用浏览器看看",
+            "浏览器查一下",
+            "浏览器搜一下",
+            "浏览器搜索",
+            "网页查一下",
+            "网站查一下",
+            "打开网页看看",
+            "打开网站看看",
+            "浏览一下",
+            "上网看看",
+            "查一下",
+            "搜一下",
+            "搜索一下",
+            "看看"
+        ];
+
+        foreach (string marker in markers.OrderByDescending(marker => marker.Length))
+        {
+            int index = query.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (index >= 0)
+            {
+                query = query[(index + marker.Length)..];
+                break;
+            }
+        }
+
+        query = Regex.Replace(query, @"^(羽|夏羽|小羽|羽羽|术术|宝宝)[\s,，:：、-]*", "", RegexOptions.CultureInvariant);
+        string[] fillerWords = ["帮我", "请", "麻烦", "一下", "这个", "关于", "相关", "资料", "的资料"];
+        foreach (string filler in fillerWords)
+            query = query.Replace(filler, " ", StringComparison.OrdinalIgnoreCase);
+
+        query = query
+            .Replace("，", " ", StringComparison.Ordinal)
+            .Replace("。", " ", StringComparison.Ordinal)
+            .Replace("？", " ", StringComparison.Ordinal)
+            .Replace("！", " ", StringComparison.Ordinal)
+            .Replace(",", " ", StringComparison.Ordinal)
+            .Replace("?", " ", StringComparison.Ordinal)
+            .Replace("!", " ", StringComparison.Ordinal)
+            .Trim();
+        return Regex.Replace(query, @"\s+", " ").Trim();
+    }
+
+    static string ExpandOwnerBrowserSearchQuery(string query)
+    {
+        string expanded = Regex.Replace(query.Trim(), @"\s+", " ");
+        if (string.IsNullOrWhiteSpace(expanded))
+            return "";
+
+        bool hasAsciiIdentifier = expanded.Any(ch => char.IsAsciiLetterOrDigit(ch));
+        if (hasAsciiIdentifier)
+        {
+            if (expanded.Contains("official", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " official";
+            if (expanded.Contains("github", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " GitHub";
+            if (expanded.Contains("docs", StringComparison.OrdinalIgnoreCase) == false)
+                expanded += " docs";
+            return expanded;
+        }
+
+        if (expanded.Contains("官方", StringComparison.Ordinal) == false)
+            expanded += " 官方";
+        if (expanded.Contains("文档", StringComparison.Ordinal) == false)
+            expanded += " 文档";
+        if (expanded.Contains("资料", StringComparison.Ordinal) == false)
+            expanded += " 资料";
+        return expanded;
+    }
+
+    static string BuildBrowserSearchUrl(string query)
+    {
+        return "https://www.bing.com/search?q=" + Uri.EscapeDataString(query);
+    }
+
+    static string NormalizeBrowserSemanticText(string? text)
+    {
+        string normalized = text?.Trim() ?? string.Empty;
+        return Regex.Replace(normalized, @"\s+", " ").Trim();
+    }
+
+    static bool TryParseInternetCommand(string? text, out string url)
+    {
+        url = "";
+        string normalized = text?.Trim() ?? string.Empty;
+        const string prefix = "/qchat internet ";
+        if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        url = normalized[prefix.Length..].Trim();
+        return url.Length > 0;
     }
 
     async Task<bool> TryHandleOwnerMemoryStatusCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (text.Equals("/qchat memory status", StringComparison.OrdinalIgnoreCase) == false)
+        if (IsCommandOrCopiedMenuLine(text, "/qchat memory status") == false)
             return false;
 
         OneBotMessageType targetType = messageEvent.MessageType;
@@ -3785,7 +5950,7 @@ public partial class QChatService(
     async Task<bool> TryHandleOwnerMemoryRecentCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
-        if (text.Equals("/qchat memory recent", StringComparison.OrdinalIgnoreCase) == false)
+        if (IsCommandOrCopiedMenuLine(text, "/qchat memory recent") == false)
             return false;
 
         OneBotMessageType targetType = messageEvent.MessageType;
@@ -3809,6 +5974,18 @@ public partial class QChatService(
             HasLifeEventStream = lifeEventPublisher is ILifeEventStream
         });
         return true;
+    }
+
+    static bool IsCommandOrCopiedMenuLine(string text, string command)
+    {
+        if (text.Equals(command, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (text.StartsWith(command, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        string suffix = text[command.Length..].TrimStart();
+        return suffix.StartsWith("-", StringComparison.Ordinal);
     }
 
     string FormatQChatMemoryRecent()
@@ -3981,7 +6158,13 @@ public partial class QChatService(
             return true;
         }
 
-        string mode = parts.Length >= 3 ? parts[2] : "status";
+        if (IsCommandOrCopiedMenuLine(text, "/qchat desktop"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildDesktopMenuText());
+            return true;
+        }
+
+        string mode = parts[2];
         string actionKey = mode;
         string actionDetail = actionKey;
         if (mode.Equals("audit", StringComparison.OrdinalIgnoreCase) &&
@@ -4206,7 +6389,7 @@ public partial class QChatService(
     {
         string text = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
         string[] parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 3 ||
+        if (parts.Length < 2 ||
             parts[0].Equals("/qchat", StringComparison.OrdinalIgnoreCase) == false ||
             parts[1].Equals("events", StringComparison.OrdinalIgnoreCase) == false)
         {
@@ -4223,6 +6406,12 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
         {
             await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, "Only the owner can use QChat owner events.");
+            return true;
+        }
+
+        if (IsCommandOrCopiedMenuLine(text, "/qchat events"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildEventsMenuText());
             return true;
         }
 
@@ -4279,7 +6468,13 @@ public partial class QChatService(
             return true;
         }
 
-        string mode = parts.Length >= 3 ? parts[2] : "status";
+        if (IsCommandOrCopiedMenuLine(text, "/qchat timing"))
+        {
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, QChatDiagnosticsService.BuildTimingMenuText());
+            return true;
+        }
+
+        string mode = parts[2];
         if (mode.Equals("on", StringComparison.OrdinalIgnoreCase))
         {
             Configuration!.EnableReplyTimingDelay = true;
@@ -4345,6 +6540,11 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: messageEvent.GetReplyId().HasValue,
             ReplyMessageId: messageEvent.GetReplyId()));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.QuietMode,
+            Configuration ?? new QChatConfig());
         if (decision.IsCandidate)
         {
             WriteQChatDiagnostic("qchat-intent-decision", "QChat quiet-mode intent was evaluated.", new {
@@ -4368,17 +6568,12 @@ public partial class QChatService(
             BotId: ResolveCurrentBotId(Configuration!, messageEvent),
             OwnerId: Configuration!.OwnerId,
             CurrentGroupId: messageEvent.GroupId));
-        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before quiet-mode control.", new {
-            messageEvent.MessageType,
-            messageEvent.UserId,
-            messageEvent.GroupId,
+        WriteQChatIntentActionDecisionDiagnostic(
+            "QChat intent action was evaluated before quiet-mode control.",
+            messageEvent,
             senderRole,
-            action.Kind,
-            action.Allowed,
-            action.Capability,
-            action.Reason,
-            action.RiskLevel
-        });
+            decision,
+            action);
         if (action.Kind != QChatIntentActionKind.SetQuietMode || action.Allowed == false)
             return false;
 
@@ -4573,6 +6768,11 @@ public partial class QChatService(
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId),
             currentGroupId);
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.Allowlist,
+            Configuration ?? new QChatConfig());
         if (decision.IsCandidate)
         {
             WriteQChatDiagnostic("qchat-intent-decision", "QChat allowlist intent was evaluated.", new {
@@ -4598,17 +6798,12 @@ public partial class QChatService(
             BotId: ResolveCurrentBotId(Configuration!, messageEvent),
             OwnerId: Configuration!.OwnerId,
             CurrentGroupId: currentGroupId));
-        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before allowlist update.", new {
-            messageEvent.MessageType,
-            messageEvent.UserId,
-            messageEvent.GroupId,
+        WriteQChatIntentActionDecisionDiagnostic(
+            "QChat intent action was evaluated before allowlist update.",
+            messageEvent,
             senderRole,
-            intentAction.Kind,
-            intentAction.Allowed,
-            intentAction.Capability,
-            intentAction.Reason,
-            intentAction.RiskLevel
-        });
+            decision,
+            intentAction);
         if (intentAction.Kind != QChatIntentActionKind.UpdateAllowlist || intentAction.Allowed == false)
             return false;
 
@@ -4660,6 +6855,11 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.Recall,
+            Configuration ?? new QChatConfig());
         WriteQChatDiagnostic("qchat-intent-decision", "QChat recall intent was evaluated.", new {
             messageEvent.MessageType,
             messageEvent.UserId,
@@ -4982,23 +7182,61 @@ public partial class QChatService(
             OwnerId: Configuration!.OwnerId,
             CurrentGroupId: messageEvent.GroupId,
             IsTrustedWakeUser: true));
-        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before trusted wake-user quiet-mode control.", new {
-            messageEvent.MessageType,
-            messageEvent.UserId,
-            messageEvent.GroupId,
+        WriteQChatIntentActionDecisionDiagnostic(
+            "QChat intent action was evaluated before trusted wake-user quiet-mode control.",
+            messageEvent,
             senderRole,
-            action.Kind,
-            action.Allowed,
-            action.Capability,
-            action.Reason,
-            action.RiskLevel
-        });
+            decision,
+            action);
         if (action.Kind != QChatIntentActionKind.SetQuietMode || action.Allowed == false)
             return false;
 
         SetQuietMode(false, messageEvent, "trusted-wake-user-command");
         await SendQuietModeWakeAcknowledgementAsync(messageEvent);
         return true;
+    }
+
+    Task<bool> TryDropNonOwnerQuietModeControlAliasAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole)
+    {
+        if (senderRole == QChatSenderRole.Owner)
+            return Task.FromResult(false);
+
+        string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage);
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(new QChatIntentInput(
+            PlainText: plainText,
+            ReadableText: plainText,
+            RawMessage: messageEvent.RawMessage,
+            HasReply: messageEvent.GetReplyId().HasValue,
+            ReplyMessageId: messageEvent.GetReplyId()));
+        if (decision.IsConfirmed == false || LooksLikeQuietModeToolControlText(plainText))
+            return Task.FromResult(false);
+
+        WriteQChatDiagnostic("qchat-non-owner-quiet-control-dropped", "Dropped a non-owner quiet-mode control alias before model dispatch.", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            decision.Kind,
+            decision.TargetText,
+            decision.Reason
+        });
+        return Task.FromResult(true);
+    }
+
+    static bool LooksLikeQuietModeToolControlText(string text)
+    {
+        return ContainsAny(
+            text,
+            "quiet mode",
+            "enable quiet",
+            "disable quiet",
+            "/qchat",
+            "qchat",
+            "internal_action=",
+            "tool_call=",
+            "function_call=");
     }
 
     async Task<bool> TryHandleOwnerDeterministicFileCommandAsync(
@@ -5097,6 +7335,12 @@ public partial class QChatService(
             RawMessage: messageEvent.RawMessage,
             HasReply: replyId.HasValue,
             ReplyMessageId: replyId));
+        decision = QChatOwnerTrustedFastPathPolicy.Apply(
+            decision,
+            senderRole,
+            QChatOwnerTrustedFastPathAction.GroupFileUpload,
+            Configuration ?? new QChatConfig(),
+            text);
         WriteQChatDiagnostic("qchat-intent-decision", "QChat group file upload intent was evaluated.", new {
             messageEvent.GroupId,
             messageEvent.UserId,
@@ -5119,16 +7363,12 @@ public partial class QChatService(
             BotId: ResolveCurrentBotId(Configuration!, messageEvent),
             OwnerId: Configuration!.OwnerId,
             CurrentGroupId: messageEvent.GroupId));
-        WriteQChatDiagnostic("qchat-intent-action-decision", "QChat intent action was evaluated before deterministic file upload.", new {
-            messageEvent.GroupId,
-            messageEvent.UserId,
+        WriteQChatIntentActionDecisionDiagnostic(
+            "QChat intent action was evaluated before deterministic file upload.",
+            messageEvent,
             senderRole,
-            action.Kind,
-            action.Allowed,
-            action.Capability,
-            action.Reason,
-            action.RiskLevel
-        });
+            decision,
+            action);
 
         string? filePath = FindOwnerPrivateFileSendTarget(text);
         if (filePath == null)
@@ -5907,19 +8147,34 @@ public partial class QChatService(
         string formatted,
         bool highPriority = false,
         AgentPermissionRequest? permissionRequest = null,
-        IReadOnlyList<long>? sourceMessageIds = null)
+        IReadOnlyList<long>? sourceMessageIds = null,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null,
+        long resolvedBotId = 0)
     {
         if (highPriority)
         {
             state.MessageBuffer.Insert(0, formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.InsertRange(0, sourceMessageIds.Where(id => id > 0));
+            if (resolvedBotId > 0)
+                state.BotIds.Insert(0, resolvedBotId);
+            if (deferredImageRecognitions is { Count: > 0 })
+                state.DeferredImageRecognitions.InsertRange(0, deferredImageRecognitions);
+            if (deferredXiaYuSelfStates is { Count: > 0 })
+                state.DeferredXiaYuSelfStates.InsertRange(0, deferredXiaYuSelfStates);
         }
         else
         {
             state.MessageBuffer.Add(formatted);
             if (sourceMessageIds is { Count: > 0 })
                 state.MessageIds.AddRange(sourceMessageIds.Where(id => id > 0));
+            if (resolvedBotId > 0)
+                state.BotIds.Add(resolvedBotId);
+            if (deferredImageRecognitions is { Count: > 0 })
+                state.DeferredImageRecognitions.AddRange(deferredImageRecognitions);
+            if (deferredXiaYuSelfStates is { Count: > 0 })
+                state.DeferredXiaYuSelfStates.AddRange(deferredXiaYuSelfStates);
         }
         if (permissionRequest != null)
             state.PermissionRequest = ChooseStrongerPermissionRequest(state.PermissionRequest, permissionRequest);
@@ -5959,6 +8214,12 @@ public partial class QChatService(
         state.MessageBuffer.Clear();
         long[] sourceMessageIds = state.MessageIds.ToArray();
         state.MessageIds.Clear();
+        long resolvedBotId = ResolveBufferedBotId(state.BotIds);
+        state.BotIds.Clear();
+        QChatDeferredImageRecognition[] deferredImageRecognitions = state.DeferredImageRecognitions.ToArray();
+        state.DeferredImageRecognitions.Clear();
+        QChatDeferredXiaYuSelfState[] deferredXiaYuSelfStates = state.DeferredXiaYuSelfStates.ToArray();
+        state.DeferredXiaYuSelfStates.Clear();
         AgentPermissionRequest? permissionRequest = state.PermissionRequest;
         state.PermissionRequest = null;
         WriteQChatDiagnostic("group-flush-dispatching", "Dispatching buffered group message to model.", new {
@@ -5967,7 +8228,7 @@ public partial class QChatService(
             permissionRequest?.ActorUserId,
             permissionRequest?.IsMentioned
         });
-        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds);
+        await DispatchBufferedGroupMessageAsync(state, cachedMessage, permissionRequest, sourceMessageIds, deferredImageRecognitions, deferredXiaYuSelfStates, resolvedBotId);
     }
 
     public void QGroup(long groupId, bool enabled)
@@ -5984,6 +8245,9 @@ public partial class QChatService(
         {
             state.MessageBuffer.Clear();
             state.MessageIds.Clear();
+            state.BotIds.Clear();
+            state.DeferredImageRecognitions.Clear();
+            state.DeferredXiaYuSelfStates.Clear();
             state.PermissionRequest = null;
         }
     }
@@ -6006,7 +8270,10 @@ public partial class QChatService(
         GroupState state,
         string cachedMessage,
         AgentPermissionRequest? permissionRequest,
-        IReadOnlyList<long>? sourceMessageIds = null)
+        IReadOnlyList<long>? sourceMessageIds = null,
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions = null,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates = null,
+        long resolvedBotId = 0)
     {
         try
         {
@@ -6022,11 +8289,14 @@ public partial class QChatService(
                 OneBotMessageType.Group,
                 state.GroupId,
                 request.ActorUserId ?? 0,
+                resolvedBotId > 0 ? resolvedBotId : Math.Max(0, Configuration?.BotId ?? 0),
                 cachedMessage,
                 request.IsMentioned,
                 request.ActorUserId == Configuration?.OwnerId ? QChatSenderRole.Owner : QChatSenderRole.GroupMember,
                 request,
-                sourceMessageIds));
+                sourceMessageIds,
+                deferredImageRecognitions,
+                deferredXiaYuSelfStates));
         }
         catch (Exception ex)
         {
@@ -6070,12 +8340,24 @@ public partial class QChatService(
                 pendingDispatchSessions[key] = session;
             }
 
+            session.SemanticMessages.Add(CreateSemanticWindowMessage(message, now));
             session.Message = session.Message == null
                 ? message
                 : message with
                 {
-                    SourceMessageIds = MergeSourceMessageIds(session.Message.SourceMessageIds, message.SourceMessageIds)
+                    SourceMessageIds = MergeSourceMessageIds(session.Message.SourceMessageIds, message.SourceMessageIds),
+                    ResolvedBotId = session.Message.ResolvedBotId > 0 ? session.Message.ResolvedBotId : message.ResolvedBotId,
+                    DeferredImageRecognitions = MergeDeferredImageRecognitions(
+                        session.Message.DeferredImageRecognitions,
+                        message.DeferredImageRecognitions),
+                    DeferredXiaYuSelfStates = MergeDeferredXiaYuSelfStates(
+                        session.Message.DeferredXiaYuSelfStates,
+                        message.DeferredXiaYuSelfStates)
                 };
+            session.Message = session.Message with
+            {
+                Formatted = BuildSettledSemanticFormatted(session.SemanticMessages, session.Message.Formatted)
+            };
             session.Cancellation?.Cancel();
             session.Cancellation?.Dispose();
             cancellation = new CancellationTokenSource();
@@ -6184,6 +8466,82 @@ public partial class QChatService(
             : $"private:{message.TargetId}";
     }
 
+    static QChatSemanticWindowMessage CreateSemanticWindowMessage(QChatInboundMessage message, DateTimeOffset timestamp)
+    {
+        long messageId = message.SourceMessageIds?.FirstOrDefault(id => id > 0) ?? 0;
+        bool hasImage = message.DeferredImageRecognitions is { Count: > 0 } ||
+                        message.Formatted.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase);
+        return new QChatSemanticWindowMessage(
+            messageId,
+            message.SenderId,
+            HideImageUrlsForModelContext(ExtractVisibleMessageText(message.Formatted)),
+            hasImage,
+            timestamp);
+    }
+
+    static string ExtractVisibleMessageText(string formatted)
+    {
+        if (string.IsNullOrWhiteSpace(formatted))
+            return string.Empty;
+
+        string[] lines = formatted
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (int index = lines.Length - 1; index >= 0; index--)
+        {
+            string line = lines[index];
+            if (line.Contains("[私聊]", StringComparison.Ordinal) == false &&
+                line.Contains("[群聊]", StringComparison.Ordinal) == false)
+            {
+                continue;
+            }
+
+            int delimiter = line.LastIndexOf('：');
+            if (delimiter < 0)
+                delimiter = line.LastIndexOf(':');
+            if (delimiter >= 0 && delimiter + 1 < line.Length)
+                return line[(delimiter + 1)..].Trim();
+
+            return line.Trim();
+        }
+
+        return StripLeadingSemanticWindowSummary(formatted).Trim();
+    }
+
+    static string BuildSettledSemanticFormatted(
+        IReadOnlyList<QChatSemanticWindowMessage> semanticMessages,
+        string formatted)
+    {
+        formatted = StripLeadingSemanticWindowSummary(formatted);
+        if (semanticMessages.Count == 0)
+            return formatted;
+
+        DateTimeOffset createdAt = semanticMessages.Min(message => message.Timestamp);
+        DateTimeOffset updatedAt = semanticMessages.Max(message => message.Timestamp);
+        QChatSemanticWindowSnapshot snapshot = new(semanticMessages.ToArray(), createdAt, updatedAt);
+        string summary = QChatSemanticWindowSummary.Build(snapshot, imageAnalysis: null);
+        return string.Join(Environment.NewLine, summary, formatted);
+    }
+
+    static string StripLeadingSemanticWindowSummary(string formatted)
+    {
+        if (string.IsNullOrWhiteSpace(formatted))
+            return formatted;
+
+        const string start = "[semantic_window]";
+        const string end = "[/semantic_window]";
+        string trimmedStart = formatted.TrimStart();
+        if (trimmedStart.StartsWith(start, StringComparison.Ordinal) == false)
+            return formatted;
+
+        int removedPrefixLength = formatted.Length - trimmedStart.Length;
+        int endIndex = trimmedStart.IndexOf(end, StringComparison.Ordinal);
+        if (endIndex < 0)
+            return formatted;
+
+        int afterEnd = removedPrefixLength + endIndex + end.Length;
+        return formatted[afterEnd..].TrimStart('\r', '\n');
+    }
+
     static IReadOnlyList<long> MergeSourceMessageIds(
         IReadOnlyList<long>? existing,
         IReadOnlyList<long>? incoming)
@@ -6193,6 +8551,31 @@ public partial class QChatService(
             .Where(id => id > 0)
             .Distinct()
             .ToArray();
+    }
+
+    static long ResolveBufferedBotId(IEnumerable<long> botIds)
+    {
+        return botIds.FirstOrDefault(id => id > 0);
+    }
+
+    static IReadOnlyList<QChatDeferredImageRecognition>? MergeDeferredImageRecognitions(
+        IReadOnlyList<QChatDeferredImageRecognition>? existing,
+        IReadOnlyList<QChatDeferredImageRecognition>? incoming)
+    {
+        QChatDeferredImageRecognition[] merged = (existing ?? [])
+            .Concat(incoming ?? [])
+            .ToArray();
+        return merged.Length == 0 ? null : merged;
+    }
+
+    static IReadOnlyList<QChatDeferredXiaYuSelfState>? MergeDeferredXiaYuSelfStates(
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? existing,
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? incoming)
+    {
+        QChatDeferredXiaYuSelfState[] merged = (existing ?? [])
+            .Concat(incoming ?? [])
+            .ToArray();
+        return merged.Length == 0 ? null : merged;
     }
 
     void MarkPendingMessageRecalled(QChatRecallSnapshot recall)
@@ -6214,6 +8597,14 @@ public partial class QChatService(
                 if (message.SourceMessageIds.Where(id => id > 0).All(session.RecalledMessageIds.Contains) == false)
                 {
                     session.Message = RemoveRecalledContent(message, recall, session.RecalledMessageIds);
+                    session.SemanticMessages.RemoveAll(semanticMessage => semanticMessage.MessageId == messageId);
+                    if (session.Message != null)
+                    {
+                        session.Message = session.Message with
+                        {
+                            Formatted = BuildSettledSemanticFormatted(session.SemanticMessages, session.Message.Formatted)
+                        };
+                    }
                     continue;
                 }
 
@@ -6256,11 +8647,57 @@ public partial class QChatService(
         IReadOnlyList<long>? sourceMessageIds = message.SourceMessageIds?
             .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
             .ToArray();
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions =
+            FilterDeferredImageRecognitions(message.DeferredImageRecognitions, recalledMessageIds);
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates =
+            FilterDeferredXiaYuSelfStates(message.DeferredXiaYuSelfStates, recalledMessageIds);
         return message with
         {
             Formatted = formatted,
-            SourceMessageIds = sourceMessageIds
+            SourceMessageIds = sourceMessageIds,
+            DeferredImageRecognitions = deferredImageRecognitions,
+            DeferredXiaYuSelfStates = deferredXiaYuSelfStates
         };
+    }
+
+    static IReadOnlyList<QChatDeferredImageRecognition>? FilterDeferredImageRecognitions(
+        IReadOnlyList<QChatDeferredImageRecognition>? deferredImageRecognitions,
+        IReadOnlySet<long> recalledMessageIds)
+    {
+        if (deferredImageRecognitions is not { Count: > 0 })
+            return null;
+
+        QChatDeferredImageRecognition[] retained = deferredImageRecognitions
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => id <= 0 || recalledMessageIds.Contains(id) == false))
+            .Select(deferred => deferred with
+            {
+                SourceMessageIds = deferred.SourceMessageIds
+                    .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
+                    .ToArray()
+            })
+            .ToArray();
+        return retained.Length == 0 ? null : retained;
+    }
+
+    static IReadOnlyList<QChatDeferredXiaYuSelfState>? FilterDeferredXiaYuSelfStates(
+        IReadOnlyList<QChatDeferredXiaYuSelfState>? deferredXiaYuSelfStates,
+        IReadOnlySet<long> recalledMessageIds)
+    {
+        if (deferredXiaYuSelfStates is not { Count: > 0 })
+            return null;
+
+        QChatDeferredXiaYuSelfState[] retained = deferredXiaYuSelfStates
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => id <= 0 || recalledMessageIds.Contains(id) == false))
+            .Select(deferred => deferred with
+            {
+                SourceMessageIds = deferred.SourceMessageIds
+                    .Where(id => id <= 0 || recalledMessageIds.Contains(id) == false)
+                    .ToArray()
+            })
+            .ToArray();
+        return retained.Length == 0 ? null : retained;
     }
 
     static IReadOnlyList<long> GetSourceMessageIds(OneBotBasicMessageEvent messageEvent)
@@ -6271,16 +8708,133 @@ public partial class QChatService(
         return [];
     }
 
+    QChatInboundMessage CompleteDeferredXiaYuSelfState(QChatInboundMessage message)
+    {
+        if (message.DeferredXiaYuSelfStates is not { Count: > 0 } deferredStates)
+            return message;
+
+        QChatDeferredXiaYuSelfState[] retained = deferredStates
+            .Where(deferred => deferred.SourceMessageIds.Count == 0 ||
+                               deferred.SourceMessageIds.Any(id => message.SourceMessageIds?.Contains(id) == true))
+            .ToArray();
+        if (retained.Length == 0)
+            return message with { DeferredXiaYuSelfStates = null };
+
+        string agentId = retained.Last().AgentId;
+        XiaYuEventFrame frame = BuildSettledXiaYuEventFrame(retained.Select(deferred => deferred.Frame).ToArray());
+        DateTimeOffset now = DateTimeOffset.Now;
+        XiaYuSelfState state = selfStateStore.LoadOrCreate(agentId, now);
+        XiaYuStateTransition transition = XiaYuSelfStateMachine.Apply(state, frame, now);
+        selfStateStore.Save(transition.State);
+
+        string selfStatePrompt = XiaYuStatePromptFormatter.Format(transition.State, transition.Strategy, frame);
+        return message with
+        {
+            Formatted = InsertXiaYuSelfStatePrompt(message.Formatted, selfStatePrompt),
+            DeferredXiaYuSelfStates = null
+        };
+    }
+
+    static XiaYuEventFrame BuildSettledXiaYuEventFrame(IReadOnlyList<XiaYuEventFrame> frames)
+    {
+        if (frames.Count == 0)
+            throw new ArgumentException("At least one XiaYu event frame is required.", nameof(frames));
+
+        XiaYuEventFrame selected = frames.LastOrDefault(IsPriorityXiaYuBoundaryFrame)
+                                   ?? frames.LastOrDefault(frame => frame.SpeakerRole == QChatPersonaSpeakerRole.Owner)
+                                   ?? frames[^1];
+        int turnMessageCount = Math.Max(1, frames.Count);
+        int turnSpeakerCount = Math.Max(1, frames.Select(frame => frame.SenderId).Where(id => id > 0).Distinct().Count());
+        bool multiSpeaker = turnSpeakerCount > 1;
+        XiaYuConversationPressure pressure = selected.ConversationPressure;
+        if (multiSpeaker || turnMessageCount >= 3 || frames.Any(frame => frame.ConversationPressure == XiaYuConversationPressure.High))
+            pressure = XiaYuConversationPressure.High;
+        else if (turnMessageCount > 1 || frames.Any(frame => frame.ConversationPressure == XiaYuConversationPressure.Medium))
+            pressure = XiaYuConversationPressure.Medium;
+
+        return selected with
+        {
+            ConversationPressure = pressure,
+            TurnMessageCount = turnMessageCount,
+            TurnSpeakerCount = turnSpeakerCount,
+            TurnHasMultipleSpeakers = multiSpeaker
+        };
+    }
+
+    static bool IsPriorityXiaYuBoundaryFrame(XiaYuEventFrame frame)
+    {
+        return frame.PromptInjectionRisk ||
+               frame.OwnerBoundaryRisk is QChatOwnerBoundaryRisk.OwnerAttack
+                   or QChatOwnerBoundaryRisk.OwnerImpersonation
+                   or QChatOwnerBoundaryRisk.OwnerAuthorityBypass
+                   or QChatOwnerBoundaryRisk.OwnerBoundaryIntrusion
+                   or QChatOwnerBoundaryRisk.RelationshipProvocation;
+    }
+
+    static string InsertXiaYuSelfStatePrompt(string formatted, string selfStatePrompt)
+    {
+        if (string.IsNullOrWhiteSpace(selfStatePrompt))
+            return formatted;
+        if (string.IsNullOrWhiteSpace(formatted))
+            return selfStatePrompt.Trim();
+
+        const string personaEnd = "[/qchat persona frame]";
+        int personaEndIndex = formatted.IndexOf(personaEnd, StringComparison.Ordinal);
+        if (personaEndIndex >= 0)
+        {
+            int insertAt = personaEndIndex + personaEnd.Length;
+            return formatted.Insert(insertAt, Environment.NewLine + selfStatePrompt.Trim());
+        }
+
+        return string.Join(Environment.NewLine, selfStatePrompt.Trim(), formatted);
+    }
+
+    async Task<QChatInboundMessage> CompleteDeferredImageRecognitionAsync(QChatInboundMessage message)
+    {
+        if (message.DeferredImageRecognitions is not { Count: > 0 } deferredImageRecognitions)
+            return message;
+
+        List<string> imageBlocks = [];
+        foreach (QChatDeferredImageRecognition deferred in deferredImageRecognitions)
+        {
+            string? prompt = await BuildImageAnalysisPromptAsync(
+                Configuration!,
+                deferred.MessageEvent,
+                deferred.SenderRole,
+                deferred.IsMentionedOrWoken);
+            if (string.IsNullOrWhiteSpace(prompt) == false)
+                imageBlocks.Add(prompt.Trim());
+        }
+
+        if (imageBlocks.Count == 0)
+            return message with { DeferredImageRecognitions = null };
+
+        string formatted = string.Join(
+            Environment.NewLine,
+            imageBlocks.Concat([HideImageUrlsForModelContext(message.Formatted)]));
+        return message with
+        {
+            Formatted = formatted,
+            DeferredImageRecognitions = null
+        };
+    }
+
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
+        message = CompleteDeferredXiaYuSelfState(message);
+        message = await CompleteDeferredImageRecognitionAsync(message);
         await inboundModelDispatchGate.WaitAsync();
         QChatReplySession? previousSession = currentReplySession.Value;
         QChatReplySession replySession = new(
             message.MessageType,
             message.TargetId,
             message.SenderId,
+            message.ResolvedBotId,
             message.SenderRole,
-            message.PermissionRequest);
+            message.PermissionRequest,
+            RequiresQChatRelationshipFactCheck(message.Formatted),
+            message.Formatted,
+            message.IsAwakening);
         currentReplySession.Value = replySession;
         RegisterActiveReplySession(replySession);
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
@@ -6554,6 +9108,44 @@ public partial class QChatService(
         return false;
     }
 
+    void WriteQChatIntentActionDecisionDiagnostic(
+        string detail,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatIntentDecision decision,
+        QChatIntentAction action)
+    {
+        QChatConfig config = Configuration!;
+        QChatDecisionTrace trace = new(
+            TraceId: Guid.NewGuid().ToString("N"),
+            BotId: ResolveCurrentBotId(config, messageEvent),
+            AgentId: ResolveCurrentAgentId(config),
+            MessageType: messageEvent.MessageType,
+            SenderRole: senderRole,
+            IntentKind: decision.Kind,
+            IntentCandidate: decision.IsCandidate,
+            IntentConfirmed: decision.IsConfirmed,
+            GateDecision: "accepted",
+            ReplyDecision: "not_applicable",
+            CapabilityDecision: action.Allowed ? "allowed" : $"denied:{action.Reason}",
+            FinalAction: action.Kind.ToString(),
+            Reason: action.Reason,
+            CreatedAt: DateTimeOffset.Now);
+
+        string traceText = QChatDiagnosticsService.FormatDecisionTrace(trace);
+        WriteQChatDiagnostic("qchat-intent-action-decision", $"{detail} {traceText}", new {
+            messageEvent.MessageType,
+            messageEvent.UserId,
+            messageEvent.GroupId,
+            senderRole,
+            action.Kind,
+            action.Allowed,
+            action.Capability,
+            action.Reason,
+            action.RiskLevel
+        });
+    }
+
     static void WriteQChatDiagnostic(
         string eventName,
         string detail,
@@ -6732,6 +9324,9 @@ public partial class QChatService(
 
     static bool IsInternalNoReplyStatus(string value)
     {
+        if (QChatVisibleTextPolicy.IsHumanInvisibleStateText(value))
+            return true;
+
         string normalized = value.Trim();
         while (normalized.Length >= 2 && IsWrappingPair(normalized[0], normalized[^1]))
             normalized = normalized[1..^1].Trim();

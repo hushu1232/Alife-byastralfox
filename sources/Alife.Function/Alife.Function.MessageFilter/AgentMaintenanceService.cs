@@ -59,7 +59,7 @@ public sealed class AgentMaintenanceProposalPersistenceState
 [Module(
     "Agent Maintenance",
     "Turns runtime issue reports into owner-confirmed self-maintenance proposals without directly changing files or configuration.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -55)]
 public class AgentMaintenanceService(
     AgentIssueReportService? issueReports = null,

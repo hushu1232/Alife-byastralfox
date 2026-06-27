@@ -40,7 +40,7 @@ public sealed record AgentTaskState(
 [Module(
     "Agent Task State",
     "Tracks multi-step agent tasks with lifecycle state and audit trail.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -62)]
 public class AgentTaskService(
     AgentAuditLogService? auditLog = null,

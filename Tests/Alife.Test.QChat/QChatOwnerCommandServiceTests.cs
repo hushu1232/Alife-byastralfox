@@ -46,7 +46,7 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
-    public async Task TryHandleDiagnosticsCommandAsyncDeniesNonOwnerWithoutRouteLeak()
+    public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerWithoutRouteLeak()
     {
         List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
         List<string> diagnostics = [];
@@ -75,10 +75,7 @@ public class QChatOwnerCommandServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(handled, Is.True);
-            Assert.That(sent, Has.Count.EqualTo(1));
-            Assert.That(sent[0].Message, Does.Contain("Only the owner"));
-            Assert.That(sent[0].Message, Does.Not.Contain("session="));
-            Assert.That(sent[0].Message, Does.Not.Contain("agent=xiayu"));
+            Assert.That(sent, Is.Empty);
             Assert.That(diagnostics, Does.Contain("qchat-diagnostics-denied"));
         });
     }
@@ -145,7 +142,42 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
-    public async Task TryHandleStatusCommandAsyncDeniesNonOwnerWithoutFormattingStatus()
+    public async Task TryHandleDiagnosticsCommandAsyncMapsNaturalQChatStatusAlias()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "\u7fbd\uff0c\u770b\u770bQQ\u804a\u5929\u72b6\u6001"
+            },
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent.Single().TargetId, Is.EqualTo(3045846738));
+            Assert.That(sent.Single().Message, Does.Contain("status=online"));
+            Assert.That(sent.Single().Message, Does.Contain("agent=xiayu"));
+        });
+    }
+
+    [Test]
+    public async Task TryHandleStatusCommandAsyncSilentlyDropsNonOwnerWithoutFormattingStatus()
     {
         List<string> sent = [];
         int formatCalls = 0;
@@ -173,8 +205,7 @@ public class QChatOwnerCommandServiceTests
         {
             Assert.That(handled, Is.True);
             Assert.That(formatCalls, Is.Zero);
-            Assert.That(sent.Single(), Does.Contain("Only the owner"));
-            Assert.That(sent.Single(), Does.Not.Contain("should not leak"));
+            Assert.That(sent, Is.Empty);
         });
     }
 
@@ -245,6 +276,17 @@ public class QChatOwnerCommandServiceTests
     public void IsStatusCommandMatchesStatusAndTasks(string text, bool expected)
     {
         Assert.That(QChatOwnerCommandService.IsStatusCommand(text), Is.EqualTo(expected));
+    }
+
+    [TestCase("\u7fbd\uff0c\u770b\u770bQQ\u804a\u5929\u72b6\u6001", true)]
+    [TestCase("\u770b\u4e00\u4e0bQChat\u72b6\u6001", true)]
+    [TestCase("\u73b0\u5728\u94fe\u8def\u72b6\u6001\u600e\u4e48\u6837", true)]
+    [TestCase("\u68c0\u67e5\u4e00\u4e0b\u5de5\u7a0b\u72b6\u6001", true)]
+    [TestCase("\u7fbd\uff0c\u770b\u770b\u4f60\u73b0\u5728\u7684\u72b6\u6001", false)]
+    [TestCase("status", false)]
+    public void IsNaturalDiagnosticsStatusCommandMatchesEngineeringStatusOnly(string text, bool expected)
+    {
+        Assert.That(QChatOwnerCommandService.IsNaturalDiagnosticsStatusCommand(text), Is.EqualTo(expected));
     }
 
     [TestCase("撤回刚才那条", true)]

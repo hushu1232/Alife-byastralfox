@@ -1,15 +1,17 @@
 using System;
 using System.ComponentModel;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Platform;
 using Alife.Framework;
+using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 
 namespace Alife.Function.Browser;
 
 [Module("网上冲浪", "让AI可以像人一样操控真实的浏览器，从而能够执行各种网页任务的同时，避免反爬。",
-    defaultCategory: "Alife 官方/实用工具")]
+    defaultCategory: "astralfox-alife/实用工具")]
 [Description(@"你拥有一个独属于自己的真实浏览器，可借此进行网上冲浪，每天学点新知识，找点新话题。
 提示：
 1. 若遇到验证或登录，可以请求主人协助，从而避免被反爬。
@@ -19,7 +21,7 @@ public class BrowserService(
     XmlFunctionCaller functionService,
     IBrowserRuntime? browserRuntime = null,
     ILifeEventPublisher? lifeEventPublisher = null)
-    : InteractiveModule<BrowserService>, IDisposable, IEmbodiedCapability, IModuleHealthReporter
+    : InteractiveModule<BrowserService>, IDisposable, IEmbodiedCapability, IModuleHealthReporter, IAgentBrowserProvider
 {
     [XmlFunction(FunctionMode.OneShot)]
     [Description("打开网页。")]
@@ -71,6 +73,13 @@ public class BrowserService(
     }
 
     readonly IBrowserRuntime browser = browserRuntime ?? new BrowserEngine();
+
+    public Task<AgentBrowserSnapshot> CaptureSnapshotAsync(
+        AgentBrowserSnapshotRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        return new AgentBrowserRuntimeProvider(browser).CaptureSnapshotAsync(request, cancellationToken);
+    }
 
     public static string FormatObservedPageResult(int page, string result)
     {

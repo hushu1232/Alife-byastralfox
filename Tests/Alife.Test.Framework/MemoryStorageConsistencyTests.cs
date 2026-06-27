@@ -1,4 +1,5 @@
 using Alife.Function.Memory;
+using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Test.Framework;
@@ -224,6 +225,26 @@ public class MemoryStorageConsistencyTests
         Assert.That(historyJson, Does.Not.Contain("保持安静"));
     }
 
+    [Test]
+    public async Task FilterPassesOriginalAgentThreadToCompressor()
+    {
+        string rootPath = CreateTempRoot();
+        RecordingHistoryCompressor compressor = new();
+        MemoryManager manager = new(compressor, new FakeVectorizer(), rootPath, compressionThreshold: 2, compressionCount: 1, maxCompressionLevel: 7);
+        ChatHistoryAgentThread thread = new();
+        thread.ChatHistory.AddUserMessage("first memory fragment");
+        thread.ChatHistory.AddAssistantMessage("second memory fragment");
+
+        bool compressed = await manager.Filter(thread);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(compressed, Is.True);
+            Assert.That(compressor.ReceivedThread, Is.SameAs(thread));
+            Assert.That(compressor.ReceivedPrompt, Is.Not.Null);
+        });
+    }
+
     static string CreateTempRoot()
     {
         string rootPath = Path.Combine(Path.GetTempPath(), "alife-memory-consistency-tests", Guid.NewGuid().ToString("N"));
@@ -243,9 +264,22 @@ public class MemoryStorageConsistencyTests
 
     sealed class FakeHistoryCompressor : HistoryCompressor
     {
-        public override Task<string?> Compress(ChatHistory history, string prompt)
+        public override Task<string?> Compress(ChatHistoryAgentThread chatHistoryAgentThread, string prompt)
         {
             return Task.FromResult<string?>("compressed");
+        }
+    }
+
+    sealed class RecordingHistoryCompressor : HistoryCompressor
+    {
+        public ChatHistoryAgentThread? ReceivedThread { get; private set; }
+        public string? ReceivedPrompt { get; private set; }
+
+        public override Task<string?> Compress(ChatHistoryAgentThread chatHistoryAgentThread, string prompt)
+        {
+            ReceivedThread = chatHistoryAgentThread;
+            ReceivedPrompt = prompt;
+            return Task.FromResult<string?>("compressed summary");
         }
     }
 }

@@ -9,4 +9,6 @@ public record WebBridgeServiceConfig
     public bool AutoSyncEnabled { get; set; }
     public int SyncIntervalMilliseconds { get; set; } = 30000;
     public bool SyncAssetsEnabled { get; set; } = true;
+    public AlifeManagementApiOptions ManagementApi { get; set; } = new();
+    public AlifeManagementStatusOptions ManagementStatus { get; set; } = new();
 }

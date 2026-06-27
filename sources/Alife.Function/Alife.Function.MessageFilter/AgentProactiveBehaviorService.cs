@@ -79,7 +79,7 @@ public sealed record AgentProactiveCleanupResult(
 [Module(
     "Agent Proactive Behavior",
     "Builds auditable proactive behavior suggestions from the agent self-model, control-center policy, recent events, and cooldown limits.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -63)]
 public class AgentProactiveBehaviorService(
     AgentSelfModelService? selfModel = null,
@@ -194,7 +194,9 @@ public class AgentProactiveBehaviorService(
         List<AgentProactiveSuggestion> suggestions = [];
         LifeEvent[] recentExperiences = MergeRecentExperiences(snapshot);
         AgentProactiveSuggestionContext providerContext = new(snapshot, recentExperiences);
-        suggestions.AddRange(BuildProviderSuggestions(providerContext));
+        suggestions.AddRange(FilterLowValueProactiveChat(
+            BuildProviderSuggestions(providerContext),
+            config));
 
         if (suggestions.Any(suggestion => suggestion.Kind is AgentProactiveActionKind.QZoneReply or AgentProactiveActionKind.QZoneLike) == false
             && ShouldSuggestQZoneReply(recentExperiences))
@@ -614,6 +616,49 @@ public class AgentProactiveBehaviorService(
         }
 
         return suggestions;
+    }
+
+    static IReadOnlyList<AgentProactiveSuggestion> FilterLowValueProactiveChat(
+        IReadOnlyList<AgentProactiveSuggestion> suggestions,
+        AgentControlCenterConfig config)
+    {
+        if (config.SuppressLowValueProactiveChat == false)
+            return suggestions;
+
+        return suggestions
+            .Where(suggestion => IsLowValueMechanicalChat(suggestion) == false)
+            .ToArray();
+    }
+
+    static bool IsLowValueMechanicalChat(AgentProactiveSuggestion suggestion)
+    {
+        if (suggestion.Kind != AgentProactiveActionKind.Chat)
+            return false;
+        if (suggestion.RequiresOwnerConfirmation)
+            return false;
+        if (suggestion.RiskLevel != AgentAuditRiskLevel.Low)
+            return false;
+
+        string targetType = suggestion.TargetType?.Trim() ?? string.Empty;
+        if (targetType.Equals("task", StringComparison.OrdinalIgnoreCase) ||
+            targetType.Equals("task-failure", StringComparison.OrdinalIgnoreCase) ||
+            targetType.Equals("owner-reminder", StringComparison.OrdinalIgnoreCase) ||
+            targetType.Equals("safety", StringComparison.OrdinalIgnoreCase) ||
+            targetType.Equals("qchat-event", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        string text = $"{suggestion.Reason} {suggestion.DraftText}".ToLowerInvariant();
+        if (text.Contains("nothing happened", StringComparison.Ordinal) ||
+            text.Contains("check-in", StringComparison.Ordinal) ||
+            text.Contains("warm", StringComparison.Ordinal) ||
+            text.Contains("陪", StringComparison.Ordinal) ||
+            text.Contains("想你", StringComparison.Ordinal) ||
+            text.Contains("我在", StringComparison.Ordinal))
+            return true;
+
+        return string.IsNullOrWhiteSpace(targetType) ||
+               targetType.Equals("companionship", StringComparison.OrdinalIgnoreCase) ||
+               targetType.Equals("idle-chat", StringComparison.OrdinalIgnoreCase);
     }
 
     LifeEvent[] MergeRecentExperiences(AgentSelfModelSnapshot snapshot)

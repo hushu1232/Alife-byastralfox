@@ -62,7 +62,7 @@ public class WebViewWorker : IDisposable
             try
             {
                 window = new UnclosableWindow {
-                    Title = "Alife.Client Browser",
+                    Title = "astralfox-alife Browser",
                     Width = 1024,
                     Height = 768,
                     WindowState = WindowState.Minimized,

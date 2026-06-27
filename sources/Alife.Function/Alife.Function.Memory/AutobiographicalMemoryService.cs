@@ -14,7 +14,7 @@ namespace Alife.Function.Memory;
 [Module(
     "Autobiographical Memory",
     "Consolidates meaningful recent life events into long-term autobiographical memory.",
-    defaultCategory: "Alife Official/Living Environment",
+    defaultCategory: "astralfox-alife/Living Environment",
     LaunchOrder = -70)]
 public class AutobiographicalMemoryService(
     ILifeEventStream? lifeEventStream = null,

@@ -14,7 +14,7 @@ namespace Alife.Function.MessageFilter;
 [Module(
     "Embodied Action",
     "Provides a unified <act> behavior tag that composes body expression, motion, voice, bubble, and QQ output.",
-    defaultCategory: "Alife Official/Interaction",
+    defaultCategory: "astralfox-alife/Interaction",
     LaunchOrder = -80)]
 public class EmbodiedActionService(
     IEnumerable<IBodyExpressionSink> bodySinks,

@@ -16,7 +16,7 @@ namespace Alife.Function.DeskPet;
 [Module("桌宠交互", @"将Live2D桌宠接入AI系统，实现表现力同步和互动反馈（仅支持Cubism 3及以上版本的live2D模型）
 可选模型下载地址：
 https://github.com/imuncle/live2d",
-    defaultCategory: "Alife 官方/交互方式",
+    defaultCategory: "astralfox-alife/交互方式",
     EditorUI = typeof(DeskPetServiceUI))]
 public class DeskPetService(
     XmlFunctionCaller functionService,

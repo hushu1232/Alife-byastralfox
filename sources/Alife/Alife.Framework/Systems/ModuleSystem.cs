@@ -142,8 +142,11 @@ public class ModuleSystem
         ModuleLoadContext compilingContext = new(source);
         try
         {
+            string[] dllFiles = Directory.GetFiles(source, "*.dll", SearchOption.AllDirectories);
+            string[] sourceFiles = Directory.GetFiles(source, "*.cs", SearchOption.AllDirectories);
+
             //加载dll
-            foreach (string file in Directory.GetFiles(source, "*.dll", SearchOption.AllDirectories))
+            foreach (string file in dllFiles)
             {
                 try
                 {
@@ -163,10 +166,12 @@ public class ModuleSystem
                 string pdbPath = Path.ChangeExtension(dllPath, ".pdb");
 
                 //解析语法树
-                var syntaxTrees = Directory.GetFiles(source, "*.cs", SearchOption.AllDirectories)
+                var syntaxTrees = sourceFiles
                     .Select(file => CSharpSyntaxTree.ParseText(
                         File.ReadAllText(file),
-                        new CSharpParseOptions(LanguageVersion.Latest)))
+                        new CSharpParseOptions(LanguageVersion.Latest),
+                        path: file,
+                        encoding: System.Text.Encoding.UTF8))
                     .ToList();
 
                 //收集元数据引用（去重）
@@ -198,7 +203,8 @@ public class ModuleSystem
                     var errors = string.Join("\n", emitResult.Diagnostics
                         .Where(d => d.Severity == DiagnosticSeverity.Error)
                         .Select(d => d.ToString()));
-                    throw new Exception($"模块编译失败:\n{errors}");
+                    throw new Exception(
+                        $"模块编译失败: source={source}; sourceFiles={sourceFiles.Length}; dllFiles={dllFiles.Length}\n{errors}");
                 }
 
                 compilingContext.LoadDll(dllPath);

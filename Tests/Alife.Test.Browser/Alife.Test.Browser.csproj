@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\sources\Alife.Function\Alife.Function.Browser\Alife.Function.Browser.csproj" />
+    <ProjectReference Include="..\..\sources\Alife.Function\Alife.Function.MessageFilter\Alife.Function.MessageFilter.csproj" />
   </ItemGroup>
 
 </Project>

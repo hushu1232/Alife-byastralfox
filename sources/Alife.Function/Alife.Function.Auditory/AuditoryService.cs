@@ -13,7 +13,7 @@ using Microsoft.SemanticKernel;
 namespace Alife.Function.Speech;
 
 [Module("语音识别", "为AI增加语音识别能力。",
-    defaultCategory: "Alife 官方/交互方式",
+    defaultCategory: "astralfox-alife/交互方式",
     EditorUI = typeof(AuditoryServiceUI))]
 public class AuditoryService(IAuditoryModel auditoryModel) :
     InteractiveModule<AuditoryService>,

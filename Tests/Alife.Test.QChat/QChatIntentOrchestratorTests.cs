@@ -125,6 +125,11 @@ public sealed class QChatIntentOrchestratorTests
             SenderRole: QChatSenderRole.GroupMember,
             AgentId: "xiayu",
             CurrentGroupId: 925402131));
+        QChatIntentAction mixuAction = QChatIntentOrchestrator.Decide(new QChatIntentOrchestrationContext(
+            Intent: intent,
+            SenderRole: QChatSenderRole.Owner,
+            AgentId: "mixu",
+            CurrentGroupId: 925402131));
 
         Assert.Multiple(() =>
         {
@@ -135,6 +140,9 @@ public sealed class QChatIntentOrchestratorTests
             Assert.That(memberAction.Kind, Is.EqualTo(QChatIntentActionKind.None));
             Assert.That(memberAction.Allowed, Is.False);
             Assert.That(memberAction.Reason, Is.EqualTo("owner_required"));
+            Assert.That(mixuAction.Kind, Is.EqualTo(QChatIntentActionKind.None));
+            Assert.That(mixuAction.Allowed, Is.False);
+            Assert.That(mixuAction.Reason, Is.EqualTo("agent_not_allowed"));
         });
     }
 

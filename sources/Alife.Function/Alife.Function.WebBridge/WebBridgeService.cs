@@ -9,16 +9,21 @@ using Microsoft.SemanticKernel;
 
 namespace Alife.Function.WebBridge;
 
-[Module("FOXD WebBridge", "同步 FOXD Web 端角色配置与 Alife 本地角色状态", defaultCategory: "Alife 官方/生态集成")]
+[Module("FOXD WebBridge", "同步 FOXD Web 端角色配置与 astralfox-alife 本地角色状态", defaultCategory: "astralfox-alife/生态集成")]
 public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurable<WebBridgeServiceConfig>, IAsyncDisposable
 {
     public WebBridgeService() {}
 
-    public WebBridgeService(WebApiClient webApiClient, ICharacterBridgeStore characterStore, WebAssetSync? assetSync = null)
+    public WebBridgeService(
+        WebApiClient webApiClient,
+        ICharacterBridgeStore characterStore,
+        WebAssetSync? assetSync = null,
+        WebBridgePackageInstaller? packageInstaller = null)
     {
         this.webApiClient = webApiClient;
         this.characterStore = characterStore;
         this.assetSync = assetSync;
+        this.packageInstaller = packageInstaller;
     }
 
     public WebBridgeServiceConfig? Configuration { get; set; }
@@ -63,6 +68,14 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         await GetAssetSync().SyncAssets(manifest, cancellationToken);
     }
 
+    public async Task<WebBridgeInstallResult> InstallPackage(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        WebBridgePackageManifest manifest = await GetClient().PullPackageManifest(packageId, cancellationToken);
+        return await GetPackageInstaller().Install(manifest, cancellationToken);
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -78,18 +91,23 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     public override async Task StartAsync(Kernel kernel, ChatActivity chatActivity)
     {
         await base.StartAsync(kernel, chatActivity);
+        if (Configuration?.ManagementApi.Enabled == true)
+            await StartManagementApi();
+
         if (Configuration?.AutoSyncEnabled == true)
             StartSyncLoop();
     }
 
     public override async Task DestroyAsync()
     {
+        await StopManagementApi();
         await StopSyncLoop();
         await base.DestroyAsync();
     }
 
     public async ValueTask DisposeAsync()
     {
+        await StopManagementApi();
         await StopSyncLoop();
         httpClient?.Dispose();
     }
@@ -111,6 +129,20 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return assetSync;
     }
 
+    WebBridgePackageInstaller GetPackageInstaller()
+    {
+        packageInstaller ??= new WebBridgePackageInstaller(
+            Path.Combine(AlifePath.StorageFolderPath, "WebBridge"),
+            DownloadPackageFile);
+        return packageInstaller;
+    }
+
+    static async Task<byte[]> DownloadPackageFile(WebBridgePackageFile file)
+    {
+        using HttpClient client = new();
+        return await client.GetByteArrayAsync(file.Url);
+    }
+
     void StartSyncLoop()
     {
         syncCancellation?.Cancel();
@@ -127,6 +159,51 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         syncCancellation?.Dispose();
         syncCancellation = null;
         syncTask = null;
+    }
+
+    async Task StartManagementApi()
+    {
+        if (managementApiHost != null)
+            return;
+
+        WebBridgeServiceConfig activeConfig = Configuration ?? new WebBridgeServiceConfig();
+        AlifeManagementStatusOptions status = activeConfig.ManagementStatus;
+        AlifeManagementApiService service = new(
+            agent: status.Agent,
+            ownerId: status.OwnerId,
+            botId: status.BotId,
+            qchatEnabled: status.QChatEnabled,
+            visionEnabled: status.VisionEnabled,
+            ttsEnabled: status.TtsEnabled,
+            outboxEnabled: status.OutboxEnabled,
+            personaMode: status.PersonaMode,
+            visionStatus: status.VisionStatus,
+            visionReason: status.VisionReason,
+            visionModel: status.VisionModel,
+            visionMaxImagesPerMessage: status.VisionMaxImagesPerMessage,
+            ttsStatus: status.TtsStatus,
+            ttsReason: status.TtsReason);
+        AlifeManagementApiHost host = new(service, activeConfig.ManagementApi);
+        try
+        {
+            await host.StartAsync();
+            managementApiHost = host;
+        }
+        catch
+        {
+            await host.DisposeAsync();
+            throw;
+        }
+    }
+
+    async Task StopManagementApi()
+    {
+        if (managementApiHost == null)
+            return;
+
+        AlifeManagementApiHost host = managementApiHost;
+        managementApiHost = null;
+        await host.DisposeAsync();
     }
 
     async Task RunSyncLoop(CancellationToken cancellationToken)
@@ -151,6 +228,8 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     WebApiClient? webApiClient;
     ICharacterBridgeStore? characterStore;
     WebAssetSync? assetSync;
+    WebBridgePackageInstaller? packageInstaller;
+    AlifeManagementApiHost? managementApiHost;
     CancellationTokenSource? syncCancellation;
     Task? syncTask;
 }

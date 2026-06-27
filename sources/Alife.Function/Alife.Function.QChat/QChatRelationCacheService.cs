@@ -23,7 +23,7 @@ public sealed record QChatGroupListCacheSnapshot(
 [Module(
     "QQ Relation Cache",
     "Caches QQ group member lists for safer context-aware interaction planning.",
-    defaultCategory: "Alife Official/Interaction",
+    defaultCategory: "astralfox-alife/Interaction",
     LaunchOrder = 9)]
 public class QChatRelationCacheService(
     IOneBotRuntime? oneBotRuntime = null,

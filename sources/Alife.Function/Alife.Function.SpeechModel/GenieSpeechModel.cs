@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Alife.Function.Speech;
 
 [Module("Genie语音合成", "基于GPT-SoVITS的本地离线语音合成引擎",
-defaultCategory: "Alife 官方/模型接入/语音模型",
+defaultCategory: "astralfox-alife/模型接入/语音模型",
 EditorUI = typeof(GenieSpeechModelUI))]
 public class GenieSpeechModel(
     ILogger<GenieSpeechModel> logger

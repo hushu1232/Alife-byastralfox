@@ -43,6 +43,22 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleRouteAcceptsCopiedMenuLineWithoutReturningHelp()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat route - show route/session ids",
+            CreateRoute(),
+            CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+            Assert.That(result.Text, Does.Not.Contain("Supported commands:"));
+        });
+    }
+
+    [Test]
     public void TryHandleProfileReturnsProfileSnapshot()
     {
         QChatAgentRoute route = CreateRoute();
@@ -100,6 +116,23 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleStatusReturnsInternetAccessState()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat status",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState(
+                InternetAccessEnabled: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("internet=disabled"));
+        });
+    }
+
+    [Test]
     public void TryHandleIdentityReturnsUnifiedRouteAndProfileSnapshot()
     {
         QChatAgentRoute route = CreateRoute();
@@ -136,46 +169,129 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
-    public void TryHandleUnknownQChatCommandReturnsHelp()
+    public void TryHandleUnknownQChatCommandReturnsShortChineseRootMenu()
     {
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat nope", CreateRoute(), CreateProfile());
 
         Assert.Multiple(() =>
         {
             Assert.That(result.Handled, Is.True);
-            Assert.That(result.Text, Does.Contain("Supported commands:"));
-            Assert.That(result.Text, Does.Contain("/qchat route"));
-            Assert.That(result.Text, Does.Contain("/qchat identity"));
-            Assert.That(result.Text, Does.Contain("/qchat profile"));
+            Assert.That(result.Text, Does.Contain("QChat 指令菜单"));
+            Assert.That(result.Text, Does.Contain("只限术术账号使用"));
             Assert.That(result.Text, Does.Contain("/qchat status"));
-            Assert.That(result.Text, Does.Contain("/qchat timing on|off|status"));
-            Assert.That(result.Text, Does.Contain("/qchat memory status"));
-            Assert.That(result.Text, Does.Contain("/qchat memory recent"));
-            Assert.That(result.Text, Does.Contain("/qchat memory forget"));
-            Assert.That(result.Text, Does.Contain("/qchat memory purge"));
-            Assert.That(result.Text, Does.Contain("/qchat desktop status"));
-            Assert.That(result.Text, Does.Contain("/qchat desktop capabilities"));
-            Assert.That(result.Text, Does.Contain("/qchat files"));
-            Assert.That(result.Text, Does.Contain("/qchat approvals"));
-            Assert.That(result.Text, Does.Contain("/qchat failures"));
-            Assert.That(result.Text, Does.Contain("/qchat recent private"));
-            Assert.That(result.Text, Does.Contain("/qchat recent group"));
-            Assert.That(result.Text, Does.Contain("show route/session ids"));
-            Assert.That(result.Text, Does.Contain("show agent identity"));
-            Assert.That(result.Text, Does.Contain("show model/persona/memory"));
-            Assert.That(result.Text, Does.Contain("show online and timing state"));
-            Assert.That(result.Text, Does.Contain("toggle humanlike reply timing"));
-            Assert.That(result.Text, Does.Contain("show QChat memory layer wiring"));
-            Assert.That(result.Text, Does.Contain("show recent memory events"));
-            Assert.That(result.Text, Does.Contain("remove a memory from current context"));
-            Assert.That(result.Text, Does.Contain("move a memory archive to trash"));
-            Assert.That(result.Text, Does.Contain("read-only desktop status"));
-            Assert.That(result.Text, Does.Contain("show enabled read-only desktop capabilities"));
-            Assert.That(result.Text, Does.Contain("show file task summary"));
-            Assert.That(result.Text, Does.Contain("show pending approvals"));
-            Assert.That(result.Text, Does.Contain("show failure count"));
-            Assert.That(result.Text, Does.Contain("show recent private context"));
-            Assert.That(result.Text, Does.Contain("show recent group context"));
+            Assert.That(result.Text, Does.Contain("/qchat timing"));
+            Assert.That(result.Text, Does.Contain("/qchat memory"));
+            Assert.That(result.Text, Does.Contain("/qchat desktop"));
+            Assert.That(result.Text, Does.Contain("/qchat web"));
+            Assert.That(result.Text, Does.Contain("/qchat rag"));
+            Assert.That(result.Text, Does.Contain("/qchat events"));
+            Assert.That(result.Text, Does.Contain("/qchat diag"));
+            Assert.That(result.Text, Does.Not.Contain("/qchat desktop draft approve"));
+            Assert.That(result.Text, Does.Not.Contain("/qchat memory purge <id> confirm"));
+            Assert.That(result.Text, Does.Not.Contain("/qchat rag add <url>"));
+            Assert.That(result.Text, Does.Not.Contain("/qchat files"));
+        });
+    }
+
+    [TestCase("/qchat memory", "记忆指令", "/qchat memory status", "/qchat memory purge <id> confirm")]
+    [TestCase("/qchat desktop", "桌面指令", "/qchat desktop status", "/qchat desktop file policy")]
+    [TestCase("/qchat timing", "回复延时", "/qchat timing status", "/qchat timing off")]
+    [TestCase("/qchat events", "主人事件", "/qchat events status", "/qchat events retry")]
+    [TestCase("/qchat diag", "诊断指令", "/qchat route", "/qchat profile")]
+    [TestCase("/qchat internet", "联网指令", "/qchat internet <url>", "仅公网 HTTP/HTTPS")]
+    [TestCase("/qchat web", "Web", "/qchat web snapshot <url>", "HTTP/HTTPS")]
+    [TestCase("/qchat rag", "外部 RAG 管理", "/qchat rag add <url>", "/qchat rag status")]
+    public void TryHandleSecondLevelMenuReturnsChineseUsage(string command, string title, string firstCommand, string secondCommand)
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(command, CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain(title));
+            Assert.That(result.Text, Does.Contain(firstCommand));
+            Assert.That(result.Text, Does.Contain(secondCommand));
+            Assert.That(result.Text, Does.Not.Contain("Supported commands:"));
+        });
+    }
+
+    [Test]
+    public void TryHandleWebSmokeReturnsManualLiveChecklist()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat web smoke", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QQ 联网研究 smoke checklist"));
+            Assert.That(result.Text, Does.Contain("1. 主人私聊：查一下 dotnet 9 release notes"));
+            Assert.That(result.Text, Does.Contain("2. 群聊成员：@bot 搜 dotnet 9 release notes"));
+            Assert.That(result.Text, Does.Contain("3. 非主人私聊：/search dotnet 9"));
+            Assert.That(result.Text, Does.Contain("预期：主人可自动读公开 HTTP/HTTPS 页面"));
+            Assert.That(result.Text, Does.Contain("预期：群成员只拿公开搜索证据"));
+            Assert.That(result.Text, Does.Contain("不得触发：点击、登录、下载、表单提交、JS 执行、私网或 file URL"));
+        });
+    }
+
+    [Test]
+    public void TryHandleWebBrowserAgentReturnsOwnerOnlyPhaseOneSummary()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat web browser-agent", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("browser-agent=phase1"));
+            Assert.That(result.Text, Does.Contain("owner-only"));
+            Assert.That(result.Text, Does.Contain("no-login"));
+            Assert.That(result.Text, Does.Contain("image-ok"));
+            Assert.That(result.Text, Does.Contain("video-link-only"));
+            Assert.That(result.Text, Does.Contain("image-return=connected"));
+            Assert.That(result.Text, Does.Contain("video-return=link-only"));
+            Assert.That(result.Text, Does.Contain(@"media-cache=D:\Alife\Runtime\BrowserAgentMedia"));
+        });
+    }
+
+    [Test]
+    public void TryHandleWebBrowserAgentSmokeReturnsLiveChecklist()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat web browser-agent smoke",
+            CreateRoute(),
+            CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("browser-agent-live-smoke"));
+            Assert.That(result.Text, Does.Contain("status=manual"));
+            Assert.That(result.Text, Does.Contain("live-smoke=pending"));
+            Assert.That(result.Text, Does.Contain("owner-private-text"));
+            Assert.That(result.Text, Does.Contain("owner-private-image"));
+            Assert.That(result.Text, Does.Contain("owner-private-video"));
+            Assert.That(result.Text, Does.Contain("non-owner-denied"));
+            Assert.That(result.Text, Does.Contain("group-denied"));
+            Assert.That(result.Text, Does.Contain("image-return=connected"));
+            Assert.That(result.Text, Does.Contain("video-return=link-only"));
+            Assert.That(result.Text, Does.Contain(@"media-cache=D:\Alife\Runtime\BrowserAgentMedia"));
+            Assert.That(result.Text, Does.Contain("blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network"));
+        });
+    }
+
+    [Test]
+    public void TryHandleRagMenuReturnsOwnerManagementUsage()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle("/qchat rag", CreateRoute(), CreateProfile());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("外部 RAG 管理"));
+            Assert.That(result.Text, Does.Contain("/qchat rag add <url>"));
+            Assert.That(result.Text, Does.Contain("/qchat rag status"));
+            Assert.That(result.Text, Does.Contain("群成员"));
+            Assert.That(result.Text, Does.Contain("/rag <question>"));
+            Assert.That(result.Text, Does.Contain("不能添加、删除、刷新或配置来源"));
         });
     }
 

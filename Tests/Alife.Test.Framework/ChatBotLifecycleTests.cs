@@ -84,6 +84,17 @@ public class ChatBotLifecycleTests
     }
 
     [Test]
+    public async Task ExposesUnderlyingAgentThreadForAdvancedRuntimeServices()
+    {
+        ChatHistoryAgentThread thread = new();
+        await using ChatBot chatBot = new(null!, thread);
+
+        Assert.That(chatBot.ChatCompletionAgent, Is.Null);
+        Assert.That(chatBot.ChatHistoryAgentThread, Is.SameAs(thread));
+        Assert.That(chatBot.ChatHistory, Is.SameAs(thread.ChatHistory));
+    }
+
+    [Test]
     public async Task GetRuntimeStateReportsLastError()
     {
         await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());

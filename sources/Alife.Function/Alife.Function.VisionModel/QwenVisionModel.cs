@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Alife.Function.Vision;
 
 [Module("Qwen视觉分析", "基于Qwen2.5-VL的本地视觉分析引擎",
-defaultCategory: "Alife 官方/模型接入/视觉模型",
+defaultCategory: "astralfox-alife/模型接入/视觉模型",
 EditorUI = typeof(QwenVisionModelUI))]
 public class QwenVisionModel(
     ILogger<QwenVisionModel> logger

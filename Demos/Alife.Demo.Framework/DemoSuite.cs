@@ -14,7 +14,7 @@ public class DemoSuite : IAsyncDisposable
     {
         Console.OutputEncoding = Encoding.UTF8;
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
-        AlifeTerminal.Log($"   Alife.Client Demo 套件: {character.Name}", ConsoleColor.Magenta);
+        AlifeTerminal.Log($"   astralfox-alife Demo 套件: {character.Name}", ConsoleColor.Magenta);
         AlifeTerminal.Log("========================================", ConsoleColor.Magenta);
 
         AlifeTerminal.LogInfo("正在初始化系统环境 (Storage, Config)...");

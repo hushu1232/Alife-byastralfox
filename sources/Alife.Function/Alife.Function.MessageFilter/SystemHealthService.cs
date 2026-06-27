@@ -14,14 +14,14 @@ namespace Alife.Function.MessageFilter;
 [Module(
     "System Health",
     "Aggregates selected module health reports so the activity can diagnose unavailable or degraded abilities.",
-    defaultCategory: "Alife Official/Living Environment",
+    defaultCategory: "astralfox-alife/Living Environment",
     LaunchOrder = -75)]
 public class SystemHealthService(XmlFunctionCaller? functionCaller = null) : InteractiveModule<SystemHealthService>
 {
     public IEnumerable<IModuleHealthReporter>? HealthReporterSourceOverride { get; set; }
 
     [XmlFunction(FunctionMode.OneShot, name: "system_health")]
-    [Description("Show the current health of selected Alife modules and embodied capabilities.")]
+    [Description("Show the current health of selected astralfox-alife modules and embodied capabilities.")]
     public void SystemHealth()
     {
         Poke(FormatHealthSnapshot(GetHealthSnapshot()));

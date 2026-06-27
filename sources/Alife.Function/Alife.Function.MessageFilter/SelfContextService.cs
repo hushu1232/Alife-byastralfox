@@ -11,7 +11,7 @@ namespace Alife.Function.MessageFilter;
 [Module(
     "Unified Self Context",
     "Builds one self-context prompt that explains selected modules as the character's body, senses, memory, communication, and action abilities.",
-    defaultCategory: "Alife Official/Living Environment",
+    defaultCategory: "astralfox-alife/Living Environment",
     LaunchOrder = -90)]
 public class SelfContextService : InteractiveModule<SelfContextService>
     , IContextContributor

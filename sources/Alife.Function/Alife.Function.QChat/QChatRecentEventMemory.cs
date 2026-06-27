@@ -135,7 +135,9 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         int limit,
         DateTimeOffset now,
         bool includeRecalledMessages = true,
-        int maxCharacters = 1200)
+        int maxCharacters = 1200,
+        long ownerUserId = 0,
+        long botUserId = 0)
     {
         IReadOnlyList<QChatRecentMessageSnapshot> recent = GetRecentConversation(selfId, type, targetId, limit, now)
             .Where(message => includeRecalledMessages || message.IsRecalled == false)
@@ -153,7 +155,7 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         List<string> selectedLines = [];
         foreach (QChatRecentMessageSnapshot message in recent.Reverse())
         {
-            string line = BuildRecentContextLine(message, Math.Min(180, remaining));
+            string line = BuildRecentContextLine(message, Math.Min(180, remaining), ownerUserId, botUserId);
             int lineCost = line.Length + Environment.NewLine.Length;
             if (selectedLines.Count > 0 && lineCost > remaining)
                 break;
@@ -264,12 +266,23 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
             : message.UserId;
     }
 
-    static string BuildRecentContextLine(QChatRecentMessageSnapshot message, int maxLength)
+    static string BuildRecentContextLine(QChatRecentMessageSnapshot message, int maxLength, long ownerUserId = 0, long botUserId = 0)
     {
         string recalled = message.IsRecalled ? " recalled" : "";
-        string prefix = $"- {message.ReceivedAt:HH:mm} user {message.UserId}{recalled}: ";
+        string role = ResolveSpeakerRole(message.UserId, ownerUserId, botUserId);
+        string prefix = $"- {message.ReceivedAt:HH:mm} {role} user {message.UserId}{recalled}: ";
         string readable = Truncate(CollapseWhitespace(message.ReadableMessage), Math.Max(0, maxLength - prefix.Length));
         return prefix + readable;
+    }
+
+    static string ResolveSpeakerRole(long userId, long ownerUserId, long botUserId)
+    {
+        if (ownerUserId > 0 && userId == ownerUserId)
+            return "owner";
+        if (botUserId > 0 && userId == botUserId)
+            return "self";
+
+        return "other";
     }
 
     static string CollapseWhitespace(string text)

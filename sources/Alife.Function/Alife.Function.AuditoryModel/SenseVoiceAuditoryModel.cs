@@ -7,7 +7,7 @@ using Alife.Platform;
 namespace Alife.Function.Speech;
 
 [Module("SenseVoice语音识别", "基于SenseVoice的本地语音识别引擎",
-    defaultCategory: "Alife 官方/模型接入/听觉模型",
+    defaultCategory: "astralfox-alife/模型接入/听觉模型",
     EditorUI = typeof(SenseVoiceAuditoryModelUI))]
 public class SenseVoiceAuditoryModel :
     IAuditoryModel,

@@ -14,7 +14,7 @@ namespace Alife.Framework;
     "OpenAI语言模型", "接入与OpenAI协议兼容的文本模型，实现最基本的文本对话功能。",
     url: "https://www.deepseek.com/",
     editorUI: typeof(OpenAILanguageModelUI),
-    defaultCategory: "Alife 官方/模型接入/文本模型"
+    defaultCategory: "astralfox-alife/模型接入/文本模型"
 )]
 public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
     ILanguageModel,
@@ -37,8 +37,16 @@ public class OpenAILanguageModel(ILogger<OpenAILanguageModel> logger) :
 
         // 使用通用处理器拦截并破解所有 OpenAI 兼容协议的思考过程字段
         OpenAICompatibleHandler reasoningHandler = new(handler);
+        OpenAIChatFallbackHandler fallbackHandler = new(
+            reasoningHandler,
+            new OpenAIChatFallbackOptions(
+                Configuration.fallbackEndpoint,
+                Configuration.fallbackModelId,
+                Configuration.fallbackApiKey,
+                Configuration.fallbackExtraBody,
+                Configuration.fallbackExtraHeaders));
 
-        HttpClient httpClient = new(reasoningHandler) {
+        HttpClient httpClient = new(fallbackHandler) {
             DefaultRequestVersion = HttpVersion.Version11,
             DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact
         };

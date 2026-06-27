@@ -58,7 +58,7 @@ public static class AlifePath
         RootFolderPath = Path.GetDirectoryName(OutputsFolderPath)!;
         StorageFolderPath = Path.Combine(RootFolderPath, "Storage");
         RuntimeFolderPath = Path.Combine(RootFolderPath, "Runtime");
-        TempFolderPath = Path.Combine(Path.GetTempPath(), "Alife.Client");
+        TempFolderPath = Path.Combine(RootFolderPath, ".tmp", "Alife.Client");
 
         //后处理
         string configPath = Path.Combine(RuntimeFolderPath, "storage_path.txt");

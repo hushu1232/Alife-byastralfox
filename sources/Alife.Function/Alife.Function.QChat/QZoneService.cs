@@ -57,7 +57,7 @@ public sealed record QZoneQueryResult(
                 提供QQ空间互动能力的安全外壳。默认使用 dry-run，真实适配器接入前不会向外部空间发帖、评论、回复或点赞。
                 点赞只面向配置中的私聊联系人池随机发生；评论回复默认更积极，但仍受目标白名单和概率限制。
                 """,
-    defaultCategory: "Alife 官方/交互方式", editorUI: typeof(QZoneServiceUI), LaunchOrder = 11)]
+    defaultCategory: "astralfox-alife/交互方式", editorUI: typeof(QZoneServiceUI), LaunchOrder = 11)]
 public class QZoneService(
     IQZoneRuntime? runtime = null,
     IOneBotActionInvoker? actionInvoker = null,

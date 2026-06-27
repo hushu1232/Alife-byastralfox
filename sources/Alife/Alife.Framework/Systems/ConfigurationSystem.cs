@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Alife.Framework;
@@ -34,7 +35,7 @@ public class ConfigurationSystem(StorageSystem storageSystem)
 
         JObject? configuration = storageSystem.GetObject<JObject>(Path.Combine(root, "Configuration", target.FullName!)) ??
                                  storageSystem.GetObject<JObject>(Path.Combine("Configuration", target.FullName!));
-        if (configuration != null) return configuration.ToObject(configurationType);
+        if (configuration != null) return configuration.ToObject(configurationType, replaceSerializer);
         return Activator.CreateInstance(configurationType, null);
     }
     public JObject? GetConfigurationJson(Type target, string root = "")
@@ -61,5 +62,6 @@ public class ConfigurationSystem(StorageSystem storageSystem)
         return storageSystem.GetObject<JObject>(path) != null;
     }
 
+    readonly JsonSerializer replaceSerializer = new() { ObjectCreationHandling = ObjectCreationHandling.Replace };
     readonly Dictionary<Type, Type> configurationTypes = new();
 }

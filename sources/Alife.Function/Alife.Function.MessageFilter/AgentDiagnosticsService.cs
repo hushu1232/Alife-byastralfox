@@ -30,7 +30,7 @@ public sealed record AgentStateSnapshot(
 [Module(
     "Agent Diagnostics",
     "Exposes self-state, module health, recent runtime events, and current embodied capabilities.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -65)]
 public class AgentDiagnosticsService(XmlFunctionCaller? functionCaller = null) : InteractiveModule<AgentDiagnosticsService>
 {

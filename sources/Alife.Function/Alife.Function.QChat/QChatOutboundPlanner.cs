@@ -10,7 +10,7 @@ public sealed class QChatOutboundPlanner(int maxTextLength = 900)
 
     public QChatOutboundMessagePlan PlanText(string? text)
     {
-        string normalized = NormalizeText(text);
+        string normalized = NormalizeText(QChatVisibleTextPolicy.SanitizeVisibleText(text));
         if (string.IsNullOrWhiteSpace(normalized))
             return new QChatOutboundMessagePlan([]);
 

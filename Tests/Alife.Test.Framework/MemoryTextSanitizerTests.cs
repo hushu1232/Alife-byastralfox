@@ -125,6 +125,28 @@ public class MemoryTextSanitizerTests
     }
 
     [Test]
+    public void SanitizeText_RemovesRoleplayStageDirectionVariants()
+    {
+        string text = """
+                      术术要求夏羽用自然聊天回复。
+                      （揉揉鼻子，尾巴尖微微动了一下）
+                      （耳朵压低，安静地趴在一边）
+                      （内心：我应该安静）
+                      夏羽需要直接不发送 QQ 状态说明。
+                      """;
+
+        MemoryTextSanitizationResult result = MemoryTextSanitizer.Default.SanitizeText(text);
+
+        Assert.That(result.Changed, Is.True);
+        Assert.That(result.RemovedSegments, Is.EqualTo(3));
+        Assert.That(result.Text, Does.Contain("术术要求夏羽用自然聊天回复。"));
+        Assert.That(result.Text, Does.Contain("夏羽需要直接不发送 QQ 状态说明。"));
+        Assert.That(result.Text, Does.Not.Contain("揉揉鼻子"));
+        Assert.That(result.Text, Does.Not.Contain("耳朵压低"));
+        Assert.That(result.Text, Does.Not.Contain("内心"));
+    }
+
+    [Test]
     public void ShouldDropHistoryRecord_DropsLeakedSilentStatusAtLevelZeroOnly()
     {
         MemoryTextSanitizer sanitizer = MemoryTextSanitizer.Default;

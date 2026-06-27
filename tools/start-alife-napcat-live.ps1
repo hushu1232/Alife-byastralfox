@@ -1,6 +1,6 @@
 param(
     [string]$NapCatRoot = "D:\NapCat",
-    [string]$DotNetPath = "C:\Users\hu shu\.dotnet\dotnet.exe",
+    [string]$DotNetPath = "",
     [string]$ClientDll = "D:\Alife\Outputs\Alife.Client\Alife.Client.dll",
     [string]$StoragePath = "D:\Alife\Storage",
     [string]$OneBotUrl = "ws://127.0.0.1:3001",
@@ -22,6 +22,37 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Resolve-DotNetPath {
+    param([string]$Candidate)
+
+    $preferred = @()
+    if (-not [string]::IsNullOrWhiteSpace($Candidate)) {
+        $preferred += $Candidate
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:ALIFE_DOTNET_PATH)) {
+        $preferred += $env:ALIFE_DOTNET_PATH
+    }
+    $preferred += "D:\dotnet\dotnet.exe"
+    $preferred += "dotnet"
+
+    foreach ($item in $preferred) {
+        if ([string]::IsNullOrWhiteSpace($item)) {
+            continue
+        }
+
+        if (Test-Path -LiteralPath $item) {
+            return (Resolve-Path -LiteralPath $item).Path
+        }
+
+        $command = Get-Command $item -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            return $command.Source
+        }
+    }
+
+    throw "No .NET runtime was found. Set -DotNetPath or ALIFE_DOTNET_PATH, preferably to a D: drive dotnet.exe."
+}
 
 function Write-Step {
     param([string]$Message)
@@ -144,9 +175,6 @@ function Start-NapCat {
 }
 
 function Start-AlifeClient {
-    if (-not (Test-Path -LiteralPath $DotNetPath)) {
-        throw "Required .NET runtime was not found: $DotNetPath"
-    }
     if (-not (Test-Path -LiteralPath $ClientDll)) {
         throw "Alife client build output was not found: $ClientDll"
     }
@@ -210,6 +238,8 @@ function Invoke-QChatLiveTest {
 }
 
 Write-Step "NapCat root: $NapCatRoot"
+$DotNetPath = Resolve-DotNetPath -Candidate $DotNetPath
+Write-Step ".NET runtime: $DotNetPath"
 $napcat = Resolve-NapCatShell -Root $NapCatRoot
 Write-Step "NapCat shell: $($napcat.ShellDirectory)"
 Write-Step "NapCat entry: $($napcat.EntryScript)"

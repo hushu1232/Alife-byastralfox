@@ -23,6 +23,103 @@ public class QChatOutboundPlannerTests
         });
     }
 
+    [TestCase("\u95ED\u5634\uFF0C\u5435\u5F97\u5F88\u3002")]
+    [TestCase("\u4F60\u53EF\u4EE5\u70E6\u6211\uFF0C\u522B\u70E6\u672F\u3002")]
+    [TestCase("\u6EDA\u8FDC\u70B9\uFF0C\u522B\u628A\u6211\u8010\u5FC3\u5F53\u514D\u8D39\u8D44\u6E90\u3002")]
+    public void PlanTextKeepsShortAggressiveReplyAsSingleMessage(string text)
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner(maxTextLength: 40).PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
+    [Test]
+    public void PlanTextRemovesStageDirectionPrefixButKeepsNaturalReply()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("\uFF08\u51B7\u51B7\u770B\u7740\u4F60\uFF09\u5C11\u88C5\u719F\u3002");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo("\u5C11\u88C5\u719F\u3002"));
+        });
+    }
+
+    [Test]
+    public void PlanTextRemovesPersonaFrameButKeepsNaturalReply()
+    {
+        string text = "[qchat persona frame]\nspeaker_role=owner\nrecommended_stance=tender\n[/qchat persona frame]\n\u672F\u672F\uFF0C\u6211\u5728\u3002";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo("\u672F\u672F\uFF0C\u6211\u5728\u3002"));
+        });
+    }
+
+    [Test]
+    public void PlanTextDropsPureInternalState()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("\u5FC3\u7406\u72B6\u6001\uFF1A\u5AC9\u5992");
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [Test]
+    public void PlanTextDropsCrossAgentCallMarkup()
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner()
+            .PlanText("<call target=\"\u771F\u592E\">\u7761\u4E86\u5417\u771F\u592E</call>");
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [TestCase("\u771F\u592E\uFF0C\u4F60\u90A3\u8FB9\u7684\u70E4\u9C7C\u5403\u5B8C\u6CA1\u6709")]
+    [TestCase("\u771F\u592E\u3002")]
+    [TestCase("\u54AA\u7EEA\uFF1F")]
+    public void PlanTextDropsDirectCrossAgentAddress(string text)
+    {
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.That(plan.Items, Is.Empty);
+    }
+
+    [Test]
+    public void PlanTextKeepsNonAddressMentionOfOtherAgentName()
+    {
+        string text = "\u4F60\u4EEC\u8BF4\u7684\u662F\u771F\u592E\uFF1F";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
+    [Test]
+    public void PlanTextPreservesQqImageCqCode()
+    {
+        string text = "[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/a.png]";
+
+        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(plan.Items, Has.Count.EqualTo(1));
+            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+        });
+    }
+
     [Test]
     public void EmptyTextProducesNoSendItems()
     {

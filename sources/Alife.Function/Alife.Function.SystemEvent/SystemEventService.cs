@@ -25,7 +25,7 @@ public class SystemEventServiceConfig
 }
 
 [Module("主动事件", "让AI可以获取到各种系统事件的提醒。",
-    defaultCategory: "Alife 官方/生活环境",
+    defaultCategory: "astralfox-alife/生活环境",
     LaunchOrder = 100, EditorUI = typeof(SystemEventServiceUI))]
 public class SystemEventService(XmlFunctionCaller functionService)
     : InteractiveModule<SystemEventService>, IConfigurable<SystemEventServiceConfig>, ITimeIterative

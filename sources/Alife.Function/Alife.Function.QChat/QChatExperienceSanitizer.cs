@@ -5,8 +5,6 @@ namespace Alife.Function.QChat;
 
 internal static class QChatExperienceSanitizer
 {
-    static readonly string[] ShortNoReplyChoices = ["。", "。。。", "？", "绷", "啧"];
-
     public static string SanitizeOutgoing(QChatConfig? config, OneBotMessageType type, long targetId, string message)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -17,7 +15,7 @@ internal static class QChatExperienceSanitizer
             return sanitized;
 
         if (IsHumanFacingNoReplyState(sanitized))
-            return ShortNoReplyChoices[0];
+            return "";
 
         sanitized = RemoveXiayuPersonaBleed(sanitized);
         sanitized = RewriteXiayuMachineIdentity(sanitized);

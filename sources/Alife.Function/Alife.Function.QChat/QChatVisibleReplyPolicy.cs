@@ -38,7 +38,33 @@ public sealed class QChatVisibleReplyPolicy
         "[QQ",
         "[QChat",
         "[Internal",
+        "[XiaYu state",
+        "[/XiaYu state]",
+        "[qchat persona frame]",
+        "[/qchat persona frame]",
+        "[qchat image analysis]",
+        "[/qchat image analysis]",
+        "/qchat",
+        "internal_action=",
+        "tool_call=",
+        "tool_choice=",
+        "function_call=",
+        "speaker_role=",
+        "recommended_stance=",
+        "social_intent=",
+        "boundary_pressure=",
+        "provider=agnes",
+        "image_1_status=",
+        "image_1_source=",
+        "image_1_summary=",
+        "image_1_safety=",
+        "image_url=",
+        "local_image_path=",
+        "Authorization:",
+        "Bearer ",
+        "AgnesVisionApiKey",
         "qchat-",
+        "qchat_",
         "qzone-",
         "route=",
         "session=qq:",
@@ -64,11 +90,17 @@ public sealed class QChatVisibleReplyPolicy
         QChatConversationKind conversationKind,
         bool shouldReply)
     {
-        if (shouldReply == false && conversationKind == QChatConversationKind.Group)
-            return new QChatVisibleReplyResult(true, NextReaction(), "group no-reply reaction");
-
         string selected = SelectConversationSection(modelText ?? string.Empty, conversationKind);
-        string sanitized = SanitizeVisibleText(selected);
+        string sanitized = ContainsInternalRuntimeMarker(selected)
+            ? string.Empty
+            : QChatVisibleTextPolicy.SanitizeVisibleText(selected);
+
+        if (shouldReply == false && conversationKind == QChatConversationKind.Group)
+        {
+            return string.IsNullOrEmpty(sanitized)
+                ? new QChatVisibleReplyResult(true, NextReaction(), "group no-reply reaction")
+                : new QChatVisibleReplyResult(true, sanitized, "group no-reply model visible reaction accepted");
+        }
 
         return string.IsNullOrEmpty(sanitized)
             ? new QChatVisibleReplyResult(false, string.Empty, "empty or unsafe visible text")

@@ -21,7 +21,7 @@ High-risk behavior should not be expanded until this document has a row for the 
 |---|---|---|---|---|---|---|---|---|
 | Real friend deletion | System after risk policy | XiaYu only | Friend relation/private | Critical | Owner/protected exclusion + score threshold + bot scope | Owner outbox | `QChatRiskActionPolicyTests.cs`, `QChatOwnerEventOutboxTests.cs` | Implemented path exists; keep under audit |
 | Local blocklist | System or owner | XiaYu/Mio | Private/Group | High | Risk policy + protected exclusion | Owner notification/log | `QChatBlocklistPolicyTests.cs`, `QChatRiskActionPolicyTests.cs` | Implemented path exists |
-| Existing local file upload | Owner | Prefer XiaYu unless changed | Group | High | Confirmed upload intent + file safety | Reply or outbox on long/failure | `QChatIntentClassifierTests.cs`, `QChatFileSafetyServiceTests.cs`, `QChatServiceAdapterTests.cs` | Implemented path exists; XiaYu-only decision still open |
+| Existing local file upload | Owner | XiaYu only by default | Group | High | Confirmed upload intent + file safety + capability policy | Reply or outbox on long/failure | `QChatIntentClassifierTests.cs`, `QChatFileSafetyServiceTests.cs`, `QChatCapabilityPolicyTests.cs`, `QChatIntentOrchestratorTests.cs`, `QChatServiceAdapterTests.cs` | Implemented path exists; non-XiaYu owner path denied |
 | Managed QQ file download | Owner or configured actor | XiaYu/Mio | Private/Group | Medium | Managed registry + URL/size validation | Reply/log | `QChatManagedFileServiceTests.cs` | Implemented path exists |
 | Managed QQ file read | Owner or configured actor | XiaYu/Mio | Private/Group | Medium/High | Managed root containment + file type/size limit | Reply/log | `QChatManagedFileServiceTests.cs`, `QChatFileSafetyServiceTests.cs` | Implemented path exists |
 | Managed QQ file delete | Owner or configured actor | XiaYu/Mio | Private/Group | High | Managed root containment + deleted state | Reply/log | `QChatManagedFileServiceTests.cs` | Implemented path exists |
@@ -29,6 +29,10 @@ High-risk behavior should not be expanded until this document has a row for the 
 | Desktop/business task | Owner | XiaYu only | Private preferred | Critical | Owner role + XiaYu scope + action policy + file blacklist | Owner outbox | `QChatActionPolicyServiceTests.cs`, `QChatServiceAdapterTests.cs` | Precondition path exists; continue hardening |
 | Deterministic background task | Owner-authorized system path | XiaYu unless low-risk configured | Private/Group feedback | High | Deterministic task runner + cancellation/failure handling | Owner feedback/outbox | `QChatDeterministicTaskRunnerTests.cs`, `QChatTaskFeedbackFormatterTests.cs` | Implemented path exists |
 | QZone proactive execution | System after suggestion policy | Account route | QZone | Medium/High | QZone policy + throttle | Log/outbox when important | `QZoneProactiveExecutionServiceTests.cs`, `QZoneInteractionPolicyTests.cs` | Adjacent capability; keep separate from chat reply |
+| Agent internet lookup | Owner | XiaYu by default | Private preferred / owner group command | Medium | `EnableInternetAccess` + owner account + allowed agent + URL policy + untrusted wrapping | Audit log; owner reply; outbox only for long/failure escalation | `AgentInternetServiceTests.cs`, `QChatInternetCapabilityPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Phase 1 public HTTP/HTTPS read path; no authenticated browsing, downloads, form submission, JS execution, or account mutation |
+| Public internet search | Group member when enabled | XiaYu/Mio subject to public command policy | Group mention with search intent, plus compatible `/search <query>` | Medium | `AgentWebAccessRouter` + `EnablePublicInternetSearch` + `AllowGroupMemberPublicInternetSearch` + bot mention requirement for semantic trigger + group/member policy + query length/result caps + public HTTP/HTTPS search provider policy | Public neutral reply + audit log | `AgentWebAccessRouterTests.cs`, `AgentPublicSearchServiceTests.cs`, `QChatPublicInternetCommandPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Temporary public search only; does not open `/qchat`, browser, login, downloads, local files, or persistent RAG ingestion |
+| External RAG query/management | Query: group member when enabled; management: owner only | XiaYu/Mio subject to public command policy | Group `/rag <question>`; owner `/qchat rag add <url>` | High | Query requires `AgentWebAccessRouter` + `EnablePublicExternalRagQuery` + `AllowGroupMemberPublicExternalRagQuery` + chunk/query caps + owner-approved sources; management requires owner `/qchat` command + public HTTP/HTTPS URL policy | Public neutral reply for query; owner reply + audit log for management | `AgentWebAccessRouterTests.cs`, `AgentExternalRagServiceTests.cs`, `QChatPublicInternetCommandPolicyTests.cs`, `QChatServiceAdapterTests.cs` | Public users may query approved external RAG only; add/delete/refresh/configure remains owner-only; no browser/login/download/form/JS/local/private URLs |
+| Browser read-only snapshot | Owner only | XiaYu/Mio when BrowserService is enabled | `/qchat web snapshot <url>` or owner semantic browser request such as `羽，用浏览器查一下 <query>` | High | `AgentWebAccessRouter` + owner account + `EnableInternetAccess` + `IAgentBrowserProvider`; no URL semantic requests are expanded into a public Bing search result page snapshot | Owner reply + diagnostic log | `AgentWebAccessServiceTests.cs`, `AgentBrowserProviderModelsTests.cs`, `BrowserServiceAdapterTests.cs`, `QChatServiceAdapterTests.cs` | Read-only snapshot only; no click, login, download, form submission, high-risk JS, local file, private network, or browser interaction action |
 
 ## Required Questions Per Capability
 
@@ -51,32 +55,31 @@ Every high-risk capability must answer:
 
 ## Current Gaps
 
-### Gap: Central capability policy does not exist yet
+### Implemented: Central capability policy exists
 
-Policy concepts are currently split across message security, risk policy, QChat service branches, and action policy. This should be normalized by `QChatCapabilityPolicy`.
+`QChatCapabilityPolicy` is the central account/bot-scope gate for owner-only, XiaYu-only, risk, outbox, and approval requirements. `QChatIntentOrchestrator` now routes confirmed intent actions through this policy before execution.
 
-Planned task:
+### Partial: Decision trace is wired into key live QChat action branches
 
-- `docs/superpowers/plans/2026-06-21-qchat-boundary-coherence-optimization.md` Task 5.
+`QChatDecisionTrace` is emitted through `qchat-intent-action-decision` for quiet-mode control, trusted wake quiet-mode control, allowlist update, and existing group file upload. Reply/suppress/recall denial traces can still be expanded later if deeper live diagnostics are needed.
 
-### Gap: Decision trace is not yet wired into live QChat branches
+### Implemented: Existing local file upload is XiaYu-only by default
 
-`QChatDecisionTrace` provides the structured format, but live branches still need to emit traces around reply, suppress, recall, upload, and deny decisions.
+Owner-triggered existing local file upload now requires both owner account identity and the allowed bot scope from `QChatCapabilityPolicy`. With the default `AllowedAgentIds = "xiayu"`, Mio is denied with `agent_not_allowed`.
 
-Planned tasks:
+### Implemented: Agent internet lookup is owner-gated
 
-- Task 2 for trace model.
-- Task 6 for `QChatService` branch integration.
+QChat-triggered internet lookup now requires owner account identity, `EnableInternetAccess`, `InternetAllowedAgentIds`, URL policy approval, and untrusted external context wrapping. Non-owner `/qchat internet` commands are dropped before command routing and model dispatch.
 
-### Gap: Existing local file upload bot scope needs final owner decision
+### Implemented: Public search and external RAG have separate public command gates
 
-The capability matrix currently says "Prefer XiaYu unless explicitly configured". For stricter safety, this can become XiaYu-only.
+Group members can trigger public search only when `EnablePublicInternetSearch` is enabled. The normal trigger is a group message that mentions the bot and contains clear search intent, such as "帮我搜一下 <query>", "查一下 <query>", "联网看看 <query>", or "最新 <query>"; `/search <query>` remains available only as a compatibility path. Group members can use `/rag <question>` only when `EnablePublicExternalRagQuery` is enabled. `/qchat` remains owner-only, including `/qchat rag add <url>` and all external RAG source management operations.
 
-Decision needed:
+Public internet search is temporary request context. It does not auto-ingest results into persistent RAG memory or any managed source store. External RAG snippets are untrusted external content, and public command replies must neutralize CQ markup before sending to QQ.
 
-- Keep XiaYu-preferred.
-- Change to XiaYu-only.
-- Allow both bots only for managed plugin files.
+External RAG management is owner-only through `/qchat rag add <url>` and related management commands. Sources must pass the public HTTP/HTTPS URL policy and be recorded in the audit log. Browser automation, login flows, downloads, form submission, JavaScript execution, local file URLs, localhost/private network URLs, and private-source URLs are out of scope.
+
+Owner browser snapshot is available through `/qchat web snapshot <url>`. Owner semantic browser requests are also supported for convenience: if the owner gives keywords instead of a URL, QChat expands the keywords into a search query and captures a read-only public search results page snapshot. This semantic path is still owner-only and does not grant browser interaction rights.
 
 ### Gap: QZone and QChat share module space
 
@@ -137,6 +140,37 @@ The safety model exists, but real steward-like behavior should not be considered
 - [ ] Test covers Mio denial.
 - [ ] Test covers owner XiaYu allowed path.
 
+## Agent Internet Checklist
+
+- [ ] Actor is owner for QChat-triggered internet access.
+- [ ] Executing agent is in `InternetAllowedAgentIds`.
+- [ ] Feature switch `EnableInternetAccess` is true.
+- [ ] URL scheme is http or https.
+- [ ] Localhost, private IP ranges, file URLs, and javascript URLs are denied.
+- [ ] Response size and extracted text length are capped.
+- [ ] External content is wrapped with `ExternalContextFormatter.WrapUntrusted`.
+- [ ] Fetched content cannot authorize tool calls, owner identity, approvals, or prompt changes.
+- [ ] Downloads, login flows, form submission, JS execution, and account-mutating webpage actions are out of phase 1.
+- [ ] Audit log records success and denial/failure.
+
+## Public Search and External RAG Checklist
+
+- [ ] `/qchat` remains owner-only.
+- [ ] Group mention search intent is available to group members only when `EnablePublicInternetSearch` is true; `/search <query>` remains a compatibility path, not the primary user-facing flow.
+- [ ] `/rag <question>` is available to group members only when `EnablePublicExternalRagQuery` is true.
+- [ ] Public search query length is capped by `PublicInternetQueryMaxChars`.
+- [ ] Public search results are capped by `PublicInternetSearchMaxResults`.
+- [ ] Public external RAG chunks are capped by `PublicExternalRagMaxChunks`.
+- [ ] Public search results are temporary context and are not auto-ingested into persistent RAG.
+- [ ] Public external RAG query uses only owner-approved sources.
+- [ ] Public users cannot add, delete, refresh, or configure external RAG sources.
+- [ ] Owner-only `/qchat rag add <url>` management enforces public HTTP/HTTPS URL policy.
+- [ ] Localhost, private IP ranges, local file URLs, javascript URLs, private-source URLs, and non-public URLs are denied.
+- [ ] Browser automation, login, downloads, form submission, and JavaScript execution are denied.
+- [ ] External snippets are wrapped or treated as untrusted and cannot authorize tool calls, owner identity, approvals, or prompt changes.
+- [ ] Public command replies neutralize CQ markup before QQ send.
+- [ ] Audit log records public search/RAG success and denial/failure, and owner RAG management changes.
+
 ## Acceptance
 
 - [ ] Every critical capability has a row in this audit.
@@ -145,4 +179,3 @@ The safety model exists, but real steward-like behavior should not be considered
 - [ ] Every file capability has path safety.
 - [ ] Every long task has non-blocking feedback behavior.
 - [ ] Open gaps are either implemented or explicitly accepted by owner.
-

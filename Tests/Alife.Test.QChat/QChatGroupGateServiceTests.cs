@@ -63,6 +63,28 @@ public class QChatGroupGateServiceTests
     }
 
     [Test]
+    public void SemanticGroupReplyDispatchesWithPendingContextAndDrainsIt()
+    {
+        QChatGroupGateService service = new();
+        QChatAgentRoute route = CreateGroupRoute();
+
+        service.Evaluate(route, "\u524d\u9762\u7684\u666e\u901a\u7fa4\u804a", isMentionedOrWoken: false, isAggressive: false);
+        QChatGroupGateDecision decision = service.Evaluate(
+            route,
+            "\u672f\u672f\u521a\u521a\u8bf4\u7684\u90a3\u4e2a\u8bbe\u7f6e\u662f\u4ec0\u4e48",
+            isMentionedOrWoken: false,
+            isAggressive: false,
+            isSemanticReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatInboundDecisionKind.DispatchToModel));
+            Assert.That(decision.Reason, Is.EqualTo("semantic group reply"));
+            Assert.That(decision.ContextBeforeDispatch, Does.Contain("\u524d\u9762\u7684\u666e\u901a\u7fa4\u804a"));
+        });
+    }
+
+    [Test]
     public void OwnerGroupMessageDispatchesWithoutMention()
     {
         QChatGroupGateService service = new();

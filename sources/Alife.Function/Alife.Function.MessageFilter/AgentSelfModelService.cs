@@ -24,7 +24,7 @@ public sealed record AgentSelfModelSnapshot(
 [Module(
     "Agent Self Model",
     "Builds a unified self-model from identity, runtime state, capabilities, health, tasks, safety limits, and recent experiences.",
-    defaultCategory: "Alife Official/Agent",
+    defaultCategory: "astralfox-alife/Agent",
     LaunchOrder = -64)]
 public class AgentSelfModelService(
     AgentDiagnosticsService? diagnostics = null,
