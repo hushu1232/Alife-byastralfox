@@ -49,7 +49,8 @@ Add-Check -Group "Harness" -Name "Voice warmup coordinator tests" -Path "Tests/A
 Add-Check -Group "Harness" -Name "Model reply loop live tests" -Path "Tests/Alife.Test.QChat/QChatModelReplyLoopLiveTests.cs" -Patterns @("QChatModelReplyLoopLiveTests")
 Add-Check -Group "Harness" -Name "Prompt leak contract tests" -Path "Tests/Alife.Test.QChat/QChatPromptLeakContractTests.cs" -Patterns @("QChatPromptLeakContractTests", "InternalStateTextDoesNotBecomePrivateVisibleReply")
 Add-Check -Group "Harness" -Name "Runtime readiness script" -Path "tools/check-qchat-runtime-readiness.ps1" -Patterns @("QChat Runtime Readiness", "AgnesVisionKeyConfigured", "XiayuTts9880Reachable", "MixuTts9881Reachable", "-Live", "-Strict", "exit 1")
-Add-Check -Group "Harness" -Name "DataAgent readiness script" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgent Readiness", "DataAgentModulePresent", "QueryPlanFixturesPass", "ContextContributionStable", "exit 1")
+Add-Check -Group "Harness" -Name "DataAgent readiness script" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgent Readiness", "DataAgentModulePresent", "QueryPlanFixturesPass", "ContextContributionStable", "PlannerInterfacePresent", "ToolHandlerReturnsDataAgentContext", "exit 1")
+Add-Check -Group "Harness" -Name "DataAgent planner/tool integration" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("PlannerInterfacePresent", "ToolHandlerReturnsDataAgentContext", "dataagent_query")
 
 Add-Check -Group "Loop" -Name "OneBot receive loop" -Path "sources/Alife.Function/Alife.Function.QChat/OneBotClient.cs" -Patterns @("ReceiveLoop", "while (ws.State == WebSocketState.Open")
 Add-Check -Group "Loop" -Name "QChat event queue loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ProcessOneBotEventQueueAsync", "oneBotEventProcessingTask")

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
         <LangVersion>latest</LangVersion>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -9,6 +9,11 @@
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
+        <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
     </ItemGroup>
 
 </Project>
