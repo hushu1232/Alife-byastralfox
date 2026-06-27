@@ -46,6 +46,52 @@ public static class DataAgentReadiness
                        answer.Context.Contains("[/data_agent_context]", StringComparison.Ordinal)
                 ? Pass("ContextContributionStable", "data_agent_context wrapper present")
                 : Fail("ContextContributionStable", "missing data_agent_context wrapper"));
+
+            checks.Add(typeof(IDataAgentQueryPlanner).IsAssignableFrom(typeof(DeterministicDataAgentQueryPlanner))
+                ? Pass("PlannerInterfacePresent", nameof(IDataAgentQueryPlanner))
+                : Fail("PlannerInterfacePresent", "deterministic planner does not implement interface"));
+
+            DataAgentQueryPlan deterministicPlan = new DeterministicDataAgentQueryPlanner().Plan(new DataAgentQueryRequest(
+                "Which runtime readiness gate is required?",
+                "developer",
+                "en-US",
+                false));
+            checks.Add(deterministicPlan.Dataset == "engineering_gate" &&
+                       deterministicPlan.Intent == "find_runtime_readiness_required_evidence"
+                ? Pass("DeterministicPlannerPassesFixtures", deterministicPlan.Intent)
+                : Fail("DeterministicPlannerPassesFixtures", $"{deterministicPlan.Dataset}/{deterministicPlan.Intent}"));
+
+            DataAgentAnswer injectedPlannerAnswer = new DataAgentService(databasePath, new FixedPlanner(new DataAgentQueryPlan(
+                "document_index",
+                "readiness_forced_document_lookup",
+                ["path", "title", "summary"],
+                [new DataAgentFilter("tags", "contains", "dataagent")],
+                [],
+                20))).Answer("force injected planner");
+            checks.Add(injectedPlannerAnswer.Dataset == "document_index" &&
+                       injectedPlannerAnswer.Context.Contains("dataset=document_index", StringComparison.Ordinal)
+                ? Pass("ServiceUsesInjectedPlanner", injectedPlannerAnswer.Dataset)
+                : Fail("ServiceUsesInjectedPlanner", injectedPlannerAnswer.Context));
+
+            DataAgentAnswer unsafePlannerAnswer = new DataAgentService(databasePath, new FixedPlanner(new DataAgentQueryPlan(
+                "engineering_gate",
+                "unsafe",
+                ["name"],
+                [new DataAgentFilter("status", "starts_with", "pass")],
+                [],
+                50))).Answer("unsafe planner output");
+            checks.Add(unsafePlannerAnswer.Validated == false &&
+                       unsafePlannerAnswer.Context.Contains("sql_status=rejected", StringComparison.Ordinal) &&
+                       unsafePlannerAnswer.RejectedReason.Contains("unsupported_operator:starts_with", StringComparison.Ordinal)
+                ? Pass("UnsafePlannerOutputRejected", unsafePlannerAnswer.RejectedReason)
+                : Fail("UnsafePlannerOutputRejected", unsafePlannerAnswer.Context));
+
+            string toolContext = new DataAgentToolHandler(new DataAgentService(databasePath)).Query("Which documents describe DataAgent NL2SQL?");
+            checks.Add(toolContext.Contains("[data_agent_context]", StringComparison.Ordinal) &&
+                       toolContext.Contains("dataset=document_index", StringComparison.Ordinal) &&
+                       toolContext.Contains("[/data_agent_context]", StringComparison.Ordinal)
+                ? Pass("ToolHandlerReturnsDataAgentContext", "dataagent_query context returned")
+                : Fail("ToolHandlerReturnsDataAgentContext", toolContext));
         }
         catch (Exception ex)
         {
@@ -58,6 +104,11 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Pass(string name, string detail) => new(name, true, detail);
 
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
+
+    sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlan Plan(DataAgentQueryRequest request) => plan;
+    }
 }
 
 public sealed record DataAgentReadinessCheck(string Name, bool Passed, string Detail);

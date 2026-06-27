@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(7));
+            Assert.That(checks, Has.Count.EqualTo(12));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -24,6 +24,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("DangerousSqlRejected"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ReadOnlyQueryExecutes"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DeterministicPlannerPassesFixtures"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("ServiceUsesInjectedPlanner"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("UnsafePlannerOutputRejected"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("ToolHandlerReturnsDataAgentContext"));
         });
     }
 
@@ -40,7 +45,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(result.StandardOutput, Does.Contain("DataAgent Readiness"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentModulePresent"));
-            Assert.That(result.StandardOutput, Does.Contain("Summary: 7 required passed, 0 required missing"));
+            Assert.That(result.StandardOutput, Does.Contain("Summary: 12 required passed, 0 required missing"));
         });
     }
 
@@ -60,6 +65,8 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgent Readiness"));
             Assert.That(declaration, Does.Contain("QueryPlanFixturesPass"));
             Assert.That(declaration, Does.Contain("ContextContributionStable"));
+            Assert.That(declaration, Does.Contain("PlannerInterfacePresent"));
+            Assert.That(declaration, Does.Contain("ToolHandlerReturnsDataAgentContext"));
         });
     }
 

@@ -49,11 +49,16 @@ $checks = @(
     New-Check -Group "Query" -Name "QueryPlanFixturesPass" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("QueryPlanFixturesPass", "find_missing_required_gates")) -Detail "QueryPlan readiness markers"
     New-Check -Group "Query" -Name "ReadOnlyQueryExecutes" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentQueryExecutor.cs" @("Execute", "CommandTimeout")) -Detail "query executor markers"
     New-Check -Group "Context" -Name "ContextContributionStable" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentContextProvider.cs" @("[data_agent_context]", "[/data_agent_context]")) -Detail "context wrapper markers"
+    New-Check -Group "Planner" -Name "PlannerInterfacePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentQueryPlanner.cs" @("IDataAgentQueryPlanner", "Plan")) -Detail "planner interface markers"
+    New-Check -Group "Planner" -Name "DeterministicPlannerPassesFixtures" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DeterministicDataAgentQueryPlanner.cs" @("DeterministicDataAgentQueryPlanner", "find_runtime_readiness_required_evidence", "find_dataagent_documents")) -Detail "deterministic planner markers"
+    New-Check -Group "Planner" -Name "ServiceUsesInjectedPlanner" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentService.cs" @("IDataAgentQueryPlanner", "new DataAgentQueryRequest", "planner.Plan")) -Detail "service injection markers"
+    New-Check -Group "Planner" -Name "UnsafePlannerOutputRejected" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("UnsafePlannerOutputRejected", "unsupported_operator:starts_with", "sql_status=rejected")) -Detail "unsafe planner rejection markers"
+    New-Check -Group "Tool" -Name "ToolHandlerReturnsDataAgentContext" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentToolHandler", "DataAgentModuleService", "RegisterHandlerWithoutDocument", "dataagent_query", "dynamic data context")) -Detail "DataAgent XML tool and module registration markers"
 )
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Safety", "Query", "Context")) {
+foreach ($group in @("Core", "Safety", "Query", "Context", "Planner", "Tool")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {
