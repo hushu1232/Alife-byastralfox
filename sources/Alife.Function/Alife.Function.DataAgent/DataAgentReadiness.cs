@@ -61,6 +61,7 @@ public static class DataAgentReadiness
 
             checks.Add(answer.Context.Contains("planner_confidence=", StringComparison.Ordinal) &&
                        answer.Context.Contains("planner_reason=", StringComparison.Ordinal) &&
+                       answer.Context.Contains("planner_signals=", StringComparison.Ordinal) &&
                        answer.PlannerExplanation.Signals.Count > 0
                 ? Pass("PlannerExplanationInContext", answer.PlannerExplanation.Confidence)
                 : Fail("PlannerExplanationInContext", answer.Context));

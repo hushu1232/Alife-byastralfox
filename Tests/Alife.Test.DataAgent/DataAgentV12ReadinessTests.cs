@@ -35,6 +35,21 @@ public sealed class DataAgentV12ReadinessTests
         });
     }
 
+    [Test]
+    public void DataAgentContextIncludesRenderedPlannerExplanationFields()
+    {
+        string databasePath = CreateDatabasePath();
+
+        DataAgentAnswer answer = new DataAgentService(databasePath).Answer("Which documents describe DataAgent NL2SQL?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answer.Context, Does.Contain("planner_confidence="));
+            Assert.That(answer.Context, Does.Contain("planner_reason="));
+            Assert.That(answer.Context, Does.Contain("planner_signals="));
+        });
+    }
+
     static string CreateDatabasePath()
     {
         string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "dataagent-v12-readiness-tests");
