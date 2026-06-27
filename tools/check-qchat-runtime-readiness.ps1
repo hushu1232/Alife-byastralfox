@@ -13,6 +13,11 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
+if ($Strict -and -not $Live) {
+    Write-Output 'Strict mode requires -Live.'
+    exit 1
+}
+
 function Resolve-AgnesVisionApiKey {
     param(
         [string]$ExplicitValue
@@ -83,8 +88,13 @@ function Test-ReferenceAudio {
 function Get-StatusText {
     param(
         [bool]$Passed,
-        [bool]$Required
+        [bool]$Required,
+        [bool]$Checked = $true
     )
+
+    if ($Checked -eq $false) {
+        return 'SKIPPED'
+    }
 
     if ($Passed) {
         return 'OK'
@@ -95,6 +105,24 @@ function Get-StatusText {
     }
 
     return 'WARN'
+}
+
+function New-CheckMetadata {
+    param(
+        [string]$Field,
+        [bool]$Passed,
+        [bool]$Checked,
+        [bool]$Required,
+        [string]$Reason = ''
+    )
+
+    [pscustomobject][ordered]@{
+        Field = $Field
+        Status = Get-StatusText -Passed $Passed -Required $Required -Checked $Checked
+        Checked = $Checked
+        Required = $Required
+        Reason = $Reason
+    }
 }
 
 $agnesKey = Resolve-AgnesVisionApiKey -ExplicitValue $AgnesVisionApiKey
@@ -152,6 +180,28 @@ $mixuJaRef = Test-ReferenceAudio -RootPath $VoiceRootPath -CandidateRelativePath
     'MiXu\ja\reference.wav'
 )
 
+$strictLive = [bool]($Live -and $Strict)
+$mode = if ($strictLive) {
+    'LiveStrict'
+}
+elseif ($Live) {
+    'Live'
+}
+else {
+    'Default'
+}
+
+$ttsSkippedReason = if ($Live) { '' } else { 'Requires -Live.' }
+$checks = @(
+    New-CheckMetadata -Field 'AgnesVisionKeyConfigured' -Passed $agnesVisionKeyConfigured -Checked $true -Required $strictLive
+    New-CheckMetadata -Field 'XiayuTts9880Reachable' -Passed $xiayuTts9880Reachable -Checked ([bool]$Live) -Required $strictLive -Reason $ttsSkippedReason
+    New-CheckMetadata -Field 'MixuTts9881Reachable' -Passed $mixuTts9881Reachable -Checked ([bool]$Live) -Required $strictLive -Reason $ttsSkippedReason
+    New-CheckMetadata -Field 'XiayuZhRef' -Passed $xiayuZhRef -Checked $true -Required $strictLive
+    New-CheckMetadata -Field 'XiayuJaRef' -Passed $xiayuJaRef -Checked $true -Required $strictLive
+    New-CheckMetadata -Field 'MixuZhRef' -Passed $mixuZhRef -Checked $true -Required $strictLive
+    New-CheckMetadata -Field 'MixuJaRef' -Passed $mixuJaRef -Checked $true -Required $strictLive
+)
+
 $result = [ordered]@{
     AgnesVisionKeyConfigured = $agnesVisionKeyConfigured
     XiayuTts9880Reachable = $xiayuTts9880Reachable
@@ -162,7 +212,6 @@ $result = [ordered]@{
     MixuJaRef = $mixuJaRef
 }
 
-$strictLive = [bool]($Live -and $Strict)
 $requiredFailures = @()
 if ($strictLive -and $agnesVisionKeyConfigured -eq $false) { $requiredFailures += 'AgnesVisionKeyConfigured' }
 if ($strictLive -and $xiayuTts9880Reachable -eq $false) { $requiredFailures += 'XiayuTts9880Reachable' }
@@ -171,6 +220,12 @@ if ($strictLive -and $xiayuZhRef -eq $false) { $requiredFailures += 'XiayuZhRef'
 if ($strictLive -and $xiayuJaRef -eq $false) { $requiredFailures += 'XiayuJaRef' }
 if ($strictLive -and $mixuZhRef -eq $false) { $requiredFailures += 'MixuZhRef' }
 if ($strictLive -and $mixuJaRef -eq $false) { $requiredFailures += 'MixuJaRef' }
+
+$result.Mode = $mode
+$result.Live = [bool]$Live
+$result.Strict = [bool]$Strict
+$result.RequiredFailures = @($requiredFailures)
+$result.Checks = @($checks)
 
 if ($Json) {
     [pscustomobject]$result | ConvertTo-Json -Depth 3
@@ -182,8 +237,8 @@ else {
     Write-Output ("  {0} Agnes Vision API key configured" -f (Get-StatusText -Passed $agnesVisionKeyConfigured -Required $strictLive))
     Write-Output ''
     Write-Output '[Voice]'
-    Write-Output ("  {0} Xiayu TTS port {1}:{2} reachable" -f (Get-StatusText -Passed $xiayuTts9880Reachable -Required $strictLive), $ComputerName, $XiayuTtsPort)
-    Write-Output ("  {0} Mixu TTS port {1}:{2} reachable" -f (Get-StatusText -Passed $mixuTts9881Reachable -Required $strictLive), $ComputerName, $MixuTtsPort)
+    Write-Output ("  {0} Xiayu TTS port {1}:{2} reachable" -f (Get-StatusText -Passed $xiayuTts9880Reachable -Required $strictLive -Checked ([bool]$Live)), $ComputerName, $XiayuTtsPort)
+    Write-Output ("  {0} Mixu TTS port {1}:{2} reachable" -f (Get-StatusText -Passed $mixuTts9881Reachable -Required $strictLive -Checked ([bool]$Live)), $ComputerName, $MixuTtsPort)
     Write-Output ("  {0} Xiayu zh reference audio" -f (Get-StatusText -Passed $xiayuZhRef -Required $strictLive))
     Write-Output ("  {0} Xiayu ja reference audio" -f (Get-StatusText -Passed $xiayuJaRef -Required $strictLive))
     Write-Output ("  {0} Mixu zh reference audio" -f (Get-StatusText -Passed $mixuZhRef -Required $strictLive))

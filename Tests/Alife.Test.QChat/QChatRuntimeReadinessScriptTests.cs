@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace Alife.Test.QChat;
@@ -72,7 +73,60 @@ public sealed class QChatRuntimeReadinessScriptTests
             Assert.That(result.StandardOutput, Does.Contain("QChat Runtime Readiness"));
             Assert.That(result.StandardOutput, Does.Contain("[Vision]"));
             Assert.That(result.StandardOutput, Does.Contain("[Voice]"));
+            Assert.That(result.StandardOutput, Does.Contain("SKIPPED"));
             Assert.That(result.StandardOutput, Does.Contain("Summary:"));
+        });
+    }
+
+    [Test]
+    public void RuntimeReadinessScriptStrictWithoutLiveFailsWithUsageMessage()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-runtime-readiness.ps1");
+
+        ScriptResult result = RunPowerShellScript(scriptPath, "-Strict");
+        string combinedOutput = result.StandardOutput + result.StandardError;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(combinedOutput, Does.Contain("Strict mode requires -Live"));
+        });
+    }
+
+    [Test]
+    public void RuntimeReadinessScriptJsonIncludesModeAndCheckMetadata()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-runtime-readiness.ps1");
+
+        ScriptResult result = RunPowerShellScript(scriptPath, "-Json");
+
+        using JsonDocument document = JsonDocument.Parse(result.StandardOutput);
+        JsonElement root = document.RootElement;
+        JsonElement checks = root.GetProperty("Checks");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(root.GetProperty("AgnesVisionKeyConfigured").ValueKind, Is.EqualTo(JsonValueKind.False).Or.EqualTo(JsonValueKind.True));
+            Assert.That(root.GetProperty("XiayuTts9880Reachable").ValueKind, Is.EqualTo(JsonValueKind.False).Or.EqualTo(JsonValueKind.True));
+            Assert.That(root.GetProperty("MixuTts9881Reachable").ValueKind, Is.EqualTo(JsonValueKind.False).Or.EqualTo(JsonValueKind.True));
+            Assert.That(root.GetProperty("Mode").GetString(), Is.EqualTo("Default"));
+            Assert.That(root.GetProperty("Live").GetBoolean(), Is.False);
+            Assert.That(root.GetProperty("Strict").GetBoolean(), Is.False);
+            Assert.That(root.GetProperty("RequiredFailures").GetArrayLength(), Is.EqualTo(0));
+            Assert.That(checks.ValueKind, Is.EqualTo(JsonValueKind.Array));
+            Assert.That(checks.GetArrayLength(), Is.GreaterThanOrEqualTo(7));
+        });
+
+        JsonElement xiayuTtsCheck = FindCheck(checks, "XiayuTts9880Reachable");
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiayuTtsCheck.GetProperty("Status").GetString(), Is.EqualTo("SKIPPED"));
+            Assert.That(xiayuTtsCheck.GetProperty("Checked").GetBoolean(), Is.False);
+            Assert.That(xiayuTtsCheck.GetProperty("Required").GetBoolean(), Is.False);
+            Assert.That(xiayuTtsCheck.GetProperty("Reason").GetString(), Does.Contain("-Live"));
         });
     }
 
@@ -210,6 +264,17 @@ public sealed class QChatRuntimeReadinessScriptTests
         return next < 0
             ? script[start..]
             : script[start..next];
+    }
+
+    static JsonElement FindCheck(JsonElement checks, string field)
+    {
+        foreach (JsonElement check in checks.EnumerateArray())
+        {
+            if (check.GetProperty("Field").GetString() == field)
+                return check;
+        }
+
+        throw new AssertionException($"Could not find check metadata for '{field}'.");
     }
 
     static string FindRepoRoot(string startDirectory)
