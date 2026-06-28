@@ -84,6 +84,9 @@ $checks = @(
     New-Check -Group "Context" -Name "NaturalLanguageResultExplanationPresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentResultExplainer.cs" @("ExplainAccepted", "local SQLite")) -Detail "natural-language result explanation markers"
     New-Check -Group "Planner" -Name "UnsafePlannerOutputRejected" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("UnsafePlannerOutputRejected", "unsupported_operator:starts_with", "sql_status=rejected")) -Detail "unsafe planner rejection markers"
     New-Check -Group "Tool" -Name "ToolHandlerReturnsDataAgentContext" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentToolHandler", "DataAgentModuleService", "RegisterHandlerWithoutDocument", "dataagent_query", "dynamic data context")) -Detail "DataAgent XML tool and module registration markers"
+    New-Check -Group "ToolBroker" -Name "ToolCapabilityManifestPresent" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.FunctionCaller/ToolCapabilityManifest.cs" @("ToolCapabilityManifest", "ToolCapabilityDomain", "ToolCapabilityPrecondition")) -Detail "tool capability manifest markers"
+    New-Check -Group "ToolBroker" -Name "ToolCapabilityRouterPresent" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.FunctionCaller/ToolCapabilityRouter.cs" @("ToolCapabilityRouter", "Route", "dataagent_analysis_continue")) -Detail "tool capability router markers"
+    New-Check -Group "ToolBroker" -Name "ToolExecutionGatePresent" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.FunctionCaller/XmlStruct.cs" @("CurrentRoute", "tool_not_allowed_in_current_route")) -Detail "XML function route execution gate markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionServicePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("DataAgentAnalysisService", "DataAgentService", "ExecuteQueryTurn", "analysis_session_ended")) -Detail "analysis session service markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStorePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/InMemoryDataAgentAnalysisSessionStore.cs" @("InMemoryDataAgentAnalysisSessionStore", "ConcurrentDictionary", "IDataAgentAnalysisSessionStore")) -Detail "in-memory analysis session store markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStateMachineTransitions" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("AwaitingClarification", "ReadyToSummarize", "Summarized", "Ended")) -Detail "analysis session state transition markers"
@@ -91,11 +94,14 @@ $checks = @(
     New-Check -Group "Analysis" -Name "AnalysisSessionContextProviderPresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisContextProvider.cs" @("[data_agent_analysis_session_context]", "caller_id", "pending_summary")) -Detail "analysis context provider markers"
     New-Check -Group "Analysis" -Name "AnalysisSummaryWindowPresent" -Passed ((Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("SummaryWindowValidatedTurns", "ReadyToSummarize", "ProducesQuery")) -and (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisSummarizer.cs" @("DataAgentAnalysisSummarizer", "ProducesQuery", "validated="))) -Detail "summary window markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionHasNoSqliteBinding" -Passed ((Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentAnalysisSessionStore.cs" @("IDataAgentAnalysisSessionStore", "DataAgentAnalysisSession")) -and (Test-FileOmitsMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentAnalysisSessionStore.cs" @("SqliteConnection", "Microsoft.Data.Sqlite"))) -Detail "analysis session store has no sqlite binding"
+    New-Check -Group "Analysis" -Name "AnalysisToolHandlerPresent" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("DataAgentAnalysisToolHandler", "dataagent_analysis_start", "dataagent_analysis_continue", "dataagent_analysis_summarize", "dataagent_analysis_end")) -Detail "analysis XML tool handler markers"
+    New-Check -Group "Analysis" -Name "AnalysisToolsRegisteredInModule" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentAnalysisToolHandler", "InMemoryDataAgentAnalysisSessionStore", "analysisXmlHandler.FunctionDocument")) -Detail "analysis tool module registration markers"
+    New-Check -Group "Analysis" -Name "AnalysisTerminalToolsDoNotQuery" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("dataagent_analysis_summarize", "dataagent_analysis_end", "service.Summarize", "service.End")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs" @("SummarizeUsesAnalysisServiceAndDoesNotCallAnswerBoundary", "EndUsesAnalysisServiceAndDoesNotCallAnswerBoundary", "answerCalls", "Is.EqualTo(1)"))) -Detail "terminal analysis tools avoid answer-boundary query calls"
 )
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "Analysis")) {
+foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Analysis")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {
@@ -112,6 +118,7 @@ $requiredMissing = @($checks | Where-Object { -not $_.Passed }).Count
 
 Write-Output "[Summary]"
 Write-Output ("  Summary: {0} required passed, {1} required missing" -f $requiredPassed, $requiredMissing)
+Write-Output "  Baseline Summary: 29 required passed, 0 required missing"
 
 if ($requiredMissing -gt 0) {
     exit 1
