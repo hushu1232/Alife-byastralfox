@@ -75,6 +75,19 @@ public class WebApiClient
         return DeserializeEnvelope<WebBridgePackageManifest>(json);
     }
 
+    public async Task<byte[]> DownloadPackageFile(
+        WebBridgePackageFile file,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(file.Url))
+            throw new InvalidOperationException("Package file URL is required.");
+
+        using HttpRequestMessage request = CreateRequest(HttpMethod.Get, file.Url);
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken);
+    }
+
     HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         HttpRequestMessage request = new(method, path);

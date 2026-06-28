@@ -274,6 +274,36 @@ public class WebBridgeServiceTests
     }
 
     [Test]
+    public async Task WebBridgeServiceDownloadsPackageFilesWithBearerToken()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true, IncludePackageFile = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-download", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig { ApiToken = "secret-token" });
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore())
+        {
+            Configuration = new WebBridgeServiceConfig
+            {
+                PackageRootPath = root
+            }
+        };
+
+        WebBridgeInstallResult result = await service.InstallPackage("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(result.InstalledFiles, Is.EqualTo(1));
+        Assert.That(File.Exists(Path.Combine(result.PackageRootPath, "characters", "xiayu", "card.json")), Is.True);
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/webbridge/packages/xiayu-character-bundle/manifest",
+            "/api/webbridge/packages/xiayu-character-bundle/files/character-card"
+        }));
+        Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Scheme == "Bearer"), Is.True);
+        Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Parameter == "secret-token"), Is.True);
+    }
+
+    [Test]
     public async Task WebApiClientPullsConfigFromWebPetSyncEnvelope()
     {
         RecordingHandler handler = new() { UseWebPetSyncEnvelope = true };
@@ -409,6 +439,7 @@ public class WebBridgeServiceTests
         public string? PostedJson { get; private set; }
         public bool UseWebPetSyncEnvelope { get; init; }
         public bool UsePackageManifestEnvelope { get; init; }
+        public bool IncludePackageFile { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -416,8 +447,17 @@ public class WebBridgeServiceTests
             if (request.Content != null)
                 PostedJson = await request.Content.ReadAsStringAsync(cancellationToken);
 
+            if (request.RequestUri?.AbsolutePath == "/api/webbridge/packages/xiayu-character-bundle/files/character-card")
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent([1, 2, 3])
+                };
+            }
+
             if (UsePackageManifestEnvelope)
             {
+                byte[] content = [1, 2, 3];
                 object webResponse = new
                 {
                     success = true,
@@ -426,6 +466,19 @@ public class WebBridgeServiceTests
                         PackageId = "xiayu-character-bundle",
                         PackageType = "characterBundle",
                         Version = "1.0.0",
+                        Files = IncludePackageFile
+                            ?
+                            [
+                                new WebBridgePackageFile
+                                {
+                                    Kind = "characterCard",
+                                    Url = "https://foxd.example/api/webbridge/packages/xiayu-character-bundle/files/character-card",
+                                    RelativePath = "characters/xiayu/card.json",
+                                    Sha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(content)).ToLowerInvariant(),
+                                    Size = content.Length
+                                }
+                            ]
+                            : [],
                         ActivationPolicy = new WebBridgeActivationPolicy
                         {
                             AutoApply = false,

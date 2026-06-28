@@ -132,15 +132,9 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     WebBridgePackageInstaller GetPackageInstaller()
     {
         packageInstaller ??= new WebBridgePackageInstaller(
-            Path.Combine(AlifePath.StorageFolderPath, "WebBridge"),
-            DownloadPackageFile);
+            Configuration?.PackageRootPath ?? Path.Combine(AlifePath.StorageFolderPath, "WebBridge"),
+            file => GetClient().DownloadPackageFile(file));
         return packageInstaller;
-    }
-
-    static async Task<byte[]> DownloadPackageFile(WebBridgePackageFile file)
-    {
-        using HttpClient client = new();
-        return await client.GetByteArrayAsync(file.Url);
     }
 
     void StartSyncLoop()
