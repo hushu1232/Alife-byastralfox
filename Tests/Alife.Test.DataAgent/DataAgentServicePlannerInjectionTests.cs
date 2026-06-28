@@ -1,4 +1,5 @@
 using Alife.Function.DataAgent;
+using Microsoft.Data.Sqlite;
 
 namespace Alife.Test.DataAgent;
 
@@ -24,6 +25,7 @@ public sealed class DataAgentServicePlannerInjectionTests
             Assert.That(answer.Validated, Is.True);
             Assert.That(answer.Dataset, Is.EqualTo("document_index"));
             Assert.That(answer.Summary, Does.Contain("DataAgent NL2SQL Design"));
+            Assert.That(answer.PlannerExplanation.PlannerName, Is.EqualTo("FixedPlanner"));
         });
     }
 
@@ -62,10 +64,50 @@ public sealed class DataAgentServicePlannerInjectionTests
             Assert.That(answer.Validated, Is.False);
             Assert.That(answer.RejectedReason, Does.Contain("unsupported_operator:starts_with"));
             Assert.That(answer.Context, Does.Contain("sql_status=rejected"));
+            Assert.That(answer.Context, Does.Contain("planner=FixedPlanner"));
             Assert.That(audit.Validated, Is.False);
             Assert.That(audit.Dataset, Is.EqualTo("engineering_gate"));
             Assert.That(audit.RejectedReason, Does.Contain("unsupported_operator:starts_with"));
         });
+    }
+
+    [Test]
+    public void MalformedPlannerExplanationThrowsBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+        DropDocumentIndexTable(databasePath);
+
+        DataAgentQueryPlan plan = new(
+            "document_index",
+            "forced_document_lookup",
+            ["path", "title", "summary"],
+            [new DataAgentFilter("tags", "contains", "dataagent")],
+            [],
+            20);
+        DataAgentService service = new(databasePath, new MalformedExplanationPlanner(plan));
+
+        Assert.Throws<ArgumentNullException>(() => service.Answer("force malformed explanation"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
+    [Test]
+    public void MismatchedPlannerExplanationThrowsBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+
+        DataAgentQueryPlan plan = new(
+            "engineering_gate",
+            "readiness_status",
+            ["name", "status", "detail"],
+            [],
+            [],
+            20);
+        DataAgentService service = new(databasePath, new MismatchedExplanationPlanner(plan));
+
+        Assert.Throws<ArgumentException>(() => service.Answer("force mismatched explanation"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
     }
 
     static string CreateDatabasePath()
@@ -78,8 +120,69 @@ public sealed class DataAgentServicePlannerInjectionTests
         return databasePath;
     }
 
+    static void DropDocumentIndexTable(string databasePath)
+    {
+        SqliteConnectionStringBuilder builder = new()
+        {
+            DataSource = databasePath
+        };
+
+        using SqliteConnection connection = new(builder.ToString());
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DROP TABLE document_index";
+        command.ExecuteNonQuery();
+    }
+
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {
-        public DataAgentQueryPlan Plan(DataAgentQueryRequest request) => plan;
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(FixedPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "low",
+                    ["injected-test"],
+                    "test planner returned fixed query plan"));
+        }
+    }
+
+    sealed class MalformedExplanationPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(MalformedExplanationPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "high",
+                    null!,
+                    "malformed explanation"));
+        }
+    }
+
+    sealed class MismatchedExplanationPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            string mismatchedDataset = string.Equals(plan.Dataset, "engineering_gate", StringComparison.Ordinal)
+                ? "document_index"
+                : "engineering_gate";
+
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(MismatchedExplanationPlanner),
+                    "different_intent",
+                    mismatchedDataset,
+                    "high",
+                    ["mismatch-test"],
+                    "mismatched explanation"));
+        }
     }
 }

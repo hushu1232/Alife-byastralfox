@@ -16,6 +16,18 @@ public static class DataAgentReadiness
             DataAgentFixtureImporter.Import(databasePath);
             checks.Add(Pass("FixtureDataImports", "engineering fixture data imported"));
 
+            DataAgentSchemaSnapshot schemaSnapshot = new DataAgentSchemaIntrospector(
+                DataAgentCatalog.CreateDefault(),
+                databasePath).Inspect();
+
+            checks.Add(schemaSnapshot.Datasets.Count > 0
+                ? Pass("SchemaSnapshotAvailable", $"{schemaSnapshot.Datasets.Count} datasets")
+                : Fail("SchemaSnapshotAvailable", "schema snapshot is empty"));
+
+            checks.Add(schemaSnapshot.CatalogMatchesDatabase
+                ? Pass("CatalogMatchesSqliteSchema", "catalog fields match sqlite schema")
+                : Fail("CatalogMatchesSqliteSchema", "catalog fields do not match sqlite schema"));
+
             DataAgentQueryPlan plan = new(
                 "engineering_gate",
                 "find_missing_required_gates",
@@ -47,15 +59,23 @@ public static class DataAgentReadiness
                 ? Pass("ContextContributionStable", "data_agent_context wrapper present")
                 : Fail("ContextContributionStable", "missing data_agent_context wrapper"));
 
+            checks.Add(answer.Context.Contains("planner_confidence=", StringComparison.Ordinal) &&
+                       answer.Context.Contains("planner_reason=", StringComparison.Ordinal) &&
+                       answer.Context.Contains("planner_signals=", StringComparison.Ordinal) &&
+                       answer.PlannerExplanation.Signals.Count > 0
+                ? Pass("PlannerExplanationInContext", answer.PlannerExplanation.Confidence)
+                : Fail("PlannerExplanationInContext", answer.Context));
+
             checks.Add(typeof(IDataAgentQueryPlanner).IsAssignableFrom(typeof(DeterministicDataAgentQueryPlanner))
                 ? Pass("PlannerInterfacePresent", nameof(IDataAgentQueryPlanner))
                 : Fail("PlannerInterfacePresent", "deterministic planner does not implement interface"));
 
-            DataAgentQueryPlan deterministicPlan = new DeterministicDataAgentQueryPlanner().Plan(new DataAgentQueryRequest(
+            DataAgentQueryPlanEnvelope deterministicEnvelope = new DeterministicDataAgentQueryPlanner().Plan(new DataAgentQueryRequest(
                 "Which runtime readiness gate is required?",
                 "developer",
                 "en-US",
                 false));
+            DataAgentQueryPlan deterministicPlan = deterministicEnvelope.Plan;
             checks.Add(deterministicPlan.Dataset == "engineering_gate" &&
                        deterministicPlan.Intent == "find_runtime_readiness_required_evidence"
                 ? Pass("DeterministicPlannerPassesFixtures", deterministicPlan.Intent)
@@ -107,7 +127,18 @@ public static class DataAgentReadiness
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {
-        public DataAgentQueryPlan Plan(DataAgentQueryRequest request) => plan;
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(FixedPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "low",
+                    ["readiness-test"],
+                    "readiness fixed query plan"));
+        }
     }
 }
 

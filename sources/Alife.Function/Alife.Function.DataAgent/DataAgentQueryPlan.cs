@@ -8,6 +8,18 @@ public sealed record DataAgentQueryPlan(
     IReadOnlyList<DataAgentOrderBy> OrderBy,
     int Limit);
 
+public sealed record DataAgentQueryPlanEnvelope(
+    DataAgentQueryPlan Plan,
+    DataAgentPlannerExplanation Explanation);
+
+public sealed record DataAgentPlannerExplanation(
+    string PlannerName,
+    string Intent,
+    string Dataset,
+    string Confidence,
+    IReadOnlyList<string> Signals,
+    string Reason);
+
 public sealed record DataAgentFilter(string Field, string Operator, object? Value);
 
 public sealed record DataAgentOrderBy(string Field, string Direction);

@@ -45,12 +45,15 @@ $checks = @(
     New-Check -Group "Core" -Name "DataAgentModulePresent" -Passed (Test-Path -LiteralPath (Join-Path $repoRoot "Sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj")) -Detail "Alife.Function.DataAgent project"
     New-Check -Group "Core" -Name "SqliteSchemaInitializes" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentSchemaInitializer.cs" @("engineering_gate", "query_audit")) -Detail "schema initializer markers"
     New-Check -Group "Core" -Name "FixtureDataImports" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentFixtureImporter.cs" @("Runtime readiness script", "MixuTts9881Reachable")) -Detail "fixture importer markers"
+    New-Check -Group "Schema" -Name "SchemaSnapshotAvailable" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentSchemaIntrospector.cs" @("DataAgentSchemaSnapshot", "Inspect", "PRAGMA table_info")) -Detail "schema introspection markers"
+    New-Check -Group "Schema" -Name "CatalogMatchesSqliteSchema" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("CatalogMatchesSqliteSchema", "CatalogMatchesDatabase")) -Detail "catalog/sqlite schema match markers"
     New-Check -Group "Safety" -Name "DangerousSqlRejected" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentSqlSafetyValidator.cs" @("unsafe_keyword_rejected", "multi_statement_sql_rejected")) -Detail "SQL safety markers"
     New-Check -Group "Query" -Name "QueryPlanFixturesPass" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("QueryPlanFixturesPass", "find_missing_required_gates")) -Detail "QueryPlan readiness markers"
     New-Check -Group "Query" -Name "ReadOnlyQueryExecutes" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentQueryExecutor.cs" @("Execute", "CommandTimeout")) -Detail "query executor markers"
     New-Check -Group "Context" -Name "ContextContributionStable" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentContextProvider.cs" @("[data_agent_context]", "[/data_agent_context]")) -Detail "context wrapper markers"
     New-Check -Group "Planner" -Name "PlannerInterfacePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentQueryPlanner.cs" @("IDataAgentQueryPlanner", "Plan")) -Detail "planner interface markers"
     New-Check -Group "Planner" -Name "DeterministicPlannerPassesFixtures" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DeterministicDataAgentQueryPlanner.cs" @("DeterministicDataAgentQueryPlanner", "find_runtime_readiness_required_evidence", "find_dataagent_documents")) -Detail "deterministic planner markers"
+    New-Check -Group "Planner" -Name "PlannerExplanationInContext" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentContextProvider.cs" @("planner_confidence", "planner_reason", "planner_signals")) -Detail "planner explanation context markers"
     New-Check -Group "Planner" -Name "ServiceUsesInjectedPlanner" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentService.cs" @("IDataAgentQueryPlanner", "new DataAgentQueryRequest", "planner.Plan")) -Detail "service injection markers"
     New-Check -Group "Planner" -Name "UnsafePlannerOutputRejected" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("UnsafePlannerOutputRejected", "unsupported_operator:starts_with", "sql_status=rejected")) -Detail "unsafe planner rejection markers"
     New-Check -Group "Tool" -Name "ToolHandlerReturnsDataAgentContext" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentToolHandler", "DataAgentModuleService", "RegisterHandlerWithoutDocument", "dataagent_query", "dynamic data context")) -Detail "DataAgent XML tool and module registration markers"
@@ -58,7 +61,7 @@ $checks = @(
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Safety", "Query", "Context", "Planner", "Tool")) {
+foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {

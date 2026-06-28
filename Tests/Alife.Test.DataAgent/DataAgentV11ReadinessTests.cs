@@ -13,7 +13,7 @@ public sealed class DataAgentV11ReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(12));
+            Assert.That(checks, Has.Count.EqualTo(15));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(names, Does.Contain("PlannerInterfacePresent"));
             Assert.That(names, Does.Contain("DeterministicPlannerPassesFixtures"));

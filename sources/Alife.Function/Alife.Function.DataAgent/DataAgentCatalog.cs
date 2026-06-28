@@ -24,6 +24,10 @@ public sealed class DataAgentCatalog
 
     public bool HasDataset(string name) => datasets.ContainsKey(name);
 
+    public IReadOnlyList<DataAgentDataset> Datasets => datasets.Values
+        .OrderBy(dataset => dataset.Name, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
     public bool HasField(string datasetName, string fieldName)
     {
         return datasets.TryGetValue(datasetName, out DataAgentDataset? dataset) &&

@@ -53,6 +53,7 @@ public sealed class DataAgentToolHandlerTests
             Assert.That(published[0], Is.EqualTo(context));
             Assert.That(published[0], Does.Contain("[data_agent_context]"));
             Assert.That(published[0], Does.Contain("dataset=document_index"));
+            Assert.That(published.Single(), Does.Contain("planner_confidence="));
         });
     }
 
