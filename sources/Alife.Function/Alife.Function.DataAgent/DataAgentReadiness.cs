@@ -184,6 +184,67 @@ public static class DataAgentReadiness
                        toolContext.Contains("[/data_agent_context]", StringComparison.Ordinal)
                 ? Pass("ToolHandlerReturnsDataAgentContext", "dataagent_query context returned")
                 : Fail("ToolHandlerReturnsDataAgentContext", toolContext));
+
+            InMemoryDataAgentAnalysisSessionStore analysisStore = new();
+            DataAgentAnalysisService analysisService = new(
+                new DataAgentService(databasePath),
+                analysisStore);
+            DataAgentAnalysisResponse analysisStart = analysisService.Start(
+                "local",
+                "Which documents describe DataAgent NL2SQL?");
+            DataAgentAnalysisSession? analysisSession = analysisStore.Get(analysisStart.SessionId);
+
+            checks.Add(typeof(DataAgentAnalysisService).IsClass &&
+                       analysisStart.Accepted &&
+                       analysisSession?.Turns.Count == 1 &&
+                       analysisStart.Answer is not null
+                ? Pass("AnalysisSessionServicePresent", analysisStart.Status.ToString())
+                : Fail("AnalysisSessionServicePresent", analysisStart.RejectedReason));
+
+            checks.Add(typeof(IDataAgentAnalysisSessionStore).IsInterface &&
+                       typeof(IDataAgentAnalysisSessionStore).IsAssignableFrom(typeof(InMemoryDataAgentAnalysisSessionStore))
+                ? Pass("AnalysisSessionStorePresent", nameof(InMemoryDataAgentAnalysisSessionStore))
+                : Fail("AnalysisSessionStorePresent", "analysis session store boundary missing"));
+
+            DataAgentAnalysisResponse analysisEnd = analysisService.End(analysisStart.SessionId);
+            DataAgentAnalysisResponse endedContinue = analysisService.Continue(analysisStart.SessionId, "\u7ee7\u7eed");
+            checks.Add(analysisStart.Status is DataAgentAnalysisSessionStatus.Active or DataAgentAnalysisSessionStatus.ReadyToSummarize &&
+                       analysisEnd.Status == DataAgentAnalysisSessionStatus.Ended &&
+                       endedContinue.Accepted == false &&
+                       endedContinue.RejectedReason == "analysis_session_ended"
+                ? Pass("AnalysisSessionStateMachineTransitions", $"{analysisStart.Status}->{analysisEnd.Status}")
+                : Fail("AnalysisSessionStateMachineTransitions", endedContinue.RejectedReason));
+
+            DataAgentFollowUpInterpreter interpreter = new();
+            checks.Add(interpreter.Interpret("\u7ee7\u7eed") == DataAgentAnalysisTurnIntent.Continue &&
+                       interpreter.Interpret("\u53ea\u770b\u5931\u8d25\u7684") == DataAgentAnalysisTurnIntent.RefinePrevious &&
+                       interpreter.Interpret("\u603b\u7ed3\u4e00\u4e0b") == DataAgentAnalysisTurnIntent.Summarize
+                ? Pass("AnalysisFollowUpInterpreterPresent", "common Chinese follow-up intents recognized")
+                : Fail("AnalysisFollowUpInterpreterPresent", "follow-up intent mismatch"));
+
+            string analysisContext = analysisSession is null
+                ? string.Empty
+                : DataAgentAnalysisContextProvider.Build(analysisSession);
+            checks.Add(analysisContext.Contains("[data_agent_analysis_session_context]", StringComparison.Ordinal) &&
+                       analysisContext.Contains("caller_id=local", StringComparison.Ordinal) &&
+                       analysisContext.Contains("pending_summary=", StringComparison.Ordinal)
+                ? Pass("AnalysisSessionContextProviderPresent", "analysis session context emitted")
+                : Fail("AnalysisSessionContextProviderPresent", analysisContext));
+
+            DataAgentAnalysisResponse summaryWindowStart = analysisService.Start("local", "Which documents describe DataAgent NL2SQL?");
+            analysisService.Continue(summaryWindowStart.SessionId, "\u7ee7\u7eed");
+            DataAgentAnalysisResponse thirdTurn = analysisService.Continue(summaryWindowStart.SessionId, "\u53ea\u770b DataAgent \u76f8\u5173");
+            checks.Add(thirdTurn.Status == DataAgentAnalysisSessionStatus.ReadyToSummarize
+                ? Pass("AnalysisSummaryWindowPresent", thirdTurn.Status.ToString())
+                : Fail("AnalysisSummaryWindowPresent", thirdTurn.Status.ToString()));
+
+            bool storeInterfaceHasSqliteBinding = typeof(IDataAgentAnalysisSessionStore)
+                .GetMethods()
+                .SelectMany(method => method.GetParameters().Select(parameter => parameter.ParameterType).Append(method.ReturnType))
+                .Any(type => type.FullName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true);
+            checks.Add(storeInterfaceHasSqliteBinding == false
+                ? Pass("AnalysisSessionHasNoSqliteBinding", "store interface is provider-neutral")
+                : Fail("AnalysisSessionHasNoSqliteBinding", "store interface exposes sqlite types"));
         }
         catch (Exception ex)
         {
