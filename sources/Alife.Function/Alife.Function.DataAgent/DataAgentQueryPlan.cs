@@ -9,8 +9,32 @@ public sealed record DataAgentQueryPlan(
     int Limit);
 
 public sealed record DataAgentQueryPlanEnvelope(
-    DataAgentQueryPlan Plan,
-    DataAgentPlannerExplanation Explanation);
+    DataAgentQueryPlan? Plan,
+    DataAgentPlannerExplanation Explanation,
+    DataAgentClarificationRequest? Clarification = null);
+
+public sealed record DataAgentClarificationRequest(
+    string Question,
+    IReadOnlyList<string> Options,
+    string Reason);
+
+public static class DataAgentClarificationSanitizer
+{
+    public const int MaxQuestionLength = 240;
+    public const int MaxReasonLength = 240;
+    public const int MaxOptionLength = 80;
+
+    public static DataAgentClarificationRequest Sanitize(DataAgentClarificationRequest clarification)
+    {
+        ArgumentNullException.ThrowIfNull(clarification);
+        ArgumentNullException.ThrowIfNull(clarification.Options);
+
+        return new DataAgentClarificationRequest(
+            DataAgentContextFieldSanitizer.Sanitize(clarification.Question, MaxQuestionLength),
+            clarification.Options.Select(option => DataAgentContextFieldSanitizer.Sanitize(option, MaxOptionLength)).ToArray(),
+            DataAgentContextFieldSanitizer.Sanitize(clarification.Reason, MaxReasonLength));
+    }
+}
 
 public sealed record DataAgentPlannerExplanation(
     string PlannerName,

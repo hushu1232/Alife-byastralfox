@@ -13,15 +13,30 @@ public static class DataAgentContextProvider
         DataAgentQueryResult result,
         DataAgentPlannerExplanation explanation)
     {
+        return Build(question, dataset, sql, rowCount, summary, result, explanation, string.Empty);
+    }
+
+    public static string Build(
+        string question,
+        string dataset,
+        string sql,
+        int rowCount,
+        string summary,
+        DataAgentQueryResult result,
+        DataAgentPlannerExplanation explanation,
+        string resultExplanation)
+    {
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
         builder.AppendLine($"question={Sanitize(question)}");
-        builder.AppendLine($"dataset={dataset}");
+        builder.AppendLine($"dataset={Sanitize(dataset)}");
         builder.AppendLine("sql_status=validated");
         AppendPlannerMetadata(builder, explanation);
         builder.AppendLine($"row_count={rowCount}");
         builder.AppendLine($"sql={Sanitize(sql)}");
         builder.AppendLine($"summary={Sanitize(summary)}");
+        if (string.IsNullOrWhiteSpace(resultExplanation) == false)
+            builder.AppendLine($"result_explanation={SanitizeResultExplanation(resultExplanation)}");
 
         string evidence = string.Join(
             ", ",
@@ -46,10 +61,31 @@ public static class DataAgentContextProvider
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
         builder.AppendLine($"question={Sanitize(question)}");
-        builder.AppendLine($"dataset={dataset}");
+        builder.AppendLine($"dataset={Sanitize(dataset)}");
         builder.AppendLine("sql_status=rejected");
         AppendPlannerMetadata(builder, explanation);
         builder.AppendLine($"rejected_reason={Sanitize(reason)}");
+        builder.AppendLine("[/data_agent_context]");
+        return builder.ToString().Trim();
+    }
+
+    public static string BuildClarification(
+        string question,
+        DataAgentClarificationRequest clarification,
+        DataAgentPlannerExplanation explanation)
+    {
+        ArgumentNullException.ThrowIfNull(clarification);
+        DataAgentClarificationRequest safeClarification = DataAgentClarificationSanitizer.Sanitize(clarification);
+
+        StringBuilder builder = new();
+        builder.AppendLine("[data_agent_context]");
+        builder.AppendLine($"question={Sanitize(question)}");
+        builder.AppendLine("dataset=");
+        builder.AppendLine("sql_status=needs_clarification");
+        AppendPlannerMetadata(builder, explanation);
+        builder.AppendLine($"clarification_question={safeClarification.Question}");
+        builder.AppendLine($"clarification_options={string.Join(", ", safeClarification.Options)}");
+        builder.AppendLine($"clarification_reason={safeClarification.Reason}");
         builder.AppendLine("[/data_agent_context]");
         return builder.ToString().Trim();
     }
@@ -66,10 +102,13 @@ public static class DataAgentContextProvider
 
     static string Sanitize(string value)
     {
-        return value
-            .Replace("\r\n", " ", StringComparison.Ordinal)
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Trim();
+        return DataAgentContextFieldSanitizer.Sanitize(value);
+    }
+
+    static string SanitizeResultExplanation(string value)
+    {
+        return DataAgentContextFieldSanitizer.Sanitize(
+            value,
+            DataAgentContextFieldSanitizer.MaxResultExplanationLength);
     }
 }
