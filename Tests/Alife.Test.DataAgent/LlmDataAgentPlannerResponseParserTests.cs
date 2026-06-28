@@ -65,6 +65,61 @@ public sealed class LlmDataAgentPlannerResponseParserTests
     }
 
     [Test]
+    public void ParseRejectsDuplicatePlannerName()
+    {
+        string json = """
+            {"type":"plan","planner_name":"UntrustedPlanner","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("duplicate_property:planner_name"));
+    }
+
+    [Test]
+    public void ParseRejectsDuplicateDataset()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"sqlite_master","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("duplicate_property:dataset"));
+    }
+
+    [Test]
+    public void ParseRejectsDuplicateNestedFilterField()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"secret","field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("duplicate_property:field"));
+    }
+
+    [Test]
+    public void ParseRejectsDuplicateNestedSortField()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[],"sorts":[{"field":"secret","field":"updated_at","direction":"desc"}],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("duplicate_property:field"));
+    }
+
+    [Test]
+    public void ParseRejectsMalformedJsonWithStableReason()
+    {
+        string json = """
+            {"type":"plan",}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("invalid_json"));
+    }
+
+    [Test]
     public void ParseRejectsUnsupportedPlannerNameForClarification()
     {
         string json = """

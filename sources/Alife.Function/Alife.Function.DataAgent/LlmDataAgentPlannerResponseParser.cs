@@ -43,6 +43,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
         {
             using JsonDocument document = JsonDocument.Parse(trimmed);
             JsonElement root = document.RootElement;
+            RejectDuplicateProperties(root);
 
             if (root.ValueKind != JsonValueKind.Object)
                 return DataAgentLlmPlannerResult.Invalid(rawModelOutput, "json_must_be_single_object");
@@ -62,7 +63,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
                 exception.Message.Contains("Expected end of data", StringComparison.OrdinalIgnoreCase))
                 return DataAgentLlmPlannerResult.Invalid(rawModelOutput, "json_must_be_single_object");
 
-            return DataAgentLlmPlannerResult.Invalid(rawModelOutput, $"invalid_json:{exception.Message}");
+            return DataAgentLlmPlannerResult.Invalid(rawModelOutput, "invalid_json");
         }
         catch (ArgumentException exception)
         {
@@ -70,6 +71,27 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
         }
     }
 
+    static void RejectDuplicateProperties(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                HashSet<string> names = new(StringComparer.Ordinal);
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (names.Add(property.Name) == false)
+                        throw new ArgumentException($"duplicate_property:{property.Name}");
+
+                    RejectDuplicateProperties(property.Value);
+                }
+                break;
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                    RejectDuplicateProperties(item);
+                break;
+        }
+    }
     DataAgentLlmPlannerResult ParsePlan(string rawModelOutput, JsonElement root)
     {
         RequiredPlannerName(root);
