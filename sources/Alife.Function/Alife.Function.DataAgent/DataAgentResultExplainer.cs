@@ -15,7 +15,7 @@ public static class DataAgentResultExplainer
         ArgumentNullException.ThrowIfNull(explanation);
 
         string rowWord = rowCount == 1 ? "row" : "rows";
-        string signals = string.Join(", ", explanation.Signals);
+        string signals = DataAgentContextFieldSanitizer.Sanitize(string.Join(", ", explanation.Signals), 240);
         return Sanitize(
             $"This query matched {dataset} and returned {rowCount} {rowWord}. " +
             $"The planner selected this dataset because it observed these signals: {signals}. " +
@@ -30,10 +30,6 @@ public static class DataAgentResultExplainer
 
     static string Sanitize(string value)
     {
-        return value
-            .Replace("\r\n", " ", StringComparison.Ordinal)
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Trim();
+        return DataAgentContextFieldSanitizer.Sanitize(value);
     }
 }

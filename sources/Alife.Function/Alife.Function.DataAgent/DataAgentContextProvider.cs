@@ -11,8 +11,20 @@ public static class DataAgentContextProvider
         int rowCount,
         string summary,
         DataAgentQueryResult result,
+        DataAgentPlannerExplanation explanation)
+    {
+        return Build(question, dataset, sql, rowCount, summary, result, explanation, string.Empty);
+    }
+
+    public static string Build(
+        string question,
+        string dataset,
+        string sql,
+        int rowCount,
+        string summary,
+        DataAgentQueryResult result,
         DataAgentPlannerExplanation explanation,
-        string resultExplanation = "")
+        string resultExplanation)
     {
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
@@ -24,7 +36,7 @@ public static class DataAgentContextProvider
         builder.AppendLine($"sql={Sanitize(sql)}");
         builder.AppendLine($"summary={Sanitize(summary)}");
         if (string.IsNullOrWhiteSpace(resultExplanation) == false)
-            builder.AppendLine($"result_explanation={Sanitize(resultExplanation)}");
+            builder.AppendLine($"result_explanation={SanitizeResultExplanation(resultExplanation)}");
 
         string evidence = string.Join(
             ", ",
@@ -90,10 +102,13 @@ public static class DataAgentContextProvider
 
     static string Sanitize(string value)
     {
-        return value
-            .Replace("\r\n", " ", StringComparison.Ordinal)
-            .Replace('\r', ' ')
-            .Replace('\n', ' ')
-            .Trim();
+        return DataAgentContextFieldSanitizer.Sanitize(value);
+    }
+
+    static string SanitizeResultExplanation(string value)
+    {
+        return DataAgentContextFieldSanitizer.Sanitize(
+            value,
+            DataAgentContextFieldSanitizer.MaxResultExplanationLength);
     }
 }
