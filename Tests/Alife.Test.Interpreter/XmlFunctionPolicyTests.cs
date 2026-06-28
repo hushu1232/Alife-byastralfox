@@ -147,6 +147,86 @@ public class XmlFunctionPolicyTests
         });
     }
 
+    [Test]
+    public void ResetTurnBudgetClearsBudgetAndCurrentRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 1
+        };
+
+        XmlFunctionExecutionDecision consumed = policy.TryConsume(Function("allowed_tool"));
+
+        policy.ResetTurnBudget();
+        int budgetAfterReset = policy.BudgetUsedThisTurn;
+        ToolRouteDecision? routeAfterReset = policy.CurrentRoute;
+        XmlFunctionExecutionDecision afterReset = policy.TryConsume(Function("denied_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(consumed.IsAllowed, Is.True);
+            Assert.That(budgetAfterReset, Is.Zero);
+            Assert.That(routeAfterReset, Is.Null);
+            Assert.That(afterReset.IsAllowed, Is.True);
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void UseRouteRestoresPreviousRouteForNestedScopes()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("outer_tool")
+        };
+
+        using (policy.UseRoute(RouteAllowing("middle_tool")))
+        {
+            Assert.That(policy.TryConsume(Function("outer_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("middle_tool")).IsAllowed, Is.True);
+
+            using (policy.UseRoute(RouteAllowing("inner_tool")))
+            {
+                Assert.That(policy.TryConsume(Function("middle_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+                Assert.That(policy.TryConsume(Function("inner_tool")).IsAllowed, Is.True);
+            }
+
+            Assert.That(policy.TryConsume(Function("inner_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("middle_tool")).IsAllowed, Is.True);
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(policy.TryConsume(Function("middle_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("outer_tool")).IsAllowed, Is.True);
+        });
+    }
+
+    [Test]
+    public void ExecutionPolicyRejectsRouteDeniedHighRiskBeforeAuthorization()
+    {
+        bool authorizerCalled = false;
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            AuthorizeHighRiskFunction = _ =>
+            {
+                authorizerCalled = true;
+                return new XmlFunctionExecutionDecision(true, "approved");
+            }
+        };
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(
+            Function("denied_tool", XmlFunctionRiskLevel.High));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.IsAllowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(authorizerCalled, Is.False);
+        });
+    }
     static ToolRouteDecision RouteAllowing(params string[] allowedTools) => new(
         "route-1",
         ToolCapabilityDomain.DataAgent,

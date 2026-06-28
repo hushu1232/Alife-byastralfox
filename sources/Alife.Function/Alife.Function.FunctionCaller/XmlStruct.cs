@@ -279,6 +279,7 @@ public sealed class XmlFunctionExecutionPolicy
         lock (gate)
         {
             BudgetUsedThisTurn = 0;
+            CurrentRoute = null;
         }
     }
 
@@ -308,6 +309,40 @@ public sealed class XmlFunctionExecutionPolicy
 
             BudgetUsedThisTurn += budgetCost;
             return new XmlFunctionExecutionDecision(true);
+        }
+    }
+
+    public IDisposable UseRoute(ToolRouteDecision? route)
+    {
+        ToolRouteDecision? previousRoute;
+        lock (gate)
+        {
+            previousRoute = CurrentRoute;
+            CurrentRoute = route;
+        }
+
+        return new RouteScope(this, previousRoute);
+    }
+
+    void RestoreRoute(ToolRouteDecision? route)
+    {
+        lock (gate)
+        {
+            CurrentRoute = route;
+        }
+    }
+
+    sealed class RouteScope(XmlFunctionExecutionPolicy policy, ToolRouteDecision? previousRoute) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            policy.RestoreRoute(previousRoute);
+            disposed = true;
         }
     }
 
