@@ -41,7 +41,7 @@ public sealed class DataAgentAnalysisServiceTests
     public void DataAgentServiceConstructorRejectsNullDataAgentService()
     {
         ArgumentNullException? exception = Assert.Throws<ArgumentNullException>(() =>
-            new DataAgentAnalysisService(null!, new InMemoryDataAgentAnalysisSessionStore()));
+            new DataAgentAnalysisService((DataAgentService)null!, new InMemoryDataAgentAnalysisSessionStore()));
 
         Assert.That(exception?.ParamName, Is.EqualTo("dataAgentService"));
     }
@@ -568,6 +568,7 @@ public sealed class DataAgentAnalysisServiceTests
             Assert.That(response.Accepted, Is.False);
             Assert.That(response.RejectedReason, Is.EqualTo("analysis_session_not_found"));
             Assert.That(response.Status.ToString(), Is.EqualTo("Rejected"));
+            Assert.That(response.Intent, Is.EqualTo(DataAgentAnalysisTurnIntent.Continue));
             Assert.That(response.SessionId, Is.EqualTo("missing"));
         });
     }

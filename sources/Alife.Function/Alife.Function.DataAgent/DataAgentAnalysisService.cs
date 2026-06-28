@@ -61,7 +61,7 @@ public sealed class DataAgentAnalysisService
         DateTimeOffset now = clock();
         DataAgentAnalysisSession? session = store.Get(sessionId);
         if (session is null)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.NewQuestion, "analysis_session_not_found");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_not_found");
 
         if (session.Status == DataAgentAnalysisSessionStatus.Ended)
             return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_ended");
