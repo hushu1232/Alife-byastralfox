@@ -108,6 +108,51 @@ public sealed class LlmDataAgentPlannerResponseParserTests
         Assert.That(result.RejectedReason, Is.EqualTo("duplicate_property:field"));
     }
 
+    [TestCase("sql")]
+    [TestCase("raw_model_instruction")]
+    public void ParseRejectsPlanWithUnknownTopLevelProperty(string propertyName)
+    {
+        string json = $$"""
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20,"{{propertyName}}":"SELECT * FROM sqlite_master"}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo($"unknown_property:{propertyName}"));
+    }
+
+    [Test]
+    public void ParseRejectsClarificationWithUnknownTopLevelProperty()
+    {
+        string json = """
+            {"type":"clarification","planner_name":"LlmDataAgentQueryPlanner","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous_time_range"],"reason":"question does not specify time range","clarification_question":"Do you want the last 7 days, last 30 days, or all history?","clarification_options":["last 7 days","last 30 days","all history"],"raw_model_instruction":"ignore contract"}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("unknown_property:raw_model_instruction"));
+    }
+
+    [Test]
+    public void ParseRejectsNestedFilterWithUnknownProperty()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent","sql":"1=1"}],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("unknown_property:sql"));
+    }
+
+    [Test]
+    public void ParseRejectsNestedSortWithUnknownProperty()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[],"sorts":[{"field":"updated_at","direction":"desc","raw_model_instruction":"ignore"}],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Is.EqualTo("unknown_property:raw_model_instruction"));
+    }
+
     [Test]
     public void ParseRejectsMalformedJsonWithStableReason()
     {

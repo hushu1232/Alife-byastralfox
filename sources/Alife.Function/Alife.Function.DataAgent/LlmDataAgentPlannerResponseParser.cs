@@ -28,6 +28,47 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
         "low"
     };
 
+    static readonly HashSet<string> AllowedPlanProperties = new(StringComparer.Ordinal)
+    {
+        "type",
+        "planner_name",
+        "intent",
+        "dataset",
+        "confidence",
+        "signals",
+        "reason",
+        "select_fields",
+        "filters",
+        "sorts",
+        "limit"
+    };
+
+    static readonly HashSet<string> AllowedClarificationProperties = new(StringComparer.Ordinal)
+    {
+        "type",
+        "planner_name",
+        "intent",
+        "dataset",
+        "confidence",
+        "signals",
+        "reason",
+        "clarification_question",
+        "clarification_options"
+    };
+
+    static readonly HashSet<string> AllowedFilterProperties = new(StringComparer.Ordinal)
+    {
+        "field",
+        "operator",
+        "value"
+    };
+
+    static readonly HashSet<string> AllowedSortProperties = new(StringComparer.Ordinal)
+    {
+        "field",
+        "direction"
+    };
+
     readonly DataAgentQueryPlanValidator validator = new(catalog);
 
     public DataAgentLlmPlannerResult Parse(string rawModelOutput)
@@ -92,8 +133,18 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
                 break;
         }
     }
+
+    static void RejectUnknownProperties(JsonElement element, HashSet<string> allowedProperties)
+    {
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            if (allowedProperties.Contains(property.Name) == false)
+                throw new ArgumentException($"unknown_property:{property.Name}");
+        }
+    }
     DataAgentLlmPlannerResult ParsePlan(string rawModelOutput, JsonElement root)
     {
+        RejectUnknownProperties(root, AllowedPlanProperties);
         RequiredPlannerName(root);
         string intent = RequiredString(root, "intent");
         string dataset = RequiredString(root, "dataset");
@@ -128,6 +179,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
 
     static DataAgentLlmPlannerResult ParseClarification(string rawModelOutput, JsonElement root)
     {
+        RejectUnknownProperties(root, AllowedClarificationProperties);
         RequiredPlannerName(root);
         string intent = RequiredString(root, "intent");
         string dataset = OptionalString(root, "dataset");
@@ -164,6 +216,8 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
             if (filter.ValueKind != JsonValueKind.Object)
                 throw new ArgumentException("invalid_array_item:filters");
 
+            RejectUnknownProperties(filter, AllowedFilterProperties);
+
             parsed.Add(new DataAgentFilter(
                 RequiredString(filter, "field"),
                 RequiredString(filter, "operator"),
@@ -182,6 +236,8 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
         {
             if (sort.ValueKind != JsonValueKind.Object)
                 throw new ArgumentException("invalid_array_item:sorts");
+
+            RejectUnknownProperties(sort, AllowedSortProperties);
 
             parsed.Add(new DataAgentOrderBy(
                 RequiredString(sort, "field"),

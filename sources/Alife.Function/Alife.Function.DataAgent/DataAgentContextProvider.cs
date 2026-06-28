@@ -29,7 +29,7 @@ public static class DataAgentContextProvider
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
         builder.AppendLine($"question={Sanitize(question)}");
-        builder.AppendLine($"dataset={dataset}");
+        builder.AppendLine($"dataset={Sanitize(dataset)}");
         builder.AppendLine("sql_status=validated");
         AppendPlannerMetadata(builder, explanation);
         builder.AppendLine($"row_count={rowCount}");
@@ -61,7 +61,7 @@ public static class DataAgentContextProvider
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
         builder.AppendLine($"question={Sanitize(question)}");
-        builder.AppendLine($"dataset={dataset}");
+        builder.AppendLine($"dataset={Sanitize(dataset)}");
         builder.AppendLine("sql_status=rejected");
         AppendPlannerMetadata(builder, explanation);
         builder.AppendLine($"rejected_reason={Sanitize(reason)}");
