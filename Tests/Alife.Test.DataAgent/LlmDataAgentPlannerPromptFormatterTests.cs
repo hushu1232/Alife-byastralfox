@@ -23,6 +23,10 @@ public sealed class LlmDataAgentPlannerPromptFormatterTests
             Assert.That(prompt.System, Does.Contain("JSON"));
             Assert.That(prompt.Contract, Does.Contain("\"type\":\"plan\""));
             Assert.That(prompt.Contract, Does.Contain("\"type\":\"clarification\""));
+            Assert.That(prompt.Contract, Does.Contain("\"select_fields\""));
+            Assert.That(prompt.Contract, Does.Contain("\"sorts\""));
+            Assert.That(prompt.Contract, Does.Contain("\"clarification_question\""));
+            Assert.That(prompt.Contract, Does.Contain("\"clarification_options\""));
             Assert.That(prompt.Schema, Does.Contain("document_index"));
             Assert.That(prompt.Schema, Does.Contain("path"));
             Assert.That(prompt.Schema, Does.Contain("summary"));
