@@ -76,12 +76,38 @@ public sealed class LlmDataAgentQueryPlanner : IDataAgentQueryPlanner
 
     static string BuildFallbackReason(string? rejectedReason)
     {
-        string reason = SanitizeFallbackReason(rejectedReason);
+        string reason = SanitizeFallbackReason(ToSafeFallbackReasonCode(rejectedReason));
         string fallbackReason = $"LLM planner output was invalid; deterministic fallback used: {reason}";
 
         return fallbackReason.Length <= 120
             ? fallbackReason
             : fallbackReason[..120];
+    }
+
+    static string ToSafeFallbackReasonCode(string? rejectedReason)
+    {
+        if (string.IsNullOrWhiteSpace(rejectedReason))
+            return "invalid_model_output";
+
+        string code = rejectedReason
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Split(';', 2, StringSplitOptions.TrimEntries)[0];
+
+        int valueSeparator = code.IndexOf(':', StringComparison.Ordinal);
+        if (valueSeparator >= 0)
+            code = code[..valueSeparator].Trim();
+
+        if (code.Length == 0)
+            return "invalid_model_output";
+
+        foreach (char character in code)
+        {
+            if (char.IsAsciiLetterOrDigit(character) == false && character != '_')
+                return "invalid_model_output";
+        }
+
+        return code;
     }
 
     static string SanitizeFallbackReason(string? value)
