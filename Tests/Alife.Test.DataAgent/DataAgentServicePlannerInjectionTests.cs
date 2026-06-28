@@ -110,6 +110,28 @@ public sealed class DataAgentServicePlannerInjectionTests
         Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
     }
 
+    [Test]
+    public void PlannerEnvelopeWithPlanAndClarificationThrowsBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+        DataAgentService service = new(databasePath, new PlanAndClarificationPlanner());
+
+        Assert.Throws<ArgumentException>(() => service.Answer("force ambiguous envelope"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
+    [Test]
+    public void MalformedClarificationThrowsBeforeQueryAudit()
+    {
+        string databasePath = CreateDatabasePath();
+        DataAgentService service = new(databasePath, new MalformedClarificationPlanner());
+
+        Assert.Throws<ArgumentException>(() => service.Answer("force malformed clarification"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
     static string CreateDatabasePath()
     {
         string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "dataagent-service-planner-tests");
@@ -183,6 +205,54 @@ public sealed class DataAgentServicePlannerInjectionTests
                     "high",
                     ["mismatch-test"],
                     "mismatched explanation"));
+        }
+    }
+
+    sealed class PlanAndClarificationPlanner : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            DataAgentQueryPlan plan = new(
+                "engineering_gate",
+                "readiness_status",
+                ["name", "status", "detail"],
+                [],
+                [],
+                20);
+
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(PlanAndClarificationPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "low",
+                    ["ambiguous-test"],
+                    "test planner returned both plan and clarification"),
+                new DataAgentClarificationRequest(
+                    "Which scope should DataAgent use?",
+                    ["runtime", "documents"],
+                    "question is ambiguous"));
+        }
+    }
+
+    sealed class MalformedClarificationPlanner : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                null,
+                new DataAgentPlannerExplanation(
+                    nameof(MalformedClarificationPlanner),
+                    "clarify_ambiguous_query",
+                    string.Empty,
+                    "low",
+                    ["ambiguous-test"],
+                    "test planner returned malformed clarification"),
+                new DataAgentClarificationRequest(
+                    "Which scope should DataAgent use?",
+                    ["runtime"],
+                    "question is ambiguous"));
         }
     }
 }

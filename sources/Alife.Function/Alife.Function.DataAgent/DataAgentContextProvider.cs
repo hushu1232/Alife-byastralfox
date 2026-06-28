@@ -54,6 +54,26 @@ public static class DataAgentContextProvider
         return builder.ToString().Trim();
     }
 
+    public static string BuildClarification(
+        string question,
+        DataAgentClarificationRequest clarification,
+        DataAgentPlannerExplanation explanation)
+    {
+        ArgumentNullException.ThrowIfNull(clarification);
+
+        StringBuilder builder = new();
+        builder.AppendLine("[data_agent_context]");
+        builder.AppendLine($"question={Sanitize(question)}");
+        builder.AppendLine("dataset=");
+        builder.AppendLine("sql_status=needs_clarification");
+        AppendPlannerMetadata(builder, explanation);
+        builder.AppendLine($"clarification_question={Sanitize(clarification.Question)}");
+        builder.AppendLine($"clarification_options={Sanitize(string.Join(", ", clarification.Options))}");
+        builder.AppendLine($"clarification_reason={Sanitize(clarification.Reason)}");
+        builder.AppendLine("[/data_agent_context]");
+        return builder.ToString().Trim();
+    }
+
     static void AppendPlannerMetadata(StringBuilder builder, DataAgentPlannerExplanation explanation)
     {
         ArgumentNullException.ThrowIfNull(explanation);

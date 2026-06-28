@@ -9,8 +9,14 @@ public sealed record DataAgentQueryPlan(
     int Limit);
 
 public sealed record DataAgentQueryPlanEnvelope(
-    DataAgentQueryPlan Plan,
-    DataAgentPlannerExplanation Explanation);
+    DataAgentQueryPlan? Plan,
+    DataAgentPlannerExplanation Explanation,
+    DataAgentClarificationRequest? Clarification = null);
+
+public sealed record DataAgentClarificationRequest(
+    string Question,
+    IReadOnlyList<string> Options,
+    string Reason);
 
 public sealed record DataAgentPlannerExplanation(
     string PlannerName,

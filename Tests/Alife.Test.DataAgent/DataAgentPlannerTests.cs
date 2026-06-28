@@ -15,15 +15,16 @@ public sealed class DataAgentPlannerTests
             "developer",
             "en-US",
             false));
+        DataAgentQueryPlan plan = RequirePlan(envelope);
 
         Assert.Multiple(() =>
         {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("runtime_readiness_check"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_qchat_tts_readiness"));
-            Assert.That(envelope.Plan.Filters, Has.Count.EqualTo(1));
-            Assert.That(envelope.Plan.Filters[0].Field, Is.EqualTo("capability"));
-            Assert.That(envelope.Plan.Filters[0].Operator, Is.EqualTo("contains"));
-            Assert.That(envelope.Plan.Filters[0].Value, Is.EqualTo("Tts"));
+            Assert.That(plan.Dataset, Is.EqualTo("runtime_readiness_check"));
+            Assert.That(plan.Intent, Is.EqualTo("find_qchat_tts_readiness"));
+            Assert.That(plan.Filters, Has.Count.EqualTo(1));
+            Assert.That(plan.Filters[0].Field, Is.EqualTo("capability"));
+            Assert.That(plan.Filters[0].Operator, Is.EqualTo("contains"));
+            Assert.That(plan.Filters[0].Value, Is.EqualTo("Tts"));
         });
         AssertExplanation(
             envelope,
@@ -42,12 +43,13 @@ public sealed class DataAgentPlannerTests
             "developer",
             "en-US",
             false));
+        DataAgentQueryPlan plan = RequirePlan(envelope);
 
         Assert.Multiple(() =>
         {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("engineering_gate"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_runtime_readiness_required_evidence"));
-            Assert.That(envelope.Plan.Limit, Is.EqualTo(10));
+            Assert.That(plan.Dataset, Is.EqualTo("engineering_gate"));
+            Assert.That(plan.Intent, Is.EqualTo("find_runtime_readiness_required_evidence"));
+            Assert.That(plan.Limit, Is.EqualTo(10));
         });
         AssertExplanation(
             envelope,
@@ -84,15 +86,16 @@ public sealed class DataAgentPlannerTests
             "developer",
             "en-US",
             false));
+        DataAgentQueryPlan plan = RequirePlan(envelope);
 
         Assert.Multiple(() =>
         {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("test_run"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("latest_test_run_summary"));
-            Assert.That(envelope.Plan.OrderBy, Has.Count.EqualTo(1));
-            Assert.That(envelope.Plan.OrderBy[0].Field, Is.EqualTo("ran_at"));
-            Assert.That(envelope.Plan.OrderBy[0].Direction, Is.EqualTo("desc"));
-            Assert.That(envelope.Plan.Limit, Is.EqualTo(1));
+            Assert.That(plan.Dataset, Is.EqualTo("test_run"));
+            Assert.That(plan.Intent, Is.EqualTo("latest_test_run_summary"));
+            Assert.That(plan.OrderBy, Has.Count.EqualTo(1));
+            Assert.That(plan.OrderBy[0].Field, Is.EqualTo("ran_at"));
+            Assert.That(plan.OrderBy[0].Direction, Is.EqualTo("desc"));
+            Assert.That(plan.Limit, Is.EqualTo(1));
         });
         AssertExplanation(
             envelope,
@@ -111,15 +114,16 @@ public sealed class DataAgentPlannerTests
             "developer",
             "en-US",
             false));
+        DataAgentQueryPlan plan = RequirePlan(envelope);
 
         Assert.Multiple(() =>
         {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("document_index"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_dataagent_documents"));
-            Assert.That(envelope.Plan.Filters, Has.Count.EqualTo(1));
-            Assert.That(envelope.Plan.Filters[0].Field, Is.EqualTo("tags"));
-            Assert.That(envelope.Plan.Filters[0].Operator, Is.EqualTo("contains"));
-            Assert.That(envelope.Plan.Filters[0].Value, Is.EqualTo("dataagent"));
+            Assert.That(plan.Dataset, Is.EqualTo("document_index"));
+            Assert.That(plan.Intent, Is.EqualTo("find_dataagent_documents"));
+            Assert.That(plan.Filters, Has.Count.EqualTo(1));
+            Assert.That(plan.Filters[0].Field, Is.EqualTo("tags"));
+            Assert.That(plan.Filters[0].Operator, Is.EqualTo("contains"));
+            Assert.That(plan.Filters[0].Value, Is.EqualTo("dataagent"));
         });
         AssertExplanation(
             envelope,
@@ -138,18 +142,19 @@ public sealed class DataAgentPlannerTests
             "developer",
             "en-US",
             false));
+        DataAgentQueryPlan plan = RequirePlan(envelope);
 
         Assert.Multiple(() =>
         {
-            Assert.That(envelope.Plan.Dataset, Is.EqualTo("engineering_gate"));
-            Assert.That(envelope.Plan.Intent, Is.EqualTo("find_missing_required_gates"));
-            Assert.That(envelope.Plan.Filters, Has.Count.EqualTo(2));
-            Assert.That(envelope.Plan.Filters[0].Field, Is.EqualTo("required"));
-            Assert.That(envelope.Plan.Filters[0].Operator, Is.EqualTo("="));
-            Assert.That(envelope.Plan.Filters[0].Value, Is.EqualTo(true));
-            Assert.That(envelope.Plan.Filters[1].Field, Is.EqualTo("status"));
-            Assert.That(envelope.Plan.Filters[1].Operator, Is.EqualTo("!="));
-            Assert.That(envelope.Plan.Filters[1].Value, Is.EqualTo("passed"));
+            Assert.That(plan.Dataset, Is.EqualTo("engineering_gate"));
+            Assert.That(plan.Intent, Is.EqualTo("find_missing_required_gates"));
+            Assert.That(plan.Filters, Has.Count.EqualTo(2));
+            Assert.That(plan.Filters[0].Field, Is.EqualTo("required"));
+            Assert.That(plan.Filters[0].Operator, Is.EqualTo("="));
+            Assert.That(plan.Filters[0].Value, Is.EqualTo(true));
+            Assert.That(plan.Filters[1].Field, Is.EqualTo("status"));
+            Assert.That(plan.Filters[1].Operator, Is.EqualTo("!="));
+            Assert.That(plan.Filters[1].Value, Is.EqualTo("passed"));
         });
         AssertExplanation(
             envelope,
@@ -194,8 +199,8 @@ public sealed class DataAgentPlannerTests
 
         Assert.Multiple(() =>
         {
-            DataAgentQueryPlan developerPlan = developerEnvelope.Plan;
-            DataAgentQueryPlan analystPlan = analystEnvelope.Plan;
+            DataAgentQueryPlan developerPlan = RequirePlan(developerEnvelope);
+            DataAgentQueryPlan analystPlan = RequirePlan(analystEnvelope);
 
             Assert.That(analystPlan.Dataset, Is.EqualTo(developerPlan.Dataset));
             Assert.That(analystPlan.Intent, Is.EqualTo(developerPlan.Intent));
@@ -230,14 +235,22 @@ public sealed class DataAgentPlannerTests
         string[] signals,
         string reason)
     {
+        DataAgentQueryPlan plan = RequirePlan(envelope);
+
         Assert.Multiple(() =>
         {
             Assert.That(envelope.Explanation.PlannerName, Is.EqualTo(nameof(DeterministicDataAgentQueryPlanner)));
-            Assert.That(envelope.Explanation.Dataset, Is.EqualTo(envelope.Plan.Dataset));
-            Assert.That(envelope.Explanation.Intent, Is.EqualTo(envelope.Plan.Intent));
+            Assert.That(envelope.Explanation.Dataset, Is.EqualTo(plan.Dataset));
+            Assert.That(envelope.Explanation.Intent, Is.EqualTo(plan.Intent));
             Assert.That(envelope.Explanation.Confidence, Is.EqualTo(confidence));
             Assert.That(envelope.Explanation.Signals, Is.EqualTo(signals));
             Assert.That(envelope.Explanation.Reason, Is.EqualTo(reason));
         });
+    }
+
+    static DataAgentQueryPlan RequirePlan(DataAgentQueryPlanEnvelope envelope)
+    {
+        Assert.That(envelope.Plan, Is.Not.Null);
+        return envelope.Plan!;
     }
 }

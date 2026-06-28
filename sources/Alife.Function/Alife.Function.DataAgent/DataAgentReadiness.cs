@@ -75,7 +75,7 @@ public static class DataAgentReadiness
                 "developer",
                 "en-US",
                 false));
-            DataAgentQueryPlan deterministicPlan = deterministicEnvelope.Plan;
+            DataAgentQueryPlan deterministicPlan = deterministicEnvelope.Plan ?? throw new InvalidOperationException("Deterministic planner returned no query plan.");
             checks.Add(deterministicPlan.Dataset == "engineering_gate" &&
                        deterministicPlan.Intent == "find_runtime_readiness_required_evidence"
                 ? Pass("DeterministicPlannerPassesFixtures", deterministicPlan.Intent)

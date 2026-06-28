@@ -29,8 +29,11 @@ public sealed class DataAgentService
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
         DataAgentQueryPlanEnvelope envelope = ValidateEnvelope(planner.Plan(new DataAgentQueryRequest(question, "developer", "zh-CN", false)));
-        DataAgentQueryPlan plan = envelope.Plan;
         DataAgentPlannerExplanation explanation = envelope.Explanation;
+        if (envelope.Clarification is not null)
+            return Clarify(question, envelope.Clarification, explanation);
+
+        DataAgentQueryPlan plan = envelope.Plan!;
         string queryPlanJson = JsonSerializer.Serialize(plan);
         DataAgentValidationResult planValidation = new DataAgentQueryPlanValidator(catalog).Validate(plan);
 
@@ -81,16 +84,37 @@ public sealed class DataAgentService
         return new DataAgentAnswer(plan.Dataset, generatedSql, 0, summary, context, false, reason, explanation);
     }
 
+    DataAgentAnswer Clarify(
+        string question,
+        DataAgentClarificationRequest clarification,
+        DataAgentPlannerExplanation explanation)
+    {
+        string queryPlanJson = JsonSerializer.Serialize(clarification);
+
+        new DataAgentAuditLog(databasePath).RecordRejected(
+            question,
+            string.Empty,
+            queryPlanJson,
+            string.Empty,
+            "needs_clarification",
+            TimeSpan.Zero);
+
+        string summary = $"DataAgent query rejected: needs_clarification";
+        string context = DataAgentContextProvider.BuildClarification(question, clarification, explanation);
+        return new DataAgentAnswer(string.Empty, string.Empty, 0, summary, context, false, "needs_clarification", explanation);
+    }
+
     static DataAgentQueryPlanEnvelope ValidateEnvelope(DataAgentQueryPlanEnvelope envelope)
     {
         ArgumentNullException.ThrowIfNull(envelope);
-        ArgumentNullException.ThrowIfNull(envelope.Plan);
         ArgumentNullException.ThrowIfNull(envelope.Explanation);
+
+        if ((envelope.Plan is null) == (envelope.Clarification is null))
+            throw new ArgumentException("Planner envelope must include exactly one of plan or clarification.", nameof(envelope));
 
         DataAgentPlannerExplanation explanation = envelope.Explanation;
         ArgumentException.ThrowIfNullOrWhiteSpace(explanation.PlannerName);
         ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Intent);
-        ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Dataset);
         ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Confidence);
         ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Reason);
         ArgumentNullException.ThrowIfNull(explanation.Signals);
@@ -98,11 +122,29 @@ public sealed class DataAgentService
         foreach (string signal in explanation.Signals)
             ArgumentException.ThrowIfNullOrWhiteSpace(signal);
 
-        if (string.Equals(explanation.Dataset, envelope.Plan.Dataset, StringComparison.Ordinal) == false)
-            throw new ArgumentException("Planner explanation dataset must match the query plan dataset.", nameof(envelope));
+        if (envelope.Plan is not null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(explanation.Dataset);
 
-        if (string.Equals(explanation.Intent, envelope.Plan.Intent, StringComparison.Ordinal) == false)
-            throw new ArgumentException("Planner explanation intent must match the query plan intent.", nameof(envelope));
+            if (string.Equals(explanation.Dataset, envelope.Plan.Dataset, StringComparison.Ordinal) == false)
+                throw new ArgumentException("Planner explanation dataset must match the query plan dataset.", nameof(envelope));
+
+            if (string.Equals(explanation.Intent, envelope.Plan.Intent, StringComparison.Ordinal) == false)
+                throw new ArgumentException("Planner explanation intent must match the query plan intent.", nameof(envelope));
+
+            return envelope;
+        }
+
+        DataAgentClarificationRequest clarification = envelope.Clarification!;
+        ArgumentException.ThrowIfNullOrWhiteSpace(clarification.Question);
+        ArgumentException.ThrowIfNullOrWhiteSpace(clarification.Reason);
+        ArgumentNullException.ThrowIfNull(clarification.Options);
+
+        if (clarification.Options.Count is < 2 or > 4)
+            throw new ArgumentException("Clarification options must include 2 to 4 choices.", nameof(envelope));
+
+        foreach (string option in clarification.Options)
+            ArgumentException.ThrowIfNullOrWhiteSpace(option);
 
         return envelope;
     }
