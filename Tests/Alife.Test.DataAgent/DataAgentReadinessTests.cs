@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(22));
+            Assert.That(checks, Has.Count.EqualTo(29));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -52,7 +52,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(result.StandardOutput, Does.Contain("DataAgent Readiness"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentModulePresent"));
-            Assert.That(result.StandardOutput, Does.Contain("Summary: 22 required passed, 0 required missing"));
+            Assert.That(result.StandardOutput, Does.Contain("[Analysis]"));
+            Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("Summary: 29 required passed, 0 required missing"));
         });
     }
 

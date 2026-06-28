@@ -41,6 +41,26 @@ function Test-FileMarker {
     return $true
 }
 
+function Test-FileOmitsMarker {
+    param(
+        [string]$RelativePath,
+        [string[]]$Markers
+    )
+
+    $fullPath = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return $false
+    }
+
+    $content = Get-Content -LiteralPath $fullPath -Raw
+    foreach ($marker in $Markers) {
+        if ($content.IndexOf($marker, [System.StringComparison]::Ordinal) -ge 0) {
+            return $false
+        }
+    }
+
+    return $true
+}
 $checks = @(
     New-Check -Group "Core" -Name "DataAgentModulePresent" -Passed (Test-Path -LiteralPath (Join-Path $repoRoot "Sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj")) -Detail "Alife.Function.DataAgent project"
     New-Check -Group "Core" -Name "SqliteSchemaInitializes" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentSchemaInitializer.cs" @("engineering_gate", "query_audit")) -Detail "schema initializer markers"
@@ -64,11 +84,18 @@ $checks = @(
     New-Check -Group "Context" -Name "NaturalLanguageResultExplanationPresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentResultExplainer.cs" @("ExplainAccepted", "local SQLite")) -Detail "natural-language result explanation markers"
     New-Check -Group "Planner" -Name "UnsafePlannerOutputRejected" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("UnsafePlannerOutputRejected", "unsupported_operator:starts_with", "sql_status=rejected")) -Detail "unsafe planner rejection markers"
     New-Check -Group "Tool" -Name "ToolHandlerReturnsDataAgentContext" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentToolHandler", "DataAgentModuleService", "RegisterHandlerWithoutDocument", "dataagent_query", "dynamic data context")) -Detail "DataAgent XML tool and module registration markers"
+    New-Check -Group "Analysis" -Name "AnalysisSessionServicePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("DataAgentAnalysisService", "DataAgentService", "ExecuteQueryTurn", "analysis_session_ended")) -Detail "analysis session service markers"
+    New-Check -Group "Analysis" -Name "AnalysisSessionStorePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/InMemoryDataAgentAnalysisSessionStore.cs" @("InMemoryDataAgentAnalysisSessionStore", "ConcurrentDictionary", "IDataAgentAnalysisSessionStore")) -Detail "in-memory analysis session store markers"
+    New-Check -Group "Analysis" -Name "AnalysisSessionStateMachineTransitions" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("AwaitingClarification", "ReadyToSummarize", "Summarized", "Ended")) -Detail "analysis session state transition markers"
+    New-Check -Group "Analysis" -Name "AnalysisFollowUpInterpreterPresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentFollowUpInterpreter.cs" @("DataAgentFollowUpInterpreter", "ContinuePhrases", "RefinePhrases", "SummarizePhrases", "EndPhrases")) -Detail "follow-up interpreter markers"
+    New-Check -Group "Analysis" -Name "AnalysisSessionContextProviderPresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisContextProvider.cs" @("[data_agent_analysis_session_context]", "caller_id", "pending_summary")) -Detail "analysis context provider markers"
+    New-Check -Group "Analysis" -Name "AnalysisSummaryWindowPresent" -Passed ((Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("SummaryWindowValidatedTurns", "ReadyToSummarize", "ProducesQuery")) -and (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisSummarizer.cs" @("DataAgentAnalysisSummarizer", "ProducesQuery", "validated="))) -Detail "summary window markers"
+    New-Check -Group "Analysis" -Name "AnalysisSessionHasNoSqliteBinding" -Passed ((Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentAnalysisSessionStore.cs" @("IDataAgentAnalysisSessionStore", "DataAgentAnalysisSession")) -and (Test-FileOmitsMarker "Sources/Alife.Function/Alife.Function.DataAgent/IDataAgentAnalysisSessionStore.cs" @("SqliteConnection", "Microsoft.Data.Sqlite"))) -Detail "analysis session store has no sqlite binding"
 )
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool")) {
+foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "Analysis")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {
