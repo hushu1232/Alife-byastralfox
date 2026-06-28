@@ -118,7 +118,6 @@ $requiredMissing = @($checks | Where-Object { -not $_.Passed }).Count
 
 Write-Output "[Summary]"
 Write-Output ("  Summary: {0} required passed, {1} required missing" -f $requiredPassed, $requiredMissing)
-Write-Output "  Baseline Summary: 29 required passed, 0 required missing"
 
 if ($requiredMissing -gt 0) {
     exit 1
