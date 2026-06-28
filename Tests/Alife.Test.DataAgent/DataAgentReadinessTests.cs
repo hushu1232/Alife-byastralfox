@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(15));
+            Assert.That(checks, Has.Count.EqualTo(22));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -29,6 +29,13 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("ServiceUsesInjectedPlanner"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("UnsafePlannerOutputRejected"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ToolHandlerReturnsDataAgentContext"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerInterfacePresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerPromptUsesSchemaSnapshot"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerStrictJsonParser"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerRejectsInvalidOutput"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerFallbackPreservesSafety"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("ClarificationRequestSupported"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("NaturalLanguageResultExplanationPresent"));
         });
     }
 
@@ -45,7 +52,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(result.StandardOutput, Does.Contain("DataAgent Readiness"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentModulePresent"));
-            Assert.That(result.StandardOutput, Does.Contain("Summary: 15 required passed, 0 required missing"));
+            Assert.That(result.StandardOutput, Does.Contain("Summary: 22 required passed, 0 required missing"));
         });
     }
 

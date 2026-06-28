@@ -53,7 +53,7 @@ public static class DataAgentReadiness
             DataAgentQueryResult result = new DataAgentQueryExecutor(databasePath).Execute(compiled);
             checks.Add(Pass("ReadOnlyQueryExecutes", $"{result.Rows.Count} rows"));
 
-            DataAgentAnswer answer = new DataAgentService(databasePath).Answer("当前还有哪些 required gate 没通过？");
+            DataAgentAnswer answer = new DataAgentService(databasePath).Answer("Which required gates are not passing?");
             checks.Add(answer.Context.Contains("[data_agent_context]", StringComparison.Ordinal) &&
                        answer.Context.Contains("[/data_agent_context]", StringComparison.Ordinal)
                 ? Pass("ContextContributionStable", "data_agent_context wrapper present")
@@ -66,6 +66,67 @@ public static class DataAgentReadiness
                 ? Pass("PlannerExplanationInContext", answer.PlannerExplanation.Confidence)
                 : Fail("PlannerExplanationInContext", answer.Context));
 
+            checks.Add(answer.Context.Contains("result_explanation=", StringComparison.Ordinal)
+                ? Pass("NaturalLanguageResultExplanationPresent", "result_explanation context field present")
+                : Fail("NaturalLanguageResultExplanationPresent", answer.Context));
+
+            checks.Add(typeof(ILlmDataAgentPlannerClient).IsInterface
+                ? Pass("LlmPlannerInterfacePresent", nameof(ILlmDataAgentPlannerClient))
+                : Fail("LlmPlannerInterfacePresent", "LLM planner client is not an interface"));
+
+            DataAgentLlmPlannerPrompt prompt = new LlmDataAgentPlannerPromptFormatter().Format(
+                new DataAgentQueryRequest("Which documents describe DataAgent NL2SQL?", "developer", "en-US", false),
+                DataAgentCatalog.CreateDefault(),
+                schemaSnapshot);
+            checks.Add(prompt.Schema.Contains("document_index", StringComparison.Ordinal) &&
+                       prompt.System.Contains("Do not output SQL", StringComparison.Ordinal)
+                ? Pass("LlmPlannerPromptUsesSchemaSnapshot", "schema snapshot and SQL prohibition present")
+                : Fail("LlmPlannerPromptUsesSchemaSnapshot", prompt.System + Environment.NewLine + prompt.Schema));
+
+            DataAgentLlmPlannerResult validLlmPlan = new LlmDataAgentPlannerResponseParser(DataAgentCatalog.CreateDefault()).Parse("""
+                {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}
+                """);
+            checks.Add(validLlmPlan.IsValid &&
+                       validLlmPlan.Envelope?.Plan?.Dataset == "document_index"
+                ? Pass("LlmPlannerStrictJsonParser", validLlmPlan.Envelope.Plan.Dataset)
+                : Fail("LlmPlannerStrictJsonParser", validLlmPlan.RejectedReason));
+
+            DataAgentLlmPlannerResult invalidLlmPlan = new LlmDataAgentPlannerResponseParser(DataAgentCatalog.CreateDefault()).Parse("""
+                {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"bad_operator","dataset":"document_index","confidence":"medium","signals":["bad"],"reason":"bad operator","select_fields":["path"],"filters":[{"field":"tags","operator":"starts_with","value":"dataagent"}],"sorts":[],"limit":20}
+                """);
+            checks.Add(invalidLlmPlan.IsValid == false &&
+                       invalidLlmPlan.RejectedReason.Contains("unsupported_operator:starts_with", StringComparison.Ordinal)
+                ? Pass("LlmPlannerRejectsInvalidOutput", invalidLlmPlan.RejectedReason)
+                : Fail("LlmPlannerRejectsInvalidOutput", invalidLlmPlan.RejectedReason));
+
+            DataAgentQueryPlanEnvelope llmFallbackEnvelope = new LlmDataAgentQueryPlanner(
+                databasePath,
+                new FixedLlmClient("not json"),
+                new DeterministicDataAgentQueryPlanner()).Plan(new DataAgentQueryRequest(
+                    "Which documents describe DataAgent NL2SQL?",
+                    "developer",
+                    "en-US",
+                    false));
+            checks.Add(llmFallbackEnvelope.Plan?.Dataset == "document_index" &&
+                       llmFallbackEnvelope.Explanation.Signals.Contains("llm_invalid_output_fallback", StringComparer.OrdinalIgnoreCase) &&
+                       llmFallbackEnvelope.Explanation.Reason.Contains("not json", StringComparison.Ordinal) == false &&
+                       llmFallbackEnvelope.Explanation.Reason.Contains("json_must_be_single_object", StringComparison.Ordinal)
+                ? Pass("LlmPlannerFallbackPreservesSafety", llmFallbackEnvelope.Explanation.Reason)
+                : Fail("LlmPlannerFallbackPreservesSafety", llmFallbackEnvelope.Explanation.Reason));
+
+            DataAgentQueryPlanEnvelope clarificationEnvelope = new LlmDataAgentQueryPlanner(
+                databasePath,
+                new FixedLlmClient("""
+                    {"type":"clarification","planner_name":"LlmDataAgentQueryPlanner","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous_dataset"],"reason":"question is ambiguous","clarification_question":"Which dataset should I use?","clarification_options":["document_index","test_run"]}
+                    """),
+                new DeterministicDataAgentQueryPlanner()).Plan(new DataAgentQueryRequest(
+                    "Show me the latest status",
+                    "developer",
+                    "en-US",
+                    false));
+            checks.Add(clarificationEnvelope.Plan is null && clarificationEnvelope.Clarification is not null
+                ? Pass("ClarificationRequestSupported", clarificationEnvelope.Clarification.Question)
+                : Fail("ClarificationRequestSupported", clarificationEnvelope.Explanation.Reason));
             checks.Add(typeof(IDataAgentQueryPlanner).IsAssignableFrom(typeof(DeterministicDataAgentQueryPlanner))
                 ? Pass("PlannerInterfacePresent", nameof(IDataAgentQueryPlanner))
                 : Fail("PlannerInterfacePresent", "deterministic planner does not implement interface"));
@@ -139,6 +200,11 @@ public static class DataAgentReadiness
                     ["readiness-test"],
                     "readiness fixed query plan"));
         }
+    }
+
+    sealed class FixedLlmClient(string raw) : ILlmDataAgentPlannerClient
+    {
+        public string Complete(DataAgentLlmPlannerPrompt prompt) => raw;
     }
 }
 
