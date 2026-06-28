@@ -35,6 +35,26 @@ public sealed class DataAgentAnalysisContextProviderTests
     }
 
     [Test]
+    public void BuildDerivesLatestTurnFromSessionWhenLatestTurnIsOmitted()
+    {
+        DataAgentAnalysisSession session = Session(
+            DataAgentAnalysisSessionStatus.Active,
+            [
+                Turn(3, true, string.Empty, rowCount: 5, createdAt: DateTimeOffset.UnixEpoch.AddMinutes(3)),
+                Turn(2, true, string.Empty, rowCount: 4, createdAt: DateTimeOffset.UnixEpoch.AddHours(2)),
+                Turn(3, true, string.Empty, rowCount: 9, createdAt: DateTimeOffset.UnixEpoch.AddHours(1))
+            ]);
+
+        string context = DataAgentAnalysisContextProvider.Build(session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.Contain("last_row_count=9"));
+            Assert.That(context, Does.Not.Contain("last_row_count=0"));
+        });
+    }
+
+    [Test]
     public void BuildSanitizesSessionFields()
     {
         DataAgentAnalysisSession session = Session(DataAgentAnalysisSessionStatus.Active, []) with
@@ -73,17 +93,22 @@ public sealed class DataAgentAnalysisContextProviderTests
             turns);
     }
 
-    static DataAgentAnalysisTurn Turn(int index, bool validated, string rejectedReason)
+    static DataAgentAnalysisTurn Turn(
+        int index,
+        bool validated,
+        string rejectedReason,
+        int rowCount = 2,
+        DateTimeOffset? createdAt = null)
     {
         return new DataAgentAnalysisTurn(
             $"t{index}",
             index,
             "Which documents describe DataAgent?",
             DataAgentAnalysisTurnIntent.NewQuestion,
-            DateTimeOffset.UnixEpoch.AddMinutes(index),
+            createdAt ?? DateTimeOffset.UnixEpoch.AddMinutes(index),
             "document_index",
             "SELECT path FROM document_index LIMIT 20",
-            2,
+            rowCount,
             "found one document",
             validated,
             rejectedReason);

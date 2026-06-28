@@ -12,6 +12,8 @@ public static class DataAgentAnalysisContextProvider
     {
         ArgumentNullException.ThrowIfNull(session);
 
+        DataAgentAnalysisTurn? effectiveLatestTurn = latestTurn ?? GetLatestTurn(session.Turns);
+
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_analysis_session_context]");
         builder.AppendLine($"session_id={Sanitize(session.SessionId)}");
@@ -20,12 +22,20 @@ public static class DataAgentAnalysisContextProvider
         builder.AppendLine($"status={session.Status}");
         builder.AppendLine($"turn_count={session.Turns.Count}");
         builder.AppendLine($"last_dataset={Sanitize(session.LastDataset ?? string.Empty)}");
-        builder.AppendLine($"last_row_count={latestTurn?.RowCount ?? 0}");
+        builder.AppendLine($"last_row_count={effectiveLatestTurn?.RowCount ?? 0}");
         builder.AppendLine($"last_summary={Sanitize(session.LastSummary ?? string.Empty, MaxSummaryLength)}");
         builder.AppendLine($"pending_clarification={ToLowerBool(string.IsNullOrWhiteSpace(session.PendingClarificationQuestion) == false)}");
         builder.AppendLine($"pending_summary={ToLowerBool(session.Status == DataAgentAnalysisSessionStatus.ReadyToSummarize)}");
         builder.AppendLine("[/data_agent_analysis_session_context]");
         return builder.ToString().Trim();
+    }
+
+    static DataAgentAnalysisTurn? GetLatestTurn(IEnumerable<DataAgentAnalysisTurn> turns)
+    {
+        return turns
+            .OrderByDescending(turn => turn.Index)
+            .ThenByDescending(turn => turn.CreatedAt)
+            .FirstOrDefault();
     }
 
     static string Sanitize(string value)
