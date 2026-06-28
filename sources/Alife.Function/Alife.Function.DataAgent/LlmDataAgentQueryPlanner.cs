@@ -48,10 +48,10 @@ public sealed class LlmDataAgentQueryPlanner : IDataAgentQueryPlanner
         if (result.IsValid && result.Envelope is not null)
             return result.Envelope;
 
-        return BuildFallbackEnvelope(request, rawOutput);
+        return BuildFallbackEnvelope(request, result.RejectedReason);
     }
 
-    DataAgentQueryPlanEnvelope BuildFallbackEnvelope(DataAgentQueryRequest request, string rawOutput)
+    DataAgentQueryPlanEnvelope BuildFallbackEnvelope(DataAgentQueryRequest request, string rejectedReason)
     {
         DataAgentQueryPlanEnvelope fallbackEnvelope = fallback.Plan(request);
         if (fallbackEnvelope.Plan is null || fallbackEnvelope.Clarification is not null)
@@ -71,23 +71,24 @@ public sealed class LlmDataAgentQueryPlanner : IDataAgentQueryPlanner
                 plan.Dataset,
                 "low",
                 signals,
-                BuildFallbackReason(rawOutput)));
+                BuildFallbackReason(rejectedReason)));
     }
 
-    static string BuildFallbackReason(string rawOutput)
+    static string BuildFallbackReason(string? rejectedReason)
     {
-        string reason = SanitizeFallbackReason(rawOutput);
-        string fallbackReason = string.IsNullOrWhiteSpace(reason)
-            ? "deterministic fallback after invalid LLM output"
-            : $"deterministic fallback after invalid LLM output: {reason}";
+        string reason = SanitizeFallbackReason(rejectedReason);
+        string fallbackReason = $"LLM planner output was invalid; deterministic fallback used: {reason}";
 
         return fallbackReason.Length <= 120
             ? fallbackReason
             : fallbackReason[..120];
     }
 
-    static string SanitizeFallbackReason(string value)
+    static string SanitizeFallbackReason(string? value)
     {
+        if (string.IsNullOrWhiteSpace(value))
+            return "invalid_model_output";
+
         string sanitized = value
             .Replace('\r', ' ')
             .Replace('\n', ' ');
