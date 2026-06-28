@@ -52,6 +52,8 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(result.StandardOutput, Does.Contain("DataAgent Readiness"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentModulePresent"));
+            Assert.That(result.StandardOutput, Does.Contain("[Analysis]"));
+            Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(result.StandardOutput, Does.Contain("Summary: 29 required passed, 0 required missing"));
         });
     }

@@ -232,11 +232,18 @@ public static class DataAgentReadiness
                 : Fail("AnalysisSessionContextProviderPresent", analysisContext));
 
             DataAgentAnalysisResponse summaryWindowStart = analysisService.Start("local", "Which documents describe DataAgent NL2SQL?");
-            analysisService.Continue(summaryWindowStart.SessionId, "\u7ee7\u7eed");
+            DataAgentAnalysisResponse secondTurn = analysisService.Continue(summaryWindowStart.SessionId, "\u7ee7\u7eed");
             DataAgentAnalysisResponse thirdTurn = analysisService.Continue(summaryWindowStart.SessionId, "\u53ea\u770b DataAgent \u76f8\u5173");
-            checks.Add(thirdTurn.Status == DataAgentAnalysisSessionStatus.ReadyToSummarize
+            string thirdTurnContext = thirdTurn.Context;
+            checks.Add(summaryWindowStart.Accepted &&
+                       secondTurn.Accepted &&
+                       thirdTurn.Accepted &&
+                       summaryWindowStart.Status != DataAgentAnalysisSessionStatus.ReadyToSummarize &&
+                       secondTurn.Status != DataAgentAnalysisSessionStatus.ReadyToSummarize &&
+                       thirdTurn.Status == DataAgentAnalysisSessionStatus.ReadyToSummarize &&
+                       thirdTurnContext.Contains("pending_summary=true", StringComparison.Ordinal)
                 ? Pass("AnalysisSummaryWindowPresent", thirdTurn.Status.ToString())
-                : Fail("AnalysisSummaryWindowPresent", thirdTurn.Status.ToString()));
+                : Fail("AnalysisSummaryWindowPresent", $"{summaryWindowStart.Status}->{secondTurn.Status}->{thirdTurn.Status}"));
 
             bool storeInterfaceHasSqliteBinding = typeof(IDataAgentAnalysisSessionStore)
                 .GetMethods()
