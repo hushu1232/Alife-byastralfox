@@ -109,19 +109,50 @@ public sealed class DataAgentAnalysisSummarizerTests
         });
     }
 
+    [Test]
+    public void SummarizeCountsOnlyQueryProducingTurns()
+    {
+        DataAgentAnalysisSession session = new(
+            "s1",
+            "local",
+            "goal",
+            DataAgentAnalysisSessionStatus.Summarized,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch,
+            "document_index",
+            "terminal summary",
+            null,
+            [
+                Turn(1, "document_index", true, string.Empty, "query summary"),
+                Turn(2, string.Empty, true, string.Empty, "summarize terminal", intent: DataAgentAnalysisTurnIntent.Summarize),
+                Turn(3, string.Empty, false, "non_query_terminal_turn", "end terminal", intent: DataAgentAnalysisTurnIntent.End)
+            ]);
+
+        string summary = DataAgentAnalysisSummarizer.Summarize(session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary, Does.Contain("turns=3"));
+            Assert.That(summary, Does.Contain("validated=1"));
+            Assert.That(summary, Does.Contain("rejected_or_clarification=0"));
+            Assert.That(summary, Does.Contain("datasets=document_index"));
+        });
+    }
+
     static DataAgentAnalysisTurn Turn(
         int index,
         string dataset,
         bool validated,
         string rejectedReason,
         string summary,
-        DateTimeOffset? createdAt = null)
+        DateTimeOffset? createdAt = null,
+        DataAgentAnalysisTurnIntent intent = DataAgentAnalysisTurnIntent.NewQuestion)
     {
         return new DataAgentAnalysisTurn(
             $"t{index}",
             index,
             $"question {index}",
-            DataAgentAnalysisTurnIntent.NewQuestion,
+            intent,
             createdAt ?? DateTimeOffset.UnixEpoch.AddMinutes(index),
             dataset,
             "SELECT 1 LIMIT 1",

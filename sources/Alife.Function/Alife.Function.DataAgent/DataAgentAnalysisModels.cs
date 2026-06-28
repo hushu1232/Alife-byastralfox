@@ -2,12 +2,12 @@ namespace Alife.Function.DataAgent;
 
 public enum DataAgentAnalysisSessionStatus
 {
-    Active,
-    AwaitingClarification,
-    ReadyToSummarize,
-    Summarized,
-    Rejected,
-    Ended
+    Active = 0,
+    AwaitingClarification = 1,
+    ReadyToSummarize = 2,
+    Summarized = 3,
+    Ended = 4,
+    Rejected = 5
 }
 
 public enum DataAgentAnalysisTurnIntent
@@ -18,6 +18,17 @@ public enum DataAgentAnalysisTurnIntent
     AnswerClarification,
     Summarize,
     End
+}
+
+internal static class DataAgentAnalysisTurnIntentExtensions
+{
+    public static bool ProducesQuery(this DataAgentAnalysisTurnIntent intent)
+    {
+        return intent is DataAgentAnalysisTurnIntent.NewQuestion
+            or DataAgentAnalysisTurnIntent.Continue
+            or DataAgentAnalysisTurnIntent.RefinePrevious
+            or DataAgentAnalysisTurnIntent.AnswerClarification;
+    }
 }
 
 public sealed record DataAgentAnalysisTurn(

@@ -77,6 +77,9 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
 
         while (sessions.TryGetValue(sessionId, out DataAgentAnalysisSession? current))
         {
+            if (current.Status == DataAgentAnalysisSessionStatus.Ended)
+                return Snapshot(current);
+
             DataAgentAnalysisSession updated = update(Snapshot(current));
             ArgumentNullException.ThrowIfNull(updated);
 

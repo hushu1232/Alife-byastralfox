@@ -7,6 +7,7 @@ public sealed class DataAgentAnalysisService
     const int SummaryWindowValidatedTurns = 3;
     const int MaxStoredQuestionLength = 240;
     const int MaxPendingClarificationQuestionLength = 240;
+    const string NonQueryTerminalTurnRejectedReason = "non_query_terminal_turn";
 
     readonly Func<string, DataAgentAnswer> answer;
     readonly IDataAgentAnalysisSessionStore store;
@@ -191,34 +192,53 @@ public sealed class DataAgentAnalysisService
         DateTimeOffset now)
     {
         DataAgentAnswer dataAgentAnswer = answer(questionForDataAgent);
-        DataAgentAnalysisTurn turn = new(
-            Guid.NewGuid().ToString("N"),
-            session.Turns.Count + 1,
-            DataAgentContextFieldSanitizer.Sanitize(originalQuestion, MaxStoredQuestionLength),
-            intent,
-            now,
-            dataAgentAnswer.Dataset,
-            dataAgentAnswer.Sql,
-            dataAgentAnswer.RowCount,
-            dataAgentAnswer.Summary,
-            dataAgentAnswer.Validated,
-            dataAgentAnswer.RejectedReason);
+        DataAgentAnalysisTurn? appendedTurn = null;
+        DataAgentAnalysisSession? updated = store.Update(
+            session.SessionId,
+            current =>
+            {
+                if (current.Status == DataAgentAnalysisSessionStatus.Ended)
+                {
+                    appendedTurn = null;
+                    return current;
+                }
 
-        IReadOnlyList<DataAgentAnalysisTurn> turns = session.Turns.Concat([turn]).ToArray();
-        DataAgentAnalysisSessionStatus status = ResolveStatus(dataAgentAnswer, turns);
-        DataAgentAnalysisSession updated = store.Save(session with
-        {
-            Status = status,
-            UpdatedAt = now,
-            LastDataset = string.IsNullOrWhiteSpace(dataAgentAnswer.Dataset) ? session.LastDataset : dataAgentAnswer.Dataset,
-            LastSummary = dataAgentAnswer.Summary,
-            PendingClarificationQuestion = ResolvePendingClarificationQuestion(dataAgentAnswer),
-            Turns = turns
-        });
+                DataAgentAnalysisTurn turn = new(
+                    Guid.NewGuid().ToString("N"),
+                    current.Turns.Count + 1,
+                    DataAgentContextFieldSanitizer.Sanitize(originalQuestion, MaxStoredQuestionLength),
+                    intent,
+                    now,
+                    dataAgentAnswer.Dataset,
+                    dataAgentAnswer.Sql,
+                    dataAgentAnswer.RowCount,
+                    dataAgentAnswer.Summary,
+                    dataAgentAnswer.Validated,
+                    dataAgentAnswer.RejectedReason);
+
+                IReadOnlyList<DataAgentAnalysisTurn> turns = current.Turns.Concat([turn]).ToArray();
+                DataAgentAnalysisSessionStatus status = ResolveStatus(dataAgentAnswer, turns);
+                appendedTurn = turn;
+                return current with
+                {
+                    Status = status,
+                    UpdatedAt = now,
+                    LastDataset = string.IsNullOrWhiteSpace(dataAgentAnswer.Dataset) ? current.LastDataset : dataAgentAnswer.Dataset,
+                    LastSummary = dataAgentAnswer.Summary,
+                    PendingClarificationQuestion = ResolvePendingClarificationQuestion(dataAgentAnswer),
+                    Turns = turns
+                };
+            });
+
+        if (updated is null)
+            return Reject(session.SessionId, intent, "analysis_session_not_found");
+
+        if (appendedTurn is null || updated.Status == DataAgentAnalysisSessionStatus.Ended)
+            return Reject(session.SessionId, intent, "analysis_session_ended");
 
         string context = string.Join(
             Environment.NewLine,
-            DataAgentAnalysisContextProvider.Build(updated, turn),
+            DataAgentAnalysisContextProvider.Build(updated, appendedTurn),
             dataAgentAnswer.Context);
 
         return new DataAgentAnalysisResponse(
@@ -239,7 +259,7 @@ public sealed class DataAgentAnalysisService
         if (answer.RejectedReason == "needs_clarification")
             return DataAgentAnalysisSessionStatus.AwaitingClarification;
 
-        int validatedTurns = turns.Count(turn => turn.Validated);
+        int validatedTurns = turns.Count(turn => turn.Intent.ProducesQuery() && turn.Validated);
         if (validatedTurns >= SummaryWindowValidatedTurns)
             return DataAgentAnalysisSessionStatus.ReadyToSummarize;
 
@@ -263,8 +283,8 @@ public sealed class DataAgentAnalysisService
             string.Empty,
             0,
             summary,
-            true,
-            string.Empty);
+            false,
+            NonQueryTerminalTurnRejectedReason);
 
         return session with { Turns = session.Turns.Concat([turn]).ToArray() };
     }
@@ -291,10 +311,35 @@ public sealed class DataAgentAnalysisService
             return null;
 
         string prefix = field + "=";
+        bool insideDataAgentContext = false;
+        bool needsClarification = false;
         foreach (string rawLine in context.Split('\n'))
         {
-            string line = rawLine.TrimEnd('\r');
-            if (line.StartsWith(prefix, StringComparison.Ordinal))
+            string line = rawLine.Trim().TrimEnd('\r');
+            if (string.Equals(line, "[data_agent_context]", StringComparison.Ordinal))
+            {
+                insideDataAgentContext = true;
+                needsClarification = false;
+                continue;
+            }
+
+            if (string.Equals(line, "[/data_agent_context]", StringComparison.Ordinal))
+            {
+                insideDataAgentContext = false;
+                needsClarification = false;
+                continue;
+            }
+
+            if (insideDataAgentContext == false)
+                continue;
+
+            if (string.Equals(line, "sql_status=needs_clarification", StringComparison.Ordinal))
+            {
+                needsClarification = true;
+                continue;
+            }
+
+            if (needsClarification && line.StartsWith(prefix, StringComparison.Ordinal))
                 return line[prefix.Length..];
         }
 

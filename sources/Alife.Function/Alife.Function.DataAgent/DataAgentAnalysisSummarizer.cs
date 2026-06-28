@@ -10,16 +10,19 @@ public static class DataAgentAnalysisSummarizer
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        int validated = session.Turns.Count(turn => turn.Validated);
-        int rejected = session.Turns.Count(turn => turn.Validated == false);
+        IReadOnlyList<DataAgentAnalysisTurn> queryTurns = session.Turns
+            .Where(turn => turn.Intent.ProducesQuery())
+            .ToArray();
+        int validated = queryTurns.Count(turn => turn.Validated);
+        int rejected = queryTurns.Count(turn => turn.Validated == false);
         string datasets = string.Join(
             ", ",
-            session.Turns
+            queryTurns
                 .Select(turn => turn.Dataset)
                 .Where(dataset => string.IsNullOrWhiteSpace(dataset) == false)
                 .Select(SanitizeValue)
                 .Distinct(StringComparer.OrdinalIgnoreCase));
-        string latestSummary = session.Turns
+        string latestSummary = queryTurns
             .OrderByDescending(turn => turn.Index)
             .ThenByDescending(turn => turn.CreatedAt)
             .FirstOrDefault()

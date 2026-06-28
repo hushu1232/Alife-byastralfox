@@ -6,6 +6,20 @@ namespace Alife.Test.DataAgent;
 public sealed class DataAgentAnalysisSessionStoreTests
 {
     [Test]
+    public void SessionStatusEnumKeepsCompatibleNumericValues()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That((int)DataAgentAnalysisSessionStatus.Active, Is.EqualTo(0));
+            Assert.That((int)DataAgentAnalysisSessionStatus.AwaitingClarification, Is.EqualTo(1));
+            Assert.That((int)DataAgentAnalysisSessionStatus.ReadyToSummarize, Is.EqualTo(2));
+            Assert.That((int)DataAgentAnalysisSessionStatus.Summarized, Is.EqualTo(3));
+            Assert.That((int)DataAgentAnalysisSessionStatus.Ended, Is.EqualTo(4));
+            Assert.That((int)DataAgentAnalysisSessionStatus.Rejected, Is.EqualTo(5));
+        });
+    }
+
+    [Test]
     public void CreateStoresActiveSessionWithCallerIsolation()
     {
         DateTimeOffset now = new(2026, 6, 28, 12, 0, 0, TimeSpan.Zero);
@@ -236,6 +250,48 @@ public sealed class DataAgentAnalysisSessionStoreTests
             Assert.That(loaded?.LastDataset, Is.EqualTo(currentSnapshot.LastDataset));
             Assert.That(loaded?.LastSummary, Is.EqualTo(currentSnapshot.LastSummary));
             Assert.That(loaded?.PendingClarificationQuestion, Is.EqualTo(currentSnapshot.PendingClarificationQuestion));
+            Assert.That(loaded?.Turns, Has.Count.EqualTo(1));
+            Assert.That(loaded?.Turns[0].TurnId, Is.EqualTo("turn-0"));
+        });
+    }
+
+    [Test]
+    public void UpdateAfterEndCannotReopenSession()
+    {
+        DateTimeOffset createdAt = new(2026, 6, 28, 12, 0, 0, TimeSpan.Zero);
+        DateTimeOffset endedAt = createdAt.AddMinutes(2);
+        DateTimeOffset updateAt = createdAt.AddMinutes(3);
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisSession session = store.Create("local", "analyze DataAgent", createdAt);
+        store.Save(session with
+        {
+            LastDataset = "document_index",
+            LastSummary = "before end",
+            Turns = [CreateTurn(0, createdAt)]
+        });
+        store.End(session.SessionId, endedAt);
+
+        DataAgentAnalysisSession? updated = store.Update(
+            session.SessionId,
+            current => current with
+            {
+                Status = DataAgentAnalysisSessionStatus.Active,
+                UpdatedAt = updateAt,
+                LastDataset = "stale_dataset",
+                LastSummary = "reopened",
+                PendingClarificationQuestion = "stale question",
+                Turns = []
+            });
+        DataAgentAnalysisSession? loaded = store.Get(session.SessionId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(updated?.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+            Assert.That(loaded?.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+            Assert.That(loaded?.UpdatedAt, Is.EqualTo(endedAt));
+            Assert.That(loaded?.LastDataset, Is.EqualTo("document_index"));
+            Assert.That(loaded?.LastSummary, Is.EqualTo("before end"));
+            Assert.That(loaded?.PendingClarificationQuestion, Is.Null);
             Assert.That(loaded?.Turns, Has.Count.EqualTo(1));
             Assert.That(loaded?.Turns[0].TurnId, Is.EqualTo("turn-0"));
         });
