@@ -72,7 +72,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
 
     DataAgentLlmPlannerResult ParsePlan(string rawModelOutput, JsonElement root)
     {
-        _ = RequiredString(root, "planner_name");
+        RequiredPlannerName(root);
         string intent = RequiredString(root, "intent");
         string dataset = RequiredString(root, "dataset");
         string confidence = RequiredConfidence(root);
@@ -106,7 +106,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
 
     static DataAgentLlmPlannerResult ParseClarification(string rawModelOutput, JsonElement root)
     {
-        _ = RequiredString(root, "planner_name");
+        RequiredPlannerName(root);
         string intent = RequiredString(root, "intent");
         string dataset = OptionalString(root, "dataset");
         string confidence = RequiredConfidence(root);
@@ -180,6 +180,13 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
             throw new ArgumentException($"missing_or_empty:{propertyName}");
 
         return text;
+    }
+
+    static void RequiredPlannerName(JsonElement root)
+    {
+        string plannerName = RequiredString(root, "planner_name");
+        if (string.Equals(plannerName, nameof(LlmDataAgentQueryPlanner), StringComparison.Ordinal) == false)
+            throw new ArgumentException($"unsupported_planner_name:{plannerName}");
     }
 
     static string OptionalString(JsonElement root, string propertyName)

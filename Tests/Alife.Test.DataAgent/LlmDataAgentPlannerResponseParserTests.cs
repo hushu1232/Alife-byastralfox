@@ -11,7 +11,7 @@ public sealed class LlmDataAgentPlannerResponseParserTests
     public void ParseValidPlanReturnsEnvelope()
     {
         string json = """
-            {"type":"plan","planner_name":"UntrustedPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}
             """;
 
         DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
@@ -51,6 +51,28 @@ public sealed class LlmDataAgentPlannerResponseParserTests
             Assert.That(result.Envelope.Clarification.Options, Has.Count.EqualTo(3));
             Assert.That(result.Envelope.Explanation.PlannerName, Is.EqualTo(nameof(LlmDataAgentQueryPlanner)));
         });
+    }
+
+    [Test]
+    public void ParseRejectsUnsupportedPlannerNameForPlan()
+    {
+        string json = """
+            {"type":"plan","planner_name":"UntrustedPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Does.Contain("unsupported_planner_name:UntrustedPlanner"));
+    }
+
+    [Test]
+    public void ParseRejectsUnsupportedPlannerNameForClarification()
+    {
+        string json = """
+            {"type":"clarification","planner_name":"UntrustedPlanner","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous_time_range"],"reason":"question does not specify time range","clarification_question":"Do you want the last 7 days, last 30 days, or all history?","clarification_options":["last 7 days","last 30 days","all history"]}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Does.Contain("unsupported_planner_name:UntrustedPlanner"));
     }
 
     [TestCase("")]
