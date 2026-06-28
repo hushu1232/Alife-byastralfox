@@ -50,7 +50,21 @@ public sealed class DataAgentService
         stopwatch.Stop();
 
         string summary = DataAgentResultSummarizer.Summarize(plan, result);
-        string context = DataAgentContextProvider.Build(question, plan.Dataset, compiled.Sql, result.Rows.Count, summary, result, explanation);
+        string resultExplanation = DataAgentResultExplainer.ExplainAccepted(
+            question,
+            plan.Dataset,
+            result.Rows.Count,
+            summary,
+            explanation);
+        string context = DataAgentContextProvider.Build(
+            question,
+            plan.Dataset,
+            compiled.Sql,
+            result.Rows.Count,
+            summary,
+            result,
+            explanation,
+            resultExplanation);
 
         new DataAgentAuditLog(databasePath).RecordAccepted(
             question,
@@ -99,7 +113,7 @@ public sealed class DataAgentService
             "needs_clarification",
             TimeSpan.Zero);
 
-        string summary = $"DataAgent query rejected: needs_clarification";
+        string summary = DataAgentResultExplainer.ExplainClarification(clarification);
         string context = DataAgentContextProvider.BuildClarification(question, clarification, explanation);
         return new DataAgentAnswer(string.Empty, string.Empty, 0, summary, context, false, "needs_clarification", explanation);
     }

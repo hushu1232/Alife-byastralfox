@@ -11,7 +11,8 @@ public static class DataAgentContextProvider
         int rowCount,
         string summary,
         DataAgentQueryResult result,
-        DataAgentPlannerExplanation explanation)
+        DataAgentPlannerExplanation explanation,
+        string resultExplanation = "")
     {
         StringBuilder builder = new();
         builder.AppendLine("[data_agent_context]");
@@ -22,6 +23,8 @@ public static class DataAgentContextProvider
         builder.AppendLine($"row_count={rowCount}");
         builder.AppendLine($"sql={Sanitize(sql)}");
         builder.AppendLine($"summary={Sanitize(summary)}");
+        if (string.IsNullOrWhiteSpace(resultExplanation) == false)
+            builder.AppendLine($"result_explanation={Sanitize(resultExplanation)}");
 
         string evidence = string.Join(
             ", ",
