@@ -270,7 +270,25 @@ public sealed class XmlFunctionExecutionPolicy
 {
     public bool AllowHighRisk { get; set; }
     public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
-    public ToolRouteDecision? CurrentRoute { get; set; }
+
+    public ToolRouteDecision? CurrentRoute
+    {
+        get
+        {
+            lock (gate)
+            {
+                return currentRoute;
+            }
+        }
+        set
+        {
+            lock (gate)
+            {
+                currentRoute = value;
+            }
+        }
+    }
+
     public int MaxBudgetPerTurn { get; set; } = 64;
     public int BudgetUsedThisTurn { get; private set; }
 
@@ -279,13 +297,20 @@ public sealed class XmlFunctionExecutionPolicy
         lock (gate)
         {
             BudgetUsedThisTurn = 0;
-            CurrentRoute = null;
+            currentRoute = null;
+            routeResetGeneration++;
         }
     }
 
     public XmlFunctionExecutionDecision TryConsume(XmlFunction function)
     {
-        if (CurrentRoute is not null && CurrentRoute.Allows(function.Name) == false)
+        ToolRouteDecision? route;
+        lock (gate)
+        {
+            route = currentRoute;
+        }
+
+        if (route is not null && route.Allows(function.Name) == false)
             return new XmlFunctionExecutionDecision(false, "tool_not_allowed_in_current_route");
 
         if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
@@ -315,24 +340,30 @@ public sealed class XmlFunctionExecutionPolicy
     public IDisposable UseRoute(ToolRouteDecision? route)
     {
         ToolRouteDecision? previousRoute;
+        int restoreGeneration;
         lock (gate)
         {
-            previousRoute = CurrentRoute;
-            CurrentRoute = route;
+            previousRoute = currentRoute;
+            currentRoute = route;
+            restoreGeneration = routeResetGeneration;
         }
 
-        return new RouteScope(this, previousRoute);
+        return new RouteScope(this, previousRoute, restoreGeneration);
     }
 
-    void RestoreRoute(ToolRouteDecision? route)
+    void RestoreRoute(ToolRouteDecision? route, int restoreGeneration)
     {
         lock (gate)
         {
-            CurrentRoute = route;
+            if (routeResetGeneration == restoreGeneration)
+                currentRoute = route;
         }
     }
 
-    sealed class RouteScope(XmlFunctionExecutionPolicy policy, ToolRouteDecision? previousRoute) : IDisposable
+    sealed class RouteScope(
+        XmlFunctionExecutionPolicy policy,
+        ToolRouteDecision? previousRoute,
+        int restoreGeneration) : IDisposable
     {
         bool disposed;
 
@@ -341,11 +372,13 @@ public sealed class XmlFunctionExecutionPolicy
             if (disposed)
                 return;
 
-            policy.RestoreRoute(previousRoute);
+            policy.RestoreRoute(previousRoute, restoreGeneration);
             disposed = true;
         }
     }
 
+    ToolRouteDecision? currentRoute;
+    int routeResetGeneration;
     readonly object gate = new();
 }
 

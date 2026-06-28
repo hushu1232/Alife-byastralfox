@@ -174,6 +174,29 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void UseRouteDoesNotRestoreStaleRouteAfterResetTurnBudget()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("old_tool")
+        };
+
+        using (IDisposable scope = policy.UseRoute(RouteAllowing("new_tool")))
+        {
+            policy.ResetTurnBudget();
+            scope.Dispose();
+        }
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(Function("denied_by_old_route"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(policy.CurrentRoute, Is.Null);
+            Assert.That(decision.IsAllowed, Is.True);
+        });
+    }
+
+    [Test]
     public void UseRouteRestoresPreviousRouteForNestedScopes()
     {
         XmlFunctionExecutionPolicy policy = new()
