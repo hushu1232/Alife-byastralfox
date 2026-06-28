@@ -58,13 +58,7 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
             {
                 if (current.Status == DataAgentAnalysisSessionStatus.Ended &&
                     incoming.Status != DataAgentAnalysisSessionStatus.Ended)
-                {
-                    return Snapshot(incoming with
-                    {
-                        Status = DataAgentAnalysisSessionStatus.Ended,
-                        UpdatedAt = current.UpdatedAt
-                    });
-                }
+                    return current;
 
                 return incoming;
             });

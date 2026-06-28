@@ -205,13 +205,26 @@ public sealed class DataAgentAnalysisSessionStoreTests
         DateTimeOffset endedAt = createdAt.AddMinutes(2);
         InMemoryDataAgentAnalysisSessionStore store = new();
         DataAgentAnalysisSession session = store.Create("local", "analyze DataAgent", createdAt);
+        DataAgentAnalysisSession currentSnapshot = session with
+        {
+            Status = DataAgentAnalysisSessionStatus.AwaitingClarification,
+            UpdatedAt = activeUpdatedAt,
+            LastDataset = "document_index",
+            LastSummary = "current ended summary",
+            PendingClarificationQuestion = "Which runtime window should be analyzed?",
+            Turns = [CreateTurn(0, activeUpdatedAt)]
+        };
         DataAgentAnalysisSession oldActiveSnapshot = session with
         {
             Status = DataAgentAnalysisSessionStatus.ReadyToSummarize,
             UpdatedAt = activeUpdatedAt,
-            LastSummary = "old active summary"
+            LastDataset = "stale_dataset",
+            LastSummary = "old active summary",
+            PendingClarificationQuestion = "stale clarification",
+            Turns = []
         };
 
+        store.Save(currentSnapshot);
         store.End(session.SessionId, endedAt);
         store.Save(oldActiveSnapshot);
         DataAgentAnalysisSession? loaded = store.Get(session.SessionId);
@@ -220,6 +233,11 @@ public sealed class DataAgentAnalysisSessionStoreTests
         {
             Assert.That(loaded?.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
             Assert.That(loaded?.UpdatedAt, Is.EqualTo(endedAt));
+            Assert.That(loaded?.LastDataset, Is.EqualTo(currentSnapshot.LastDataset));
+            Assert.That(loaded?.LastSummary, Is.EqualTo(currentSnapshot.LastSummary));
+            Assert.That(loaded?.PendingClarificationQuestion, Is.EqualTo(currentSnapshot.PendingClarificationQuestion));
+            Assert.That(loaded?.Turns, Has.Count.EqualTo(1));
+            Assert.That(loaded?.Turns[0].TurnId, Is.EqualTo("turn-0"));
         });
     }
 
