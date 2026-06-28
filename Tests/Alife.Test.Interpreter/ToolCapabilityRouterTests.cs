@@ -183,6 +183,26 @@ public sealed class ToolCapabilityRouterTests
         });
     }
 
+    [TestCase("analyze project readiness for V1.5")]
+    [TestCase("analyze V2 readiness")]
+    [TestCase("project readiness analysis")]
+    public void RouterAllowsEnglishProjectReadinessAnalysisWhenNoDataAgentSessionExists(string utterance)
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = TrustedOwnerPrivateState(activeSession: false);
+
+        ToolRouteDecision decision = router.Route(utterance, state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.DataAgent));
+            Assert.That(decision.Intent, Is.EqualTo("analysis_start"));
+            Assert.That(decision.Reason, Is.EqualTo("explicit_dataagent_analysis_start"));
+            Assert.That(decision.AllowedTools, Is.EqualTo(StartAllowedTools));
+            AssertDeniedTools(decision, StartDeniedTools, "tool_not_allowed_in_current_route");
+        });
+    }
+
     [Test]
     public void RouterAllowsContinueSummarizeAndEndOnlyForExplicitDataAgentAnalysisWithActiveSession()
     {
@@ -288,6 +308,22 @@ public sealed class ToolCapabilityRouterTests
     [TestCase("帮我分析这段话")]
     [TestCase("分析一下这个回复怎么写")]
     public void RouterDoesNotTreatOrdinaryChineseAnalysisAsDataAgentAnalysis(string utterance)
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = TrustedOwnerPrivateState(activeSession: true);
+
+        ToolRouteDecision decision = router.Route(utterance, state);
+
+        Assert.Multiple(() =>
+        {
+            AssertOrdinaryTrustedChatDecision(decision);
+            AssertDeniedTools(decision, DataAgentToolNames, "tool_not_allowed_in_current_route");
+        });
+    }
+
+    [TestCase("analyze this paragraph")]
+    [TestCase("analysis of this paragraph")]
+    public void RouterDoesNotTreatGenericEnglishAnalysisAsDataAgentAnalysis(string utterance)
     {
         ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
         ToolRouteState state = TrustedOwnerPrivateState(activeSession: true);

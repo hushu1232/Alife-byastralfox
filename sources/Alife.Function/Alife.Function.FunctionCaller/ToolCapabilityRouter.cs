@@ -278,7 +278,8 @@ public sealed class ToolCapabilityRouter
 
         return ContainsOrdinalIgnoreCase(utterance, "dataagent")
             || ContainsOrdinalIgnoreCase(utterance, "data agent")
-            || LooksLikeProjectGapAnalysis(utterance);
+            || LooksLikeProjectGapAnalysis(utterance)
+            || LooksLikeEnglishProjectReadinessAnalysis(utterance);
     }
 
     static bool LooksLikeProjectGapAnalysis(string utterance)
@@ -288,6 +289,24 @@ public sealed class ToolCapabilityRouter
                 || ContainsOrdinalIgnoreCase(utterance, "v1.5")
                 || utterance.Contains("我们离", StringComparison.Ordinal)
                 || utterance.Contains("还差什么", StringComparison.Ordinal));
+    }
+
+    static bool LooksLikeEnglishProjectReadinessAnalysis(string utterance)
+    {
+        bool mentionsAnalysis = ContainsOrdinalIgnoreCase(utterance, "analyze")
+            || ContainsOrdinalIgnoreCase(utterance, "analysis");
+        if (mentionsAnalysis == false)
+        {
+            return false;
+        }
+
+        bool mentionsProjectReadiness = ContainsOrdinalIgnoreCase(utterance, "project")
+            && ContainsOrdinalIgnoreCase(utterance, "readiness");
+        bool mentionsVersionReadiness = ContainsOrdinalIgnoreCase(utterance, "readiness")
+            && (ContainsOrdinalIgnoreCase(utterance, "v1.5")
+                || ContainsOrdinalIgnoreCase(utterance, "v2"));
+
+        return mentionsProjectReadiness || mentionsVersionReadiness;
     }
 
     static bool ContainsOrdinalIgnoreCase(string value, string candidate)
