@@ -11,19 +11,30 @@ public sealed class DataAgentAnalysisSessionStoreTests
         DateTimeOffset now = new(2026, 6, 28, 12, 0, 0, TimeSpan.Zero);
         InMemoryDataAgentAnalysisSessionStore store = new();
 
-        DataAgentAnalysisSession session = store.Create("xiayu", "分析最近失败的测试", now);
-        DataAgentAnalysisSession? loaded = store.Get(session.SessionId);
+        const string xiayuGoal = "analyze recent failed tests";
+        const string mixuGoal = "summarize readiness blockers";
+        DataAgentAnalysisSession xiayuSession = store.Create("xiayu", xiayuGoal, now);
+        DataAgentAnalysisSession mixuSession = store.Create("mixu", mixuGoal, now);
+        DataAgentAnalysisSession? loadedXiayu = store.Get(xiayuSession.SessionId);
+        DataAgentAnalysisSession? loadedMixu = store.Get(mixuSession.SessionId);
 
         Assert.Multiple(() =>
         {
-            Assert.That(session.SessionId, Is.Not.Empty);
-            Assert.That(session.CallerId, Is.EqualTo("xiayu"));
-            Assert.That(session.Goal, Is.EqualTo("分析最近失败的测试"));
-            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
-            Assert.That(session.CreatedAt, Is.EqualTo(now));
-            Assert.That(session.UpdatedAt, Is.EqualTo(now));
-            Assert.That(session.Turns, Is.Empty);
-            Assert.That(loaded, Is.EqualTo(session));
+            Assert.That(xiayuSession.SessionId, Is.Not.Empty);
+            Assert.That(mixuSession.SessionId, Is.Not.Empty);
+            Assert.That(mixuSession.SessionId, Is.Not.EqualTo(xiayuSession.SessionId));
+            Assert.That(xiayuSession.CallerId, Is.EqualTo("xiayu"));
+            Assert.That(xiayuSession.Goal, Is.EqualTo(xiayuGoal));
+            Assert.That(mixuSession.CallerId, Is.EqualTo("mixu"));
+            Assert.That(mixuSession.Goal, Is.EqualTo(mixuGoal));
+            Assert.That(xiayuSession.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(xiayuSession.CreatedAt, Is.EqualTo(now));
+            Assert.That(xiayuSession.UpdatedAt, Is.EqualTo(now));
+            Assert.That(xiayuSession.Turns, Is.Empty);
+            Assert.That(loadedXiayu, Is.EqualTo(xiayuSession));
+            Assert.That(loadedMixu, Is.EqualTo(mixuSession));
+            Assert.That(loadedXiayu, Is.Not.EqualTo(loadedMixu));
+            Assert.That(loadedXiayu, Is.Not.SameAs(loadedMixu));
         });
     }
 
