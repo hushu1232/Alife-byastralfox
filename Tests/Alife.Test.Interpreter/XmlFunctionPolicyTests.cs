@@ -86,6 +86,87 @@ public class XmlFunctionPolicyTests
         Assert.That(handler.DeleteCalls, Is.EqualTo(1));
     }
 
+    [Test]
+    public void ExecutionPolicyRejectsToolOutsideCurrentRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool")
+        };
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(Function("denied_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.IsAllowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+        });
+    }
+
+    [Test]
+    public void ExecutionPolicyRouteGateDoesNotConsumeBudgetWhenRejectingOutsideRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 1
+        };
+
+        XmlFunctionExecutionDecision denied = policy.TryConsume(Function("denied_tool"));
+        XmlFunctionExecutionDecision allowed = policy.TryConsume(Function("allowed_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(denied.IsAllowed, Is.False);
+            Assert.That(denied.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(allowed.IsAllowed, Is.True);
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void ExecutionPolicyAllowsListedToolAndConsumesBudgetNormally()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 2
+        };
+
+        XmlFunctionExecutionDecision first = policy.TryConsume(Function("allowed_tool"));
+        XmlFunctionExecutionDecision second = policy.TryConsume(Function("allowed_tool"));
+        XmlFunctionExecutionDecision exhausted = policy.TryConsume(Function("allowed_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.IsAllowed, Is.True);
+            Assert.That(second.IsAllowed, Is.True);
+            Assert.That(exhausted.IsAllowed, Is.False);
+            Assert.That(exhausted.Reason, Does.Contain("budget"));
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(2));
+        });
+    }
+
+    static ToolRouteDecision RouteAllowing(params string[] allowedTools) => new(
+        "route-1",
+        ToolCapabilityDomain.DataAgent,
+        "analysis_continue",
+        allowedTools,
+        [],
+        ToolRouteState.Empty,
+        "test_route");
+
+    static XmlFunction Function(
+        string name,
+        XmlFunctionRiskLevel riskLevel = XmlFunctionRiskLevel.Low,
+        int budgetCost = 1) => new()
+    {
+        Name = name,
+        Mode = FunctionMode.OneShot,
+        RiskLevel = riskLevel,
+        BudgetCost = budgetCost,
+        Invoker = (_, _) => Task.CompletedTask,
+    };
     static XmlContext OneShotContext() => new()
     {
         CallMode = CallMode.OneShot,

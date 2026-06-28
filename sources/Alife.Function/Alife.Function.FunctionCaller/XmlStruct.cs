@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Function.FunctionCaller;
 
 namespace Alife.Function.Interpreter;
 
@@ -269,6 +270,7 @@ public sealed class XmlFunctionExecutionPolicy
 {
     public bool AllowHighRisk { get; set; }
     public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
+    public ToolRouteDecision? CurrentRoute { get; set; }
     public int MaxBudgetPerTurn { get; set; } = 64;
     public int BudgetUsedThisTurn { get; private set; }
 
@@ -282,6 +284,9 @@ public sealed class XmlFunctionExecutionPolicy
 
     public XmlFunctionExecutionDecision TryConsume(XmlFunction function)
     {
+        if (CurrentRoute is not null && CurrentRoute.Allows(function.Name) == false)
+            return new XmlFunctionExecutionDecision(false, "tool_not_allowed_in_current_route");
+
         if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
         {
             XmlFunctionExecutionDecision? authorization = AuthorizeHighRiskFunction?.Invoke(function);
