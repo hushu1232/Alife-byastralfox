@@ -66,6 +66,31 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
         return Snapshot(saved);
     }
 
+    public DataAgentAnalysisSession? Update(
+        string sessionId,
+        Func<DataAgentAnalysisSession, DataAgentAnalysisSession> update)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return null;
+
+        ArgumentNullException.ThrowIfNull(update);
+
+        while (sessions.TryGetValue(sessionId, out DataAgentAnalysisSession? current))
+        {
+            DataAgentAnalysisSession updated = update(Snapshot(current));
+            ArgumentNullException.ThrowIfNull(updated);
+
+            if (string.Equals(updated.SessionId, sessionId, StringComparison.Ordinal) == false)
+                throw new InvalidOperationException("Session update cannot change the session id.");
+
+            DataAgentAnalysisSession snapshot = Snapshot(updated);
+            if (sessions.TryUpdate(sessionId, snapshot, current))
+                return Snapshot(snapshot);
+        }
+
+        return null;
+    }
+
     public bool End(string sessionId, DateTimeOffset now)
     {
         if (string.IsNullOrWhiteSpace(sessionId))

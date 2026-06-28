@@ -5,6 +5,8 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentAnalysisService
 {
     const int SummaryWindowValidatedTurns = 3;
+    const int MaxStoredQuestionLength = 240;
+    const int MaxPendingClarificationQuestionLength = 240;
 
     readonly Func<string, DataAgentAnswer> answer;
     readonly IDataAgentAnalysisSessionStore store;
@@ -14,7 +16,10 @@ public sealed class DataAgentAnalysisService
     public DataAgentAnalysisService(
         DataAgentService dataAgentService,
         IDataAgentAnalysisSessionStore store)
-        : this(dataAgentService.Answer, store, new DataAgentFollowUpInterpreter(), () => DateTimeOffset.UtcNow)
+        : this((dataAgentService ?? throw new ArgumentNullException(nameof(dataAgentService))).Answer,
+            store,
+            new DataAgentFollowUpInterpreter(),
+            () => DateTimeOffset.UtcNow)
     {
     }
 
@@ -62,16 +67,21 @@ public sealed class DataAgentAnalysisService
 
         DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(question, session);
         if (intent == DataAgentAnalysisTurnIntent.Summarize)
-            return Summarize(sessionId);
+            return Summarize(sessionId, question);
 
         if (intent == DataAgentAnalysisTurnIntent.End)
-            return End(sessionId);
+            return End(sessionId, question);
 
         string composedQuestion = ComposeQuestion(session, question, intent);
         return ExecuteQueryTurn(session, question, composedQuestion, intent, now);
     }
 
     public DataAgentAnalysisResponse Summarize(string sessionId)
+    {
+        return Summarize(sessionId, "summarize");
+    }
+
+    DataAgentAnalysisResponse Summarize(string sessionId, string turnQuestion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
@@ -83,20 +93,43 @@ public sealed class DataAgentAnalysisService
         if (session.Status == DataAgentAnalysisSessionStatus.Ended)
             return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended");
 
-        DataAgentAnalysisSession updated = store.Save(session with
-        {
-            Status = DataAgentAnalysisSessionStatus.Summarized,
-            UpdatedAt = now,
-            LastSummary = DataAgentAnalysisSummarizer.Summarize(session)
-        });
+        DataAgentAnalysisSession? updated = store.Update(
+            sessionId,
+            current =>
+            {
+                if (current.Status == DataAgentAnalysisSessionStatus.Ended)
+                    return current;
 
+                string summary = DataAgentAnalysisSummarizer.Summarize(current);
+                DataAgentAnalysisSession withTerminalTurn = AppendTerminalTurn(
+                    current,
+                    turnQuestion,
+                    DataAgentAnalysisTurnIntent.Summarize,
+                    now,
+                    summary);
+
+                return withTerminalTurn with
+                {
+                    Status = DataAgentAnalysisSessionStatus.Summarized,
+                    UpdatedAt = now,
+                    LastSummary = summary
+                };
+            });
+
+        if (updated is null)
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_not_found");
+
+        if (updated.Status == DataAgentAnalysisSessionStatus.Ended)
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended");
+
+        string summaryText = updated.LastSummary ?? string.Empty;
         string context = DataAgentAnalysisContextProvider.Build(updated);
         return new DataAgentAnalysisResponse(
             updated.SessionId,
             updated.Status,
             DataAgentAnalysisTurnIntent.Summarize,
             null,
-            updated.LastSummary ?? string.Empty,
+            summaryText,
             context,
             true,
             string.Empty);
@@ -104,27 +137,47 @@ public sealed class DataAgentAnalysisService
 
     public DataAgentAnalysisResponse End(string sessionId)
     {
+        return End(sessionId, "end");
+    }
+
+    DataAgentAnalysisResponse End(string sessionId, string turnQuestion)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
         DateTimeOffset now = clock();
-        DataAgentAnalysisSession? session = store.Get(sessionId);
-        if (session is null)
+        DataAgentAnalysisSession? updated = store.Update(
+            sessionId,
+            current =>
+            {
+                if (current.Status == DataAgentAnalysisSessionStatus.Ended)
+                    return current;
+
+                string summary = DataAgentAnalysisSummarizer.Summarize(current);
+                DataAgentAnalysisSession withTerminalTurn = AppendTerminalTurn(
+                    current,
+                    turnQuestion,
+                    DataAgentAnalysisTurnIntent.End,
+                    now,
+                    summary);
+
+                return withTerminalTurn with
+                {
+                    Status = DataAgentAnalysisSessionStatus.Ended,
+                    UpdatedAt = now,
+                    LastSummary = summary
+                };
+            });
+
+        if (updated is null)
             return Reject(sessionId, DataAgentAnalysisTurnIntent.End, "analysis_session_not_found");
 
-        string summary = DataAgentAnalysisSummarizer.Summarize(session);
-        DataAgentAnalysisSession updated = store.Save(session with
-        {
-            Status = DataAgentAnalysisSessionStatus.Ended,
-            UpdatedAt = now,
-            LastSummary = summary
-        });
-
+        string summaryText = updated.LastSummary ?? string.Empty;
         return new DataAgentAnalysisResponse(
             updated.SessionId,
             updated.Status,
             DataAgentAnalysisTurnIntent.End,
             null,
-            summary,
+            summaryText,
             DataAgentAnalysisContextProvider.Build(updated),
             true,
             string.Empty);
@@ -141,7 +194,7 @@ public sealed class DataAgentAnalysisService
         DataAgentAnalysisTurn turn = new(
             Guid.NewGuid().ToString("N"),
             session.Turns.Count + 1,
-            DataAgentContextFieldSanitizer.Sanitize(originalQuestion, 240),
+            DataAgentContextFieldSanitizer.Sanitize(originalQuestion, MaxStoredQuestionLength),
             intent,
             now,
             dataAgentAnswer.Dataset,
@@ -159,7 +212,7 @@ public sealed class DataAgentAnalysisService
             UpdatedAt = now,
             LastDataset = string.IsNullOrWhiteSpace(dataAgentAnswer.Dataset) ? session.LastDataset : dataAgentAnswer.Dataset,
             LastSummary = dataAgentAnswer.Summary,
-            PendingClarificationQuestion = dataAgentAnswer.RejectedReason == "needs_clarification" ? dataAgentAnswer.Summary : null,
+            PendingClarificationQuestion = ResolvePendingClarificationQuestion(dataAgentAnswer),
             Turns = turns
         });
 
@@ -193,6 +246,61 @@ public sealed class DataAgentAnalysisService
         return DataAgentAnalysisSessionStatus.Active;
     }
 
+    static DataAgentAnalysisSession AppendTerminalTurn(
+        DataAgentAnalysisSession session,
+        string question,
+        DataAgentAnalysisTurnIntent intent,
+        DateTimeOffset now,
+        string summary)
+    {
+        DataAgentAnalysisTurn turn = new(
+            Guid.NewGuid().ToString("N"),
+            session.Turns.Count + 1,
+            DataAgentContextFieldSanitizer.Sanitize(question, MaxStoredQuestionLength),
+            intent,
+            now,
+            string.Empty,
+            string.Empty,
+            0,
+            summary,
+            true,
+            string.Empty);
+
+        return session with { Turns = session.Turns.Concat([turn]).ToArray() };
+    }
+
+    static string? ResolvePendingClarificationQuestion(DataAgentAnswer answer)
+    {
+        if (answer.RejectedReason != "needs_clarification")
+            return null;
+
+        string? question = ExtractContextField(answer.Context, "clarification_question");
+        if (string.IsNullOrWhiteSpace(question))
+            question = answer.Summary;
+
+        string sanitized = DataAgentContextFieldSanitizer.Sanitize(
+            question,
+            MaxPendingClarificationQuestionLength);
+
+        return string.IsNullOrWhiteSpace(sanitized) ? null : sanitized;
+    }
+
+    static string? ExtractContextField(string context, string field)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+            return null;
+
+        string prefix = field + "=";
+        foreach (string rawLine in context.Split('\n'))
+        {
+            string line = rawLine.TrimEnd('\r');
+            if (line.StartsWith(prefix, StringComparison.Ordinal))
+                return line[prefix.Length..];
+        }
+
+        return null;
+    }
+
     static string ComposeQuestion(
         DataAgentAnalysisSession session,
         string question,
@@ -223,9 +331,13 @@ public sealed class DataAgentAnalysisService
         DataAgentAnalysisTurnIntent intent,
         string reason)
     {
+        DataAgentAnalysisSessionStatus status = reason == "analysis_session_not_found"
+            ? DataAgentAnalysisSessionStatus.Rejected
+            : DataAgentAnalysisSessionStatus.Ended;
+
         return new DataAgentAnalysisResponse(
             sessionId,
-            DataAgentAnalysisSessionStatus.Ended,
+            status,
             intent,
             null,
             string.Empty,

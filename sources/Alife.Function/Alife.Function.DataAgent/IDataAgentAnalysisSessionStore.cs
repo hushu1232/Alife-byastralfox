@@ -8,5 +8,9 @@ public interface IDataAgentAnalysisSessionStore
 
     DataAgentAnalysisSession Save(DataAgentAnalysisSession session);
 
+    DataAgentAnalysisSession? Update(
+        string sessionId,
+        Func<DataAgentAnalysisSession, DataAgentAnalysisSession> update);
+
     bool End(string sessionId, DateTimeOffset now);
 }

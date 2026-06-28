@@ -6,6 +6,7 @@ public enum DataAgentAnalysisSessionStatus
     AwaitingClarification,
     ReadyToSummarize,
     Summarized,
+    Rejected,
     Ended
 }
 
