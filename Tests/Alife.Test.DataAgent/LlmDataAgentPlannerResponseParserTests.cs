@@ -187,4 +187,26 @@ public sealed class LlmDataAgentPlannerResponseParserTests
         DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
         Assert.That(result.RejectedReason, Does.Contain("invalid_clarification_option_count"));
     }
+
+    [Test]
+    public void ParseRejectsPlanWithoutPlannerName()
+    {
+        string json = """
+            {"type":"plan","intent":"missing_planner_name","dataset":"document_index","confidence":"low","signals":["bad"],"reason":"missing planner name","select_fields":["path"],"filters":[],"sorts":[],"limit":20}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Does.Contain("missing_or_empty:planner_name"));
+    }
+
+    [Test]
+    public void ParseRejectsClarificationWithoutPlannerName()
+    {
+        string json = """
+            {"type":"clarification","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous"],"reason":"ambiguous","clarification_question":"Which range?","clarification_options":["last 7 days","last 30 days"]}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+        Assert.That(result.RejectedReason, Does.Contain("missing_or_empty:planner_name"));
+    }
 }

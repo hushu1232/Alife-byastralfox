@@ -76,8 +76,8 @@ public sealed class LlmDataAgentPlannerPromptFormatter
     {
         StringBuilder builder = new();
         builder.AppendLine("Return exactly one JSON object matching one of these examples.");
-        builder.AppendLine("""{"type":"plan","dataset":"document_index","intent":"find_documents","confidence":"medium","signals":["documents"],"reason":"The question asks for DataAgent documents.","select_fields":["path","summary"],"filters":[{"field":"summary","operator":"contains","value":"DataAgent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}""");
-        builder.Append("""{"type":"clarification","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous_dataset"],"reason":"The question is ambiguous.","clarification_question":"Which dataset should I use?","clarification_options":["document_index","test_run"]}""");
+        builder.AppendLine("""{"type":"plan","planner_name":"LlmDataAgentQueryPlanner","dataset":"document_index","intent":"find_documents","confidence":"medium","signals":["documents"],"reason":"The question asks for DataAgent documents.","select_fields":["path","summary"],"filters":[{"field":"summary","operator":"contains","value":"DataAgent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}""");
+        builder.Append("""{"type":"clarification","planner_name":"LlmDataAgentQueryPlanner","intent":"clarify_ambiguous_query","dataset":"","confidence":"low","signals":["ambiguous_dataset"],"reason":"The question is ambiguous.","clarification_question":"Which dataset should I use?","clarification_options":["document_index","test_run"]}""");
         return builder.ToString();
     }
 

@@ -72,6 +72,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
 
     DataAgentLlmPlannerResult ParsePlan(string rawModelOutput, JsonElement root)
     {
+        _ = RequiredString(root, "planner_name");
         string intent = RequiredString(root, "intent");
         string dataset = RequiredString(root, "dataset");
         string confidence = RequiredConfidence(root);
@@ -105,6 +106,7 @@ public sealed class LlmDataAgentPlannerResponseParser(DataAgentCatalog catalog)
 
     static DataAgentLlmPlannerResult ParseClarification(string rawModelOutput, JsonElement root)
     {
+        _ = RequiredString(root, "planner_name");
         string intent = RequiredString(root, "intent");
         string dataset = OptionalString(root, "dataset");
         string confidence = RequiredConfidence(root);
