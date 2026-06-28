@@ -135,18 +135,20 @@ public sealed class DataAgentService
             return envelope;
         }
 
-        DataAgentClarificationRequest clarification = envelope.Clarification!;
+        DataAgentClarificationRequest rawClarification = envelope.Clarification!;
+        ArgumentNullException.ThrowIfNull(rawClarification.Options);
+
+        if (rawClarification.Options.Count is < 2 or > 4)
+            throw new ArgumentException("Clarification options must include 2 to 4 choices.", nameof(envelope));
+
+        DataAgentClarificationRequest clarification = DataAgentClarificationSanitizer.Sanitize(rawClarification);
         ArgumentException.ThrowIfNullOrWhiteSpace(clarification.Question);
         ArgumentException.ThrowIfNullOrWhiteSpace(clarification.Reason);
-        ArgumentNullException.ThrowIfNull(clarification.Options);
-
-        if (clarification.Options.Count is < 2 or > 4)
-            throw new ArgumentException("Clarification options must include 2 to 4 choices.", nameof(envelope));
 
         foreach (string option in clarification.Options)
             ArgumentException.ThrowIfNullOrWhiteSpace(option);
 
-        return envelope;
+        return envelope with { Clarification = clarification };
     }
 }
 

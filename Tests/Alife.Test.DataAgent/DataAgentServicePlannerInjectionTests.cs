@@ -122,6 +122,17 @@ public sealed class DataAgentServicePlannerInjectionTests
     }
 
     [Test]
+    public void NullPlanAndNullClarificationEnvelopeThrowsBeforeAudit()
+    {
+        string databasePath = CreateDatabasePath();
+        DataAgentService service = new(databasePath, new EmptyEnvelopePlanner());
+
+        Assert.Throws<ArgumentException>(() => service.Answer("force empty envelope"));
+
+        Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
+    }
+
+    [Test]
     public void MalformedClarificationThrowsBeforeQueryAudit()
     {
         string databasePath = CreateDatabasePath();
@@ -233,6 +244,23 @@ public sealed class DataAgentServicePlannerInjectionTests
                     "Which scope should DataAgent use?",
                     ["runtime", "documents"],
                     "question is ambiguous"));
+        }
+    }
+
+    sealed class EmptyEnvelopePlanner : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                null,
+                new DataAgentPlannerExplanation(
+                    nameof(EmptyEnvelopePlanner),
+                    "clarify_ambiguous_query",
+                    string.Empty,
+                    "low",
+                    ["empty-test"],
+                    "test planner returned neither plan nor clarification"),
+                null);
         }
     }
 
