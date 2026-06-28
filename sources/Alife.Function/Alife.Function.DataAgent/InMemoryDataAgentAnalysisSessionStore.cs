@@ -8,12 +8,15 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
 
     public DataAgentAnalysisSession Create(string callerId, string goal, DateTimeOffset now)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(goal);
+        ArgumentNullException.ThrowIfNull(goal);
 
-        string safeCallerId = string.IsNullOrWhiteSpace(callerId)
-            ? "local"
-            : DataAgentContextFieldSanitizer.Sanitize(callerId, 80);
+        string safeCallerId = DataAgentContextFieldSanitizer.Sanitize(callerId ?? string.Empty, 80);
+        if (string.IsNullOrWhiteSpace(safeCallerId))
+            safeCallerId = "local";
+
         string safeGoal = DataAgentContextFieldSanitizer.Sanitize(goal, 240);
+        if (string.IsNullOrWhiteSpace(safeGoal))
+            throw new ArgumentException("Goal cannot be empty after sanitization.", nameof(goal));
 
         DataAgentAnalysisSession session = new(
             Guid.NewGuid().ToString("N"),
@@ -27,8 +30,9 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
             null,
             []);
 
-        sessions[session.SessionId] = session;
-        return session;
+        DataAgentAnalysisSession snapshot = Snapshot(session);
+        sessions[snapshot.SessionId] = snapshot;
+        return Snapshot(snapshot);
     }
 
     public DataAgentAnalysisSession? Get(string sessionId)
@@ -37,7 +41,7 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
             return null;
 
         return sessions.TryGetValue(sessionId, out DataAgentAnalysisSession? session)
-            ? session
+            ? Snapshot(session)
             : null;
     }
 
@@ -46,20 +50,53 @@ public sealed class InMemoryDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(session.SessionId);
 
-        sessions[session.SessionId] = session;
-        return session;
+        DataAgentAnalysisSession incoming = Snapshot(session);
+        DataAgentAnalysisSession saved = sessions.AddOrUpdate(
+            incoming.SessionId,
+            incoming,
+            (_, current) =>
+            {
+                if (current.Status == DataAgentAnalysisSessionStatus.Ended &&
+                    incoming.Status != DataAgentAnalysisSessionStatus.Ended)
+                {
+                    return Snapshot(incoming with
+                    {
+                        Status = DataAgentAnalysisSessionStatus.Ended,
+                        UpdatedAt = current.UpdatedAt
+                    });
+                }
+
+                return incoming;
+            });
+
+        return Snapshot(saved);
     }
 
     public bool End(string sessionId, DateTimeOffset now)
     {
-        if (Get(sessionId) is not DataAgentAnalysisSession session)
+        if (string.IsNullOrWhiteSpace(sessionId))
             return false;
 
-        Save(session with
+        while (sessions.TryGetValue(sessionId, out DataAgentAnalysisSession? current))
         {
-            Status = DataAgentAnalysisSessionStatus.Ended,
-            UpdatedAt = now
-        });
-        return true;
+            if (current.Status == DataAgentAnalysisSessionStatus.Ended)
+                return true;
+
+            DataAgentAnalysisSession ended = Snapshot(current with
+            {
+                Status = DataAgentAnalysisSessionStatus.Ended,
+                UpdatedAt = now
+            });
+
+            if (sessions.TryUpdate(sessionId, ended, current))
+                return true;
+        }
+
+        return false;
+    }
+
+    static DataAgentAnalysisSession Snapshot(DataAgentAnalysisSession session)
+    {
+        return session with { Turns = Array.AsReadOnly(session.Turns.ToArray()) };
     }
 }
