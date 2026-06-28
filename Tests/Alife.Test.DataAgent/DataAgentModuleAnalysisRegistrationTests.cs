@@ -42,7 +42,7 @@ public sealed class DataAgentModuleAnalysisRegistrationTests
         string root = FindRepositoryRoot();
         return File.ReadAllText(Path.Combine(
             root,
-            "Sources",
+            "sources",
             "Alife.Function",
             "Alife.Function.DataAgent",
             "DataAgentModuleService.cs"));
@@ -53,7 +53,7 @@ public sealed class DataAgentModuleAnalysisRegistrationTests
         DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
         while (directory != null)
         {
-            if (Directory.Exists(Path.Combine(directory.FullName, "Sources")) &&
+            if (Directory.Exists(Path.Combine(directory.FullName, "sources")) &&
                 File.Exists(Path.Combine(directory.FullName, "Alife.slnx")))
                 return directory.FullName;
 
