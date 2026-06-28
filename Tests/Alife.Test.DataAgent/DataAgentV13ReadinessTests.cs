@@ -45,6 +45,21 @@ public sealed class DataAgentV13ReadinessTests
         {
             foreach (string checkName in RequiredChecks)
                 Assert.That(script, Does.Contain(checkName), checkName);
+
+            Assert.That(script, Does.Contain("Test-FileMarker"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/ILlmDataAgentPlannerClient.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/LlmDataAgentPlannerPromptFormatter.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/LlmDataAgentPlannerResponseParser.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/DataAgentQueryPlanValidator.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/LlmDataAgentQueryPlanner.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/DataAgentContextProvider.cs"));
+            Assert.That(script, Does.Contain("Sources/Alife.Function/Alife.Function.DataAgent/DataAgentResultExplainer.cs"));
+            Assert.That(script, Does.Contain("json_must_be_single_object"));
+            Assert.That(script, Does.Contain("DataAgentQueryPlanValidator"));
+            Assert.That(script, Does.Contain("unsupported_operator:"));
+            Assert.That(script, Does.Contain("llm_invalid_output_fallback"));
+            Assert.That(script, Does.Contain("clarification_options"));
+            Assert.That(script, Does.Contain("ExplainAccepted"));
         });
     }
 

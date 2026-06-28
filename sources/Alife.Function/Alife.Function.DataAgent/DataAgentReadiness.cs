@@ -83,13 +83,24 @@ public static class DataAgentReadiness
                 ? Pass("LlmPlannerPromptUsesSchemaSnapshot", "schema snapshot and SQL prohibition present")
                 : Fail("LlmPlannerPromptUsesSchemaSnapshot", prompt.System + Environment.NewLine + prompt.Schema));
 
-            DataAgentLlmPlannerResult validLlmPlan = new LlmDataAgentPlannerResponseParser(DataAgentCatalog.CreateDefault()).Parse("""
+            LlmDataAgentPlannerResponseParser llmParser = new(DataAgentCatalog.CreateDefault());
+            DataAgentLlmPlannerResult validLlmPlan = llmParser.Parse("""
                 {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[{"field":"updated_at","direction":"desc"}],"limit":20}
                 """);
+            DataAgentLlmPlannerResult duplicatePlannerNamePlan = llmParser.Parse("""
+                {"type":"plan","planner_name":"UntrustedPlanner","planner_name":"LlmDataAgentQueryPlanner","intent":"find_dataagent_documents","dataset":"document_index","confidence":"medium","signals":["dataagent","document"],"reason":"question asks for DataAgent documentation","select_fields":["path","title","summary"],"filters":[{"field":"tags","operator":"contains","value":"dataagent"}],"sorts":[],"limit":20}
+                """);
+            DataAgentLlmPlannerResult concatenatedJsonPlan = llmParser.Parse("""
+                {"type":"plan"}{"type":"plan"}
+                """);
             checks.Add(validLlmPlan.IsValid &&
-                       validLlmPlan.Envelope?.Plan?.Dataset == "document_index"
-                ? Pass("LlmPlannerStrictJsonParser", validLlmPlan.Envelope.Plan.Dataset)
-                : Fail("LlmPlannerStrictJsonParser", validLlmPlan.RejectedReason));
+                       validLlmPlan.Envelope?.Plan?.Dataset == "document_index" &&
+                       duplicatePlannerNamePlan.IsValid == false &&
+                       duplicatePlannerNamePlan.RejectedReason == "duplicate_property:planner_name" &&
+                       concatenatedJsonPlan.IsValid == false &&
+                       concatenatedJsonPlan.RejectedReason == "json_must_be_single_object"
+                ? Pass("LlmPlannerStrictJsonParser", "strict JSON parser rejects duplicate and non-single-object output")
+                : Fail("LlmPlannerStrictJsonParser", string.Join(";", validLlmPlan.RejectedReason, duplicatePlannerNamePlan.RejectedReason, concatenatedJsonPlan.RejectedReason)));
 
             DataAgentLlmPlannerResult invalidLlmPlan = new LlmDataAgentPlannerResponseParser(DataAgentCatalog.CreateDefault()).Parse("""
                 {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"bad_operator","dataset":"document_index","confidence":"medium","signals":["bad"],"reason":"bad operator","select_fields":["path"],"filters":[{"field":"tags","operator":"starts_with","value":"dataagent"}],"sorts":[],"limit":20}
