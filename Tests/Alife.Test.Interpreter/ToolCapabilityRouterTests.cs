@@ -130,4 +130,73 @@ public sealed class ToolCapabilityRouterTests
             Assert.That(decision.Allows("dataagent_analysis_continue"), Is.False);
         });
     }
+
+    [Test]
+    public void RouterAllowsStartAndQueryWhenNoDataAgentSessionExists()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = new("", "", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true);
+
+        ToolRouteDecision decision = router.Route(
+            "分析一下我们离 V2 还差什么",
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.DataAgent));
+            Assert.That(decision.AllowedTools, Does.Contain("dataagent_query"));
+            Assert.That(decision.AllowedTools, Does.Contain("dataagent_analysis_start"));
+            Assert.That(decision.AllowedTools, Does.Not.Contain("dataagent_analysis_continue"));
+            Assert.That(decision.AllowedTools, Does.Not.Contain("dataagent_analysis_summarize"));
+            Assert.That(decision.AllowedTools, Does.Not.Contain("dataagent_analysis_end"));
+        });
+    }
+
+    [Test]
+    public void RouterAllowsContinueSummarizeAndEndOnlyForExplicitDataAgentAnalysisWithActiveSession()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = new("analysis-1", "Active", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true);
+
+        ToolRouteDecision decision = router.Route("继续刚才的 DataAgent 分析", state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.AllowedTools, Does.Contain("dataagent_analysis_continue"));
+            Assert.That(decision.AllowedTools, Does.Contain("dataagent_analysis_summarize"));
+            Assert.That(decision.AllowedTools, Does.Contain("dataagent_analysis_end"));
+        });
+    }
+
+    [Test]
+    public void RouterDoesNotTreatOrdinaryContinueAsDataAgentAnalysis()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = new("analysis-1", "Active", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true);
+
+        ToolRouteDecision decision = router.Route("继续说", state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.Chat));
+            Assert.That(decision.AllowedTools, Does.Not.Contain("dataagent_analysis_continue"));
+            Assert.That(decision.Reason, Is.EqualTo("ordinary_chat"));
+        });
+    }
+
+    [Test]
+    public void RouterDoesNotExposeDataAgentToolsWhenRouteStateIsUntrusted()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+
+        ToolRouteDecision decision = router.Route("分析一下我们离 V2 还差什么", ToolRouteState.Empty);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.DataAgent));
+            Assert.That(decision.AllowedTools, Is.Empty);
+            Assert.That(decision.DeniedTools.Select(tool => tool.Name), Does.Contain("dataagent_query"));
+            Assert.That(decision.Reason, Is.EqualTo("route_state_not_trusted"));
+        });
+    }
 }
