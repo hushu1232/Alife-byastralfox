@@ -4,10 +4,10 @@
 
 `D:\Alife` is the canonical local checkout for the Alife .NET 9 runtime.
 
-Default upload target:
+Default GitHub upload target:
 
 ```text
-git@github.com:hushu1232/Alife-byastralfox.git
+https://github.com/hushu1232/Alife-byastralfox
 ```
 
 Use the local remote name:
@@ -16,21 +16,21 @@ Use the local remote name:
 alife-byastralfox
 ```
 
-Do not replace `origin`. `origin` tracks the upstream BDFFZI Alife repository and is not the default upload target for this project.
-
-FOXD references Alife through a Git submodule:
+The remote may use SSH for authentication:
 
 ```text
-D:\FOXD\alife-service -> git@github.com:hushu1232/Alife-byastralfox.git
+git@github.com:hushu1232/Alife-byastralfox.git
 ```
 
-The submodule pointer in FOXD should be updated only after the target Alife commit exists on `Alife-byastralfox`.
+Do not replace `origin`. `origin` tracks the upstream BDFFZI Alife repository and is not the default upload target for this project.
 
 ## Hard Rules
 
+- Upload Alife only from `D:\Alife` to `alife-byastralfox`.
+- Do not touch `D:\FOXD`, `D:\FOXD\alife-service`, or ASRRAL-FOX during an Alife upload.
 - Do not upload Alife into FOXD as a copied source snapshot.
 - Do not create new `Update Alife service snapshot` commits.
-- Do not use the old `D:\Alife\tools\upload-alife-service-via-foxd.ps1` snapshot workflow unless explicitly restoring historical behavior for an archive branch.
+- Do not use the old `D:\Alife\tools\upload-alife-service-via-foxd.ps1` workflow.
 - Do not commit runtime state, build output, generated package output, model weights, logs, local caches, or credentials.
 - Do not push to `origin` unless the user explicitly asks to interact with the upstream BDFFZI repository.
 - Do not force-push `master` unless a backup branch exists and the command uses `--force-with-lease` with the expected old remote commit.
@@ -41,13 +41,13 @@ The submodule pointer in FOXD should be updated only after the target Alife comm
 2. Check status:
 
    ```powershell
-   git -C D:\Alife status --short --branch --untracked-files=no
+   git -C D:\Alife status --short --branch
    ```
 
-3. Run focused verification with the user-local .NET 9 SDK:
+3. Run verification with the user-local .NET 9 SDK:
 
    ```powershell
-   & "C:\Users\hu shu\.dotnet\dotnet.exe" test "Tests\Alife.Test.Framework\Alife.Test.Framework.csproj" --filter "FullyQualifiedName~WebBridge"
+   & "C:\Users\hu shu\.dotnet\dotnet.exe" test Alife.slnx --no-restore --no-build -v:minimal
    ```
 
 4. Commit the Alife changes:
@@ -57,10 +57,16 @@ The submodule pointer in FOXD should be updated only after the target Alife comm
    git -C D:\Alife commit -m "<clear message>"
    ```
 
-5. Push Alife first:
+5. Push Alife directly to GitHub:
 
    ```powershell
-   git -C D:\Alife push alife-byastralfox master
+   powershell -ExecutionPolicy Bypass -File D:\Alife\tools\upload-alife-to-github.ps1
+   ```
+
+   Manual equivalent:
+
+   ```powershell
+   git -C D:\Alife push alife-byastralfox HEAD:master
    ```
 
 6. Verify the remote:
@@ -69,33 +75,19 @@ The submodule pointer in FOXD should be updated only after the target Alife comm
    git -C D:\Alife ls-remote --heads alife-byastralfox master
    ```
 
-7. Only after this succeeds, update FOXD's `alife-service` submodule pointer.
-
-## Updating FOXD After Alife Upload
-
-After the Alife commit exists on GitHub:
-
-```powershell
-git -C D:\FOXD\alife-service fetch origin
-git -C D:\FOXD\alife-service checkout <published-alife-commit>
-git -C D:\FOXD add alife-service
-git -C D:\FOXD commit -m "chore: update Alife submodule pointer"
-git -C D:\FOXD push github master
-```
-
-The FOXD commit should contain only the submodule gitlink change unless FOXD Web files were intentionally changed too.
+The upload flow ends here. It does not update FOXD, create a local FOXD copy, create a FOXD worktree, or push ASRRAL-FOX.
 
 ## Local Folder Roles
 
 `D:\Alife` is the Alife source-of-truth working folder.
 
-`D:\FOXD\alife-service` is the FOXD submodule checkout. It is allowed to be detached at a specific commit. Detached HEAD inside a submodule is normal.
+`D:\FOXD` is outside the Alife upload flow. Do not mirror or copy Alife source into it during GitHub upload.
 
-If a change is accidentally made inside `D:\FOXD\alife-service`, move or cherry-pick it into `D:\Alife`, push it to `Alife-byastralfox`, then update the FOXD pointer. Do not leave the only copy of an Alife change inside the submodule checkout.
+If a change is accidentally made inside `D:\FOXD\alife-service`, move or cherry-pick it into `D:\Alife`, then upload from `D:\Alife` to `Alife-byastralfox`. Do not leave the only copy of an Alife change inside the FOXD folder.
 
-## Version Snapshot Policy
+## Version Tag Policy
 
-Use tags for source snapshots.
+Use tags for source checkpoints.
 
 Stable runtime version:
 
@@ -107,15 +99,15 @@ git -C D:\Alife push alife-byastralfox alife-vX.Y.Z
 Interview or demo checkpoint:
 
 ```powershell
-git -C D:\Alife tag interview-snapshot-YYYY-MM-DD <alife-commit>
-git -C D:\Alife push alife-byastralfox interview-snapshot-YYYY-MM-DD
+git -C D:\Alife tag interview-checkpoint-YYYY-MM-DD <alife-commit>
+git -C D:\Alife push alife-byastralfox interview-checkpoint-YYYY-MM-DD
 ```
 
 Use GitHub Releases or external artifact storage for binaries, generated builds, model packages, and large runtime assets. Do not put those files in Git history.
 
 ## Existing Archive Branches
 
-Old snapshot-style master states were preserved as archives:
+Old copy-based master states were preserved as archives:
 
 ```text
 Alife-byastralfox:
@@ -127,7 +119,7 @@ backup/master-before-submodule-20260628
 
 Treat these branches as read-only recovery points. Do not merge them back into active `master`.
 
-Historical files under `docs/superpowers/` may still mention the old copy-based snapshot workflow. Treat those references as historical notes only. This document and `AGENTS.md` are the current upload authority.
+Historical files under `docs/superpowers/` may still mention the old copy-based workflow. Treat those references as historical notes only. This document and `AGENTS.md` are the current upload authority.
 
 ## Cleanup Boundaries
 

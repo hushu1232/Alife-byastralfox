@@ -1,28 +1,25 @@
-# GitHub Upload Via D:\FOXD
+# Deprecated: GitHub Upload Via D:\FOXD
 
-This old snapshot workflow is deprecated.
+This old copy-based workflow is disabled for current development.
 
-FOXD now references Alife through a Git submodule at `D:\FOXD\alife-service`. Alife must be uploaded to its own repository first:
+Do not upload Alife by copying tracked files into `D:\FOXD`, `D:\FOXD\alife-service`, or any FOXD worktree. Do not create new `Update Alife service snapshot` commits.
+
+Current Alife uploads go only to:
 
 ```text
-git@github.com:hushu1232/Alife-byastralfox.git
+https://github.com/hushu1232/Alife-byastralfox
 ```
 
-Then FOXD should commit only the `alife-service` submodule pointer update.
-
-Do not use the previous copy-based workflow for normal development:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File D:\Alife\tools\upload-alife-service-via-foxd.ps1
-```
-
-That workflow copied tracked files from `D:\Alife` into `D:\FOXD\alife-service` as a normal directory snapshot and created commits named `Update Alife service snapshot`. It caused FOXD and Alife history to diverge and conflicts with the current submodule model.
-
-Use this canonical runbook instead:
+Use this current runbook:
 
 ```text
 D:\Alife\docs\alife-upload-rules.md
-D:\FOXD\docs\alife-submodule-upload-rules.md
+```
+
+Use this upload command after local verification and commit:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\Alife\tools\upload-alife-to-github.ps1
 ```
 
 The old snapshot-based master states are preserved only as archive branches:
