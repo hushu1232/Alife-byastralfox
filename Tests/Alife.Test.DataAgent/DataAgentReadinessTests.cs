@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(29));
+            Assert.That(checks, Has.Count.EqualTo(30));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -36,6 +36,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("LlmPlannerFallbackPreservesSafety"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ClarificationRequestSupported"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("NaturalLanguageResultExplanationPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("ToolBrokerAuditLogPresent"));
         });
     }
 
