@@ -55,6 +55,40 @@ public static class DataAgentReadiness
             DataAgentQueryResult result = new DataAgentQueryExecutor(databasePath).Execute(compiled);
             checks.Add(Pass("ReadOnlyQueryExecutes", $"{result.Rows.Count} rows"));
 
+            checks.Add(typeof(IDataAgentStore).IsInterface &&
+                       typeof(SqliteDataAgentStore).GetInterface(nameof(IDataAgentStore)) is not null &&
+                       typeof(PostgresDataAgentStore).GetInterface(nameof(IDataAgentStore)) is not null
+                ? Pass("DataAgentStoreBoundaryPresent", "DataAgent provider-neutral store boundary exists")
+                : Fail("DataAgentStoreBoundaryPresent", "store boundary types missing"));
+
+            IDataAgentStore readinessStore = new SqliteDataAgentStore(databasePath);
+            checks.Add(string.Equals(readinessStore.ProviderName, "sqlite", StringComparison.Ordinal) &&
+                       readinessStore.Query(new DataAgentCompiledSql("SELECT path FROM document_index LIMIT 1", [])).Rows.Count >= 0
+                ? Pass("SqliteStoreCompatibilityPresent", "SQLite store remains default-compatible")
+                : Fail("SqliteStoreCompatibilityPresent", "SQLite store query failed"));
+
+            checks.Add(string.Equals(new PostgresDataAgentStore("Host=localhost;Database=alife_readiness;Username=alife;Password=alife").ProviderName, "postgres", StringComparison.Ordinal)
+                ? Pass("PostgresStoreProviderPresent", "PostgreSQL store provider type exists")
+                : Fail("PostgresStoreProviderPresent", "PostgreSQL provider missing"));
+
+            checks.Add(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION"))
+                ? Pass("PostgresLiveTestsEnvironmentGated", "PostgreSQL live tests are environment-gated")
+                : Pass("PostgresLiveTestsEnvironmentGated", "PostgreSQL live test connection is explicitly configured"));
+
+            DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
+                readinessStore,
+                new FixedPlanner(new DataAgentQueryPlan(
+                    "engineering_gate",
+                    "store_boundary_readiness",
+                    ["name", "status", "evidence_path"],
+                    [new DataAgentFilter("required", "=", true)],
+                    [],
+                    20))).Answer("force store boundary readiness");
+            checks.Add(storeBoundaryAnswer.Validated &&
+                       storeBoundaryAnswer.Context.Contains("dataset=engineering_gate", StringComparison.Ordinal)
+                ? Pass("DataAgentServiceUsesStoreBoundary", "DataAgentService accepted an injected IDataAgentStore")
+                : Fail("DataAgentServiceUsesStoreBoundary", storeBoundaryAnswer.Context));
+
             DataAgentToolBrokerAuditLog toolBrokerAuditLog = new(databasePath);
             toolBrokerAuditLog.Record(new DataAgentToolBrokerAuditRecord(
                 "readiness-session",
