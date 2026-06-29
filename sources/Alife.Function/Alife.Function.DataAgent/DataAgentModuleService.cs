@@ -18,10 +18,11 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         await base.AwakeAsync(context);
 
         string databasePath = Path.Combine(AppContext.BaseDirectory, "DataAgent", "dataagent.sqlite");
-        DataAgentSchemaInitializer.Initialize(databasePath);
-        DataAgentFixtureImporter.Import(databasePath);
+        IDataAgentStore store = DataAgentStoreFactory.Create(DataAgentStoreFactory.FromEnvironment(databasePath));
+        store.Initialize();
+        store.ImportFixtures();
 
-        DataAgentService service = new(databasePath);
+        DataAgentService service = new(store);
         InMemoryDataAgentAnalysisSessionStore analysisSessionStore = new InMemoryDataAgentAnalysisSessionStore();
         DataAgentAnalysisService analysisService = new DataAgentAnalysisService(service, analysisSessionStore);
 
