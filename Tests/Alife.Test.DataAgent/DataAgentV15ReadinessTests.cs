@@ -75,7 +75,7 @@ public sealed class DataAgentV15ReadinessTests
             Assert.That(script, Does.Contain("Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs"));
             Assert.That(script, Does.Contain("SummarizeUsesAnalysisServiceAndDoesNotCallAnswerBoundary"));
             Assert.That(script, Does.Contain("EndUsesAnalysisServiceAndDoesNotCallAnswerBoundary"));
-            Assert.That(script, Does.Contain("foreach ($group in @(\"Core\", \"Schema\", \"Safety\", \"Query\", \"Context\", \"Planner\", \"Tool\", \"ToolBroker\", \"Analysis\"))"));
+            Assert.That(script, Does.Contain("foreach ($group in @(\"Core\", \"Schema\", \"Safety\", \"Query\", \"Context\", \"Planner\", \"Tool\", \"ToolBroker\", \"Store\", \"Analysis\"))"));
         });
     }
 

@@ -1,0 +1,24 @@
+{
+  "Name": "\u771f\u592e",
+  "Prompt": "Sanitized persona fixture for runtime configuration tests. Use complete, selective replies without encouraging fragmented or repeated chat.",
+  "Modules": [
+    "Alife.Function.MessageFilter.LifeEventStreamService",
+    "Alife.Function.MessageFilter.SystemHealthService",
+    "Alife.Function.MessageFilter.SelfContextService",
+    "Alife.Function.MessageFilter.MessageFilterService",
+    "Alife.Function.Agent.AgentDiagnosticsService",
+    "Alife.Function.Agent.AgentCapabilityInventoryService",
+    "Alife.Function.Agent.AgentSelfModelService",
+    "Alife.Function.Agent.AgentIssueReportService",
+    "Alife.Function.Agent.AgentTaskService",
+    "Alife.Function.Agent.AgentWorkspaceService",
+    "Alife.Function.Agent.AgentCommandService",
+    "Alife.Function.Agent.AgentProjectStatusService",
+    "Alife.Function.Agent.AgentMaintenanceService",
+    "Alife.Function.Agent.AgentProactiveBehaviorService",
+    "Alife.Function.Agent.AgentControlCenterService",
+    "Alife.Function.MessageFilter.EmbodiedActionService",
+    "Alife.Function.QChat.QChatRelationCacheService",
+    "Alife.Function.Memory.AutobiographicalMemoryService"
+  ]
+}

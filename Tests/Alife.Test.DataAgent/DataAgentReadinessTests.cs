@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(31));
+            Assert.That(checks, Has.Count.EqualTo(36));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -23,6 +23,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("QueryPlanFixturesPass"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DangerousSqlRejected"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ReadOnlyQueryExecutes"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentStoreBoundaryPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteStoreCompatibilityPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("PostgresStoreProviderPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("PostgresLiveTestsEnvironmentGated"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DeterministicPlannerPassesFixtures"));
@@ -58,7 +63,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 45 required passed, 0 required missing"
+                "  Summary: 50 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
@@ -87,6 +92,27 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void EngineeringMapDeclaresDataAgentStoreBoundaryAsRequired()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent store provider boundary");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Is.Not.Empty);
+            Assert.That(declaration, Does.Not.Contain("-Required $false"));
+            Assert.That(declaration, Does.Contain("DataAgentStoreBoundaryPresent"));
+            Assert.That(declaration, Does.Contain("SqliteStoreCompatibilityPresent"));
+            Assert.That(declaration, Does.Contain("PostgresStoreProviderPresent"));
+            Assert.That(declaration, Does.Contain("PostgresLiveTestsEnvironmentGated"));
+            Assert.That(declaration, Does.Contain("DataAgentServiceUsesStoreBoundary"));
+        });
+    }
+
+    [Test]
     public void QChatEngineeringMapDefaultModeExitsZeroAndPrintsSummary()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -99,7 +125,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 42 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 43 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }

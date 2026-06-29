@@ -11,6 +11,33 @@ namespace Alife.Test.Framework;
 public class CharacterPersonaRuntimeConfigTests
 {
     [Test]
+    public void ActivePersonaTestsUseSourceControlledFixtures()
+    {
+        string repositoryRoot = FindRepositoryRoot();
+        string activeCharacterRelativePath = Path.GetRelativePath(repositoryRoot, GetActiveCharacterPath());
+        string qChatConfigRelativePath = Path.GetRelativePath(repositoryRoot, GetQChatConfigPath());
+        string storageRootSegment = Path.Combine("Storage", "Character");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(activeCharacterRelativePath, Is.EqualTo(Path.Combine("Tests", "Fixtures", "Character", "\u771f\u592e", "index.json")));
+            Assert.That(activeCharacterRelativePath, Does.Not.StartWith(storageRootSegment));
+            Assert.That(qChatConfigRelativePath, Is.EqualTo(Path.Combine("Tests", "Fixtures", "Character", "\u771f\u592e", "Configuration", "Alife.Function.QChat.QChatService.json")));
+            Assert.That(qChatConfigRelativePath, Does.Not.StartWith(storageRootSegment));
+        });
+    }
+
+    [Test]
+    public void ActivePersonaFixtureFilesExistInSourceControlledFixtureRoot()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(File.Exists(GetActiveCharacterPath()), Is.True);
+            Assert.That(File.Exists(GetQChatConfigPath()), Is.True);
+        });
+    }
+
+    [Test]
     public void ActivePersonaLoadsAnthropomorphicContextModules()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(GetActiveCharacterPath()));
@@ -178,18 +205,25 @@ public class CharacterPersonaRuntimeConfigTests
 
     static string GetActiveCharacterPath()
     {
-        return Path.Combine(FindRepositoryRoot(), "Storage", "Character", "真央", "index.json");
+        return GetCharacterFixturePath("\u771f\u592e");
     }
 
     static string GetQChatConfigPath()
     {
         return Path.Combine(
-            FindRepositoryRoot(),
-            "Storage",
-            "Character",
-            "真央",
+            GetCharacterFixtureDirectory("\u771f\u592e"),
             "Configuration",
             "Alife.Function.QChat.QChatService.json");
+    }
+
+    static string GetCharacterFixturePath(string characterName)
+    {
+        return Path.Combine(GetCharacterFixtureDirectory(characterName), "index.json");
+    }
+
+    static string GetCharacterFixtureDirectory(string characterName)
+    {
+        return Path.Combine(FindRepositoryRoot(), "Tests", "Fixtures", "Character", characterName);
     }
 
     static string[] GetRequiredAnthropomorphicModules()

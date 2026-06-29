@@ -8,6 +8,119 @@ namespace Alife.Test.QChat;
 [TestFixture]
 public sealed class QChatPersonaBoundaryTests
 {
+    const string OpenAiApiKeyPattern = @"sk-[A-Za-z0-9_-]{20,}";
+    const string PrivateAbsolutePathPattern = @"(?i)(?:[A-Z]:[\\/]|\\\\[^\\\s""']+\\[^\\\s""']+|(?<!\\)/(?:home|users|root|var|etc)(?:/|(?=\s|[""']|$)))";
+    const string SecretTokenFragmentPattern = @"[A-Za-z0-9._~+/\-]{8,}";
+    const string PlaceholderBoundaryPattern = @"(?:$|[""',.;:!?()\[\]{}]|\s+(?![A-Za-z0-9._~+/\-]{8,}\b))";
+    const string AuthorizationHeaderValuePattern = @"(?i)\bAuthorization\s*:\s*(?!(?:header|headers|redacted|placeholder)" + PlaceholderBoundaryPattern + @")(?!(?:token|Bearer\s+token)" + PlaceholderBoundaryPattern + @")(?:Bearer\s+token[\s-]+[A-Za-z0-9._~+/\-]{8,}|token[\s-]+[A-Za-z0-9._~+/\-]{8,}|[^\s""']+)";
+    const string AuthorizationJsonValuePattern = @"(?i)""authorization""\s*:\s*""(?!(?:token|Bearer\s+token|header|headers|redacted|placeholder)" + PlaceholderBoundaryPattern + @")[^""]+""";
+    const string BearerTokenValuePattern = @"(?i)\bBearer\s+(?:(?!(?:token)" + PlaceholderBoundaryPattern + @")[A-Za-z0-9._~+/\-]{8,}|token[\s-]+[A-Za-z0-9._~+/\-]{8,})";
+
+    [Test]
+    public void PersonaBoundaryTestsUseSourceControlledFixtures()
+    {
+        string xiaYuCharacterPath = GetXiaYuCharacterPath();
+        string maoVirtualWorldConfigPath = GetVirtualWorldConfigPath("\u771f\u592e");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiaYuCharacterPath, Does.Contain(Path.Combine("Tests", "Fixtures", "Character")));
+            Assert.That(xiaYuCharacterPath, Does.Not.Contain(Path.Combine("Storage", "Character")));
+            Assert.That(maoVirtualWorldConfigPath, Does.Contain(Path.Combine("Tests", "Fixtures", "Character")));
+            Assert.That(maoVirtualWorldConfigPath, Does.Not.Contain(Path.Combine("Storage", "Character")));
+        });
+    }
+
+    [Test]
+    public void PersonaFixturesDoNotContainRuntimeSecrets()
+    {
+        string fixtureRoot = Path.Combine(FindRepositoryRoot(), "Tests", "Fixtures", "Character");
+
+        Assert.That(Directory.Exists(fixtureRoot), Is.True, $"Missing persona fixture root: {fixtureRoot}");
+
+        string[] jsonFiles = Directory.GetFiles(fixtureRoot, "*.json", SearchOption.AllDirectories);
+        Assert.That(jsonFiles, Is.Not.Empty, "Persona fixture root should contain JSON fixtures.");
+
+        foreach (string jsonFile in jsonFiles)
+        {
+            string content = File.ReadAllText(jsonFile);
+            string relativePath = Path.GetRelativePath(fixtureRoot, jsonFile);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(content, Does.Not.Match(OpenAiApiKeyPattern), $"{relativePath} should not contain OpenAI-style API keys.");
+                Assert.That(content, Does.Not.Contain("OneBotToken"), $"{relativePath} should not contain OneBot runtime tokens.");
+                Assert.That(content, Does.Not.Match(PrivateAbsolutePathPattern), $"{relativePath} should not contain private absolute paths.");
+                Assert.That(content, Does.Not.Match(AuthorizationHeaderValuePattern), $"{relativePath} should not contain raw Authorization header values.");
+                Assert.That(content, Does.Not.Match(AuthorizationJsonValuePattern), $"{relativePath} should not contain Authorization JSON values.");
+                Assert.That(content, Does.Not.Match(BearerTokenValuePattern), $"{relativePath} should not contain Bearer token values.");
+            });
+        }
+    }
+
+    [Test]
+    public void PersonaFixtureSecretPatternsRejectTokenLikeValuesButAllowDefensivePlaceholders()
+    {
+        string[] blockedAuthorizationHeaderExamples =
+        {
+            "Authorization: token-abcdef123456",
+            "Authorization: Token abcdef123456",
+            "Authorization: Bearer token-abcdef123456",
+        };
+        string[] blockedBearerExamples =
+        {
+            "Bearer token-abcdef123456",
+            "Bearer token abcdef123456",
+        };
+        string[] blockedAuthorizationJsonExamples =
+        {
+            @"""authorization"": ""token-abcdef123456""",
+            @"""authorization"": ""Token abcdef123456""",
+        };
+        string[] blockedPrivatePathExamples =
+        {
+            @"D:\lobotomy\file.wav",
+            "D:/lobotomy/file.wav",
+            "C:/Users/user/private.wav",
+            "D:/Storage/Character/\u590f\u7fbd/index.json",
+        };
+        string[] allowedAuthorizationHeaderExamples =
+        {
+            "Authorization",
+        };
+        string[] allowedBearerExamples =
+        {
+            "Bearer token",
+            "Do not output Authorization or Bearer token to QQ.",
+        };
+        string[] allowedAuthorizationJsonExamples =
+        {
+            @"""authorization"": ""placeholder""",
+            @"""authorization"": ""redacted""",
+        };
+        string[] allowedPrivatePathExamples =
+        {
+            "Tests/Fixtures/Voice/xiayu-zh-kayoko.wav",
+        };
+
+        foreach (string example in blockedAuthorizationHeaderExamples)
+            Assert.That(example, Does.Match(AuthorizationHeaderValuePattern));
+        foreach (string example in blockedBearerExamples)
+            Assert.That(example, Does.Match(BearerTokenValuePattern));
+        foreach (string example in blockedAuthorizationJsonExamples)
+            Assert.That(example, Does.Match(AuthorizationJsonValuePattern));
+        foreach (string example in blockedPrivatePathExamples)
+            Assert.That(example, Does.Match(PrivateAbsolutePathPattern));
+        foreach (string example in allowedAuthorizationHeaderExamples)
+            Assert.That(example, Does.Not.Match(AuthorizationHeaderValuePattern));
+        foreach (string example in allowedBearerExamples)
+            Assert.That(example, Does.Not.Match(BearerTokenValuePattern));
+        foreach (string example in allowedAuthorizationJsonExamples)
+            Assert.That(example, Does.Not.Match(AuthorizationJsonValuePattern));
+        foreach (string example in allowedPrivatePathExamples)
+            Assert.That(example, Does.Not.Match(PrivateAbsolutePathPattern));
+    }
+
     [Test]
     public void XiaYuPersonaUsesShushuAddressInsteadOfOwnerTitle()
     {
@@ -136,11 +249,11 @@ public sealed class QChatPersonaBoundaryTests
             Assert.That(root.GetProperty("EnableOwnerVoiceClone").GetBoolean(), Is.True);
             Assert.That(root.GetProperty("DenyVoiceForNonOwner").GetBoolean(), Is.True);
             Assert.That(chineseProfile.GetProperty("VoiceId").GetString(), Is.EqualTo("xiayu-zh-kayoko"));
-            Assert.That(chineseProfile.GetProperty("ReferenceAudioPath").GetString(), Does.Contain(@"D:\lobotomy\GPT模型\ブルーアーカイブ\佳代子\中\音频文件\主"));
-            Assert.That(chineseProfile.GetProperty("PromptText").GetString(), Is.EqualTo("圣诞快乐，这是情侣们的节日啊。"));
+            AssertSanitizedVoiceFixtureReference(chineseProfile.GetProperty("ReferenceAudioPath").GetString(), "xiayu-zh-kayoko.wav");
+            Assert.That(chineseProfile.GetProperty("PromptText").GetString(), Is.EqualTo("\u5723\u8bde\u5feb\u4e50\uff0c\u8fd9\u662f\u60c5\u4fa3\u4eec\u7684\u8282\u65e5\u5440\u3002"));
             Assert.That(japaneseProfile.GetProperty("VoiceId").GetString(), Is.EqualTo("xiayu-ja-kayoko"));
-            Assert.That(japaneseProfile.GetProperty("ReferenceAudioPath").GetString(), Does.Contain(@"D:\lobotomy\GPT模型\ブルーアーカイブ\佳代子\日\音频文件\主"));
-            Assert.That(japaneseProfile.GetProperty("PromptText").GetString(), Is.EqualTo("ありがとう、先生。これからも"));
+            AssertSanitizedVoiceFixtureReference(japaneseProfile.GetProperty("ReferenceAudioPath").GetString(), "xiayu-ja-kayoko.wav");
+            Assert.That(japaneseProfile.GetProperty("PromptText").GetString(), Is.EqualTo("\u3042\u308a\u304c\u3068\u3046\u3001\u5148\u751f\u3002\u3053\u308c\u304b\u3089\u3082"));
             Assert.That(japaneseProfile.GetProperty("PromptLanguage").GetString(), Is.EqualTo("ja"));
         });
     }
@@ -210,20 +323,17 @@ public sealed class QChatPersonaBoundaryTests
 
     static string GetXiaYuCharacterPath()
     {
-        return Path.Combine(FindRepositoryRoot(), "Storage", "Character", "夏羽", "index.json");
+        return GetCharacterFixturePath("\u590f\u7fbd");
     }
 
     static string GetXiaYuCharacterDirectory()
     {
-        return Path.GetDirectoryName(GetXiaYuCharacterPath())!;
+        return GetCharacterFixtureDirectory("\u590f\u7fbd");
     }
 
     static string GetXiaYuQChatConfigPath()
     {
-        return Path.Combine(
-            GetXiaYuCharacterDirectory(),
-            "Configuration",
-            "Alife.Function.QChat.QChatService.json");
+        return GetCharacterQChatConfigPath("\u590f\u7fbd");
     }
 
     static string GetXiaYuVirtualWorldConfigPath()
@@ -231,15 +341,41 @@ public sealed class QChatPersonaBoundaryTests
         return GetVirtualWorldConfigPath("\u590f\u7fbd");
     }
 
+    static string GetCharacterFixturePath(string characterName)
+    {
+        return Path.Combine(GetCharacterFixtureDirectory(characterName), "index.json");
+    }
+
+    static string GetCharacterFixtureDirectory(string characterName)
+    {
+        return Path.Combine(FindRepositoryRoot(), "Tests", "Fixtures", "Character", characterName);
+    }
+
+    static string GetCharacterQChatConfigPath(string characterName)
+    {
+        return Path.Combine(
+            GetCharacterFixtureDirectory(characterName),
+            "Configuration",
+            "Alife.Function.QChat.QChatService.json");
+    }
+
     static string GetVirtualWorldConfigPath(string characterName)
     {
         return Path.Combine(
-            FindRepositoryRoot(),
-            "Storage",
-            "Character",
-            characterName,
+            GetCharacterFixtureDirectory(characterName),
             "Configuration",
             "Alife.Function.VirtualWorld.VirtualWorldService.json");
+    }
+
+    static void AssertSanitizedVoiceFixtureReference(string? actualPath, string expectedFileName)
+    {
+        Assert.That(actualPath, Is.Not.Null.And.Not.Empty);
+        Assert.That(Path.IsPathRooted(actualPath!), Is.False);
+        string normalized = actualPath!.Replace('\\', '/');
+        Assert.That(normalized, Does.StartWith("Tests/Fixtures/Voice/"));
+        Assert.That(normalized, Does.EndWith(expectedFileName));
+        Assert.That(normalized, Does.Not.Contain("../"));
+        Assert.That(normalized, Does.Not.Contain("D:"));
     }
 
     static string FindRepositoryRoot()

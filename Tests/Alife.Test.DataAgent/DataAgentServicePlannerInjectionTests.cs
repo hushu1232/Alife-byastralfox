@@ -45,6 +45,24 @@ public sealed class DataAgentServicePlannerInjectionTests
     }
 
     [Test]
+    public void PathConstructorsRejectEmptyDatabasePath()
+    {
+        DataAgentQueryPlan plan = new(
+            "engineering_gate",
+            "readiness_status",
+            ["name", "status", "detail"],
+            [],
+            [],
+            20);
+
+        Assert.Multiple(() =>
+        {
+            Assert.Throws<ArgumentException>(() => new DataAgentService(string.Empty));
+            Assert.Throws<ArgumentException>(() => new DataAgentService("   ", new FixedPlanner(plan)));
+        });
+    }
+
+    [Test]
     public void InvalidInjectedPlannerOutputIsRejectedAndAudited()
     {
         string databasePath = CreateDatabasePath();
@@ -196,6 +214,61 @@ public sealed class DataAgentServicePlannerInjectionTests
         Assert.That(new DataAgentAuditLog(databasePath).ReadAll(), Is.Empty);
     }
 
+    [Test]
+    public void UsesInjectedStoreForAcceptedQueryAndAudit()
+    {
+        RecordingStore store = new(new DataAgentQueryResult([
+            new Dictionary<string, object?>
+            {
+                ["name"] = "Runtime readiness script",
+                ["status"] = "passed",
+                ["evidence_path"] = "tools/check-qchat-runtime-readiness.ps1"
+            }
+        ]));
+        DataAgentService service = new(store, new FixedPlanner(new DataAgentQueryPlan(
+            "engineering_gate",
+            "find_runtime_readiness_required_evidence",
+            ["name", "status", "evidence_path"],
+            [new DataAgentFilter("required", "=", true)],
+            [],
+            20)));
+
+        DataAgentAnswer answer = service.Answer("Which runtime readiness gate is required?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answer.Validated, Is.True);
+            Assert.That(store.Queries, Has.Count.EqualTo(1));
+            Assert.That(store.AcceptedAudits, Has.Count.EqualTo(1));
+            Assert.That(store.RejectedAudits, Is.Empty);
+            Assert.That(store.AcceptedAudits[0].Dataset, Is.EqualTo("engineering_gate"));
+        });
+    }
+
+    [Test]
+    public void UsesInjectedStoreForRejectedQueryAuditWithoutExecutingQuery()
+    {
+        RecordingStore store = new(new DataAgentQueryResult([]));
+        DataAgentService service = new(store, new FixedPlanner(new DataAgentQueryPlan(
+            "engineering_gate",
+            "unsafe",
+            ["name"],
+            [new DataAgentFilter("status", "starts_with", "pass")],
+            [],
+            20)));
+
+        DataAgentAnswer answer = service.Answer("Use unsafe operator.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answer.Validated, Is.False);
+            Assert.That(store.Queries, Is.Empty);
+            Assert.That(store.AcceptedAudits, Is.Empty);
+            Assert.That(store.RejectedAudits, Has.Count.EqualTo(1));
+            Assert.That(store.RejectedAudits[0].RejectedReason, Does.Contain("unsupported_operator:starts_with"));
+        });
+    }
+
     static string CreateDatabasePath()
     {
         string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "dataagent-service-planner-tests");
@@ -226,6 +299,49 @@ public sealed class DataAgentServicePlannerInjectionTests
             .Split(Environment.NewLine, StringSplitOptions.None)
             .Single(value => value.StartsWith(prefix, StringComparison.Ordinal));
         return line[prefix.Length..];
+    }
+
+    sealed class RecordingStore(DataAgentQueryResult queryResult) : IDataAgentStore
+    {
+        public List<DataAgentCompiledSql> Queries { get; } = [];
+        public List<DataAgentAcceptedAuditInput> AcceptedAudits { get; } = [];
+        public List<DataAgentRejectedAuditInput> RejectedAudits { get; } = [];
+        public List<DataAgentToolBrokerAuditRecord> ToolBrokerAudits { get; } = [];
+        public string ProviderName => "recording";
+
+        public void Initialize() { }
+        public void ImportFixtures() { }
+
+        public DataAgentQueryResult Query(DataAgentCompiledSql compiledSql)
+        {
+            Queries.Add(compiledSql);
+            return queryResult;
+        }
+
+        public void RecordAccepted(DataAgentAcceptedAuditInput input)
+        {
+            AcceptedAudits.Add(input);
+        }
+
+        public void RecordRejected(DataAgentRejectedAuditInput input)
+        {
+            RejectedAudits.Add(input);
+        }
+
+        public IReadOnlyList<DataAgentAuditRecord> ReadQueryAudit()
+        {
+            return [];
+        }
+
+        public void RecordToolBrokerAudit(DataAgentToolBrokerAuditRecord record)
+        {
+            ToolBrokerAudits.Add(record);
+        }
+
+        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ReadToolBrokerAudit()
+        {
+            return ToolBrokerAudits;
+        }
     }
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner

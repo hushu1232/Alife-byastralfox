@@ -36,6 +36,21 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
+    public void AwakeUsesConfiguredDataAgentStoreBoundary()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("IDataAgentStore"));
+            Assert.That(source, Does.Contain("DataAgentStoreFactory.Create"));
+            Assert.That(source, Does.Contain("store.Initialize()"));
+            Assert.That(source, Does.Contain("store.ImportFixtures()"));
+            Assert.That(source, Does.Contain("new(store)"));
+        });
+    }
+
+    [Test]
     public void ModuleExposesRegisteredProviderAndToolNamesForDiagnostics()
     {
         string source = ReadModuleSource();
