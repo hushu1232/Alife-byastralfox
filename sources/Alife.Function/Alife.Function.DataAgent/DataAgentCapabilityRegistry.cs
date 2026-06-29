@@ -8,14 +8,16 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentCapabilityRegistry
 {
     readonly List<IDataAgentCapabilityProvider> providers = [];
+    readonly List<string> providerNamesInOrder = [];
+    readonly List<string> toolNamesInOrder = [];
     readonly List<ToolCapabilityManifest> toolManifests = [];
     readonly HashSet<string> providerNames = new(StringComparer.Ordinal);
     readonly HashSet<string> toolNames = new(StringComparer.Ordinal);
 
-    public IReadOnlyList<IDataAgentCapabilityProvider> Providers => providers;
-    public IReadOnlyList<string> ProviderNames => providers.Select(provider => provider.Name).ToArray();
-    public IReadOnlyList<string> ToolNames => toolManifests.Select(manifest => manifest.Name).ToArray();
-    public IReadOnlyList<ToolCapabilityManifest> ToolManifests => toolManifests;
+    public IReadOnlyList<IDataAgentCapabilityProvider> Providers => providers.ToArray();
+    public IReadOnlyList<string> ProviderNames => providerNamesInOrder.ToArray();
+    public IReadOnlyList<string> ToolNames => toolNamesInOrder.ToArray();
+    public IReadOnlyList<ToolCapabilityManifest> ToolManifests => toolManifests.ToArray();
 
     public void Add(IDataAgentCapabilityProvider provider)
     {
@@ -38,10 +40,12 @@ public sealed class DataAgentCapabilityRegistry
             throw new ArgumentException($"DataAgent capability provider '{providerName}' returned null tool manifests.", nameof(provider));
         }
 
-        List<ToolCapabilityManifest> validatedManifests = new(manifests.Count);
-        HashSet<string> addedToolNames = new(StringComparer.Ordinal);
+        ToolCapabilityManifest[] manifestSnapshot = manifests.ToArray();
+        List<ToolCapabilityManifest> validatedManifests = new(manifestSnapshot.Length);
+        List<string> validatedToolNames = new(manifestSnapshot.Length);
+        HashSet<string> providerToolNames = new(StringComparer.Ordinal);
 
-        foreach (ToolCapabilityManifest? manifest in manifests)
+        foreach (ToolCapabilityManifest? manifest in manifestSnapshot)
         {
             if (manifest is null)
             {
@@ -53,18 +57,21 @@ public sealed class DataAgentCapabilityRegistry
                 throw new ArgumentException($"DataAgent tool capability name cannot be blank for provider '{providerName}'.", nameof(provider));
             }
 
-            if (toolNames.Contains(manifest.Name) || !addedToolNames.Add(manifest.Name))
+            if (toolNames.Contains(manifest.Name) || !providerToolNames.Add(manifest.Name))
             {
                 throw new InvalidOperationException($"Duplicate DataAgent tool capability '{manifest.Name}'.");
             }
 
             validatedManifests.Add(manifest);
+            validatedToolNames.Add(manifest.Name);
         }
 
         providers.Add(provider);
         providerNames.Add(providerName);
+        providerNamesInOrder.Add(providerName);
         toolManifests.AddRange(validatedManifests);
-        foreach (string toolName in addedToolNames)
+        toolNamesInOrder.AddRange(validatedToolNames);
+        foreach (string toolName in validatedToolNames)
         {
             toolNames.Add(toolName);
         }
