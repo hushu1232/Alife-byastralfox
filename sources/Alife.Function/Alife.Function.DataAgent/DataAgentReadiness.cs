@@ -67,7 +67,7 @@ public static class DataAgentReadiness
                 ? Pass("SqliteStoreCompatibilityPresent", "SQLite store remains default-compatible")
                 : Fail("SqliteStoreCompatibilityPresent", "SQLite store query failed"));
 
-            checks.Add(string.Equals(new PostgresDataAgentStore("Host=localhost;Database=alife_readiness;Username=alife;Password=alife").ProviderName, "postgres", StringComparison.Ordinal)
+            checks.Add(typeof(IDataAgentStore).IsAssignableFrom(typeof(PostgresDataAgentStore))
                 ? Pass("PostgresStoreProviderPresent", "PostgreSQL store provider type exists")
                 : Fail("PostgresStoreProviderPresent", "PostgreSQL provider missing"));
 
@@ -89,15 +89,14 @@ public static class DataAgentReadiness
                 ? Pass("DataAgentServiceUsesStoreBoundary", "DataAgentService accepted an injected IDataAgentStore")
                 : Fail("DataAgentServiceUsesStoreBoundary", storeBoundaryAnswer.Context));
 
-            DataAgentToolBrokerAuditLog toolBrokerAuditLog = new(databasePath);
-            toolBrokerAuditLog.Record(new DataAgentToolBrokerAuditRecord(
+            readinessStore.RecordToolBrokerAudit(new DataAgentToolBrokerAuditRecord(
                 "readiness-session",
                 "dataagent_analysis_continue",
                 false,
                 "tool_route_required",
                 "route is required",
                 DateTimeOffset.UtcNow));
-            IReadOnlyList<DataAgentToolBrokerAuditRecord> toolBrokerAuditRecords = toolBrokerAuditLog.ReadAll();
+            IReadOnlyList<DataAgentToolBrokerAuditRecord> toolBrokerAuditRecords = readinessStore.ReadToolBrokerAudit();
             checks.Add(toolBrokerAuditRecords.Any(record =>
                        record.SessionId == "readiness-session" &&
                        record.ToolName == "dataagent_analysis_continue" &&

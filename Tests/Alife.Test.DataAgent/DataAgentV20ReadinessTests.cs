@@ -41,6 +41,44 @@ public sealed class DataAgentV20ReadinessTests
         });
     }
 
+    [Test]
+    public void CoreReadinessUsesStoreBoundaryForToolBrokerAudit()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "DataAgentReadiness.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("RecordToolBrokerAudit"));
+            Assert.That(source, Does.Contain("ReadToolBrokerAudit"));
+            Assert.That(source, Does.Not.Contain("new DataAgentToolBrokerAuditLog"));
+        });
+    }
+
+    [Test]
+    public void CoreReadinessDoesNotCommitPostgresConnectionString()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "DataAgentReadiness.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Not.Contain("Host=localhost"));
+            Assert.That(source, Does.Not.Contain("Username="));
+            Assert.That(source, Does.Not.Contain("Password="));
+        });
+    }
+
     static string FindRepoRoot(string startDirectory)
     {
         DirectoryInfo? directory = new(startDirectory);

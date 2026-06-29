@@ -32,6 +32,8 @@ public sealed class DataAgentQueryPlanValidator(DataAgentCatalog catalog)
             return DataAgentValidationResult.FromErrors(errors);
         }
 
+        DataAgentDataset dataset = catalog.GetDataset(plan.Dataset);
+
         foreach (string field in plan.Select)
         {
             if (catalog.HasField(plan.Dataset, field) == false)
@@ -49,6 +51,12 @@ public sealed class DataAgentQueryPlanValidator(DataAgentCatalog catalog)
                      catalog.IsTextField(plan.Dataset, filter.Field) == false)
             {
                 errors.Add($"unsupported_operator_for_field:contains:{plan.Dataset}.{filter.Field}");
+            }
+            else
+            {
+                DataAgentFieldType fieldType = dataset.GetFieldType(filter.Field);
+                if (IsFilterValueCompatible(fieldType, filter.Value) == false)
+                    errors.Add($"invalid_filter_value_type:{plan.Dataset}.{filter.Field}:{FieldTypeName(fieldType)}");
             }
 
             if (AllowedOperators.Contains(filter.Operator) == false)
@@ -68,6 +76,47 @@ public sealed class DataAgentQueryPlanValidator(DataAgentCatalog catalog)
             errors.Add($"invalid_limit:{plan.Limit}");
 
         return DataAgentValidationResult.FromErrors(errors);
+    }
+
+    static bool IsFilterValueCompatible(DataAgentFieldType fieldType, object? value)
+    {
+        if (value is null)
+            return false;
+
+        return fieldType switch
+        {
+            DataAgentFieldType.Text => value is string,
+            DataAgentFieldType.Boolean => value is bool,
+            DataAgentFieldType.Integer => IsInt32Compatible(value),
+            _ => false
+        };
+    }
+
+    static bool IsInt32Compatible(object value)
+    {
+        return value switch
+        {
+            byte => true,
+            sbyte => true,
+            short => true,
+            ushort => true,
+            int => true,
+            uint unsigned => unsigned <= int.MaxValue,
+            long signed => signed is >= int.MinValue and <= int.MaxValue,
+            ulong unsigned => unsigned <= int.MaxValue,
+            _ => false
+        };
+    }
+
+    static string FieldTypeName(DataAgentFieldType fieldType)
+    {
+        return fieldType switch
+        {
+            DataAgentFieldType.Text => "text",
+            DataAgentFieldType.Boolean => "boolean",
+            DataAgentFieldType.Integer => "integer",
+            _ => fieldType.ToString().ToLowerInvariant()
+        };
     }
 }
 

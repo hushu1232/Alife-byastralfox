@@ -271,10 +271,10 @@ public sealed class LlmDataAgentPlannerResponseParserTests
     }
 
     [Test]
-    public void ParseSupportsScalarFilterValues()
+    public void ParseSupportsTypedScalarFilterValues()
     {
         string json = """
-            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"scalar_values","dataset":"test_run","confidence":"medium","signals":["tests"],"reason":"question asks for tests","select_fields":["suite_name","passed","failed"],"filters":[{"field":"passed","operator":">","value":0},{"field":"failed","operator":"=","value":false},{"field":"command","operator":"!=","value":null}],"sorts":[],"limit":5}
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"scalar_values","dataset":"module_capability","confidence":"medium","signals":["modules"],"reason":"question asks for module capabilities","select_fields":["id","module_name","required","status"],"filters":[{"field":"id","operator":">","value":0},{"field":"required","operator":"=","value":false},{"field":"status","operator":"!=","value":"missing"}],"sorts":[],"limit":5}
             """;
 
         DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
@@ -284,7 +284,24 @@ public sealed class LlmDataAgentPlannerResponseParserTests
             Assert.That(result.IsValid, Is.True);
             Assert.That(result.Envelope!.Plan!.Filters[0].Value, Is.EqualTo(0L));
             Assert.That(result.Envelope.Plan.Filters[1].Value, Is.EqualTo(false));
-            Assert.That(result.Envelope.Plan.Filters[2].Value, Is.Null);
+            Assert.That(result.Envelope.Plan.Filters[2].Value, Is.EqualTo("missing"));
+        });
+    }
+
+    [Test]
+    public void ParseRejectsScalarFilterValueWithWrongFieldType()
+    {
+        string json = """
+            {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"wrong_scalar_values","dataset":"test_run","confidence":"medium","signals":["tests"],"reason":"question asks for tests","select_fields":["suite_name","passed","failed"],"filters":[{"field":"failed","operator":"=","value":false},{"field":"command","operator":"!=","value":null}],"sorts":[],"limit":5}
+            """;
+
+        DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(json);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsValid, Is.False);
+            Assert.That(result.RejectedReason, Does.Contain("invalid_filter_value_type:test_run.failed:integer"));
+            Assert.That(result.RejectedReason, Does.Contain("invalid_filter_value_type:test_run.command:text"));
         });
     }
 
