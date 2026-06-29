@@ -13,7 +13,16 @@ public sealed record ToolRouteState(
 {
     public bool HasActiveDataAgentSession =>
         string.IsNullOrWhiteSpace(ActiveDataAgentSessionId) == false
-        && string.Equals(ActiveDataAgentStatus?.Trim(), "Active", StringComparison.OrdinalIgnoreCase);
+        && IsLiveDataAgentAnalysisStatus(ActiveDataAgentStatus);
+
+    public static bool IsLiveDataAgentAnalysisStatus(string? status)
+    {
+        string normalized = status?.Trim() ?? string.Empty;
+        return string.Equals(normalized, "Active", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "AwaitingClarification", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "ReadyToSummarize", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "Summarized", StringComparison.OrdinalIgnoreCase);
+    }
 
     public static ToolRouteState Empty { get; } = new(
         string.Empty,

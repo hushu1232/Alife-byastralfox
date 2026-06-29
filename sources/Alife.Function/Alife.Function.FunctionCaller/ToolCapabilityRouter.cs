@@ -47,6 +47,8 @@ public sealed class ToolCapabilityRouter
 
     readonly IReadOnlyList<ToolCapabilityManifest> manifests;
 
+    public IReadOnlyList<string> ToolNames { get; }
+
     public ToolCapabilityRouter(IReadOnlyList<ToolCapabilityManifest> manifests)
     {
         if (manifests is null)
@@ -63,6 +65,7 @@ public sealed class ToolCapabilityRouter
         this.manifests = manifestCopy.Length == 0
             ? Array.Empty<ToolCapabilityManifest>()
             : Array.AsReadOnly(manifestCopy);
+        ToolNames = Array.AsReadOnly(this.manifests.Select(manifest => manifest.Name).ToArray());
     }
 
     public static ToolCapabilityRouter CreateDefault()

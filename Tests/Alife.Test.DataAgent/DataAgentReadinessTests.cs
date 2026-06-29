@@ -56,7 +56,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 35 required passed, 0 required missing"
+                "  Summary: 39 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });

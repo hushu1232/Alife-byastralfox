@@ -115,6 +115,35 @@ public sealed class ToolCapabilityRouterTests
         Assert.That(state.HasActiveDataAgentSession, Is.True);
     }
 
+
+    [TestCase("AwaitingClarification")]
+    [TestCase("ReadyToSummarize")]
+    [TestCase("Summarized")]
+    public void RouteStateTreatsLiveAnalysisStatusesAsActive(string status)
+    {
+        ToolRouteState state = new(
+            ActiveDataAgentSessionId: "analysis-1",
+            ActiveDataAgentStatus: status,
+            IsOwner: true,
+            IsPrivateChat: true,
+            IsTrustedRuntime: true);
+
+        Assert.That(state.HasActiveDataAgentSession, Is.True);
+    }
+
+    [TestCase("Ended")]
+    [TestCase("Rejected")]
+    public void RouteStateTreatsTerminalAnalysisStatusesAsInactive(string status)
+    {
+        ToolRouteState state = new(
+            ActiveDataAgentSessionId: "analysis-1",
+            ActiveDataAgentStatus: status,
+            IsOwner: true,
+            IsPrivateChat: true,
+            IsTrustedRuntime: true);
+
+        Assert.That(state.HasActiveDataAgentSession, Is.False);
+    }
     [Test]
     public void RouteDecisionDefensivelyCopiesToolLists()
     {

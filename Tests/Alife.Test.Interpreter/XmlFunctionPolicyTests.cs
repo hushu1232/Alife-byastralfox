@@ -103,6 +103,75 @@ public class XmlFunctionPolicyTests
         });
     }
 
+
+    [Test]
+    public void HandleRejectsGovernedDataAgentToolWhenRouteIsMissing()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.Register(new XmlHandler(handler));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("dataagent_analysis_continue", OneShotContext()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("tool_route_required"));
+            Assert.That(handler.DataAgentContinueCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void HandleRejectsSessionScopedDataAgentToolWhenRouteSessionDoesNotMatch()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.ExecutionPolicy.CurrentRoute = new ToolRouteDecision(
+            "route-1",
+            ToolCapabilityDomain.DataAgent,
+            "analysis_continue",
+            ["dataagent_analysis_continue"],
+            [],
+            new ToolRouteState("analysis-1", "Active", true, true, true),
+            "test_route");
+        table.Register(new XmlHandler(handler));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle(
+                "dataagent_analysis_continue",
+                OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-2" })));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(handler.DataAgentContinueCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task HandleAllowsSessionScopedDataAgentToolWhenRouteSessionMatches()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.ExecutionPolicy.CurrentRoute = new ToolRouteDecision(
+            "route-1",
+            ToolCapabilityDomain.DataAgent,
+            "analysis_continue",
+            ["dataagent_analysis_continue"],
+            [],
+            new ToolRouteState("analysis-1", "ReadyToSummarize", true, true, true),
+            "test_route");
+        table.Register(new XmlHandler(handler));
+
+        await table.Handle(
+            "dataagent_analysis_continue",
+            OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-1" }));
+
+        Assert.That(handler.DataAgentContinueCalls, Is.EqualTo(1));
+    }
     [Test]
     public void ExecutionPolicyRouteGateDoesNotConsumeBudgetWhenRejectingOutsideRoute()
     {
@@ -270,16 +339,17 @@ public class XmlFunctionPolicyTests
         BudgetCost = budgetCost,
         Invoker = (_, _) => Task.CompletedTask,
     };
-    static XmlContext OneShotContext() => new()
+    static XmlContext OneShotContext(IReadOnlyDictionary<string, string>? parameters = null) => new()
     {
         CallMode = CallMode.OneShot,
-        Parameters = new Dictionary<string, string>(),
+        Parameters = parameters ?? new Dictionary<string, string>(),
     };
 
     sealed class PolicyHandler
     {
         public int DeleteCalls { get; private set; }
         public int PingCalls { get; private set; }
+        public int DataAgentContinueCalls { get; private set; }
 
         [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High)]
         public void DeleteFile()
@@ -292,8 +362,32 @@ public class XmlFunctionPolicyTests
         {
             PingCalls++;
         }
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_continue")]
+        public void ContinueDataAgentAnalysis(string sessionId)
+        {
+            DataAgentContinueCalls++;
+        }
     }
 
+
+    sealed class DataAgentXmlTools
+    {
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_query")]
+        public void Query(string question) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
+        public void Start(string callerId, string goalOrQuestion) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_continue")]
+        public void Continue(string sessionId, string question) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_summarize")]
+        public void Summarize(string sessionId) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_end")]
+        public void End(string sessionId) {}
+    }
     sealed class HiddenTool
     {
         [XmlFunction(FunctionMode.OneShot, name: "hidden_ping")]

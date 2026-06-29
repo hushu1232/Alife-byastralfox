@@ -14,26 +14,23 @@ public sealed class DataAgentModuleAnalysisRegistrationTests
             Assert.That(source, Does.Contain("RegisterHandlerWithoutDocument(xmlHandler)"));
             Assert.That(source, Does.Contain("new InMemoryDataAgentAnalysisSessionStore()"));
             Assert.That(source, Does.Contain("new DataAgentAnalysisService(service, analysisSessionStore)"));
-            Assert.That(source, Does.Contain("new DataAgentAnalysisToolHandler(analysisService, Poke)"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisToolHandler(analysisService, PublishAnalysisContext)"));
             Assert.That(source, Does.Contain("RegisterHandlerWithoutDocument(analysisXmlHandler)"));
         });
     }
 
     [Test]
-    public void AwakePromptIncludesAnalysisToolContractAndDocument()
+    public void AwakePromptDefersAnalysisToolDocumentsToToolBrokerRoute()
     {
         string source = ReadModuleSource();
 
         Assert.Multiple(() =>
         {
-            Assert.That(source, Does.Contain("dataagent_query"));
-            Assert.That(source, Does.Contain("dataagent_analysis_start"));
-            Assert.That(source, Does.Contain("dataagent_analysis_continue"));
-            Assert.That(source, Does.Contain("dataagent_analysis_summarize"));
-            Assert.That(source, Does.Contain("dataagent_analysis_end"));
-            Assert.That(source, Does.Contain("Summarize and end analysis actions do not execute SQL"));
-            Assert.That(source, Does.Contain("If there is no active DataAgent analysis session, do not call continue, summarize, or end."));
-            Assert.That(source, Does.Contain("{analysisXmlHandler.FunctionDocument()}"));
+            Assert.That(source, Does.Contain("PublishAnalysisContext"));
+            Assert.That(source, Does.Contain("UpdateDataAgentAnalysisRouteSessionFromContext"));
+            Assert.That(source, Does.Contain("Only use DataAgent XML tools when they appear in current [tool_route_context]"));
+            Assert.That(source, Does.Not.Contain("{xmlHandler.FunctionDocument()}"));
+            Assert.That(source, Does.Not.Contain("{analysisXmlHandler.FunctionDocument()}"));
         });
     }
 

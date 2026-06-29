@@ -8894,9 +8894,15 @@ public partial class QChatService(
         }
     }
 
-    protected virtual Task<string> DispatchToModelAsync(QChatInboundMessage message)
+    protected virtual async Task<string> DispatchToModelAsync(QChatInboundMessage message)
     {
-        return ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+        ToolRouteState routeState = functionService.CreateToolRouteState(
+            isOwner: message.SenderRole == QChatSenderRole.Owner,
+            isPrivateChat: message.MessageType == OneBotMessageType.Private,
+            isTrustedRuntime: true);
+
+        using IDisposable _ = functionService.UseToolRouteState(routeState);
+        return await ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
     }
 
     async Task PublishQChatToolResultAsync(string message, string source)

@@ -34,16 +34,18 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
-    public void AwakeInjectsDataAgentToolPrompt()
+    public void AwakeInjectsToolBrokerPromptWithoutStaticToolDocuments()
     {
         string source = ReadModuleSource();
 
         Assert.Multiple(() =>
         {
             Assert.That(source, Does.Contain("Prompt("));
-            Assert.That(source, Does.Contain("dataagent_query"));
-            Assert.That(source, Does.Contain("dynamic data context"));
-            Assert.That(source, Does.Contain("FunctionDocument()"));
+            Assert.That(source, Does.Contain("Tool Broker contract"));
+            Assert.That(source, Does.Contain("Only use DataAgent XML tools when they appear in current [tool_route_context]"));
+            Assert.That(source, Does.Contain("PublishAnalysisContext"));
+            Assert.That(source, Does.Not.Contain("{xmlHandler.FunctionDocument()}"));
+            Assert.That(source, Does.Not.Contain("{analysisXmlHandler.FunctionDocument()}"));
         });
     }
 

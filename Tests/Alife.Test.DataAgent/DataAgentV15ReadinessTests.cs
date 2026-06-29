@@ -10,7 +10,11 @@ public sealed class DataAgentV15ReadinessTests
         "AnalysisTerminalToolsDoNotQuery",
         "ToolCapabilityManifestPresent",
         "ToolCapabilityRouterPresent",
-        "ToolExecutionGatePresent"
+        "ToolExecutionGatePresent",
+        "ToolBrokerDynamicExposurePresent",
+        "ToolRouteRuntimeWiringPresent",
+        "QChatToolRouteStateScopePresent",
+        "ToolBrokerRuntimeTestsPresent"
     ];
 
     [Test]
@@ -37,6 +41,9 @@ public sealed class DataAgentV15ReadinessTests
             Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.FunctionCaller/XmlStruct.cs"));
             Assert.That(script, Does.Contain("CurrentRoute"));
             Assert.That(script, Does.Contain("tool_not_allowed_in_current_route"));
+            Assert.That(script, Does.Contain("SetGovernedToolNames"));
+            Assert.That(script, Does.Contain("tool_route_required"));
+            Assert.That(script, Does.Contain("tool_session_not_allowed_in_current_route"));
 
             Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs"));
             Assert.That(script, Does.Contain("DataAgentAnalysisToolHandler"));
@@ -47,8 +54,24 @@ public sealed class DataAgentV15ReadinessTests
 
             Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs"));
             Assert.That(script, Does.Contain("InMemoryDataAgentAnalysisSessionStore"));
-            Assert.That(script, Does.Contain("analysisXmlHandler.FunctionDocument"));
+            Assert.That(script, Does.Contain("PublishAnalysisContext"));
+            Assert.That(script, Does.Contain("UpdateDataAgentAnalysisRouteSessionFromContext"));
+            Assert.That(script, Does.Contain("Only use DataAgent XML tools when they appear in current [tool_route_context]"));
 
+            Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.FunctionCaller/XmlFunctionCaller.cs"));
+            Assert.That(script, Does.Contain("RouteCurrentTurn"));
+            Assert.That(script, Does.Contain("BuildRoutedFunctionGuide"));
+            Assert.That(script, Does.Contain("[tool_route_context]"));
+
+            Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.QChat/QChatService.cs"));
+            Assert.That(script, Does.Contain("protected virtual async Task<string> DispatchToModelAsync"));
+            Assert.That(script, Does.Contain("functionService.CreateToolRouteState"));
+            Assert.That(script, Does.Contain("functionService.UseToolRouteState(routeState)"));
+            Assert.That(script, Does.Contain("return await ChatBot.ChatAsync"));
+
+            Assert.That(script, Does.Contain("Tests/Alife.Test.QChat/QChatToolRouteStateWiringTests.cs"));
+            Assert.That(script, Does.Contain("HandleRejectsGovernedDataAgentToolWhenRouteIsMissing"));
+            Assert.That(script, Does.Contain("HandleRejectsSessionScopedDataAgentToolWhenRouteSessionDoesNotMatch"));
             Assert.That(script, Does.Contain("Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs"));
             Assert.That(script, Does.Contain("SummarizeUsesAnalysisServiceAndDoesNotCallAnswerBoundary"));
             Assert.That(script, Does.Contain("EndUsesAnalysisServiceAndDoesNotCallAnswerBoundary"));
