@@ -45,6 +45,24 @@ public sealed class DataAgentServicePlannerInjectionTests
     }
 
     [Test]
+    public void PathConstructorsRejectEmptyDatabasePath()
+    {
+        DataAgentQueryPlan plan = new(
+            "engineering_gate",
+            "readiness_status",
+            ["name", "status", "detail"],
+            [],
+            [],
+            20);
+
+        Assert.Multiple(() =>
+        {
+            Assert.Throws<ArgumentException>(() => new DataAgentService(string.Empty));
+            Assert.Throws<ArgumentException>(() => new DataAgentService("   ", new FixedPlanner(plan)));
+        });
+    }
+
+    [Test]
     public void InvalidInjectedPlannerOutputIsRejectedAndAudited()
     {
         string databasePath = CreateDatabasePath();

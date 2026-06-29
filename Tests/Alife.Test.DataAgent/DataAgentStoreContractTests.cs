@@ -6,6 +6,17 @@ namespace Alife.Test.DataAgent;
 public sealed class DataAgentStoreContractTests
 {
     [Test]
+    public void SqliteStoreRejectsInvalidDatabasePath()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.Throws<ArgumentNullException>(() => new SqliteDataAgentStore(null!));
+            Assert.Throws<ArgumentException>(() => new SqliteDataAgentStore(string.Empty));
+            Assert.Throws<ArgumentException>(() => new SqliteDataAgentStore("   "));
+        });
+    }
+
+    [Test]
     public void SqliteStoreInitializesImportsFixturesAndExecutesReadOnlyQuery()
     {
         string databasePath = CreateDatabasePath();

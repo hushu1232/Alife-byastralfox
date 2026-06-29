@@ -1,7 +1,16 @@
 namespace Alife.Function.DataAgent;
 
-public sealed class SqliteDataAgentStore(string databasePath) : IDataAgentStore
+public sealed class SqliteDataAgentStore : IDataAgentStore
 {
+    readonly string databasePath;
+
+    public SqliteDataAgentStore(string databasePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+
+        this.databasePath = databasePath;
+    }
+
     public string ProviderName => "sqlite";
 
     public void Initialize()
