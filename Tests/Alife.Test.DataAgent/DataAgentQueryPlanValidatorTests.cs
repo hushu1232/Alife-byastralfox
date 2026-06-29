@@ -87,6 +87,59 @@ public sealed class DataAgentQueryPlanValidatorTests
     }
 
     [Test]
+    public void ContainsOnTextFieldPasses()
+    {
+        DataAgentQueryPlan plan = new(
+            "document_index",
+            "find_dataagent_docs",
+            ["path", "title"],
+            [new DataAgentFilter("tags", "contains", "dataagent")],
+            [],
+            20);
+
+        DataAgentValidationResult result = validator.Validate(plan);
+
+        Assert.That(result.IsValid, Is.True, string.Join(Environment.NewLine, result.Errors));
+    }
+
+    [Test]
+    public void ContainsOnBooleanFieldIsRejected()
+    {
+        DataAgentQueryPlan plan = ValidPlan() with
+        {
+            Filters = [new DataAgentFilter("required", "contains", true)]
+        };
+
+        DataAgentValidationResult result = validator.Validate(plan);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsValid, Is.False);
+            Assert.That(result.Errors, Does.Contain("unsupported_operator_for_field:contains:engineering_gate.required"));
+        });
+    }
+
+    [Test]
+    public void ContainsOnIntegerFieldIsRejected()
+    {
+        DataAgentQueryPlan plan = new(
+            "test_run",
+            "find_test_runs",
+            ["suite_name", "passed"],
+            [new DataAgentFilter("passed", "contains", 1)],
+            [],
+            20);
+
+        DataAgentValidationResult result = validator.Validate(plan);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsValid, Is.False);
+            Assert.That(result.Errors, Does.Contain("unsupported_operator_for_field:contains:test_run.passed"));
+        });
+    }
+
+    [Test]
     public void UnknownOrderByFieldIsRejected()
     {
         DataAgentQueryPlan plan = ValidPlan() with

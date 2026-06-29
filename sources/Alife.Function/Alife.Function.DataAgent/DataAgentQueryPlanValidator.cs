@@ -40,8 +40,16 @@ public sealed class DataAgentQueryPlanValidator(DataAgentCatalog catalog)
 
         foreach (DataAgentFilter filter in plan.Filters)
         {
-            if (catalog.HasField(plan.Dataset, filter.Field) == false)
+            bool fieldExists = catalog.HasField(plan.Dataset, filter.Field);
+            if (fieldExists == false)
+            {
                 errors.Add($"unknown_filter_field:{plan.Dataset}.{filter.Field}");
+            }
+            else if (filter.Operator.Equals("contains", StringComparison.OrdinalIgnoreCase) &&
+                     catalog.IsTextField(plan.Dataset, filter.Field) == false)
+            {
+                errors.Add($"unsupported_operator_for_field:contains:{plan.Dataset}.{filter.Field}");
+            }
 
             if (AllowedOperators.Contains(filter.Operator) == false)
                 errors.Add($"unsupported_operator:{filter.Operator}");

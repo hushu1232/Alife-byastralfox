@@ -103,13 +103,29 @@ public sealed class PostgresDataAgentStore : IDataAgentStore
     public void ImportFixtures()
     {
         string timestamp = new DateTimeOffset(2026, 6, 27, 0, 0, 0, TimeSpan.Zero).ToString("O");
+        string readinessEvidencePath = "tools/check-qchat-runtime-readiness.ps1";
+        string testRunCommand = "dotnet test Alife.slnx --no-restore --no-build -v:minimal";
+        string documentPath = "docs/superpowers/specs/2026-06-27-dataagent-nl2sql-design.md";
 
         using NpgsqlConnection connection = Open();
-        Execute(connection, "DELETE FROM engineering_gate");
-        Execute(connection, "DELETE FROM runtime_readiness_check");
-        Execute(connection, "DELETE FROM module_capability");
-        Execute(connection, "DELETE FROM test_run");
-        Execute(connection, "DELETE FROM document_index");
+        Execute(
+            connection,
+            "DELETE FROM engineering_gate WHERE source = @source",
+            new NpgsqlParameter("source", "fixture"));
+        Execute(
+            connection,
+            "DELETE FROM runtime_readiness_check WHERE capability = @capability AND evidence_path = @evidence_path",
+            new NpgsqlParameter("capability", "MixuTts9881Reachable"),
+            new NpgsqlParameter("evidence_path", readinessEvidencePath));
+        Execute(
+            connection,
+            "DELETE FROM test_run WHERE suite_name = @suite_name AND command = @command",
+            new NpgsqlParameter("suite_name", "Alife.Test.QChat"),
+            new NpgsqlParameter("command", testRunCommand));
+        Execute(
+            connection,
+            "DELETE FROM document_index WHERE path = @path",
+            new NpgsqlParameter("path", documentPath));
 
         Execute(
             connection,
@@ -121,9 +137,52 @@ public sealed class PostgresDataAgentStore : IDataAgentStore
             new NpgsqlParameter("category", "Harness"),
             new NpgsqlParameter("required", true),
             new NpgsqlParameter("status", "passed"),
-            new NpgsqlParameter("evidence_path", "tools/check-qchat-runtime-readiness.ps1"),
+            new NpgsqlParameter("evidence_path", readinessEvidencePath),
             new NpgsqlParameter("last_checked_at", timestamp),
             new NpgsqlParameter("source", "fixture"));
+
+        Execute(
+            connection,
+            """
+            INSERT INTO engineering_gate (name, category, required, status, evidence_path, last_checked_at, source)
+            VALUES (@name, @category, @required, @status, @evidence_path, @last_checked_at, @source)
+            """,
+            new NpgsqlParameter("name", "DataAgent readiness script"),
+            new NpgsqlParameter("category", "Harness"),
+            new NpgsqlParameter("required", false),
+            new NpgsqlParameter("status", "missing"),
+            new NpgsqlParameter("evidence_path", "tools/check-dataagent-readiness.ps1"),
+            new NpgsqlParameter("last_checked_at", timestamp),
+            new NpgsqlParameter("source", "fixture"));
+
+        Execute(
+            connection,
+            """
+            INSERT INTO runtime_readiness_check (capability, account, endpoint, status, required, failure_reason, last_checked_at, evidence_path)
+            VALUES (@capability, @account, @endpoint, @status, @required, @failure_reason, @last_checked_at, @evidence_path)
+            """,
+            new NpgsqlParameter("capability", "MixuTts9881Reachable"),
+            new NpgsqlParameter("account", "mixu"),
+            new NpgsqlParameter("endpoint", "127.0.0.1:9881"),
+            new NpgsqlParameter("status", "missing"),
+            new NpgsqlParameter("required", true),
+            new NpgsqlParameter("failure_reason", "mixu_tts_endpoint_unreachable"),
+            new NpgsqlParameter("last_checked_at", timestamp),
+            new NpgsqlParameter("evidence_path", readinessEvidencePath));
+
+        Execute(
+            connection,
+            """
+            INSERT INTO test_run (suite_name, passed, failed, skipped, total, ran_at, command)
+            VALUES (@suite_name, @passed, @failed, @skipped, @total, @ran_at, @command)
+            """,
+            new NpgsqlParameter("suite_name", "Alife.Test.QChat"),
+            new NpgsqlParameter("passed", (object)1168),
+            new NpgsqlParameter("failed", (object)0),
+            new NpgsqlParameter("skipped", (object)10),
+            new NpgsqlParameter("total", (object)1178),
+            new NpgsqlParameter("ran_at", timestamp),
+            new NpgsqlParameter("command", testRunCommand));
 
         Execute(
             connection,
@@ -131,7 +190,7 @@ public sealed class PostgresDataAgentStore : IDataAgentStore
             INSERT INTO document_index (path, doc_type, title, summary, tags, updated_at)
             VALUES (@path, @doc_type, @title, @summary, @tags, @updated_at)
             """,
-            new NpgsqlParameter("path", "docs/superpowers/specs/2026-06-27-dataagent-nl2sql-design.md"),
+            new NpgsqlParameter("path", documentPath),
             new NpgsqlParameter("doc_type", "spec"),
             new NpgsqlParameter("title", "DataAgent NL2SQL Design"),
             new NpgsqlParameter("summary", "DataAgent QueryPlan-first NL2SQL design."),
