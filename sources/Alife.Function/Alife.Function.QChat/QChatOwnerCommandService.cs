@@ -88,7 +88,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         QChatSenderRole senderRole,
         QChatConfig config,
         Func<OneBotMessageType, long, string, Task> sendAsync,
-        Action<string, string, object?, Exception?> writeDiagnostic)
+        Action<string, string, object?, Exception?> writeDiagnostic,
+        Func<string>? recentToolRouteTrace = null)
     {
         ArgumentNullException.ThrowIfNull(messageEvent);
 
@@ -133,7 +134,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
             new QChatDiagnosticsRuntimeState(
                 ReplyTimingDelayEnabled: config.EnableReplyTimingDelay,
                 ConversationSettleWindowEnabled: config.EnableConversationSettleWindow,
-                InternetAccessEnabled: config.EnableInternetAccess));
+                InternetAccessEnabled: config.EnableInternetAccess,
+                RecentToolRouteTrace: recentToolRouteTrace?.Invoke()));
         if (result.Handled)
         {
             await sendAsync(targetType, targetId, result.Text);

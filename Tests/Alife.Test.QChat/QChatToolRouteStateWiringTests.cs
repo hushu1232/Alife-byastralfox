@@ -18,7 +18,8 @@ public sealed class QChatToolRouteStateWiringTests
             Assert.That(source, Does.Contain("message.SenderRole == QChatSenderRole.Owner"));
             Assert.That(source, Does.Contain("message.MessageType == OneBotMessageType.Private"));
             Assert.That(source, Does.Contain("functionService.UseToolRouteState(routeState)"));
-            Assert.That(source, Does.Contain("return await ChatBot.ChatAsync(ChatTextFilter(message.Formatted))"));
+            Assert.That(source, Does.Contain("ChatBot.ChatAsync(ChatTextFilter(message.Formatted))"));
+            Assert.That(source, Does.Contain("recentToolRouteTrace = FormatToolRouteTrace(functionService.RecentToolRouteDecision)"));
         });
     }
 

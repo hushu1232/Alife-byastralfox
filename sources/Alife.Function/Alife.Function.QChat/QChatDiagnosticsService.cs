@@ -7,7 +7,8 @@ public sealed record QChatDiagnosticsResult(bool Handled, string Text);
 public sealed record QChatDiagnosticsRuntimeState(
     bool ReplyTimingDelayEnabled = false,
     bool ConversationSettleWindowEnabled = false,
-    bool InternetAccessEnabled = false);
+    bool InternetAccessEnabled = false,
+    string? RecentToolRouteTrace = null);
 
 public static class QChatDiagnosticsService
 {
@@ -60,6 +61,7 @@ public static class QChatDiagnosticsService
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
+            "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -137,6 +139,31 @@ public static class QChatDiagnosticsService
             "status=online");
     }
 
+    static string BuildToolBrokerText(QChatDiagnosticsRuntimeState runtimeState)
+    {
+        string trace = SanitizeToolRouteTrace(runtimeState.RecentToolRouteTrace);
+        return string.Join(Environment.NewLine,
+            "Tool Broker diagnostics",
+            $"recent={trace}");
+    }
+
+    static string SanitizeToolRouteTrace(string? trace)
+    {
+        if (string.IsNullOrWhiteSpace(trace))
+            return "none";
+
+        if (trace.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
+            trace.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
+            trace.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase))
+        {
+            return "redacted";
+        }
+
+        string normalized = trace.ReplaceLineEndings(" ").Trim();
+        return normalized.Length <= 240
+            ? normalized
+            : normalized[..240] + "...";
+    }
     static string FormatEnabled(bool value)
     {
         return value ? "enabled" : "disabled";
@@ -149,6 +176,7 @@ public static class QChatDiagnosticsService
             "",
             "常用：",
             "/qchat status - 查看当前 QQ 聊天状态",
+            "/qchat diag toolbroker - Tool Broker route diagnostics",
             "/qchat timing - 回复延时设置",
             "/qchat memory - 记忆相关指令",
             "/qchat desktop - 桌面能力相关指令",

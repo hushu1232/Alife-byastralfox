@@ -2447,6 +2447,7 @@ public partial class QChatService(
     static readonly Dictionary<long, DateTimeOffset> emptyGroupFlushDiagnosticTimes = new();
     static readonly TimeSpan EmptyGroupFlushDiagnosticInterval = TimeSpan.FromMinutes(5);
     readonly object recentSentMessagesGate = new();
+    readonly object toolRouteDiagnosticsGate = new();
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
     readonly object pokeCooldownGate = new();
     readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
@@ -2457,6 +2458,7 @@ public partial class QChatService(
     static readonly TimeSpan PokeCooldown = TimeSpan.FromSeconds(60);
     const int MaxRecentSentMessages = 40;
     long outboundMessageVersion;
+    string recentToolRouteTrace = "none";
 
     sealed record QChatProfileRuntimeServices(
         QChatUserProfileService UserProfiles,
@@ -6701,7 +6703,8 @@ public partial class QChatService(
             senderRole,
             Configuration ?? new QChatConfig(),
             (type, targetId, message) => SendCommandReplyAsync(messageEvent, senderRole, type, targetId, message),
-            WriteQChatDiagnostic);
+            WriteQChatDiagnostic,
+            GetRecentToolRouteTrace);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -8902,7 +8905,45 @@ public partial class QChatService(
             isTrustedRuntime: true);
 
         using IDisposable _ = functionService.UseToolRouteState(routeState);
-        return await ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+        string response = await ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+        lock (toolRouteDiagnosticsGate)
+        {
+            recentToolRouteTrace = FormatToolRouteTrace(functionService.RecentToolRouteDecision);
+        }
+
+        return response;
+    }
+
+    string GetRecentToolRouteTrace()
+    {
+        lock (toolRouteDiagnosticsGate)
+        {
+            return recentToolRouteTrace;
+        }
+    }
+
+    static string FormatToolRouteTrace(ToolRouteDecision? route)
+    {
+        if (route is null)
+            return "none";
+
+        string allowed = FormatToolRouteNames(route.AllowedTools);
+        string denied = FormatToolRouteNames(route.DeniedTools.Select(tool => tool.Name));
+        return $"allowed={allowed}; denied={denied}; reason={NormalizeToolRouteTraceToken(route.ReasonCode)}; intent={NormalizeToolRouteTraceToken(route.Intent)}";
+    }
+
+    static string FormatToolRouteNames(IEnumerable<string> names)
+    {
+        string[] normalizedNames = names
+            .Where(name => string.IsNullOrWhiteSpace(name) == false)
+            .Select(NormalizeToolRouteTraceToken)
+            .ToArray();
+        return normalizedNames.Length == 0 ? "none" : string.Join(",", normalizedNames);
+    }
+
+    static string NormalizeToolRouteTraceToken(string value)
+    {
+        return value.ReplaceLineEndings(" ").Replace(';', ',').Trim();
     }
 
     async Task PublishQChatToolResultAsync(string message, string source)
