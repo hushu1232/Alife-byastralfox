@@ -129,6 +129,7 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
 
         if (response.Answer.RejectedReason == "needs_clarification")
         {
+            steps.Add(Step(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Skipped, "needs_clarification", false));
             steps.Add(Step(DataAgentOrchestrationNodeKind.Clarification, DataAgentOrchestrationStepStatus.Succeeded, "needs_clarification", false));
             steps.Add(Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false));
             return;

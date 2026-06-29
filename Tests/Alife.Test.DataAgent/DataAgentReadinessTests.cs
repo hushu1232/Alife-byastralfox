@@ -47,6 +47,8 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorNodeBoundaryPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorCheckpointPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorRouteGateFailClosed"));
+            DataAgentReadinessCheck routeGateCheck = checks.Single(check => check.Name == "OrchestratorRouteGateFailClosed");
+            Assert.That(routeGateCheck.Detail, Does.Contain("continue"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorTerminalNodesDoNotQuery"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorStateMachineTransitions"));
         });

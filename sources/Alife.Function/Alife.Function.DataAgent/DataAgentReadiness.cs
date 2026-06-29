@@ -355,6 +355,13 @@ public static class DataAgentReadiness
                 "Which documents describe DataAgent?",
                 null,
                 RouteAllowsQuery: false));
+            DataAgentOrchestrationResult orchestrationDeniedContinue = orchestrator.Continue(new DataAgentOrchestrationRequest(
+                "readiness",
+                "\u7ee7\u7eed",
+                orchestrationStart.SessionId,
+                RouteAllowsQuery: false));
+            int answerCallsAfterDeniedContinue = orchestrationAnswerCalls;
+            int turnsAfterDeniedContinue = orchestrationStore.Get(orchestrationStart.SessionId)?.Turns.Count ?? -1;
             DataAgentOrchestrationResult orchestrationSummary = orchestrator.Continue(new DataAgentOrchestrationRequest(
                 "readiness",
                 "\u603b\u7ed3\u4e00\u4e0b",
@@ -384,9 +391,14 @@ public static class DataAgentReadiness
 
             checks.Add(orchestrationDenied.Response.Accepted == false &&
                        orchestrationDenied.Response.RejectedReason == "tool_route_required" &&
-                       orchestrationDenied.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) == false
-                ? Pass("OrchestratorRouteGateFailClosed", "route denial prevents query execution")
-                : Fail("OrchestratorRouteGateFailClosed", orchestrationDenied.Response.RejectedReason));
+                       orchestrationDenied.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) == false &&
+                       orchestrationDeniedContinue.Response.Accepted == false &&
+                       orchestrationDeniedContinue.Response.RejectedReason == "tool_route_required" &&
+                       orchestrationDeniedContinue.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) == false &&
+                       answerCallsAfterDeniedContinue == 1 &&
+                       turnsAfterDeniedContinue == 1
+                ? Pass("OrchestratorRouteGateFailClosed", "denied start and denied continue avoided query execution and session mutation")
+                : Fail("OrchestratorRouteGateFailClosed", $"{orchestrationDenied.Response.RejectedReason};continue={orchestrationDeniedContinue.Response.RejectedReason};answerCalls={answerCallsAfterDeniedContinue};turns={turnsAfterDeniedContinue}"));
 
             checks.Add(orchestrationSummary.Response.Accepted &&
                        orchestrationSummary.Response.Answer is null &&

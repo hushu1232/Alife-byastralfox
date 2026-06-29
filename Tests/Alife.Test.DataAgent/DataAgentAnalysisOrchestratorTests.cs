@@ -262,9 +262,13 @@ public sealed class DataAgentAnalysisOrchestratorTests
                 DataAgentOrchestrationNodeKind.RouteGate,
                 DataAgentOrchestrationNodeKind.SchemaContext,
                 DataAgentOrchestrationNodeKind.Plan,
+                DataAgentOrchestrationNodeKind.Validate,
                 DataAgentOrchestrationNodeKind.Clarification,
                 DataAgentOrchestrationNodeKind.Checkpoint
             }));
+            Assert.That(result.Steps.Single(step => step.Node == DataAgentOrchestrationNodeKind.Validate).Status, Is.EqualTo(DataAgentOrchestrationStepStatus.Skipped));
+            Assert.That(result.Steps.Single(step => step.Node == DataAgentOrchestrationNodeKind.Validate).Reason, Is.EqualTo("needs_clarification"));
+            Assert.That(result.Steps.Single(step => step.Node == DataAgentOrchestrationNodeKind.Validate).ExecutedSql, Is.False);
             Assert.That(result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
             Assert.That(result.Checkpoint.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.AwaitingClarification));
             Assert.That(result.Checkpoint.CanContinue, Is.True);
