@@ -54,7 +54,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentModulePresent"));
             Assert.That(result.StandardOutput, Does.Contain("[Analysis]"));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
-            Assert.That(result.StandardOutput, Does.Contain("Summary: 29 required passed, 0 required missing"));
+            Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
+            {
+                "  Summary: 39 required passed, 0 required missing"
+            }));
+            Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
 
@@ -159,5 +163,12 @@ public sealed class DataAgentReadinessTests
         throw new DirectoryNotFoundException("Could not locate repository root from test directory.");
     }
 
+    static string[] GetSummaryLines(string output)
+    {
+        return output
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("  Summary:", StringComparison.Ordinal))
+            .ToArray();
+    }
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
 }

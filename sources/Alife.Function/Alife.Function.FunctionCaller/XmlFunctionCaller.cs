@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.Interpreter;
@@ -24,6 +25,68 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     public bool IsIdle => executor.IsInactive;
     public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
 
+    public ToolRouteDecision RouteCurrentTurn(string utterance, ToolRouteState state)
+    {
+        handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
+        ToolRouteDecision route = toolRouter.Route(utterance, state);
+        handlerTable.ExecutionPolicy.CurrentRoute = route;
+        return route;
+    }
+
+    public string BuildRoutedFunctionGuide(ToolRouteDecision route)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+
+        string documents = handlerTable.Document(function => route.Allows(function.Name));
+        if (string.IsNullOrWhiteSpace(documents))
+            return string.Empty;
+
+        return $"""
+               Tool Broker route: {route.Intent}
+               Reason: {route.Reason}
+               Allowed XML tools for this turn:
+               {documents}
+               """;
+    }
+
+    public ToolRouteState CreateToolRouteState(bool isOwner, bool isPrivateChat, bool isTrustedRuntime = true)
+    {
+        lock (dataAgentRouteGate)
+        {
+            return new ToolRouteState(
+                activeDataAgentSessionId,
+                activeDataAgentSessionStatus,
+                isOwner,
+                isPrivateChat,
+                isTrustedRuntime);
+        }
+    }
+
+    public IDisposable UseToolRouteState(ToolRouteState state)
+    {
+        ToolRouteState? previous = scopedToolRouteState.Value;
+        scopedToolRouteState.Value = state;
+        return new ToolRouteStateScope(scopedToolRouteState, previous);
+    }
+
+    public void UpdateDataAgentAnalysisRouteSessionFromContext(string context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+            return;
+
+        string? sessionId = ReadContextValue(context, "session_id=");
+        string? status = ReadContextValue(context, "status=");
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(status))
+            return;
+
+        lock (dataAgentRouteGate)
+        {
+            activeDataAgentSessionStatus = status.Trim();
+            activeDataAgentSessionId = ToolRouteState.IsLiveDataAgentAnalysisStatus(status)
+                ? sessionId.Trim()
+                : string.Empty;
+        }
+    }
     public void RegisterHandlerWithoutDocument(XmlHandler handler, params string[] plainAreas)
     {
         handlerTable.Register(handler);
@@ -68,6 +131,11 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     }
 
     readonly XmlHandlerTable handlerTable = new();
+    readonly ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
+    readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
+    readonly object dataAgentRouteGate = new();
+    string activeDataAgentSessionId = string.Empty;
+    string activeDataAgentSessionStatus = string.Empty;
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;
     XmlStreamExecutor executor = null!;
@@ -133,6 +201,8 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             minBreakingLength: 9
         );
         handlerTable.ExecutionPolicy.ResetTurnBudget();
+        handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
+        chatActivity.ChatBot.ChatSend += OnChatSend;
         parser.Error += OnError;
         executor.Error += OnError;
 
@@ -168,10 +238,30 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     public override async Task DestroyAsync()
     {
+        if (ChatBot != null)
+            ChatBot.ChatSend -= OnChatSend;
+
         await executor.WaitToInactive();
         await executor.DisposeAsync();
 
         await base.DestroyAsync();
+    }
+
+    string OnChatSend(string message)
+    {
+        ToolRouteState state = scopedToolRouteState.Value ?? ToolRouteState.Empty;
+        ToolRouteDecision route = RouteCurrentTurn(message, state);
+        string routedGuide = BuildRoutedFunctionGuide(route);
+        if (string.IsNullOrWhiteSpace(routedGuide))
+            return message;
+
+        return $"""
+               {message}
+
+               [tool_route_context]
+               {routedGuide}
+               [/tool_route_context]
+               """;
     }
 
     async void OnChatSent(string _)
@@ -210,5 +300,31 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     {
         Poke($"执行{tag}标签出错：{exception.Message}");
         logger.LogWarning(exception, $"执行{tag}标签出错");
+    }
+
+    static string? ReadContextValue(string context, string prefix)
+    {
+        foreach (string line in context.Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (trimmed.StartsWith(prefix, StringComparison.Ordinal))
+                return trimmed[prefix.Length..].Trim();
+        }
+
+        return null;
+    }
+
+    sealed class ToolRouteStateScope(AsyncLocal<ToolRouteState?> target, ToolRouteState? previous) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            target.Value = previous;
+            disposed = true;
+        }
     }
 }

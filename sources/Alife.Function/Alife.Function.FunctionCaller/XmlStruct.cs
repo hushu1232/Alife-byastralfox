@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Function.FunctionCaller;
 
 namespace Alife.Function.Interpreter;
 
@@ -194,15 +195,19 @@ public class XmlHandler
         };
     }
 
-    public string Document()
+    public string Document(Func<XmlFunction, bool>? functionFilter = null)
     {
         StringBuilder sb = new();
         sb.AppendLine($"> 来源：{Name}");
         if (string.IsNullOrEmpty(Description) == false)
             sb.AppendLine($"功能简介：\n{Description}");
 
+        string functionDocument = FunctionDocument(functionFilter);
+        if (string.IsNullOrWhiteSpace(functionDocument))
+            return string.Empty;
+
         sb.AppendLine("提供函数：");
-        sb.AppendLine(FunctionDocument());
+        sb.AppendLine(functionDocument);
 
         if (string.IsNullOrEmpty(Explain) == false)
         {
@@ -214,11 +219,15 @@ public class XmlHandler
 
         return sb.ToString().TrimEnd();
     }
-    public string FunctionDocument()
+
+    public string FunctionDocument(Func<XmlFunction, bool>? functionFilter = null)
     {
         StringBuilder sb = new();
         foreach (XmlFunction function in Functions)
         {
+            if (functionFilter is not null && functionFilter(function) == false)
+                continue;
+
             sb.Append($"- <{function.Name}");
             foreach (XmlParameter param in function.Parameters)
             {
@@ -247,7 +256,6 @@ public class XmlHandler
         return sb.ToString().TrimEnd();
     }
 }
-
 [Flags]
 public enum FunctionMode
 {
@@ -269,19 +277,80 @@ public sealed class XmlFunctionExecutionPolicy
 {
     public bool AllowHighRisk { get; set; }
     public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
+
+    public ToolRouteDecision? CurrentRoute
+    {
+        get
+        {
+            lock (gate)
+            {
+                return currentRoute;
+            }
+        }
+        set
+        {
+            lock (gate)
+            {
+                currentRoute = value;
+            }
+        }
+    }
+
     public int MaxBudgetPerTurn { get; set; } = 64;
     public int BudgetUsedThisTurn { get; private set; }
+
+    public void SetGovernedToolNames(IEnumerable<string> toolNames)
+    {
+        ArgumentNullException.ThrowIfNull(toolNames);
+
+        lock (gate)
+        {
+            governedToolNames.Clear();
+            foreach (string toolName in toolNames)
+            {
+                if (string.IsNullOrWhiteSpace(toolName) == false)
+                    governedToolNames.Add(toolName.Trim());
+            }
+        }
+    }
 
     public void ResetTurnBudget()
     {
         lock (gate)
         {
             BudgetUsedThisTurn = 0;
+            currentRoute = null;
+            routeResetGeneration++;
         }
     }
 
-    public XmlFunctionExecutionDecision TryConsume(XmlFunction function)
+    public XmlFunctionExecutionDecision TryConsume(XmlFunction function, XmlContext? context = null)
     {
+        ToolRouteDecision? route;
+        bool hasGovernedTools;
+        bool isGovernedTool;
+        lock (gate)
+        {
+            route = currentRoute;
+            hasGovernedTools = governedToolNames.Count > 0;
+            isGovernedTool = governedToolNames.Contains(function.Name);
+        }
+
+        if (hasGovernedTools && isGovernedTool && route is null)
+            return new XmlFunctionExecutionDecision(false, "tool_route_required");
+
+        bool routeGatesFunction = hasGovernedTools ? isGovernedTool : route is not null;
+        if (routeGatesFunction && route is not null && route.Allows(function.Name) == false)
+            return new XmlFunctionExecutionDecision(false, "tool_not_allowed_in_current_route");
+
+        if (route is not null
+            && isGovernedTool
+            && IsSessionScopedDataAgentTool(function.Name)
+            && IsRouteSessionAllowed(route, context) == false)
+        {
+            return new XmlFunctionExecutionDecision(false, "tool_session_not_allowed_in_current_route");
+        }
+
         if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
         {
             XmlFunctionExecutionDecision? authorization = AuthorizeHighRiskFunction?.Invoke(function);
@@ -306,6 +375,69 @@ public sealed class XmlFunctionExecutionPolicy
         }
     }
 
+    public IDisposable UseRoute(ToolRouteDecision? route)
+    {
+        ToolRouteDecision? previousRoute;
+        int restoreGeneration;
+        lock (gate)
+        {
+            previousRoute = currentRoute;
+            currentRoute = route;
+            restoreGeneration = routeResetGeneration;
+        }
+
+        return new RouteScope(this, previousRoute, restoreGeneration);
+    }
+
+    void RestoreRoute(ToolRouteDecision? route, int restoreGeneration)
+    {
+        lock (gate)
+        {
+            if (routeResetGeneration == restoreGeneration)
+                currentRoute = route;
+        }
+    }
+
+    sealed class RouteScope(
+        XmlFunctionExecutionPolicy policy,
+        ToolRouteDecision? previousRoute,
+        int restoreGeneration) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            policy.RestoreRoute(previousRoute, restoreGeneration);
+            disposed = true;
+        }
+    }
+
+    static bool IsSessionScopedDataAgentTool(string toolName)
+    {
+        return string.Equals(toolName, "dataagent_analysis_continue", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(toolName, "dataagent_analysis_summarize", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(toolName, "dataagent_analysis_end", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static bool IsRouteSessionAllowed(ToolRouteDecision route, XmlContext? context)
+    {
+        string expectedSessionId = route.State.ActiveDataAgentSessionId;
+        if (string.IsNullOrWhiteSpace(expectedSessionId))
+            return false;
+        if (context is null)
+            return false;
+        if (context.Parameters.TryGetValue("sessionid", out string? actualSessionId) == false)
+            return false;
+
+        return string.Equals(actualSessionId, expectedSessionId, StringComparison.Ordinal);
+    }
+
+    ToolRouteDecision? currentRoute;
+    int routeResetGeneration;
+    readonly HashSet<string> governedToolNames = new(StringComparer.OrdinalIgnoreCase);
     readonly object gate = new();
 }
 

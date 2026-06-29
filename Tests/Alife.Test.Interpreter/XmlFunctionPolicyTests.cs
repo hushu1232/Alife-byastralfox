@@ -86,16 +86,270 @@ public class XmlFunctionPolicyTests
         Assert.That(handler.DeleteCalls, Is.EqualTo(1));
     }
 
-    static XmlContext OneShotContext() => new()
+    [Test]
+    public void ExecutionPolicyRejectsToolOutsideCurrentRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool")
+        };
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(Function("denied_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.IsAllowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+        });
+    }
+
+
+    [Test]
+    public void HandleRejectsGovernedDataAgentToolWhenRouteIsMissing()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.Register(new XmlHandler(handler));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("dataagent_analysis_continue", OneShotContext()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("tool_route_required"));
+            Assert.That(handler.DataAgentContinueCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void HandleRejectsSessionScopedDataAgentToolWhenRouteSessionDoesNotMatch()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.ExecutionPolicy.CurrentRoute = new ToolRouteDecision(
+            "route-1",
+            ToolCapabilityDomain.DataAgent,
+            "analysis_continue",
+            ["dataagent_analysis_continue"],
+            [],
+            new ToolRouteState("analysis-1", "Active", true, true, true),
+            "test_route");
+        table.Register(new XmlHandler(handler));
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle(
+                "dataagent_analysis_continue",
+                OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-2" })));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(handler.DataAgentContinueCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task HandleAllowsSessionScopedDataAgentToolWhenRouteSessionMatches()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.ExecutionPolicy.CurrentRoute = new ToolRouteDecision(
+            "route-1",
+            ToolCapabilityDomain.DataAgent,
+            "analysis_continue",
+            ["dataagent_analysis_continue"],
+            [],
+            new ToolRouteState("analysis-1", "ReadyToSummarize", true, true, true),
+            "test_route");
+        table.Register(new XmlHandler(handler));
+
+        await table.Handle(
+            "dataagent_analysis_continue",
+            OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-1" }));
+
+        Assert.That(handler.DataAgentContinueCalls, Is.EqualTo(1));
+    }
+    [Test]
+    public void ExecutionPolicyRouteGateDoesNotConsumeBudgetWhenRejectingOutsideRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 1
+        };
+
+        XmlFunctionExecutionDecision denied = policy.TryConsume(Function("denied_tool"));
+        XmlFunctionExecutionDecision allowed = policy.TryConsume(Function("allowed_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(denied.IsAllowed, Is.False);
+            Assert.That(denied.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(allowed.IsAllowed, Is.True);
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void ExecutionPolicyAllowsListedToolAndConsumesBudgetNormally()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 2
+        };
+
+        XmlFunctionExecutionDecision first = policy.TryConsume(Function("allowed_tool"));
+        XmlFunctionExecutionDecision second = policy.TryConsume(Function("allowed_tool"));
+        XmlFunctionExecutionDecision exhausted = policy.TryConsume(Function("allowed_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.IsAllowed, Is.True);
+            Assert.That(second.IsAllowed, Is.True);
+            Assert.That(exhausted.IsAllowed, Is.False);
+            Assert.That(exhausted.Reason, Does.Contain("budget"));
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void ResetTurnBudgetClearsBudgetAndCurrentRoute()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            MaxBudgetPerTurn = 1
+        };
+
+        XmlFunctionExecutionDecision consumed = policy.TryConsume(Function("allowed_tool"));
+
+        policy.ResetTurnBudget();
+        int budgetAfterReset = policy.BudgetUsedThisTurn;
+        ToolRouteDecision? routeAfterReset = policy.CurrentRoute;
+        XmlFunctionExecutionDecision afterReset = policy.TryConsume(Function("denied_tool"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(consumed.IsAllowed, Is.True);
+            Assert.That(budgetAfterReset, Is.Zero);
+            Assert.That(routeAfterReset, Is.Null);
+            Assert.That(afterReset.IsAllowed, Is.True);
+            Assert.That(policy.BudgetUsedThisTurn, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void UseRouteDoesNotRestoreStaleRouteAfterResetTurnBudget()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("old_tool")
+        };
+
+        using (IDisposable scope = policy.UseRoute(RouteAllowing("new_tool")))
+        {
+            policy.ResetTurnBudget();
+            scope.Dispose();
+        }
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(Function("denied_by_old_route"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(policy.CurrentRoute, Is.Null);
+            Assert.That(decision.IsAllowed, Is.True);
+        });
+    }
+
+    [Test]
+    public void UseRouteRestoresPreviousRouteForNestedScopes()
+    {
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("outer_tool")
+        };
+
+        using (policy.UseRoute(RouteAllowing("middle_tool")))
+        {
+            Assert.That(policy.TryConsume(Function("outer_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("middle_tool")).IsAllowed, Is.True);
+
+            using (policy.UseRoute(RouteAllowing("inner_tool")))
+            {
+                Assert.That(policy.TryConsume(Function("middle_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+                Assert.That(policy.TryConsume(Function("inner_tool")).IsAllowed, Is.True);
+            }
+
+            Assert.That(policy.TryConsume(Function("inner_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("middle_tool")).IsAllowed, Is.True);
+        }
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(policy.TryConsume(Function("middle_tool")).Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(policy.TryConsume(Function("outer_tool")).IsAllowed, Is.True);
+        });
+    }
+
+    [Test]
+    public void ExecutionPolicyRejectsRouteDeniedHighRiskBeforeAuthorization()
+    {
+        bool authorizerCalled = false;
+        XmlFunctionExecutionPolicy policy = new()
+        {
+            CurrentRoute = RouteAllowing("allowed_tool"),
+            AuthorizeHighRiskFunction = _ =>
+            {
+                authorizerCalled = true;
+                return new XmlFunctionExecutionDecision(true, "approved");
+            }
+        };
+
+        XmlFunctionExecutionDecision decision = policy.TryConsume(
+            Function("denied_tool", XmlFunctionRiskLevel.High));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.IsAllowed, Is.False);
+            Assert.That(decision.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            Assert.That(authorizerCalled, Is.False);
+        });
+    }
+    static ToolRouteDecision RouteAllowing(params string[] allowedTools) => new(
+        "route-1",
+        ToolCapabilityDomain.DataAgent,
+        "analysis_continue",
+        allowedTools,
+        [],
+        ToolRouteState.Empty,
+        "test_route");
+
+    static XmlFunction Function(
+        string name,
+        XmlFunctionRiskLevel riskLevel = XmlFunctionRiskLevel.Low,
+        int budgetCost = 1) => new()
+    {
+        Name = name,
+        Mode = FunctionMode.OneShot,
+        RiskLevel = riskLevel,
+        BudgetCost = budgetCost,
+        Invoker = (_, _) => Task.CompletedTask,
+    };
+    static XmlContext OneShotContext(IReadOnlyDictionary<string, string>? parameters = null) => new()
     {
         CallMode = CallMode.OneShot,
-        Parameters = new Dictionary<string, string>(),
+        Parameters = parameters ?? new Dictionary<string, string>(),
     };
 
     sealed class PolicyHandler
     {
         public int DeleteCalls { get; private set; }
         public int PingCalls { get; private set; }
+        public int DataAgentContinueCalls { get; private set; }
 
         [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High)]
         public void DeleteFile()
@@ -108,8 +362,32 @@ public class XmlFunctionPolicyTests
         {
             PingCalls++;
         }
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_continue")]
+        public void ContinueDataAgentAnalysis(string sessionId)
+        {
+            DataAgentContinueCalls++;
+        }
     }
 
+
+    sealed class DataAgentXmlTools
+    {
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_query")]
+        public void Query(string question) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
+        public void Start(string callerId, string goalOrQuestion) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_continue")]
+        public void Continue(string sessionId, string question) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_summarize")]
+        public void Summarize(string sessionId) {}
+
+        [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_end")]
+        public void End(string sessionId) {}
+    }
     sealed class HiddenTool
     {
         [XmlFunction(FunctionMode.OneShot, name: "hidden_ping")]

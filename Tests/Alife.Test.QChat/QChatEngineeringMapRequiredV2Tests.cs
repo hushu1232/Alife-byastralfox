@@ -20,7 +20,10 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "Persona intensity prompt formatter",
         "Persona frame prompt",
         "XiaYu private state prompt",
-        "Semantic window summary prompt"
+        "Semantic window summary prompt",
+        "Tool broker runtime wiring",
+        "QChat tool route state wiring",
+        "DataAgent dynamic tool route contract"
     ];
 
     [Test]

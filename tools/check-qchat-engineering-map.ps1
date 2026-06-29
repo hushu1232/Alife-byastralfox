@@ -49,8 +49,12 @@ Add-Check -Group "Harness" -Name "Voice warmup coordinator tests" -Path "Tests/A
 Add-Check -Group "Harness" -Name "Model reply loop live tests" -Path "Tests/Alife.Test.QChat/QChatModelReplyLoopLiveTests.cs" -Patterns @("QChatModelReplyLoopLiveTests")
 Add-Check -Group "Harness" -Name "Prompt leak contract tests" -Path "Tests/Alife.Test.QChat/QChatPromptLeakContractTests.cs" -Patterns @("QChatPromptLeakContractTests", "InternalStateTextDoesNotBecomePrivateVisibleReply")
 Add-Check -Group "Harness" -Name "Runtime readiness script" -Path "tools/check-qchat-runtime-readiness.ps1" -Patterns @("QChat Runtime Readiness", "AgnesVisionKeyConfigured", "XiayuTts9880Reachable", "MixuTts9881Reachable", "-Live", "-Strict", "exit 1")
-Add-Check -Group "Harness" -Name "DataAgent readiness script" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgent Readiness", "DataAgentModulePresent", "QueryPlanFixturesPass", "ContextContributionStable", "PlannerInterfacePresent", "ToolHandlerReturnsDataAgentContext", "exit 1")
+Add-Check -Group "Harness" -Name "DataAgent readiness script" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgent Readiness", "DataAgentModulePresent", "QueryPlanFixturesPass", "ContextContributionStable", "PlannerInterfacePresent", "ToolHandlerReturnsDataAgentContext", "ToolBrokerDynamicExposurePresent", "ToolRouteRuntimeWiringPresent", "QChatToolRouteStateScopePresent", "exit 1")
 Add-Check -Group "Harness" -Name "DataAgent planner/tool integration" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("PlannerInterfacePresent", "ToolHandlerReturnsDataAgentContext", "dataagent_query")
+Add-Check -Group "Harness" -Name "Tool broker route tests" -Path "Tests/Alife.Test.Interpreter/ToolCapabilityRouterTests.cs" -Patterns @("ToolCapabilityRouterTests", "RouterDoesNotTreatOrdinaryContinueAsDataAgentAnalysis")
+Add-Check -Group "Harness" -Name "Tool broker execution gate tests" -Path "Tests/Alife.Test.Interpreter/XmlFunctionPolicyTests.cs" -Patterns @("ExecutionPolicyRejectsToolOutsideCurrentRoute", "HandleRejectsGovernedDataAgentToolWhenRouteIsMissing", "HandleRejectsSessionScopedDataAgentToolWhenRouteSessionDoesNotMatch")
+Add-Check -Group "Harness" -Name "QChat tool route state wiring" -Path "Tests/Alife.Test.QChat/QChatToolRouteStateWiringTests.cs" -Patterns @("DispatchToModelCreatesScopedToolRouteState", "functionService.CreateToolRouteState", "functionService.UseToolRouteState(routeState)")
+Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 
 Add-Check -Group "Loop" -Name "OneBot receive loop" -Path "sources/Alife.Function/Alife.Function.QChat/OneBotClient.cs" -Patterns @("ReceiveLoop", "while (ws.State == WebSocketState.Open")
 Add-Check -Group "Loop" -Name "QChat event queue loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ProcessOneBotEventQueueAsync", "oneBotEventProcessingTask")
@@ -64,6 +68,8 @@ Add-Check -Group "Loop" -Name "Semantic settle window contract tests" -Path "Tes
 Add-Check -Group "Loop" -Name "Voice warmup contract tests" -Path "Tests/Alife.Test.QChat/QChatVoiceWarmupCoordinatorTests.cs" -Patterns @("WarmupAsync_MultipleProfilesTrackIndependentStatuses", "StartAsync_RetriesUntilEndpointBecomesReachable")
 Add-Check -Group "Loop" -Name "XiaYu self-state machine" -Path "sources/Alife.Function/Alife.Function.QChat/XiaYuSelfStateMachine.cs" -Patterns @("XiaYuSelfStateMachine", "Apply")
 Add-Check -Group "Loop" -Name "Owner event dispatcher" -Path "sources/Alife.Function/Alife.Function.QChat/QChatOwnerEventDispatcher.cs" -Patterns @("QChatOwnerEventDispatcher", "FlushAsync")
+Add-Check -Group "Loop" -Name "Tool route decision model" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/ToolRouteModels.cs" -Patterns @("ToolRouteDecision", "AllowedTools", "DeniedTools")
+Add-Check -Group "Loop" -Name "Tool broker runtime wiring" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/XmlFunctionCaller.cs" -Patterns @("RouteCurrentTurn", "BuildRoutedFunctionGuide", "SetGovernedToolNames", "[tool_route_context]", "ChatSend += OnChatSend")
 
 Add-Check -Group "Prompt" -Name "Stable persona prompt registration" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("RegisterStablePersonaPromptIfNeeded")
 Add-Check -Group "Prompt" -Name "Persona intensity prompt formatter" -Path "sources/Alife.Function/Alife.Function.QChat/QChatAggressionBoundaryPolicy.cs" -Patterns @("QChatPersonaIntensityPromptFormatter", "persona_intensity")
@@ -78,6 +84,7 @@ Add-Check -Group "Prompt" -Name "Context budget composer" -Path "sources/Alife/A
 Add-Check -Group "Prompt" -Name "Visible text policy" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVisibleTextPolicy.cs" -Patterns @("QChatVisibleTextPolicy", "IsHumanInvisibleStateText")
 Add-Check -Group "Prompt" -Name "Visible reply policy" -Path "sources/Alife.Function/Alife.Function.QChat/QChatVisibleReplyPolicy.cs" -Patterns @("QChatVisibleReplyPolicy", "IsHumanInvisibleStateText")
 Add-Check -Group "Prompt" -Name "Experience sanitizer" -Path "sources/Alife.Function/Alife.Function.QChat/QChatExperienceSanitizer.cs" -Patterns @("QChatExperienceSanitizer", "SanitizeOutgoing")
+Add-Check -Group "Prompt" -Name "Dynamic tool manifest boundary" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/ToolCapabilityManifest.cs" -Patterns @("ToolCapabilityManifest", "Preconditions", "StateEffect")
 
 Write-Output "QChat Engineering Map"
 

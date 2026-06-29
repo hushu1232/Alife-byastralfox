@@ -43,14 +43,19 @@ public class XmlHandlerTable
                && xmlFunctionGroup.Count > 0;
     }
 
-    public string Document()
+    public string Document(Func<XmlFunction, bool>? functionFilter = null)
     {
         StringBuilder sb = new();
         foreach (XmlHandler handler in xmlHandlers)
         {
             if (handler.IsImplicit)
                 continue;
-            sb.AppendLine(handler.Document());
+
+            string document = handler.Document(functionFilter);
+            if (string.IsNullOrWhiteSpace(document))
+                continue;
+
+            sb.AppendLine(document);
             sb.AppendLine();
         }
 
@@ -64,7 +69,7 @@ public class XmlHandlerTable
             throw new Exception($"未找到名为 {name} 的可调用函数");
         foreach (XmlFunction xmlFunction in xmlFunctionGroup)
         {
-            XmlFunctionExecutionDecision decision = ExecutionPolicy.TryConsume(xmlFunction);
+            XmlFunctionExecutionDecision decision = ExecutionPolicy.TryConsume(xmlFunction, tagContext);
             if (decision.IsAllowed == false)
                 throw new InvalidOperationException(decision.Reason);
 
