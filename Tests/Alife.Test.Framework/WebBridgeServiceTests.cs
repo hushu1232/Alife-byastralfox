@@ -179,6 +179,89 @@ public class WebBridgeServiceTests
     }
 
     [Test]
+    public async Task WebBridgePackageInstallerApplyPackageWritesActiveConfigAndMarksCatalogApplied()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer-apply", Guid.NewGuid().ToString("N"));
+        byte[] content = [4, 5, 6];
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(content));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "apply-package",
+            PackageType = "characterBundle",
+            Version = "20260629120000",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "characterCard",
+                    Url = "https://foxd.example/card.json",
+                    RelativePath = "characters/apply/card.json",
+                    Size = content.Length
+                }
+            ],
+            ConfigDraft = new WebBridgeConfigDraft
+            {
+                CharacterName = "apply-character",
+                CharacterCardPath = "characters/apply/card.json",
+                Live2DModelPath = "live2d/apply/model3.json"
+            }
+        };
+
+        await installer.Install(manifest, CancellationToken.None);
+
+        WebBridgeInstallResult result = await installer.ApplyPackage("apply-package", CancellationToken.None);
+
+        string activeConfigPath = Path.Combine(root, "ActiveConfig", "apply-package.json");
+        string catalog = File.ReadAllText(Path.Combine(root, "catalog.json"));
+        Assert.That(result.PackageId, Is.EqualTo("apply-package"));
+        Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.Applied));
+        Assert.That(File.Exists(activeConfigPath), Is.True);
+        Assert.That(File.ReadAllText(activeConfigPath), Does.Contain("apply-character"));
+        Assert.That(catalog, Does.Contain("\"status\": \"applied\""));
+        Assert.That(catalog, Does.Contain("\"activeConfigPath\""));
+    }
+
+    [Test]
+    public async Task WebBridgePackageInstallerApplyPackageRejectsMissingConfigDraftWithoutChangingCatalog()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-installer-apply-missing-draft", Guid.NewGuid().ToString("N"));
+        byte[] content = [8, 8, 8];
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(content));
+        WebBridgePackageManifest manifest = new()
+        {
+            PackageId = "missing-draft-package",
+            PackageType = "characterBundle",
+            Version = "20260629130000",
+            Files =
+            [
+                new WebBridgePackageFile
+                {
+                    Kind = "characterCard",
+                    Url = "https://foxd.example/card.json",
+                    RelativePath = "characters/missing-draft/card.json",
+                    Size = content.Length
+                }
+            ],
+            ConfigDraft = new WebBridgeConfigDraft
+            {
+                CharacterName = "missing-draft-character",
+                CharacterCardPath = "characters/missing-draft/card.json",
+                Live2DModelPath = "live2d/missing-draft/model3.json"
+            }
+        };
+        WebBridgeInstallResult installResult = await installer.Install(manifest, CancellationToken.None);
+        File.Delete(installResult.ConfigDraftPath);
+
+        InvalidOperationException exception = Assert.ThrowsAsync<InvalidOperationException>(() =>
+            installer.ApplyPackage("missing-draft-package", CancellationToken.None))!;
+
+        string catalog = File.ReadAllText(Path.Combine(root, "catalog.json"));
+        Assert.That(exception.Message, Does.Contain("config draft"));
+        Assert.That(catalog, Does.Contain("\"status\": \"pendingActivation\""));
+        Assert.That(catalog, Does.Not.Contain("\"status\": \"applied\""));
+    }
+
+    [Test]
     public void CharacterSyncMapsAvatarConfigToAlifeCharacter()
     {
         WebAvatarConfig avatar = new()
@@ -352,6 +435,86 @@ public class WebBridgeServiceTests
         }));
         Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Scheme == "Bearer"), Is.True);
         Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Parameter == "secret-token"), Is.True);
+    }
+
+    [Test]
+    public async Task WebBridgeServiceApplyPackageReportsPackageApplied()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-apply", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1 }));
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore(), assetSync: null, packageInstaller: installer);
+        await service.InstallPackage("xiayu-character-bundle", CancellationToken.None);
+        handler.Requests.Clear();
+        handler.PostedJsonBodies.Clear();
+
+        WebBridgeInstallResult result = await service.ApplyPackage("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.Applied));
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/pet/sync/status"
+        }));
+        Assert.That(handler.PostedJsonBodies.Where(body => body.Contains("\"milestone\"")).Select(GetPostedMilestone), Is.EqualTo(new[]
+        {
+            WebBridgeSyncMilestones.PackageApplied
+        }));
+    }
+
+    [Test]
+    public async Task WebBridgeServiceApplyPackageTreatsManifestReadAsBestEffortAfterLocalApply()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-apply-corrupt-manifest", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1 }));
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore(), assetSync: null, packageInstaller: installer);
+        WebBridgeInstallResult installResult = await service.InstallPackage("xiayu-character-bundle", CancellationToken.None);
+        File.WriteAllText(installResult.ManifestPath, "{not-json");
+        handler.Requests.Clear();
+        handler.PostedJsonBodies.Clear();
+
+        WebBridgeInstallResult result = await service.ApplyPackage("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.Applied));
+        Assert.That(handler.PostedJsonBodies.Where(body => body.Contains("\"milestone\"")).Select(GetPostedMilestone), Is.EqualTo(new[]
+        {
+            WebBridgeSyncMilestones.PackageApplied
+        }));
+    }
+
+    [Test]
+    public void WebBridgeServiceApplyPackageReportsPackageFailedWhenLocalApplyFails()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-apply-failed", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+        WebBridgePackageInstaller installer = new(root, _ => Task.FromResult(new byte[] { 1 }));
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore(), assetSync: null, packageInstaller: installer);
+
+        InvalidOperationException exception = Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ApplyPackage("missing-package", CancellationToken.None))!;
+
+        Assert.That(exception.Message, Does.Contain("catalog"));
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/pet/sync/status"
+        }));
+        Assert.That(handler.PostedJsonBodies.Where(body => body.Contains("\"milestone\"")).Select(GetPostedMilestone), Is.EqualTo(new[]
+        {
+            WebBridgeSyncMilestones.PackageFailed
+        }));
+        Assert.That(handler.PostedJsonBodies.Single(body => body.Contains("\"milestone\"")), Does.Contain("PACKAGE_APPLY_FAILED"));
     }
 
     [Test]

@@ -7,6 +7,7 @@ public static class WebBridgeSyncMilestones
     public const string HashValidated = "hashValidated";
     public const string PackageStaged = "packageStaged";
     public const string ConfirmationRequested = "confirmationRequested";
+    public const string PackageApplied = "packageApplied";
     public const string PackageFailed = "packageFailed";
 }
 

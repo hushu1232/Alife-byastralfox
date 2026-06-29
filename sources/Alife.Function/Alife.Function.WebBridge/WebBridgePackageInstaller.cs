@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -57,6 +58,44 @@ public sealed class WebBridgePackageInstaller(
         };
     }
 
+    public async Task<WebBridgeInstallResult> ApplyPackage(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(packageId))
+            throw new InvalidOperationException("PackageId is required.");
+
+        WebBridgeLocalCatalog catalog = await ReadCatalog(cancellationToken);
+        WebBridgeInstalledPackageRecord record = catalog.InstalledPackages.FirstOrDefault(package =>
+            string.Equals(package.PackageId, packageId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"WebBridge package is not staged: {packageId}");
+
+        if (string.Equals(record.Status, WebBridgePackageStatus.PendingActivation, StringComparison.OrdinalIgnoreCase) == false)
+            throw new InvalidOperationException($"WebBridge package is not pending activation: {packageId}");
+
+        if (string.IsNullOrWhiteSpace(record.ConfigDraftPath) || File.Exists(record.ConfigDraftPath) == false)
+            throw new InvalidOperationException($"WebBridge config draft was not found: {record.ConfigDraftPath}");
+
+        string activeConfigPath = Path.Combine(rootDirectory, "ActiveConfig", $"{SanitizeSegment(packageId)}.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(activeConfigPath)!);
+        string draft = await File.ReadAllTextAsync(record.ConfigDraftPath, cancellationToken);
+        await File.WriteAllTextAsync(activeConfigPath, draft, cancellationToken);
+
+        record.Status = WebBridgePackageStatus.Applied;
+        record.AppliedAtUtc = DateTimeOffset.UtcNow;
+        record.ActiveConfigPath = activeConfigPath;
+        await WriteCatalog(catalog, cancellationToken);
+
+        return new WebBridgeInstallResult
+        {
+            PackageId = record.PackageId,
+            Status = record.Status,
+            PackageRootPath = record.PackageRootPath,
+            ManifestPath = record.ManifestPath,
+            ConfigDraftPath = record.ConfigDraftPath
+        };
+    }
+
     static string ResolveSafePath(string root, string relativePath)
     {
         if (string.IsNullOrWhiteSpace(relativePath))
@@ -88,13 +127,7 @@ public sealed class WebBridgePackageInstaller(
         string draftPath,
         CancellationToken cancellationToken)
     {
-        string catalogPath = Path.Combine(rootDirectory, "catalog.json");
-        WebBridgeLocalCatalog catalog = new();
-        if (File.Exists(catalogPath))
-        {
-            string existing = await File.ReadAllTextAsync(catalogPath, cancellationToken);
-            catalog = JsonSerializer.Deserialize<WebBridgeLocalCatalog>(existing, JsonOptions) ?? new WebBridgeLocalCatalog();
-        }
+        WebBridgeLocalCatalog catalog = await ReadCatalog(cancellationToken, missingIsEmpty: true);
 
         catalog.InstalledPackages.RemoveAll(package => package.PackageId == manifest.PackageId);
         catalog.InstalledPackages.Add(new WebBridgeInstalledPackageRecord
@@ -108,6 +141,32 @@ public sealed class WebBridgePackageInstaller(
             ConfigDraftPath = draftPath
         });
 
+        await WriteCatalog(catalog, cancellationToken);
+    }
+
+    async Task<WebBridgeLocalCatalog> ReadCatalog(
+        CancellationToken cancellationToken,
+        bool missingIsEmpty = false)
+    {
+        string catalogPath = Path.Combine(rootDirectory, "catalog.json");
+        if (File.Exists(catalogPath) == false)
+        {
+            if (missingIsEmpty)
+                return new WebBridgeLocalCatalog();
+
+            throw new InvalidOperationException("WebBridge package catalog was not found.");
+        }
+
+        string existing = await File.ReadAllTextAsync(catalogPath, cancellationToken);
+        return JsonSerializer.Deserialize<WebBridgeLocalCatalog>(existing, JsonOptions) ?? new WebBridgeLocalCatalog();
+    }
+
+    async Task WriteCatalog(
+        WebBridgeLocalCatalog catalog,
+        CancellationToken cancellationToken)
+    {
+        string catalogPath = Path.Combine(rootDirectory, "catalog.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(catalogPath)!);
         await File.WriteAllTextAsync(catalogPath, JsonSerializer.Serialize(catalog, JsonOptions), cancellationToken);
     }
 

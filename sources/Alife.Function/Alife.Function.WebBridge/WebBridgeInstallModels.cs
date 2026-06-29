@@ -25,6 +25,7 @@ public static class WebBridgePackageStatus
     public const string Verified = "verified";
     public const string Installed = "installed";
     public const string PendingActivation = "pendingActivation";
+    public const string Applied = "applied";
     public const string Failed = "failed";
 }
 
@@ -35,9 +36,11 @@ public sealed class WebBridgeInstalledPackageRecord
     public string Version { get; set; } = string.Empty;
     public string Status { get; set; } = WebBridgePackageStatus.PendingActivation;
     public DateTimeOffset InstalledAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? AppliedAtUtc { get; set; }
     public string PackageRootPath { get; set; } = string.Empty;
     public string ManifestPath { get; set; } = string.Empty;
     public string ConfigDraftPath { get; set; } = string.Empty;
+    public string ActiveConfigPath { get; set; } = string.Empty;
 }
 
 public sealed class WebBridgeLocalCatalog

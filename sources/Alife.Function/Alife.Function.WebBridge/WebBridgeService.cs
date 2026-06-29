@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
@@ -93,6 +94,26 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         catch (Exception exception)
         {
             manifest ??= new WebBridgePackageManifest { PackageId = packageId };
+            await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.PackageFailed, ErrorFromException(exception), cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task<WebBridgeInstallResult> ApplyPackage(
+        string packageId,
+        CancellationToken cancellationToken = default)
+    {
+        WebApiClient client = GetClient();
+        WebBridgePackageManifest manifest = new() { PackageId = packageId };
+        try
+        {
+            WebBridgeInstallResult result = await CreatePackageInstaller(manifest, client).ApplyPackage(packageId, cancellationToken);
+            manifest = await LoadPackageManifest(result, packageId, cancellationToken);
+            await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.PackageApplied, error: null, cancellationToken);
+            return result;
+        }
+        catch (Exception exception)
+        {
             await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.PackageFailed, ErrorFromException(exception), cancellationToken);
             throw;
         }
@@ -217,6 +238,30 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return WebBridgeSyncErrorCodes.PackageApplyFailed;
     }
 
+    static async Task<WebBridgePackageManifest> LoadPackageManifest(
+        WebBridgeInstallResult result,
+        string packageId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(result.ManifestPath) || File.Exists(result.ManifestPath) == false)
+            return new WebBridgePackageManifest { PackageId = packageId };
+
+        try
+        {
+            string json = await File.ReadAllTextAsync(result.ManifestPath, cancellationToken);
+            WebBridgePackageManifest manifest = JsonSerializer.Deserialize<WebBridgePackageManifest>(json, PackageJsonOptions) ?? new WebBridgePackageManifest();
+            if (string.IsNullOrWhiteSpace(manifest.PackageId))
+                manifest.PackageId = packageId;
+
+            return manifest;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
+        {
+            AlifeTerminal.LogWarning($"WebBridge package manifest read failed after local apply: {exception.Message}");
+            return new WebBridgePackageManifest { PackageId = packageId };
+        }
+    }
+
     void StartSyncLoop()
     {
         syncCancellation?.Cancel();
@@ -306,4 +351,10 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
     AlifeManagementApiHost? managementApiHost;
     CancellationTokenSource? syncCancellation;
     Task? syncTask;
+
+    static readonly JsonSerializerOptions PackageJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
 }
