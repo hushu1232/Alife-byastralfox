@@ -148,6 +148,95 @@ public sealed class DataAgentAnalysisOrchestratorTests
         });
     }
 
+    [Test]
+    public void ContinueSummarizeDoesNotRequireRouteAndDoesNotExecuteSql()
+    {
+        DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+
+        DataAgentOrchestrationResult summary = orchestrator.Continue(new DataAgentOrchestrationRequest(
+            "owner",
+            "\u603b\u7ed3\u4e00\u4e0b",
+            start.SessionId,
+            RouteAllowsQuery: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(summary.Response.Accepted, Is.True);
+            Assert.That(summary.Response.Answer, Is.Null);
+            Assert.That(summary.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Summarized));
+            Assert.That(summary.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Summarize,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(summary.Checkpoint.CanContinue, Is.True);
+            Assert.That(summary.Checkpoint.Terminal, Is.False);
+        });
+    }
+
+    [Test]
+    public void ContinueEndDoesNotRequireRouteAndProducesTerminalCheckpoint()
+    {
+        DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+
+        DataAgentOrchestrationResult end = orchestrator.Continue(new DataAgentOrchestrationRequest(
+            "owner",
+            "\u7ed3\u675f",
+            start.SessionId,
+            RouteAllowsQuery: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(end.Response.Accepted, Is.True);
+            Assert.That(end.Response.Answer, Is.Null);
+            Assert.That(end.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+            Assert.That(end.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.End,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(end.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(end.Checkpoint.CanContinue, Is.False);
+            Assert.That(end.Checkpoint.CanSummarize, Is.False);
+            Assert.That(end.Checkpoint.Terminal, Is.True);
+        });
+    }
+
     static DataAgentAnalysisOrchestrator Orchestrator(
         IDataAgentAnalysisSessionStore store,
         Func<string, DataAgentAnswer> answer,
