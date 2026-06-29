@@ -38,6 +38,28 @@ public sealed class ToolCapabilityRouterTests
     ];
 
     [Test]
+    public void DefaultRouterUsesSharedDataAgentManifestFactory()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        IReadOnlyList<ToolCapabilityManifest> manifests = DataAgentToolCapabilityManifests.Create();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(router.ToolNames, Is.EqualTo(manifests.Select(manifest => manifest.Name).ToArray()));
+            Assert.That(manifests.Select(manifest => manifest.Name), Is.EqualTo(new[]
+            {
+                "dataagent_query",
+                "dataagent_analysis_start",
+                "dataagent_analysis_continue",
+                "dataagent_analysis_summarize",
+                "dataagent_analysis_end"
+            }));
+            Assert.That(manifests.Single(manifest => manifest.Name == "dataagent_query").StateEffect, Is.EqualTo(ToolStateEffect.ReadsData));
+            Assert.That(manifests.Single(manifest => manifest.Name == "dataagent_analysis_end").StateEffect, Is.EqualTo(ToolStateEffect.EndsAnalysis));
+        });
+    }
+
+    [Test]
     public void ManifestStoresDomainIntentAndPreconditions()
     {
         ToolCapabilityManifest manifest = new(
