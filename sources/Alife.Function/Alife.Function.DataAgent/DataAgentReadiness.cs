@@ -320,6 +320,86 @@ public static class DataAgentReadiness
             checks.Add(storeInterfaceHasSqliteBinding == false
                 ? Pass("AnalysisSessionHasNoSqliteBinding", "store interface is provider-neutral")
                 : Fail("AnalysisSessionHasNoSqliteBinding", "store interface exposes sqlite types"));
+
+            InMemoryDataAgentAnalysisSessionStore orchestrationStore = new();
+            int orchestrationAnswerCalls = 0;
+            DataAgentAnalysisService orchestrationAnalysisService = new(
+                question =>
+                {
+                    orchestrationAnswerCalls++;
+                    return new DataAgentAnswer(
+                        "document_index",
+                        "SELECT path FROM document_index LIMIT 20",
+                        1,
+                        "orchestrated answer",
+                        "[data_agent_context]\nsql_status=validated\nresult_explanation=orchestrated answer\n[/data_agent_context]",
+                        true,
+                        string.Empty,
+                        new DataAgentPlannerExplanation(
+                            "ReadinessPlanner",
+                            "orchestrator_readiness",
+                            "document_index",
+                            "high",
+                            ["orchestrator"],
+                            "readiness orchestrator answer"));
+                },
+                orchestrationStore);
+            DataAgentAnalysisOrchestrator orchestrator = new(orchestrationAnalysisService, orchestrationStore);
+            DataAgentOrchestrationResult orchestrationStart = orchestrator.Start(new DataAgentOrchestrationRequest(
+                "readiness",
+                "Which documents describe DataAgent?",
+                null,
+                RouteAllowsQuery: true));
+            DataAgentOrchestrationResult orchestrationDenied = orchestrator.Start(new DataAgentOrchestrationRequest(
+                "readiness",
+                "Which documents describe DataAgent?",
+                null,
+                RouteAllowsQuery: false));
+            DataAgentOrchestrationResult orchestrationSummary = orchestrator.Continue(new DataAgentOrchestrationRequest(
+                "readiness",
+                "\u603b\u7ed3\u4e00\u4e0b",
+                orchestrationStart.SessionId,
+                RouteAllowsQuery: false));
+
+            checks.Add(typeof(IDataAgentAnalysisOrchestrator).IsAssignableFrom(typeof(DataAgentAnalysisOrchestrator)) &&
+                       orchestrationStart.Response.Accepted
+                ? Pass("DataAgentOrchestratorPresent", "native DataAgent analysis orchestrator available")
+                : Fail("DataAgentOrchestratorPresent", "orchestrator type or accepted flow missing"));
+
+            checks.Add(orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.RouteGate) &&
+                       orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.SchemaContext) &&
+                       orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Plan) &&
+                       orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Validate) &&
+                       orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) &&
+                       orchestrationStart.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Explain)
+                ? Pass("OrchestratorNodeBoundaryPresent", "route/schema/plan/validate/execute/explain nodes recorded")
+                : Fail("OrchestratorNodeBoundaryPresent", string.Join(",", orchestrationStart.Steps.Select(step => step.Node))));
+
+            checks.Add(orchestrationStart.Checkpoint.SessionId == orchestrationStart.SessionId &&
+                       orchestrationStart.Checkpoint.TurnCount == 1 &&
+                       orchestrationStart.Checkpoint.CanContinue &&
+                       orchestrationStart.Checkpoint.CanSummarize
+                ? Pass("OrchestratorCheckpointPresent", "checkpoint includes session state and continuation flags")
+                : Fail("OrchestratorCheckpointPresent", orchestrationStart.Checkpoint.ToString()));
+
+            checks.Add(orchestrationDenied.Response.Accepted == false &&
+                       orchestrationDenied.Response.RejectedReason == "tool_route_required" &&
+                       orchestrationDenied.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) == false
+                ? Pass("OrchestratorRouteGateFailClosed", "route denial prevents query execution")
+                : Fail("OrchestratorRouteGateFailClosed", orchestrationDenied.Response.RejectedReason));
+
+            checks.Add(orchestrationSummary.Response.Accepted &&
+                       orchestrationSummary.Response.Answer is null &&
+                       orchestrationSummary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize) &&
+                       orchestrationSummary.Steps.Any(step => step.ExecutedSql) == false &&
+                       orchestrationAnswerCalls == 1
+                ? Pass("OrchestratorTerminalNodesDoNotQuery", "summarize terminal node avoided query execution")
+                : Fail("OrchestratorTerminalNodesDoNotQuery", $"answerCalls={orchestrationAnswerCalls}"));
+
+            checks.Add(orchestrationStart.SessionStatus == DataAgentAnalysisSessionStatus.Active &&
+                       orchestrationSummary.SessionStatus == DataAgentAnalysisSessionStatus.Summarized
+                ? Pass("OrchestratorStateMachineTransitions", $"{orchestrationStart.SessionStatus}->{orchestrationSummary.SessionStatus}")
+                : Fail("OrchestratorStateMachineTransitions", $"{orchestrationStart.SessionStatus}->{orchestrationSummary.SessionStatus}"));
         }
         catch (Exception ex)
         {
