@@ -67,7 +67,7 @@ public sealed class DataAgentV15ReadinessTests
             Assert.That(script, Does.Contain("protected virtual async Task<string> DispatchToModelAsync"));
             Assert.That(script, Does.Contain("functionService.CreateToolRouteState"));
             Assert.That(script, Does.Contain("functionService.UseToolRouteState(routeState)"));
-            Assert.That(script, Does.Contain("return await ChatBot.ChatAsync"));
+            Assert.That(script, Does.Contain("ChatBot.ChatAsync(ChatTextFilter"));
 
             Assert.That(script, Does.Contain("Tests/Alife.Test.QChat/QChatToolRouteStateWiringTests.cs"));
             Assert.That(script, Does.Contain("HandleRejectsGovernedDataAgentToolWhenRouteIsMissing"));

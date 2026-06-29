@@ -273,10 +273,19 @@ public enum XmlFunctionRiskLevel
 
 public sealed record XmlFunctionExecutionDecision(bool IsAllowed, string? Reason = null);
 
+public sealed record XmlFunctionExecutionAuditRecord(
+    string ToolName,
+    bool Allowed,
+    string ReasonCode,
+    string Reason,
+    string? RouteSessionId,
+    DateTimeOffset CreatedAt);
+
 public sealed class XmlFunctionExecutionPolicy
 {
     public bool AllowHighRisk { get; set; }
     public Func<XmlFunction, XmlFunctionExecutionDecision>? AuthorizeHighRiskFunction { get; set; }
+    public event EventHandler<XmlFunctionExecutionAuditRecord>? ExecutionAudited;
 
     public ToolRouteDecision? CurrentRoute
     {
@@ -337,18 +346,28 @@ public sealed class XmlFunctionExecutionPolicy
         }
 
         if (hasGovernedTools && isGovernedTool && route is null)
-            return new XmlFunctionExecutionDecision(false, "tool_route_required");
+            return Deny(function, isGovernedTool, "tool_route_required", "tool_route_required", route);
 
         bool routeGatesFunction = hasGovernedTools ? isGovernedTool : route is not null;
         if (routeGatesFunction && route is not null && route.Allows(function.Name) == false)
-            return new XmlFunctionExecutionDecision(false, "tool_not_allowed_in_current_route");
+            return Deny(
+                function,
+                isGovernedTool,
+                "tool_not_allowed_in_current_route",
+                "tool_not_allowed_in_current_route",
+                route);
 
         if (route is not null
             && isGovernedTool
             && IsSessionScopedDataAgentTool(function.Name)
             && IsRouteSessionAllowed(route, context) == false)
         {
-            return new XmlFunctionExecutionDecision(false, "tool_session_not_allowed_in_current_route");
+            return Deny(
+                function,
+                isGovernedTool,
+                "tool_session_not_allowed_in_current_route",
+                "tool_session_not_allowed_in_current_route",
+                route);
         }
 
         if (function.RiskLevel == XmlFunctionRiskLevel.High && AllowHighRisk == false)
@@ -356,23 +375,72 @@ public sealed class XmlFunctionExecutionPolicy
             XmlFunctionExecutionDecision? authorization = AuthorizeHighRiskFunction?.Invoke(function);
             if (authorization is not { IsAllowed: true })
             {
-                return authorization ?? new XmlFunctionExecutionDecision(
+                XmlFunctionExecutionDecision denied = authorization ?? new XmlFunctionExecutionDecision(
                     false,
                     $"XML function '{function.Name}' is high-risk and is blocked by policy.");
+                string reason = denied.Reason ?? "high-risk authorization denied";
+                string reasonCode = authorization is null ? "high_risk_blocked" : "high_risk_authorization_denied";
+                return Deny(function, isGovernedTool, reasonCode, reason, route);
             }
         }
 
+        string? budgetDeniedReason = null;
         lock (gate)
         {
             int budgetCost = Math.Max(1, function.BudgetCost);
             if (BudgetUsedThisTurn + budgetCost > MaxBudgetPerTurn)
-                return new XmlFunctionExecutionDecision(
-                    false,
-                    $"XML function budget exhausted before '{function.Name}'.");
-
-            BudgetUsedThisTurn += budgetCost;
-            return new XmlFunctionExecutionDecision(true);
+            {
+                budgetDeniedReason = $"XML function budget exhausted before '{function.Name}'.";
+            }
+            else
+            {
+                BudgetUsedThisTurn += budgetCost;
+            }
         }
+
+        if (budgetDeniedReason is not null)
+            return Deny(function, isGovernedTool, "xml_budget_exhausted", budgetDeniedReason, route);
+
+        return Allow(function, isGovernedTool, route);
+    }
+
+    XmlFunctionExecutionDecision Allow(XmlFunction function, bool shouldAudit, ToolRouteDecision? route)
+    {
+        if (shouldAudit)
+            PublishAudit(function, allowed: true, "execution_allowed", "allowed", route);
+
+        return new XmlFunctionExecutionDecision(true);
+    }
+
+    XmlFunctionExecutionDecision Deny(
+        XmlFunction function,
+        bool shouldAudit,
+        string reasonCode,
+        string reason,
+        ToolRouteDecision? route)
+    {
+        if (shouldAudit)
+            PublishAudit(function, allowed: false, reasonCode, reason, route);
+
+        return new XmlFunctionExecutionDecision(false, reason);
+    }
+
+    void PublishAudit(
+        XmlFunction function,
+        bool allowed,
+        string reasonCode,
+        string reason,
+        ToolRouteDecision? route)
+    {
+        ExecutionAudited?.Invoke(
+            this,
+            new XmlFunctionExecutionAuditRecord(
+                function.Name,
+                allowed,
+                reasonCode,
+                reason,
+                route?.State.ActiveDataAgentSessionId,
+                DateTimeOffset.UtcNow));
     }
 
     public IDisposable UseRoute(ToolRouteDecision? route)

@@ -46,6 +46,42 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncPassesToolBrokerTraceToOwnerDiagnostics()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag toolbroker"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentToolRouteTrace: () => "allowed=dataagent_analysis_continue; denied=dataagent_query; reason=route_allowed");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent[0].Message, Does.Contain("Tool Broker"));
+            Assert.That(sent[0].Message, Does.Contain("dataagent_analysis_continue"));
+            Assert.That(sent[0].Message, Does.Not.Contain("[tool_route_context]"));
+        });
+    }
+    [Test]
     public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerWithoutRouteLeak()
     {
         List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];

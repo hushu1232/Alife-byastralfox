@@ -233,6 +233,23 @@ public sealed class ToolCapabilityRouterTests
     }
 
     [Test]
+    public void RouteReturnsStableReasonCodeWhenDataAgentAnalysisSessionIsMissing()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        ToolRouteState state = TrustedOwnerPrivateState(activeSession: false);
+
+        ToolRouteDecision decision = router.Route("continue DataAgent analysis", state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.DataAgent));
+            Assert.That(decision.Intent, Is.EqualTo("analysis_continue"));
+            Assert.That(decision.AllowedTools, Is.Empty);
+            Assert.That(decision.ReasonCode, Is.EqualTo("dataagent_analysis_session_missing"));
+            AssertDeniedTools(decision, DataAgentToolNames, "dataagent_analysis_session_missing");
+        });
+    }
+    [Test]
     public void RouterAllowsContinueSummarizeAndEndOnlyForExplicitDataAgentAnalysisWithActiveSession()
     {
         ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();

@@ -25,11 +25,27 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     public bool IsIdle => executor.IsInactive;
     public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
 
+    public ToolRouteDecision? RecentToolRouteDecision
+    {
+        get
+        {
+            lock (recentToolRouteGate)
+            {
+                return recentToolRouteDecision;
+            }
+        }
+    }
+
     public ToolRouteDecision RouteCurrentTurn(string utterance, ToolRouteState state)
     {
         handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
         ToolRouteDecision route = toolRouter.Route(utterance, state);
         handlerTable.ExecutionPolicy.CurrentRoute = route;
+        lock (recentToolRouteGate)
+        {
+            recentToolRouteDecision = route;
+        }
+
         return route;
     }
 
@@ -134,8 +150,10 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     readonly ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
     readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
     readonly object dataAgentRouteGate = new();
+    readonly object recentToolRouteGate = new();
     string activeDataAgentSessionId = string.Empty;
     string activeDataAgentSessionStatus = string.Empty;
+    ToolRouteDecision? recentToolRouteDecision;
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;
     XmlStreamExecutor executor = null!;

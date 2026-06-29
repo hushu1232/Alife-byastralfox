@@ -81,6 +81,16 @@ public static class DataAgentSchemaInitializer
                 elapsed_ms INTEGER NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS tool_broker_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                allowed INTEGER NOT NULL,
+                reason_code TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
     }

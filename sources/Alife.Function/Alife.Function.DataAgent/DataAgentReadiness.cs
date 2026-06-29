@@ -53,6 +53,23 @@ public static class DataAgentReadiness
             DataAgentQueryResult result = new DataAgentQueryExecutor(databasePath).Execute(compiled);
             checks.Add(Pass("ReadOnlyQueryExecutes", $"{result.Rows.Count} rows"));
 
+            DataAgentToolBrokerAuditLog toolBrokerAuditLog = new(databasePath);
+            toolBrokerAuditLog.Record(new DataAgentToolBrokerAuditRecord(
+                "readiness-session",
+                "dataagent_analysis_continue",
+                false,
+                "tool_route_required",
+                "route is required",
+                DateTimeOffset.UtcNow));
+            IReadOnlyList<DataAgentToolBrokerAuditRecord> toolBrokerAuditRecords = toolBrokerAuditLog.ReadAll();
+            checks.Add(toolBrokerAuditRecords.Any(record =>
+                       record.SessionId == "readiness-session" &&
+                       record.ToolName == "dataagent_analysis_continue" &&
+                       record.Allowed == false &&
+                       record.ReasonCode == "tool_route_required")
+                ? Pass("ToolBrokerAuditLogPresent", "Tool Broker audit record persisted")
+                : Fail("ToolBrokerAuditLogPresent", "Tool Broker audit record was not persisted"));
+
             DataAgentAnswer answer = new DataAgentService(databasePath).Answer("Which required gates are not passing?");
             checks.Add(answer.Context.Contains("[data_agent_context]", StringComparison.Ordinal) &&
                        answer.Context.Contains("[/data_agent_context]", StringComparison.Ordinal)

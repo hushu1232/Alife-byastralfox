@@ -296,6 +296,26 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleToolBrokerDiagnosticsShowsRecentRouteStateForOwner()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentToolRouteTrace: "allowed=dataagent_analysis_continue; denied=dataagent_query; reason=route_allowed");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag toolbroker",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("Tool Broker"));
+            Assert.That(result.Text, Does.Contain("dataagent_analysis_continue"));
+            Assert.That(result.Text, Does.Not.Contain("[tool_route_context]"));
+        });
+    }
+    [Test]
     public void TryHandleQChatCommandThrowsForNullRoute()
     {
         Assert.That(

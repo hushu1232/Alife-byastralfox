@@ -43,7 +43,8 @@ public sealed record ToolRouteDecision
         IReadOnlyList<string>? AllowedTools,
         IReadOnlyList<ToolRouteDeniedTool>? DeniedTools,
         ToolRouteState State,
-        string Reason)
+        string Reason,
+        string? ReasonCode = null)
     {
         this.RouteId = RouteId;
         this.Domain = Domain;
@@ -52,6 +53,7 @@ public sealed record ToolRouteDecision
         this.DeniedTools = CopyOrEmpty(DeniedTools);
         this.State = State;
         this.Reason = Reason;
+        this.ReasonCode = string.IsNullOrWhiteSpace(ReasonCode) ? Reason : ReasonCode;
     }
 
     public string RouteId { get; }
@@ -67,6 +69,8 @@ public sealed record ToolRouteDecision
     public ToolRouteState State { get; }
 
     public string Reason { get; }
+
+    public string ReasonCode { get; }
 
     public bool Allows(string? toolName)
     {
