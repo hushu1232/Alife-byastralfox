@@ -13,6 +13,12 @@ public sealed class ToolCapabilityRouter
     const string RouteStateNotTrustedReason = "route_state_not_trusted";
     const string SurfaceNotAllowedReason = "surface_not_allowed";
     const string PreconditionNotMetReason = "precondition_not_met";
+    const string RouteAllowedReasonCode = "route_allowed";
+    const string IntentNotMatchedReasonCode = "intent_not_matched";
+    const string OwnerPrivateRequiredReasonCode = "owner_private_required";
+    const string TrustedRuntimeRequiredReasonCode = "trusted_runtime_required";
+    const string DataAgentAnalysisSessionMissingReasonCode = "dataagent_analysis_session_missing";
+    const string DataAgentAnalysisSessionInactiveReasonCode = "dataagent_analysis_session_inactive";
 
     static readonly IReadOnlyList<ToolCapabilityPrecondition> TrustedOnlyPreconditions =
     [
@@ -129,7 +135,8 @@ public sealed class ToolCapabilityRouter
                 Array.Empty<string>(),
                 state,
                 RouteStateNotTrustedReason,
-                routeDenyReason: RouteStateNotTrustedReason);
+                routeDenyReason: RouteStateNotTrustedReason,
+                reasonCode: TrustedRuntimeRequiredReasonCode);
         }
 
         if (isDataAgentAnalysis == false)
@@ -139,7 +146,8 @@ public sealed class ToolCapabilityRouter
                 OrdinaryChatIntent,
                 Array.Empty<string>(),
                 state,
-                OrdinaryChatReason);
+                OrdinaryChatReason,
+                reasonCode: IntentNotMatchedReasonCode);
         }
 
         if (IsOwnerPrivateSurfaceAllowed(state) == false)
@@ -150,7 +158,22 @@ public sealed class ToolCapabilityRouter
                 Array.Empty<string>(),
                 state,
                 SurfaceNotAllowedReason,
-                routeDenyReason: SurfaceNotAllowedReason);
+                routeDenyReason: SurfaceNotAllowedReason,
+                reasonCode: OwnerPrivateRequiredReasonCode);
+        }
+
+        string? existingAnalysisIntent = GetRequestedExistingAnalysisIntent(normalizedUtterance);
+        if (existingAnalysisIntent is not null && state.HasActiveDataAgentSession == false)
+        {
+            string missingSessionReason = GetMissingAnalysisSessionReasonCode(state);
+            return BuildDecision(
+                ToolCapabilityDomain.DataAgent,
+                existingAnalysisIntent,
+                Array.Empty<string>(),
+                state,
+                missingSessionReason,
+                routeDenyReason: missingSessionReason,
+                reasonCode: missingSessionReason);
         }
 
         if (state.HasActiveDataAgentSession)
@@ -160,7 +183,8 @@ public sealed class ToolCapabilityRouter
                 "analysis_continue",
                 ActiveAnalysisTools,
                 state,
-                "explicit_dataagent_analysis_continue");
+                "explicit_dataagent_analysis_continue",
+                reasonCode: RouteAllowedReasonCode);
         }
 
         return BuildDecision(
@@ -168,7 +192,8 @@ public sealed class ToolCapabilityRouter
             "analysis_start",
             StartAnalysisTools,
             state,
-            "explicit_dataagent_analysis_start");
+            "explicit_dataagent_analysis_start",
+            reasonCode: RouteAllowedReasonCode);
     }
 
     ToolRouteDecision BuildDecision(
@@ -177,7 +202,8 @@ public sealed class ToolCapabilityRouter
         IReadOnlyList<string> allowedToolNames,
         ToolRouteState state,
         string reason,
-        string? routeDenyReason = null)
+        string? routeDenyReason = null,
+        string? reasonCode = null)
     {
         HashSet<string> allowedNameSet = new(
             allowedToolNames.Where(name => string.IsNullOrWhiteSpace(name) == false),
@@ -217,7 +243,8 @@ public sealed class ToolCapabilityRouter
             allowedTools,
             deniedTools,
             state,
-            reason);
+            reason,
+            reasonCode);
     }
 
     static string? GetManifestDenyReason(ToolCapabilityManifest manifest, ToolRouteState state)
@@ -263,6 +290,35 @@ public sealed class ToolCapabilityRouter
     static bool IsOwnerPrivateSurfaceAllowed(ToolRouteState state)
     {
         return state.IsOwner && state.IsPrivateChat;
+    }
+
+    static string? GetRequestedExistingAnalysisIntent(string utterance)
+    {
+        if (ContainsOrdinalIgnoreCase(utterance, "summarize")
+            || ContainsOrdinalIgnoreCase(utterance, "summary"))
+        {
+            return "analysis_summarize";
+        }
+
+        if (ContainsOrdinalIgnoreCase(utterance, "continue"))
+        {
+            return "analysis_continue";
+        }
+
+        if (ContainsOrdinalIgnoreCase(utterance, "end")
+            || ContainsOrdinalIgnoreCase(utterance, "finish"))
+        {
+            return "analysis_end";
+        }
+
+        return null;
+    }
+
+    static string GetMissingAnalysisSessionReasonCode(ToolRouteState state)
+    {
+        return string.IsNullOrWhiteSpace(state.ActiveDataAgentSessionId)
+            ? DataAgentAnalysisSessionMissingReasonCode
+            : DataAgentAnalysisSessionInactiveReasonCode;
     }
 
     static string GetDataAgentIntent(ToolRouteState state)
