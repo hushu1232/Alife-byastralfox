@@ -7,20 +7,30 @@ public sealed class DataAgentService
 {
     readonly DataAgentCatalog catalog = DataAgentCatalog.CreateDefault();
     readonly DataAgentSqlSafetyValidator safetyValidator = new();
-    readonly string databasePath;
+    readonly IDataAgentStore store;
     readonly IDataAgentQueryPlanner planner;
 
     public DataAgentService(string databasePath)
-        : this(databasePath, new DeterministicDataAgentQueryPlanner())
+        : this(new SqliteDataAgentStore(databasePath), new DeterministicDataAgentQueryPlanner())
     {
     }
 
     public DataAgentService(string databasePath, IDataAgentQueryPlanner planner)
+        : this(new SqliteDataAgentStore(databasePath), planner)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
+    }
+
+    public DataAgentService(IDataAgentStore store)
+        : this(store, new DeterministicDataAgentQueryPlanner())
+    {
+    }
+
+    public DataAgentService(IDataAgentStore store, IDataAgentQueryPlanner planner)
+    {
+        ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(planner);
 
-        this.databasePath = databasePath;
+        this.store = store;
         this.planner = planner;
     }
 
@@ -46,7 +56,7 @@ public sealed class DataAgentService
             return Reject(question, plan, explanation, queryPlanJson, safety.Reason, compiled.Sql);
 
         Stopwatch stopwatch = Stopwatch.StartNew();
-        DataAgentQueryResult result = new DataAgentQueryExecutor(databasePath).Execute(compiled);
+        DataAgentQueryResult result = store.Query(compiled);
         stopwatch.Stop();
 
         string summary = DataAgentResultSummarizer.Summarize(plan, result);
@@ -66,13 +76,13 @@ public sealed class DataAgentService
             explanation,
             resultExplanation);
 
-        new DataAgentAuditLog(databasePath).RecordAccepted(
+        store.RecordAccepted(new DataAgentAcceptedAuditInput(
             question,
             plan.Dataset,
             queryPlanJson,
             compiled.Sql,
             result.Rows.Count,
-            stopwatch.Elapsed);
+            stopwatch.Elapsed));
 
         return new DataAgentAnswer(plan.Dataset, compiled.Sql, result.Rows.Count, summary, context, true, string.Empty, explanation);
     }
@@ -85,13 +95,13 @@ public sealed class DataAgentService
         string reason,
         string generatedSql)
     {
-        new DataAgentAuditLog(databasePath).RecordRejected(
+        store.RecordRejected(new DataAgentRejectedAuditInput(
             question,
             plan.Dataset,
             queryPlanJson,
             generatedSql,
             reason,
-            TimeSpan.Zero);
+            TimeSpan.Zero));
 
         string summary = $"DataAgent query rejected: {reason}";
         string context = DataAgentContextProvider.BuildRejected(question, plan.Dataset, reason, explanation);
@@ -105,13 +115,13 @@ public sealed class DataAgentService
     {
         string queryPlanJson = JsonSerializer.Serialize(clarification);
 
-        new DataAgentAuditLog(databasePath).RecordRejected(
+        store.RecordRejected(new DataAgentRejectedAuditInput(
             question,
             string.Empty,
             queryPlanJson,
             string.Empty,
             "needs_clarification",
-            TimeSpan.Zero);
+            TimeSpan.Zero));
 
         string summary = DataAgentResultExplainer.ExplainClarification(clarification);
         string context = DataAgentContextProvider.BuildClarification(question, clarification, explanation);
