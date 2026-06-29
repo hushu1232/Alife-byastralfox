@@ -2,8 +2,11 @@ namespace Alife.Function.DataAgent;
 
 public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrator
 {
+    const string RouteDeniedReason = "tool_route_required";
+
     readonly DataAgentAnalysisService analysisService;
     readonly IDataAgentAnalysisSessionStore sessionStore;
+    readonly DataAgentFollowUpInterpreter followUpInterpreter;
 
     public DataAgentAnalysisOrchestrator(
         DataAgentAnalysisService analysisService,
@@ -15,11 +18,19 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
 
         this.analysisService = analysisService;
         this.sessionStore = sessionStore;
+        this.followUpInterpreter = followUpInterpreter ?? new DataAgentFollowUpInterpreter();
     }
 
     public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
     {
         ValidateStartRequest(request);
+
+        if (request.RouteAllowsQuery == false)
+            return BuildRejectedResult(
+                string.Empty,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                RouteDeniedReason,
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, RouteDeniedReason, false));
 
         List<DataAgentOrchestrationStep> steps = [];
         steps.Add(Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false));
@@ -34,13 +45,68 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
     {
         ValidateContinueRequest(request);
 
+        DataAgentAnalysisSession? session = sessionStore.Get(request.SessionId!);
+        if (session is null)
+        {
+            DataAgentAnalysisResponse missingSessionResponse = analysisService.Continue(request.SessionId!, request.Input);
+            return BuildResult(
+                missingSessionResponse,
+                [
+                    Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    Step(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, missingSessionResponse.RejectedReason, false),
+                    Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ]);
+        }
+
+        DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(request.Input, session);
+        bool queryProducing = intent.ProducesQuery();
+        if (request.RouteAllowsQuery == false && queryProducing)
+        {
+            return BuildRejectedResult(
+                request.SessionId!,
+                intent,
+                RouteDeniedReason,
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, RouteDeniedReason, false));
+        }
+
         DataAgentAnalysisResponse response = analysisService.Continue(request.SessionId!, request.Input);
         List<DataAgentOrchestrationStep> steps =
         [
-            Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false)
+            Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, queryProducing ? "route_allowed" : "terminal_route_not_required", false)
         ];
         AppendAnswerSteps(steps, response);
         return BuildResult(response, steps);
+    }
+
+    DataAgentOrchestrationResult BuildRejectedResult(
+        string sessionId,
+        DataAgentAnalysisTurnIntent intent,
+        string reason,
+        DataAgentOrchestrationStep routeStep)
+    {
+        DataAgentAnalysisResponse response = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Rejected,
+            intent,
+            null,
+            string.Empty,
+            string.Empty,
+            false,
+            reason);
+
+        DataAgentOrchestrationStep[] steps =
+        [
+            routeStep,
+            Step(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, reason, false),
+            Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+        ];
+
+        return new DataAgentOrchestrationResult(
+            sessionId,
+            response.Status,
+            steps,
+            BuildCheckpoint(sessionId, response.Status),
+            response);
     }
 
     void AppendAnswerSteps(List<DataAgentOrchestrationStep> steps, DataAgentAnalysisResponse response)
