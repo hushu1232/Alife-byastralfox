@@ -779,6 +779,14 @@ git commit -m "Document DataAgent V1.6 to V2 roadmap"
 
 ---
 
+## LangGraph Multi-Agent Orchestration Link
+
+LangGraph is intentionally deferred until V2.5. The approved design is tracked in `docs/superpowers/specs/2026-06-29-langgraph-multi-agent-orchestration-design.md`, and the execution plan is tracked in `docs/superpowers/plans/2026-06-29-langgraph-multi-agent-orchestration.md`.
+
+V1.6 and V1.7 should focus on Tool Broker observability and DataAgent capability boundaries. V2 should establish provider-neutral persistence and PostgreSQL. Only after those gates pass should V2.5 introduce a LangGraph sidecar pilot for DataAgent analysis workflows.
+
+---
+
 ## V3 Direction
 
 V3 should evolve from scheme 3 to scheme 4: a supervisor-controlled tool governance layer. The supervisor should own tool budget, tool conflict resolution, per-agent capability leases, cross-module audit queries, and policy escalation. V3 should not be started until V2 has PostgreSQL-backed persistence, provider-neutral store contracts, and reliable Tool Broker observability.
