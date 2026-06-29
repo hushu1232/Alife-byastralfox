@@ -23,7 +23,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "Semantic window summary prompt",
         "Tool broker runtime wiring",
         "QChat tool route state wiring",
-        "DataAgent dynamic tool route contract"
+        "DataAgent dynamic tool route contract",
+        "QChat owner Tool Broker diagnostics"
     ];
 
     [Test]
