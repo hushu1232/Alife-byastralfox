@@ -123,6 +123,30 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void GovernedToolDenialPublishesExecutionAudit()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.Register(new XmlHandler(handler));
+
+        List<XmlFunctionExecutionAuditRecord> records = [];
+        table.ExecutionPolicy.ExecutionAudited += (_, record) => records.Add(record);
+
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await table.Handle("dataagent_analysis_continue", OneShotContext()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Is.EqualTo("tool_route_required"));
+            Assert.That(records, Has.Count.EqualTo(1));
+            Assert.That(records[0].ToolName, Is.EqualTo("dataagent_analysis_continue"));
+            Assert.That(records[0].Allowed, Is.False);
+            Assert.That(records[0].ReasonCode, Is.EqualTo("tool_route_required"));
+            Assert.That(handler.DataAgentContinueCalls, Is.Zero);
+        });
+    }
+    [Test]
     public void HandleRejectsSessionScopedDataAgentToolWhenRouteSessionDoesNotMatch()
     {
         PolicyHandler handler = new();
@@ -171,6 +195,39 @@ public class XmlFunctionPolicyTests
             OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-1" }));
 
         Assert.That(handler.DataAgentContinueCalls, Is.EqualTo(1));
+    }
+    [Test]
+    public async Task GovernedToolAllowancePublishesExecutionAudit()
+    {
+        PolicyHandler handler = new();
+        XmlHandlerTable table = new();
+        table.ExecutionPolicy.SetGovernedToolNames(["dataagent_analysis_continue"]);
+        table.ExecutionPolicy.CurrentRoute = new ToolRouteDecision(
+            "route-1",
+            ToolCapabilityDomain.DataAgent,
+            "analysis_continue",
+            ["dataagent_analysis_continue"],
+            [],
+            new ToolRouteState("analysis-1", "ReadyToSummarize", true, true, true),
+            "test_route");
+        table.Register(new XmlHandler(handler));
+
+        List<XmlFunctionExecutionAuditRecord> records = [];
+        table.ExecutionPolicy.ExecutionAudited += (_, record) => records.Add(record);
+
+        await table.Handle(
+            "dataagent_analysis_continue",
+            OneShotContext(new Dictionary<string, string> { ["sessionid"] = "analysis-1" }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(records, Has.Count.EqualTo(1));
+            Assert.That(records[0].ToolName, Is.EqualTo("dataagent_analysis_continue"));
+            Assert.That(records[0].Allowed, Is.True);
+            Assert.That(records[0].ReasonCode, Is.EqualTo("execution_allowed"));
+            Assert.That(records[0].RouteSessionId, Is.EqualTo("analysis-1"));
+            Assert.That(handler.DataAgentContinueCalls, Is.EqualTo(1));
+        });
     }
     [Test]
     public void ExecutionPolicyRouteGateDoesNotConsumeBudgetWhenRejectingOutsideRoute()
