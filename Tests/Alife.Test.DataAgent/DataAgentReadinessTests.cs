@@ -86,6 +86,24 @@ public sealed class DataAgentReadinessTests
         });
     }
 
+    [Test]
+    public void QChatEngineeringMapDefaultModeExitsZeroAndPrintsSummary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+
+        ScriptResult result = RunPowerShellScript(scriptPath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
+            {
+                "Summary: 42 required passed, 0 required missing, 0 optional present, 0 optional missing"
+            }));
+        });
+    }
+
     static string NewDatabasePath()
     {
         string directory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "dataagent-readiness-tests");
@@ -173,5 +191,14 @@ public sealed class DataAgentReadinessTests
             .Where(line => line.StartsWith("  Summary:", StringComparison.Ordinal))
             .ToArray();
     }
+
+    static string[] GetEngineeringMapSummaryLines(string output)
+    {
+        return output
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("Summary:", StringComparison.Ordinal))
+            .ToArray();
+    }
+
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
 }
