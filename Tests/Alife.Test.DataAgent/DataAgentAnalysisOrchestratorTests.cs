@@ -237,6 +237,74 @@ public sealed class DataAgentAnalysisOrchestratorTests
         });
     }
 
+    [Test]
+    public void ClarificationBranchRecordsClarificationWithoutExecute()
+    {
+        DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ => ClarificationAnswer(),
+            now);
+
+        DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Show status",
+            null,
+            RouteAllowsQuery: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.AwaitingClarification));
+            Assert.That(result.Response.Answer?.RejectedReason, Is.EqualTo("needs_clarification"));
+            Assert.That(result.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.SchemaContext,
+                DataAgentOrchestrationNodeKind.Plan,
+                DataAgentOrchestrationNodeKind.Clarification,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
+            Assert.That(result.Checkpoint.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.AwaitingClarification));
+            Assert.That(result.Checkpoint.CanContinue, Is.True);
+        });
+    }
+
+    [Test]
+    public void RejectedPlannerOutputRecordsRejectWithoutExecute()
+    {
+        DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ => RejectedAnswer(),
+            now);
+
+        DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Use unsafe planner output",
+            null,
+            RouteAllowsQuery: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Response.Answer?.Validated, Is.False);
+            Assert.That(result.Response.Answer?.RejectedReason, Is.EqualTo("unsupported_operator:starts_with"));
+            Assert.That(result.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.SchemaContext,
+                DataAgentOrchestrationNodeKind.Plan,
+                DataAgentOrchestrationNodeKind.Validate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(result.Steps.Single(step => step.Node == DataAgentOrchestrationNodeKind.Validate).Status, Is.EqualTo(DataAgentOrchestrationStepStatus.Rejected));
+            Assert.That(result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
+        });
+    }
+
     static DataAgentAnalysisOrchestrator Orchestrator(
         IDataAgentAnalysisSessionStore store,
         Func<string, DataAgentAnswer> answer,
@@ -271,5 +339,43 @@ public sealed class DataAgentAnalysisOrchestratorTests
                 "high",
                 ["test"],
                 "test accepted answer"));
+    }
+
+    static DataAgentAnswer ClarificationAnswer()
+    {
+        return new DataAgentAnswer(
+            string.Empty,
+            string.Empty,
+            0,
+            "Which dataset should I use?",
+            "[data_agent_context]\nsql_status=needs_clarification\nclarification_question=Which dataset should I use?\n[/data_agent_context]",
+            false,
+            "needs_clarification",
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "clarify",
+                string.Empty,
+                "low",
+                ["ambiguous_dataset"],
+                "ambiguous dataset"));
+    }
+
+    static DataAgentAnswer RejectedAnswer()
+    {
+        return new DataAgentAnswer(
+            "engineering_gate",
+            string.Empty,
+            0,
+            "DataAgent query rejected: unsupported_operator:starts_with",
+            "[data_agent_context]\nsql_status=rejected\nrejected_reason=unsupported_operator:starts_with\n[/data_agent_context]",
+            false,
+            "unsupported_operator:starts_with",
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "unsafe",
+                "engineering_gate",
+                "low",
+                ["unsafe_operator"],
+                "unsupported operator"));
     }
 }
