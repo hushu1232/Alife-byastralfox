@@ -785,6 +785,8 @@ LangGraph is intentionally deferred until V2.5. The approved design is tracked i
 
 V1.6 and V1.7 should focus on Tool Broker observability and DataAgent capability boundaries. V2 should establish provider-neutral persistence and PostgreSQL. Only after those gates pass should V2.5 introduce a LangGraph sidecar pilot for DataAgent analysis workflows.
 
+V1.7 capability metadata should also preserve the later multi-agent coordination norm: split permission validation, SQL generation, and report interpretation into dedicated nodes; normalize business terms through a pre-scheduling Scenario Knowledge Package; persist intermediate state through checkpoints; provide degradation paths for failed nodes; and stream linked-run progress to owner diagnostics or a frontend. These are V2.5/V3 orchestration requirements, not V1.7 runtime dependencies.
+
 ---
 
 ## V3 Direction
