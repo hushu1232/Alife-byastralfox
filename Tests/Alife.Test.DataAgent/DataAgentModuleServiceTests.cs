@@ -21,15 +21,31 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
-    public void AwakeRegistersDataAgentToolHandler()
+    public void AwakeRegistersDataAgentCapabilityProviders()
     {
         string source = ReadModuleSource();
 
         Assert.Multiple(() =>
         {
-            Assert.That(source, Does.Contain("new DataAgentToolHandler(service, Poke)"));
-            Assert.That(source, Does.Contain("new XmlHandler"));
-            Assert.That(source, Does.Contain("RegisterHandlerWithoutDocument(xmlHandler)"));
+            Assert.That(source, Does.Contain("DataAgentCapabilityRegistry"));
+            Assert.That(source, Does.Contain("DataAgentQueryCapabilityProvider"));
+            Assert.That(source, Does.Contain("DataAgentAnalysisCapabilityProvider"));
+            Assert.That(source, Does.Contain("DataAgentCapabilityRegistrar"));
+            Assert.That(source, Does.Contain("provider.Register(registrar)"));
+        });
+    }
+
+    [Test]
+    public void ModuleExposesRegisteredProviderAndToolNamesForDiagnostics()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("RegisteredCapabilityProviderNames"));
+            Assert.That(source, Does.Contain("RegisteredCapabilityToolNames"));
+            Assert.That(source, Does.Contain("capabilityRegistry.ProviderNames"));
+            Assert.That(source, Does.Contain("capabilityRegistry.ToolNames"));
         });
     }
 
