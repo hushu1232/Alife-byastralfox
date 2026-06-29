@@ -101,11 +101,12 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
             Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
         ];
 
+        DataAgentOrchestrationCheckpoint checkpoint = BuildCheckpoint(sessionId, response.Status);
         return new DataAgentOrchestrationResult(
             sessionId,
-            response.Status,
+            checkpoint.SessionStatus,
             steps,
-            BuildCheckpoint(sessionId, response.Status),
+            checkpoint,
             response);
     }
 

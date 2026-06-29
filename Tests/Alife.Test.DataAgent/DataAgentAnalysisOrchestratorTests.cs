@@ -124,9 +124,26 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(answerCalls, Is.EqualTo(1));
             Assert.That(denied.Response.Accepted, Is.False);
             Assert.That(denied.Response.RejectedReason, Is.EqualTo("tool_route_required"));
+            Assert.That(denied.Response.Intent, Is.EqualTo(DataAgentAnalysisTurnIntent.Continue));
+            Assert.That(denied.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(denied.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(denied.Steps.Select(step => step.Status), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationStepStatus.Rejected,
+                DataAgentOrchestrationStepStatus.Rejected,
+                DataAgentOrchestrationStepStatus.Succeeded
+            }));
             Assert.That(denied.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
             Assert.That(denied.Checkpoint.SessionId, Is.EqualTo(start.SessionId));
+            Assert.That(denied.Checkpoint.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
             Assert.That(denied.Checkpoint.TurnCount, Is.EqualTo(1));
+            Assert.That(denied.Checkpoint.CanContinue, Is.True);
+            Assert.That(denied.Checkpoint.Terminal, Is.False);
             Assert.That(session.Turns, Has.Count.EqualTo(1));
         });
     }
