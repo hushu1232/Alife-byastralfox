@@ -20,23 +20,6 @@ public sealed class ToolCapabilityRouter
     const string DataAgentAnalysisSessionMissingReasonCode = "dataagent_analysis_session_missing";
     const string DataAgentAnalysisSessionInactiveReasonCode = "dataagent_analysis_session_inactive";
 
-    static readonly IReadOnlyList<ToolCapabilityPrecondition> TrustedOnlyPreconditions =
-    [
-        ToolCapabilityPrecondition.TrustedRuntime
-    ];
-
-    static readonly IReadOnlyList<ToolCapabilityPrecondition> ActiveAnalysisPreconditions =
-    [
-        ToolCapabilityPrecondition.ActiveDataAgentAnalysisSession,
-        ToolCapabilityPrecondition.TrustedRuntime
-    ];
-
-    static readonly IReadOnlyList<ToolCapabilitySurface> DataAgentSurfaces =
-    [
-        ToolCapabilitySurface.OwnerPrivate,
-        ToolCapabilitySurface.TrustedRuntime
-    ];
-
     static readonly IReadOnlyList<string> StartAnalysisTools =
     [
         "dataagent_query",
@@ -76,49 +59,7 @@ public sealed class ToolCapabilityRouter
 
     public static ToolCapabilityRouter CreateDefault()
     {
-        return new ToolCapabilityRouter(
-        [
-            new(
-                "dataagent_query",
-                ToolCapabilityDomain.DataAgent,
-                "query",
-                ToolCapabilityRisk.Low,
-                TrustedOnlyPreconditions,
-                DataAgentSurfaces,
-                ToolStateEffect.ReadsData),
-            new(
-                "dataagent_analysis_start",
-                ToolCapabilityDomain.DataAgent,
-                "analysis_start",
-                ToolCapabilityRisk.Low,
-                TrustedOnlyPreconditions,
-                DataAgentSurfaces,
-                ToolStateEffect.AppendsAnalysisTurn),
-            new(
-                "dataagent_analysis_continue",
-                ToolCapabilityDomain.DataAgent,
-                "analysis_continue",
-                ToolCapabilityRisk.Low,
-                ActiveAnalysisPreconditions,
-                DataAgentSurfaces,
-                ToolStateEffect.AppendsAnalysisTurn),
-            new(
-                "dataagent_analysis_summarize",
-                ToolCapabilityDomain.DataAgent,
-                "analysis_summarize",
-                ToolCapabilityRisk.Low,
-                ActiveAnalysisPreconditions,
-                DataAgentSurfaces,
-                ToolStateEffect.SummarizesAnalysis),
-            new(
-                "dataagent_analysis_end",
-                ToolCapabilityDomain.DataAgent,
-                "analysis_end",
-                ToolCapabilityRisk.Low,
-                ActiveAnalysisPreconditions,
-                DataAgentSurfaces,
-                ToolStateEffect.EndsAnalysis)
-        ]);
+        return new ToolCapabilityRouter(DataAgentToolCapabilityManifests.Create());
     }
 
     public ToolRouteDecision Route(string utterance, ToolRouteState state)

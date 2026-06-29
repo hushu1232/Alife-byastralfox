@@ -38,6 +38,46 @@ public sealed class ToolCapabilityRouterTests
     ];
 
     [Test]
+    public void DefaultRouterUsesSharedDataAgentManifestFactory()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        IReadOnlyList<ToolCapabilityManifest> manifests = DataAgentToolCapabilityManifests.Create();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(router.ToolNames, Is.EqualTo(manifests.Select(manifest => manifest.Name).ToArray()));
+            Assert.That(manifests.Select(manifest => manifest.Name), Is.EqualTo(new[]
+            {
+                "dataagent_query",
+                "dataagent_analysis_start",
+                "dataagent_analysis_continue",
+                "dataagent_analysis_summarize",
+                "dataagent_analysis_end"
+            }));
+            Assert.That(manifests.Single(manifest => manifest.Name == "dataagent_query").StateEffect, Is.EqualTo(ToolStateEffect.ReadsData));
+            Assert.That(manifests.Single(manifest => manifest.Name == "dataagent_analysis_end").StateEffect, Is.EqualTo(ToolStateEffect.EndsAnalysis));
+        });
+    }
+
+    [Test]
+    public void SharedDataAgentManifestsReturnIndependentReadOnlyInstances()
+    {
+        IReadOnlyList<ToolCapabilityManifest> first = DataAgentToolCapabilityManifests.Create();
+        IReadOnlyList<ToolCapabilityManifest> second = DataAgentToolCapabilityManifests.Create();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.Not.SameAs(second));
+            Assert.That(first[0], Is.Not.SameAs(second[0]));
+            Assert.That(first[0].Preconditions, Is.Not.SameAs(second[0].Preconditions));
+            Assert.That(first[0].Surfaces, Is.Not.SameAs(second[0].Surfaces));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilityManifest>)first).Add(first[0]));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilityPrecondition>)first[0].Preconditions).Add(ToolCapabilityPrecondition.None));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilitySurface>)first[0].Surfaces).Add(ToolCapabilitySurface.PublicGroup));
+        });
+    }
+
+    [Test]
     public void ManifestStoresDomainIntentAndPreconditions()
     {
         ToolCapabilityManifest manifest = new(

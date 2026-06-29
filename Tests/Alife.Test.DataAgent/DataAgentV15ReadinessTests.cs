@@ -79,6 +79,23 @@ public sealed class DataAgentV15ReadinessTests
         });
     }
 
+    [Test]
+    public void StaticReadinessScriptContainsV17CapabilityBoundaryMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("CapabilityBoundaryPresent"));
+            Assert.That(script, Does.Contain("IDataAgentCapabilityProvider"));
+            Assert.That(script, Does.Contain("DataAgentCapabilityRegistry"));
+            Assert.That(script, Does.Contain("DataAgentQueryCapabilityProvider"));
+            Assert.That(script, Does.Contain("DataAgentAnalysisCapabilityProvider"));
+            Assert.That(script, Does.Contain("DataAgentToolCapabilityManifests"));
+        });
+    }
+
     static string FindRepoRoot(string startDirectory)
     {
         DirectoryInfo? directory = new(startDirectory);

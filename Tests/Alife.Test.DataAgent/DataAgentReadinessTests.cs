@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(30));
+            Assert.That(checks, Has.Count.EqualTo(31));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -37,6 +37,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("ClarificationRequestSupported"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("NaturalLanguageResultExplanationPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ToolBrokerAuditLogPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("CapabilityBoundaryPresent"));
         });
     }
 
@@ -57,7 +58,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 42 required passed, 0 required missing"
+                "  Summary: 45 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
@@ -81,6 +82,25 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("ContextContributionStable"));
             Assert.That(declaration, Does.Contain("PlannerInterfacePresent"));
             Assert.That(declaration, Does.Contain("ToolHandlerReturnsDataAgentContext"));
+            Assert.That(declaration, Does.Contain("CapabilityBoundaryPresent"));
+        });
+    }
+
+    [Test]
+    public void QChatEngineeringMapDefaultModeExitsZeroAndPrintsSummary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+
+        ScriptResult result = RunPowerShellScript(scriptPath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
+            {
+                "Summary: 42 required passed, 0 required missing, 0 optional present, 0 optional missing"
+            }));
         });
     }
 
@@ -171,5 +191,14 @@ public sealed class DataAgentReadinessTests
             .Where(line => line.StartsWith("  Summary:", StringComparison.Ordinal))
             .ToArray();
     }
+
+    static string[] GetEngineeringMapSummaryLines(string output)
+    {
+        return output
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Where(line => line.StartsWith("Summary:", StringComparison.Ordinal))
+            .ToArray();
+    }
+
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
 }

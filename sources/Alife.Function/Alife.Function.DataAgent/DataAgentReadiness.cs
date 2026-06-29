@@ -1,3 +1,5 @@
+using Alife.Function.FunctionCaller;
+
 namespace Alife.Function.DataAgent;
 
 public static class DataAgentReadiness
@@ -69,6 +71,22 @@ public static class DataAgentReadiness
                        record.ReasonCode == "tool_route_required")
                 ? Pass("ToolBrokerAuditLogPresent", "Tool Broker audit record persisted")
                 : Fail("ToolBrokerAuditLogPresent", "Tool Broker audit record was not persisted"));
+
+            DataAgentCapabilityRegistry capabilityRegistry = new();
+            DataAgentService readinessService = new(databasePath);
+            DataAgentAnalysisService readinessAnalysisService = new(
+                readinessService,
+                new InMemoryDataAgentAnalysisSessionStore());
+            capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(readinessService));
+            capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(readinessAnalysisService));
+            checks.Add(capabilityRegistry.ProviderNames.SequenceEqual(new[]
+                       {
+                           nameof(DataAgentQueryCapabilityProvider),
+                           nameof(DataAgentAnalysisCapabilityProvider)
+                       }) &&
+                       capabilityRegistry.ToolNames.SequenceEqual(DataAgentToolCapabilityManifests.Create().Select(manifest => manifest.Name))
+                ? Pass("CapabilityBoundaryPresent", "DataAgent query and analysis providers registered")
+                : Fail("CapabilityBoundaryPresent", string.Join(",", capabilityRegistry.ToolNames)));
 
             DataAgentAnswer answer = new DataAgentService(databasePath).Answer("Which required gates are not passing?");
             checks.Add(answer.Context.Contains("[data_agent_context]", StringComparison.Ordinal) &&

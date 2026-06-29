@@ -1,6 +1,5 @@
 using Alife.Framework;
 using Alife.Function.FunctionCaller;
-using Alife.Function.Interpreter;
 
 namespace Alife.Function.DataAgent;
 
@@ -11,6 +10,9 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
     : InteractiveModule<DataAgentModuleService>
 {
+    public IReadOnlyList<string> RegisteredCapabilityProviderNames { get; private set; } = [];
+    public IReadOnlyList<string> RegisteredCapabilityToolNames { get; private set; } = [];
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -20,13 +22,19 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentFixtureImporter.Import(databasePath);
 
         DataAgentService service = new(databasePath);
-        XmlHandler xmlHandler = new XmlHandler(new DataAgentToolHandler(service, Poke));
-        functionService.RegisterHandlerWithoutDocument(xmlHandler);
-
         InMemoryDataAgentAnalysisSessionStore analysisSessionStore = new InMemoryDataAgentAnalysisSessionStore();
         DataAgentAnalysisService analysisService = new DataAgentAnalysisService(service, analysisSessionStore);
-        XmlHandler analysisXmlHandler = new XmlHandler(new DataAgentAnalysisToolHandler(analysisService, PublishAnalysisContext));
-        functionService.RegisterHandlerWithoutDocument(analysisXmlHandler);
+
+        DataAgentCapabilityRegistry capabilityRegistry = new();
+        capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
+        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisService, PublishAnalysisContext));
+
+        DataAgentCapabilityRegistrar registrar = new(functionService);
+        foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)
+            provider.Register(registrar);
+
+        RegisteredCapabilityProviderNames = capabilityRegistry.ProviderNames;
+        RegisteredCapabilityToolNames = capabilityRegistry.ToolNames;
 
         Prompt($"""
                 DataAgent provides governed NL2SQL analytics over local Alife engineering evidence.
