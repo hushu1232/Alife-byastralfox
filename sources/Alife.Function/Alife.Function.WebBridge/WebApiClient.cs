@@ -88,6 +88,17 @@ public class WebApiClient
         return await response.Content.ReadAsByteArrayAsync(cancellationToken);
     }
 
+    public async Task ReportSyncMilestone(
+        WebBridgeSyncMilestoneReport report,
+        CancellationToken cancellationToken = default)
+    {
+        string json = JsonSerializer.Serialize(report, jsonOptions);
+        using HttpRequestMessage request = CreateRequest(HttpMethod.Post, "api/pet/sync/status");
+        request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
     HttpRequestMessage CreateRequest(HttpMethod method, string path)
     {
         HttpRequestMessage request = new(method, path);

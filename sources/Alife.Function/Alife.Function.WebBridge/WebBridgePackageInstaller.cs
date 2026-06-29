@@ -9,7 +9,8 @@ namespace Alife.Function.WebBridge;
 
 public sealed class WebBridgePackageInstaller(
     string rootDirectory,
-    Func<WebBridgePackageFile, Task<byte[]>> downloadFile)
+    Func<WebBridgePackageFile, Task<byte[]>> downloadFile,
+    Func<string, CancellationToken, Task>? reportMilestone = null)
 {
     public async Task<WebBridgeInstallResult> Install(
         WebBridgePackageManifest manifest,
@@ -37,9 +38,13 @@ public sealed class WebBridgePackageInstaller(
             installedFiles++;
         }
 
+        await ReportMilestone(WebBridgeSyncMilestones.FilesDownloaded, cancellationToken);
+        await ReportMilestone(WebBridgeSyncMilestones.HashValidated, cancellationToken);
+
         await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions), cancellationToken);
         await File.WriteAllTextAsync(draftPath, JsonSerializer.Serialize(manifest.ConfigDraft, JsonOptions), cancellationToken);
         await WriteCatalog(manifest, packageRoot, manifestPath, draftPath, cancellationToken);
+        await ReportMilestone(WebBridgeSyncMilestones.PackageStaged, cancellationToken);
 
         return new WebBridgeInstallResult
         {
@@ -104,6 +109,11 @@ public sealed class WebBridgePackageInstaller(
         });
 
         await File.WriteAllTextAsync(catalogPath, JsonSerializer.Serialize(catalog, JsonOptions), cancellationToken);
+    }
+
+    Task ReportMilestone(string milestone, CancellationToken cancellationToken)
+    {
+        return reportMilestone?.Invoke(milestone, cancellationToken) ?? Task.CompletedTask;
     }
 
     static string SanitizeSegment(string value)

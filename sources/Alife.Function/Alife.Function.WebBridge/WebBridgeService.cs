@@ -72,8 +72,30 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         string packageId,
         CancellationToken cancellationToken = default)
     {
-        WebBridgePackageManifest manifest = await GetClient().PullPackageManifest(packageId, cancellationToken);
-        return await GetPackageInstaller().Install(manifest, cancellationToken);
+        WebApiClient client = GetClient();
+        WebBridgePackageManifest? manifest = null;
+        try
+        {
+            manifest = await client.PullPackageManifest(packageId, cancellationToken);
+            await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.ManifestFetched, error: null, cancellationToken);
+
+            WebBridgeInstallResult result = await CreatePackageInstaller(manifest, client).Install(manifest, cancellationToken);
+            if (result.Status == WebBridgePackageStatus.PendingActivation)
+            {
+                if (packageInstaller != null)
+                    await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.PackageStaged, error: null, cancellationToken);
+
+                await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.ConfirmationRequested, error: null, cancellationToken);
+            }
+
+            return result;
+        }
+        catch (Exception exception)
+        {
+            manifest ??= new WebBridgePackageManifest { PackageId = packageId };
+            await TryReportMilestone(client, manifest, WebBridgeSyncMilestones.PackageFailed, ErrorFromException(exception), cancellationToken);
+            throw;
+        }
     }
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -129,12 +151,70 @@ public class WebBridgeService : InteractiveModule<WebBridgeService>, IConfigurab
         return assetSync;
     }
 
-    WebBridgePackageInstaller GetPackageInstaller()
+    WebBridgePackageInstaller CreatePackageInstaller(WebBridgePackageManifest manifest, WebApiClient client)
     {
-        packageInstaller ??= new WebBridgePackageInstaller(
+        if (packageInstaller != null)
+            return packageInstaller;
+
+        return new WebBridgePackageInstaller(
             Configuration?.PackageRootPath ?? Path.Combine(AlifePath.StorageFolderPath, "WebBridge"),
-            file => GetClient().DownloadPackageFile(file));
-        return packageInstaller;
+            file => client.DownloadPackageFile(file),
+            (milestone, cancellationToken) => TryReportMilestone(client, manifest, milestone, error: null, cancellationToken));
+    }
+
+    async Task TryReportMilestone(
+        WebApiClient client,
+        WebBridgePackageManifest manifest,
+        string milestone,
+        WebBridgeSyncErrorReport? error,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await client.ReportSyncMilestone(new WebBridgeSyncMilestoneReport
+            {
+                Milestone = milestone,
+                PackageVersion = ParsePackageVersion(manifest.Version),
+                ReportedAt = DateTimeOffset.UtcNow.ToString("O"),
+                Error = error
+            }, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            AlifeTerminal.LogWarning($"WebBridge sync milestone report failed: {milestone} ({exception.Message})");
+        }
+    }
+
+    static long? ParsePackageVersion(string version)
+    {
+        return long.TryParse(version, out long parsed) && parsed > 0 && parsed <= 9007199254740991
+            ? parsed
+            : null;
+    }
+
+    static WebBridgeSyncErrorReport ErrorFromException(Exception exception)
+    {
+        return new WebBridgeSyncErrorReport
+        {
+            Code = ErrorCodeFromException(exception),
+            Message = exception.Message,
+            Detail = exception.ToString()
+        };
+    }
+
+    static string ErrorCodeFromException(Exception exception)
+    {
+        if (exception is HttpRequestException)
+            return WebBridgeSyncErrorCodes.PackageDownloadFailed;
+
+        if (exception.Message.Contains("SHA-256 mismatch", StringComparison.OrdinalIgnoreCase))
+            return WebBridgeSyncErrorCodes.PackageHashMismatch;
+
+        if (exception.Message.Contains("escapes install root", StringComparison.OrdinalIgnoreCase) ||
+            exception.Message.Contains("RelativePath is required", StringComparison.OrdinalIgnoreCase))
+            return WebBridgeSyncErrorCodes.PackageSecurityBlocked;
+
+        return WebBridgeSyncErrorCodes.PackageApplyFailed;
     }
 
     void StartSyncLoop()

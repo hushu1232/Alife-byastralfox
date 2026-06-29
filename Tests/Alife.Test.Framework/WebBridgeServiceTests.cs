@@ -269,8 +269,13 @@ public class WebBridgeServiceTests
 
         Assert.That(result.PackageId, Is.EqualTo("xiayu-character-bundle"));
         Assert.That(result.Status, Is.EqualTo(WebBridgePackageStatus.PendingActivation));
-        Assert.That(handler.Requests, Has.Count.EqualTo(1));
-        Assert.That(handler.Requests[0].RequestUri?.PathAndQuery, Is.EqualTo("/api/webbridge/packages/xiayu-character-bundle/manifest"));
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/webbridge/packages/xiayu-character-bundle/manifest",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status"
+        }));
     }
 
     [Test]
@@ -297,7 +302,53 @@ public class WebBridgeServiceTests
         Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
         {
             "/api/webbridge/packages/xiayu-character-bundle/manifest",
-            "/api/webbridge/packages/xiayu-character-bundle/files/character-card"
+            "/api/pet/sync/status",
+            "/api/webbridge/packages/xiayu-character-bundle/files/character-card",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status"
+        }));
+        Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Scheme == "Bearer"), Is.True);
+        Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Parameter == "secret-token"), Is.True);
+    }
+
+    [Test]
+    public async Task WebBridgeServiceReportsPackageInstallMilestones()
+    {
+        RecordingHandler handler = new() { UsePackageManifestEnvelope = true, IncludePackageFile = true };
+        string root = Path.Combine(Path.GetTempPath(), "alife-webbridge-service-milestones", Guid.NewGuid().ToString("N"));
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig { ApiToken = "secret-token" });
+        WebBridgeService service = new(client, new MemoryCharacterBridgeStore())
+        {
+            Configuration = new WebBridgeServiceConfig
+            {
+                PackageRootPath = root
+            }
+        };
+
+        await service.InstallPackage("xiayu-character-bundle", CancellationToken.None);
+
+        Assert.That(handler.Requests.Select(request => request.RequestUri?.PathAndQuery), Is.EqualTo(new[]
+        {
+            "/api/webbridge/packages/xiayu-character-bundle/manifest",
+            "/api/pet/sync/status",
+            "/api/webbridge/packages/xiayu-character-bundle/files/character-card",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status",
+            "/api/pet/sync/status"
+        }));
+        Assert.That(handler.PostedJsonBodies.Where(body => body.Contains("\"milestone\"")).Select(GetPostedMilestone), Is.EqualTo(new[]
+        {
+            "manifestFetched",
+            "filesDownloaded",
+            "hashValidated",
+            "packageStaged",
+            "confirmationRequested"
         }));
         Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Scheme == "Bearer"), Is.True);
         Assert.That(handler.Requests.All(request => request.Headers.Authorization?.Parameter == "secret-token"), Is.True);
@@ -452,6 +503,7 @@ public class WebBridgeServiceTests
     sealed class RecordingHandler : HttpMessageHandler
     {
         public List<HttpRequestMessage> Requests { get; } = new();
+        public List<string> PostedJsonBodies { get; } = new();
         public string? PostedJson { get; private set; }
         public bool UseWebPetSyncEnvelope { get; init; }
         public bool UsePackageManifestEnvelope { get; init; }
@@ -462,7 +514,10 @@ public class WebBridgeServiceTests
         {
             Requests.Add(request);
             if (request.Content != null)
+            {
                 PostedJson = await request.Content.ReadAsStringAsync(cancellationToken);
+                PostedJsonBodies.Add(PostedJson);
+            }
 
             if (request.RequestUri?.AbsolutePath == "/api/webbridge/packages/xiayu-character-bundle/files/character-card")
             {
@@ -612,5 +667,11 @@ public class WebBridgeServiceTests
         }
 
         Assert.Fail("等待条件超时");
+    }
+
+    static string GetPostedMilestone(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.GetProperty("milestone").GetString() ?? string.Empty;
     }
 }
