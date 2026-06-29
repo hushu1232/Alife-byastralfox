@@ -60,7 +60,7 @@ public class WebApiClient
         response.EnsureSuccessStatusCode();
 
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        return JsonSerializer.Deserialize<WebAssetManifest>(json, jsonOptions) ?? new WebAssetManifest();
+        return DeserializeEnvelope<WebAssetManifest>(json);
     }
 
     public async Task<WebBridgePackageManifest> PullPackageManifest(

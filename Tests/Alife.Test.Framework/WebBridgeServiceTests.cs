@@ -359,6 +359,22 @@ public class WebBridgeServiceTests
     }
 
     [Test]
+    public async Task WebApiClientPullsAssetsFromWebEnvelope()
+    {
+        RecordingHandler handler = new() { UseAssetManifestEnvelope = true };
+        WebApiClient client = new(new HttpClient(handler)
+        {
+            BaseAddress = new Uri("https://foxd.example/")
+        }, new WebBridgeServiceConfig());
+
+        WebAssetManifest manifest = await client.PullAssets(CancellationToken.None);
+
+        Assert.That(handler.Requests[0].RequestUri?.PathAndQuery, Is.EqualTo("/api/pet/assets"));
+        Assert.That(manifest.Files, Has.Count.EqualTo(1));
+        Assert.That(manifest.Files[0].RelativePath, Is.EqualTo("model/Mao/texture.png"));
+    }
+
+    [Test]
     public async Task WebAssetSyncWritesFilesInsideTargetDirectory()
     {
         string targetDirectory = Path.Combine(Path.GetTempPath(), "alife-webbridge-assets", Guid.NewGuid().ToString("N"));
@@ -440,6 +456,7 @@ public class WebBridgeServiceTests
         public bool UseWebPetSyncEnvelope { get; init; }
         public bool UsePackageManifestEnvelope { get; init; }
         public bool IncludePackageFile { get; init; }
+        public bool UseAssetManifestEnvelope { get; init; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -519,17 +536,7 @@ public class WebBridgeServiceTests
 
             object response = request.RequestUri?.AbsolutePath switch
             {
-                "/api/pet/assets" => new WebAssetManifest
-                {
-                    Files =
-                    [
-                        new WebAssetFile
-                        {
-                            RelativePath = "model/Mao/texture.png",
-                            ContentBase64 = Convert.ToBase64String([1, 2, 3])
-                        }
-                    ]
-                },
+                "/api/pet/assets" => BuildAssetResponse(UseAssetManifestEnvelope),
                 _ => new WebAvatarConfig
                 {
                     Id = "avatar-remote",
@@ -544,6 +551,30 @@ public class WebBridgeServiceTests
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(responseJson)
+            };
+        }
+
+        static object BuildAssetResponse(bool envelope)
+        {
+            WebAssetManifest manifest = new()
+            {
+                Files =
+                [
+                    new WebAssetFile
+                    {
+                        RelativePath = "model/Mao/texture.png",
+                        ContentBase64 = Convert.ToBase64String([1, 2, 3])
+                    }
+                ]
+            };
+
+            if (envelope == false)
+                return manifest;
+
+            return new
+            {
+                success = true,
+                data = manifest
             };
         }
     }
