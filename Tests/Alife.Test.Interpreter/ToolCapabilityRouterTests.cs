@@ -60,6 +60,24 @@ public sealed class ToolCapabilityRouterTests
     }
 
     [Test]
+    public void SharedDataAgentManifestsReturnIndependentReadOnlyInstances()
+    {
+        IReadOnlyList<ToolCapabilityManifest> first = DataAgentToolCapabilityManifests.Create();
+        IReadOnlyList<ToolCapabilityManifest> second = DataAgentToolCapabilityManifests.Create();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first, Is.Not.SameAs(second));
+            Assert.That(first[0], Is.Not.SameAs(second[0]));
+            Assert.That(first[0].Preconditions, Is.Not.SameAs(second[0].Preconditions));
+            Assert.That(first[0].Surfaces, Is.Not.SameAs(second[0].Surfaces));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilityManifest>)first).Add(first[0]));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilityPrecondition>)first[0].Preconditions).Add(ToolCapabilityPrecondition.None));
+            Assert.Throws<NotSupportedException>(() => ((IList<ToolCapabilitySurface>)first[0].Surfaces).Add(ToolCapabilitySurface.PublicGroup));
+        });
+    }
+
+    [Test]
     public void ManifestStoresDomainIntentAndPreconditions()
     {
         ToolCapabilityManifest manifest = new(
