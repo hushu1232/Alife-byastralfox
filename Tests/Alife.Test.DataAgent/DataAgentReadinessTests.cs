@@ -73,6 +73,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEvidencePackPresent"));
             DataAgentReadinessCheck evidencePackCheck = checks.Single(check => check.Name == "DataAgentEvidencePackPresent");
             Assert.That(evidencePackCheck.Detail, Does.Contain("accepted=true"));
+            Assert.That(evidencePackCheck.Detail, Does.Contain("accepted_route_context=runtime"));
             Assert.That(evidencePackCheck.Detail, Does.Contain("denied=true"));
             Assert.That(evidencePackCheck.Detail, Does.Contain("terminal=true"));
         });
