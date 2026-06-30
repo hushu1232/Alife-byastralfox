@@ -79,6 +79,19 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
+    public void AwakeWiresRuntimeToolRouteContextAccessor()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("XmlPolicyDataAgentToolRouteContextAccessor"));
+            Assert.That(source, Does.Contain("functionService.ExecutionPolicy"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext, routeContextAccessor)"));
+        });
+    }
+
+    [Test]
     public void AwakeInjectsToolBrokerPromptWithoutStaticToolDocuments()
     {
         string source = ReadModuleSource();

@@ -28,10 +28,12 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         IDataAgentAnalysisOrchestrator analysisOrchestrator = new DataAgentAnalysisOrchestrator(
             analysisService,
             analysisSessionStore);
+        IDataAgentToolRouteContextAccessor routeContextAccessor =
+            new XmlPolicyDataAgentToolRouteContextAccessor(functionService.ExecutionPolicy);
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
-        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext));
+        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext, routeContextAccessor));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)
