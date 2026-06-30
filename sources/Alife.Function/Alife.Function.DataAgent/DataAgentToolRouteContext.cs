@@ -19,6 +19,8 @@ public sealed record DataAgentToolRouteContext(
 
     public static DataAgentToolRouteContext Missing(string toolName)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
+
         return new DataAgentToolRouteContext(
             false,
             toolName,
