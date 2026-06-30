@@ -134,6 +134,28 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void ReadinessScriptProtectsV24EvidencePackContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "DataAgentEvidencePackPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentEvidencePack.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidencePackBuilder.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidencePackFormatter.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidencePackPresent"));
+            Assert.That(declaration, Does.Contain("BuilderIgnoresStaleAuditsForRouteDeniedEvidence"));
+            Assert.That(declaration, Does.Contain("FormatterPreservesDiagnosticPunctuationOutsideEvidencePackTag"));
+            Assert.That(declaration, Does.Contain("accepted_route_context=runtime"));
+            Assert.That(declaration, Does.Contain("BuilderBuildsTerminalNoQueryEvidence"));
+        });
+    }
+
+    [Test]
     public void EngineeringMapDeclaresDataAgentReadinessAsRequired()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
