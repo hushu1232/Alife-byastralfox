@@ -105,6 +105,67 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void BuilderIgnoresStaleAuditsForRouteDeniedEvidence()
+    {
+        DataAgentOrchestrationResult result = Result(
+            DataAgentAnalysisSessionStatus.Rejected,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Active, "document_index", 1, true, true, false),
+            DataAgentToolRouteContext.Missing("dataagent_analysis_continue"));
+        DataAgentAuditRecord staleQueryAudit = new(
+            "Which documents describe DataAgent?",
+            "document_index",
+            "{}",
+            "SELECT path FROM document_index LIMIT 20",
+            true,
+            string.Empty,
+            9,
+            TimeSpan.FromMilliseconds(12),
+            DateTimeOffset.UnixEpoch);
+        DataAgentToolBrokerAuditRecord currentDeniedToolAudit = new(
+            "session-1",
+            "dataagent_analysis_continue",
+            false,
+            "tool_route_required",
+            "tool route required",
+            DateTimeOffset.UnixEpoch);
+        DataAgentToolBrokerAuditRecord staleSameSessionDifferentToolAudit = new(
+            "session-1",
+            "dataagent_analysis_start",
+            true,
+            "route_allowed",
+            "route allowed",
+            DateTimeOffset.UnixEpoch.AddSeconds(1));
+        DataAgentToolBrokerAuditRecord staleSameToolDifferentSessionAudit = new(
+            "session-stale",
+            "dataagent_analysis_continue",
+            true,
+            "route_allowed",
+            "route allowed",
+            DateTimeOffset.UnixEpoch.AddSeconds(2));
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(
+            result,
+            [staleQueryAudit],
+            [currentDeniedToolAudit, staleSameSessionDifferentToolAudit, staleSameToolDifferentSessionAudit]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.ExecutedSql, Is.False);
+            Assert.That(pack.AuditValidated, Is.False);
+            Assert.That(pack.AuditDataset, Is.Empty);
+            Assert.That(pack.AuditRowCount, Is.EqualTo(0));
+            Assert.That(pack.AuditRejectedReason, Is.Empty);
+            Assert.That(pack.ToolBrokerAuditAllowed, Is.False);
+            Assert.That(pack.ToolBrokerAuditReasonCode, Is.EqualTo("tool_route_required"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,

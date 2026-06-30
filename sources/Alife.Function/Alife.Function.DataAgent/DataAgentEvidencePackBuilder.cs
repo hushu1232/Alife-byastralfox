@@ -9,9 +9,9 @@ public sealed class DataAgentEvidencePackBuilder
     {
         ArgumentNullException.ThrowIfNull(result);
 
-        DataAgentAuditRecord? latestAudit = queryAudit?.LastOrDefault();
-        DataAgentToolBrokerAuditRecord? latestToolAudit = FindToolBrokerAudit(result, toolBrokerAudit);
         bool executedSql = result.Steps.Any(step => step.ExecutedSql);
+        DataAgentAuditRecord? latestAudit = executedSql ? queryAudit?.LastOrDefault() : null;
+        DataAgentToolBrokerAuditRecord? latestToolAudit = FindToolBrokerAudit(result, toolBrokerAudit);
         string trace = BuildTrace(result.Steps);
         string routeReasonCode = result.RouteContext?.ReasonCode ?? string.Empty;
 
@@ -47,9 +47,15 @@ public sealed class DataAgentEvidencePackBuilder
             return null;
 
         string routeTool = result.RouteContext?.ToolName ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(routeTool))
+            return null;
+
+        string routeSessionId = result.RouteContext?.RouteSessionId ?? string.Empty;
         return records.LastOrDefault(record =>
-            string.Equals(record.SessionId, result.SessionId, StringComparison.Ordinal) ||
-            string.Equals(record.ToolName, routeTool, StringComparison.Ordinal));
+            string.Equals(record.ToolName, routeTool, StringComparison.Ordinal) &&
+            (string.Equals(record.SessionId, result.SessionId, StringComparison.Ordinal) ||
+                (string.IsNullOrWhiteSpace(routeSessionId) == false &&
+                    string.Equals(record.SessionId, routeSessionId, StringComparison.Ordinal))));
     }
 
     static string BuildTrace(IEnumerable<DataAgentOrchestrationStep> steps)
