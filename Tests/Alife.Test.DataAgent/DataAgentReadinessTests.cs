@@ -149,6 +149,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgentEvidencePackFormatter.cs"));
             Assert.That(declaration, Does.Contain("DataAgentEvidencePackPresent"));
             Assert.That(declaration, Does.Contain("BuilderIgnoresStaleAuditsForRouteDeniedEvidence"));
+            Assert.That(declaration, Does.Contain("BuilderMatchesAcceptedQueryAuditToResponseAnswer"));
             Assert.That(declaration, Does.Contain("FormatterPreservesDiagnosticPunctuationOutsideEvidencePackTag"));
             Assert.That(declaration, Does.Contain("accepted_route_context=runtime"));
             Assert.That(declaration, Does.Contain("BuilderBuildsTerminalNoQueryEvidence"));

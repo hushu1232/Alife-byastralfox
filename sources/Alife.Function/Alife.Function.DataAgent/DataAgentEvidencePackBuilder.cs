@@ -10,7 +10,7 @@ public sealed class DataAgentEvidencePackBuilder
         ArgumentNullException.ThrowIfNull(result);
 
         bool executedSql = result.Steps.Any(step => step.ExecutedSql);
-        DataAgentAuditRecord? latestAudit = executedSql ? queryAudit?.LastOrDefault() : null;
+        DataAgentAuditRecord? latestAudit = FindQueryAudit(result, queryAudit, executedSql);
         DataAgentToolBrokerAuditRecord? latestToolAudit = FindToolBrokerAudit(result, toolBrokerAudit);
         string trace = BuildTrace(result.Steps);
         string routeReasonCode = result.RouteContext?.ReasonCode ?? string.Empty;
@@ -37,6 +37,26 @@ public sealed class DataAgentEvidencePackBuilder
             latestToolAudit?.ReasonCode ?? string.Empty,
             BuildSafetySummary(result, executedSql),
             BuildInterviewSummary(result, executedSql, routeReasonCode));
+    }
+
+    static DataAgentAuditRecord? FindQueryAudit(
+        DataAgentOrchestrationResult result,
+        IReadOnlyList<DataAgentAuditRecord>? records,
+        bool executedSql)
+    {
+        if (executedSql == false || records is null || records.Count == 0)
+            return null;
+
+        DataAgentAnswer? answer = result.Response.Answer;
+        if (answer is null)
+            return null;
+
+        return records.LastOrDefault(record =>
+            string.Equals(record.Dataset, answer.Dataset, StringComparison.Ordinal) &&
+            string.Equals(record.GeneratedSql, answer.Sql, StringComparison.Ordinal) &&
+            record.RowCount == answer.RowCount &&
+            record.Validated == answer.Validated &&
+            string.Equals(record.RejectedReason, answer.RejectedReason, StringComparison.Ordinal));
     }
 
     static DataAgentToolBrokerAuditRecord? FindToolBrokerAudit(

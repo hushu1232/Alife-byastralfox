@@ -24,7 +24,8 @@ public sealed class DataAgentEvidencePackTests
                 "route-1",
                 "analysis_continue",
                 "route_allowed",
-                "session-1"));
+                "session-1"),
+            AcceptedAnswer());
         DataAgentAuditRecord audit = new(
             "Which documents describe DataAgent?",
             "document_index",
@@ -297,17 +298,73 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void BuilderMatchesAcceptedQueryAuditToResponseAnswer()
+    {
+        DataAgentOrchestrationResult result = Result(
+            DataAgentAnalysisSessionStatus.Active,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Active, "document_index", 2, true, true, false),
+            new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_continue",
+                true,
+                true,
+                "route-1",
+                "analysis_continue",
+                "route_allowed",
+                "session-1"),
+            AcceptedAnswer());
+        DataAgentAuditRecord matchingAudit = new(
+            "Which documents describe DataAgent?",
+            "document_index",
+            "{}",
+            "SELECT path FROM document_index LIMIT 20",
+            true,
+            string.Empty,
+            2,
+            TimeSpan.FromMilliseconds(12),
+            DateTimeOffset.UnixEpoch);
+        DataAgentAuditRecord newerUnrelatedAudit = new(
+            "Which gates are missing?",
+            "engineering_gate",
+            "{}",
+            "SELECT name FROM engineering_gate LIMIT 1",
+            true,
+            string.Empty,
+            99,
+            TimeSpan.FromMilliseconds(7),
+            DateTimeOffset.UnixEpoch.AddSeconds(1));
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(
+            result,
+            [matchingAudit, newerUnrelatedAudit]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.AuditValidated, Is.True);
+            Assert.That(pack.AuditDataset, Is.EqualTo("document_index"));
+            Assert.That(pack.AuditRowCount, Is.EqualTo(2));
+            Assert.That(pack.AuditRejectedReason, Is.EqualTo(string.Empty));
+            Assert.That(pack.AuditDataset, Is.Not.EqualTo("engineering_gate"));
+            Assert.That(pack.AuditRowCount, Is.Not.EqualTo(99));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
         DataAgentOrchestrationCheckpoint checkpoint,
-        DataAgentToolRouteContext? routeContext)
+        DataAgentToolRouteContext? routeContext,
+        DataAgentAnswer? answer = null)
     {
         DataAgentAnalysisResponse response = new(
             checkpoint.SessionId,
             responseStatus,
             DataAgentAnalysisTurnIntent.Continue,
-            null,
+            answer,
             string.Empty,
             string.Empty,
             responseStatus != DataAgentAnalysisSessionStatus.Rejected,
@@ -320,5 +377,24 @@ public sealed class DataAgentEvidencePackTests
             checkpoint,
             response,
             routeContext);
+    }
+
+    static DataAgentAnswer AcceptedAnswer()
+    {
+        return new DataAgentAnswer(
+            "document_index",
+            "SELECT path FROM document_index LIMIT 20",
+            2,
+            "Found DataAgent documentation.",
+            "[data_agent_context]\nsql_status=validated\n[/data_agent_context]",
+            true,
+            string.Empty,
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "find_documents",
+                "document_index",
+                "high",
+                ["test"],
+                "test accepted answer"));
     }
 }
