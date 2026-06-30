@@ -620,6 +620,64 @@ public static class DataAgentReadiness
             int answerCallsAfterTerminalRoute = orchestrationAnswerCalls;
             string terminalRouteSummaryContext = DataAgentOrchestrationContextProvider.Build(terminalRouteSummary);
 
+            DataAgentToolRouteContext acceptedEvidenceRouteContext = new(
+                true,
+                "dataagent_analysis_start",
+                true,
+                true,
+                "route-evidence-pack",
+                "analysis_start",
+                "route_allowed",
+                orchestrationStart.SessionId);
+            DataAgentEvidencePackBuilder evidencePackBuilder = new();
+            DataAgentEvidencePack acceptedEvidencePack = evidencePackBuilder.Build(
+                orchestrationStart with { RouteContext = acceptedEvidenceRouteContext },
+                [
+                    new DataAgentAuditRecord(
+                        "Which documents describe DataAgent?",
+                        "document_index",
+                        "{}",
+                        "SELECT path FROM document_index LIMIT 20",
+                        true,
+                        string.Empty,
+                        1,
+                        TimeSpan.FromMilliseconds(1),
+                        DateTimeOffset.UtcNow)
+                ],
+                [
+                    new DataAgentToolBrokerAuditRecord(
+                        orchestrationStart.SessionId,
+                        "dataagent_analysis_start",
+                        true,
+                        "route_allowed",
+                        "route allowed",
+                        DateTimeOffset.UtcNow)
+                ]);
+            DataAgentEvidencePack deniedEvidencePack = evidencePackBuilder.Build(orchestrationDeniedContinue);
+            DataAgentEvidencePack terminalEvidencePack = evidencePackBuilder.Build(terminalRouteSummary);
+            string acceptedEvidencePackContext = DataAgentEvidencePackFormatter.Format(acceptedEvidencePack);
+            string deniedEvidencePackContext = DataAgentEvidencePackFormatter.Format(deniedEvidencePack);
+            string terminalEvidencePackContext = DataAgentEvidencePackFormatter.Format(terminalEvidencePack);
+
+            bool acceptedEvidenceReady =
+                acceptedEvidencePack.ExecutedSql &&
+                acceptedEvidencePack.RouteAllowed &&
+                acceptedEvidencePack.AuditValidated &&
+                acceptedEvidencePackContext.Contains("[data_agent_evidence_pack]", StringComparison.Ordinal) &&
+                acceptedEvidencePackContext.Contains("safety_summary=route_allowed read_only_sql_executed checkpoint_active", StringComparison.Ordinal);
+
+            bool deniedEvidenceReady =
+                deniedEvidencePack.ExecutedSql == false &&
+                deniedEvidencePack.Trace.Contains("RouteGate:Rejected", StringComparison.Ordinal) &&
+                deniedEvidencePack.SafetySummary == "route_rejected;sql_not_executed;checkpoint_unchanged" &&
+                deniedEvidencePackContext.Contains("executed_sql=false", StringComparison.Ordinal);
+
+            bool terminalEvidenceReady =
+                terminalEvidencePack.ExecutedSql == false &&
+                terminalEvidencePack.Trace.Contains("Summarize:Succeeded", StringComparison.Ordinal) &&
+                terminalEvidencePack.SafetySummary.Contains("terminal_no_query", StringComparison.Ordinal) &&
+                terminalEvidencePackContext.Contains("terminal=false", StringComparison.Ordinal);
+
             checks.Add(terminalRouteSummary.Response.Accepted &&
                        terminalRouteSummary.Response.Answer is null &&
                        terminalRouteSummary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize) &&
@@ -640,6 +698,10 @@ public static class DataAgentReadiness
                        terminalRouteSummaryContext.Contains($"route_session_id={terminalRouteStart.SessionId}", StringComparison.Ordinal)
                 ? Pass("TerminalRouteDoesNotQuery", $"route_tool=dataagent_analysis_summarize;route_allows_query=true;route_session_id={terminalRouteStart.SessionId};answer_calls_unchanged=true;denied_terminal_fail_closed=true")
                 : Fail("TerminalRouteDoesNotQuery", $"answerCallsBefore={answerCallsBeforeTerminalRoute};answerCallsAfter={answerCallsAfterTerminalRoute};turnsBeforeDenied={turnsBeforeDeniedTerminalRoute};turnsAfterDenied={turnsAfterDeniedTerminalRoute};context={terminalRouteSummaryContext};deniedContext={terminalRouteDeniedSummaryContext}"));
+
+            checks.Add(acceptedEvidenceReady && deniedEvidenceReady && terminalEvidenceReady
+                ? Pass("DataAgentEvidencePackPresent", "accepted=true;denied=true;terminal=true")
+                : Fail("DataAgentEvidencePackPresent", $"accepted={acceptedEvidenceReady};denied={deniedEvidenceReady};terminal={terminalEvidenceReady}"));
         }
         catch (Exception ex)
         {

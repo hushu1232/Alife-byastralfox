@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(55));
+            Assert.That(checks, Has.Count.EqualTo(56));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -70,6 +70,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(terminalRouteCheck.Detail, Does.Match("route_session_id=[0-9a-f]{32}"));
             Assert.That(terminalRouteCheck.Detail, Does.Contain("answer_calls_unchanged=true"));
             Assert.That(terminalRouteCheck.Detail, Does.Contain("denied_terminal_fail_closed=true"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEvidencePackPresent"));
+            DataAgentReadinessCheck evidencePackCheck = checks.Single(check => check.Name == "DataAgentEvidencePackPresent");
+            Assert.That(evidencePackCheck.Detail, Does.Contain("accepted=true"));
+            Assert.That(evidencePackCheck.Detail, Does.Contain("denied=true"));
+            Assert.That(evidencePackCheck.Detail, Does.Contain("terminal=true"));
         });
     }
 
