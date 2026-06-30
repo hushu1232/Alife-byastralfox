@@ -1,0 +1,132 @@
+using Alife.Function.DataAgent;
+
+namespace Alife.Test.DataAgent;
+
+[TestFixture]
+public sealed class DataAgentEvidencePackTests
+{
+    [Test]
+    public void BuilderBuildsAcceptedQueryEvidence()
+    {
+        DataAgentOrchestrationResult result = Result(
+            DataAgentAnalysisSessionStatus.Active,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Active, "document_index", 2, true, true, false),
+            new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_continue",
+                true,
+                true,
+                "route-1",
+                "analysis_continue",
+                "route_allowed",
+                "session-1"));
+        DataAgentAuditRecord audit = new(
+            "Which documents describe DataAgent?",
+            "document_index",
+            "{}",
+            "SELECT path FROM document_index LIMIT 20",
+            true,
+            string.Empty,
+            2,
+            TimeSpan.FromMilliseconds(12),
+            DateTimeOffset.UnixEpoch);
+        DataAgentToolBrokerAuditRecord toolAudit = new(
+            "session-1",
+            "dataagent_analysis_continue",
+            true,
+            "route_allowed",
+            "route allowed",
+            DateTimeOffset.UnixEpoch);
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(result, [audit], [toolAudit]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.SessionId, Is.EqualTo("session-1"));
+            Assert.That(pack.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(pack.TurnCount, Is.EqualTo(2));
+            Assert.That(pack.RoutePresent, Is.True);
+            Assert.That(pack.RouteTool, Is.EqualTo("dataagent_analysis_continue"));
+            Assert.That(pack.RouteAllowed, Is.True);
+            Assert.That(pack.RouteAllowsQuery, Is.True);
+            Assert.That(pack.RouteReasonCode, Is.EqualTo("route_allowed"));
+            Assert.That(pack.Trace, Is.EqualTo("RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(pack.ExecutedSql, Is.True);
+            Assert.That(pack.Terminal, Is.False);
+            Assert.That(pack.CanContinue, Is.True);
+            Assert.That(pack.CanSummarize, Is.True);
+            Assert.That(pack.AuditValidated, Is.True);
+            Assert.That(pack.AuditDataset, Is.EqualTo("document_index"));
+            Assert.That(pack.AuditRowCount, Is.EqualTo(2));
+            Assert.That(pack.AuditRejectedReason, Is.Empty);
+            Assert.That(pack.ToolBrokerAuditAllowed, Is.True);
+            Assert.That(pack.ToolBrokerAuditReasonCode, Is.EqualTo("route_allowed"));
+            Assert.That(pack.SafetySummary, Is.EqualTo("route_allowed;read_only_sql_executed;checkpoint_active"));
+            Assert.That(pack.InterviewSummary, Does.Contain("governed read-only query"));
+        });
+    }
+
+    [Test]
+    public void BuilderBuildsRouteDeniedEvidenceWithoutSql()
+    {
+        DataAgentOrchestrationResult result = Result(
+            DataAgentAnalysisSessionStatus.Rejected,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Active, "document_index", 1, true, true, false),
+            DataAgentToolRouteContext.Missing("dataagent_analysis_continue"));
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.SessionId, Is.EqualTo("session-1"));
+            Assert.That(pack.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(pack.RoutePresent, Is.False);
+            Assert.That(pack.RouteAllowed, Is.False);
+            Assert.That(pack.RouteAllowsQuery, Is.False);
+            Assert.That(pack.RouteReasonCode, Is.EqualTo("tool_route_required"));
+            Assert.That(pack.Trace, Is.EqualTo("RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded"));
+            Assert.That(pack.ExecutedSql, Is.False);
+            Assert.That(pack.AuditValidated, Is.False);
+            Assert.That(pack.AuditDataset, Is.Empty);
+            Assert.That(pack.ToolBrokerAuditAllowed, Is.False);
+            Assert.That(pack.ToolBrokerAuditReasonCode, Is.Empty);
+            Assert.That(pack.SafetySummary, Is.EqualTo("route_rejected;sql_not_executed;checkpoint_unchanged"));
+            Assert.That(pack.InterviewSummary, Does.Contain("rejected before SQL execution"));
+        });
+    }
+
+    static DataAgentOrchestrationResult Result(
+        DataAgentAnalysisSessionStatus responseStatus,
+        IReadOnlyList<DataAgentOrchestrationStep> steps,
+        DataAgentOrchestrationCheckpoint checkpoint,
+        DataAgentToolRouteContext? routeContext)
+    {
+        DataAgentAnalysisResponse response = new(
+            checkpoint.SessionId,
+            responseStatus,
+            DataAgentAnalysisTurnIntent.Continue,
+            null,
+            string.Empty,
+            string.Empty,
+            responseStatus != DataAgentAnalysisSessionStatus.Rejected,
+            responseStatus == DataAgentAnalysisSessionStatus.Rejected ? "tool_route_required" : string.Empty);
+
+        return new DataAgentOrchestrationResult(
+            checkpoint.SessionId,
+            responseStatus,
+            steps,
+            checkpoint,
+            response,
+            routeContext);
+    }
+}
