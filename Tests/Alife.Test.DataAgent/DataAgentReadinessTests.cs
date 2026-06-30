@@ -96,7 +96,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 69 required passed, 0 required missing"
+                "  Summary: 70 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -107,6 +107,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("RouteEvidenceContextPresent"));
             Assert.That(result.StandardOutput, Does.Contain("RouteSessionScopePreserved"));
             Assert.That(result.StandardOutput, Does.Contain("TerminalRouteDoesNotQuery"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentEvidencePackPresent"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
@@ -122,7 +123,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 69"));
+            Assert.That(script, Does.Contain("$expectedRequired = 70"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
