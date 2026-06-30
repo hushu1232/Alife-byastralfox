@@ -119,6 +119,123 @@ public sealed class DataAgentAnalysisToolHandlerTests
     }
 
     [Test]
+    public void SummarizeWithoutRouteContextFailsClosedAtHandlerBoundaryWithoutMutation()
+    {
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = RealOrchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            });
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "xiayu",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        DataAgentAnalysisToolHandler handler = new(orchestrator);
+
+        string context = handler.Summarize(start.SessionId);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("checkpoint_status=Active"));
+            Assert.That(context, Does.Contain("checkpoint_turn_count=1"));
+            Assert.That(context, Does.Contain("route_present=false"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_summarize"));
+            Assert.That(context, Does.Contain("route_reason_code=tool_route_required"));
+        });
+    }
+
+    [Test]
+    public void EndWithoutRouteContextFailsClosedAtHandlerBoundaryWithoutMutation()
+    {
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = RealOrchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            });
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "xiayu",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        DataAgentAnalysisToolHandler handler = new(orchestrator);
+
+        string context = handler.End(start.SessionId);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("checkpoint_status=Active"));
+            Assert.That(context, Does.Contain("checkpoint_turn_count=1"));
+            Assert.That(context, Does.Contain("route_present=false"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_end"));
+            Assert.That(context, Does.Contain("route_reason_code=tool_route_required"));
+        });
+    }
+
+    [Test]
+    public void SummarizeSessionMismatchFailsClosedAtHandlerBoundaryWithoutMutation()
+    {
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = RealOrchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            });
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "xiayu",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_summarize",
+            false,
+            false,
+            "route-summary",
+            "analysis_summarize",
+            DataAgentToolRouteContext.SessionNotAllowedReasonCode,
+            "other-session"));
+        DataAgentAnalysisToolHandler handler = new(orchestrator, null, routeAccessor);
+
+        string context = handler.Summarize(start.SessionId);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(routeAccessor.Requests, Is.EqualTo(new[] { ("dataagent_analysis_summarize", (string?)start.SessionId) }));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("route_present=true"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_summarize"));
+            Assert.That(context, Does.Contain("route_reason_code=tool_session_not_allowed_in_current_route"));
+            Assert.That(context, Does.Contain("route_session_id=other-session"));
+        });
+    }
+
+    [Test]
     public void SummarizeCallsOrchestratorAndPublishesTerminalContext()
     {
         List<string> published = [];
@@ -248,6 +365,41 @@ public sealed class DataAgentAnalysisToolHandlerTests
             ["summarize"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Summarized, DataAgentAnalysisTurnIntent.Summarize, [], 2, string.Empty),
             ["end"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Ended, DataAgentAnalysisTurnIntent.End, [], 2, string.Empty)
         });
+    }
+
+    static DataAgentAnalysisOrchestrator RealOrchestrator(
+        IDataAgentAnalysisSessionStore store,
+        Func<string, DataAgentAnswer> answer)
+    {
+        DataAgentAnalysisService analysisService = new(
+            answer,
+            store,
+            new DataAgentFollowUpInterpreter(),
+            () => new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero));
+
+        return new DataAgentAnalysisOrchestrator(
+            analysisService,
+            store,
+            new DataAgentFollowUpInterpreter());
+    }
+
+    static DataAgentAnswer AcceptedAnswer()
+    {
+        return new DataAgentAnswer(
+            "document_index",
+            "SELECT path FROM document_index LIMIT 20",
+            2,
+            "Found DataAgent documentation.",
+            "[data_agent_context]\nsql_status=validated\nresult_explanation=Found DataAgent documentation.\n[/data_agent_context]",
+            true,
+            string.Empty,
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "find_documents",
+                "document_index",
+                "high",
+                ["test"],
+                "test accepted answer"));
     }
 
     static DataAgentOrchestrationResult OrchestratedResult(

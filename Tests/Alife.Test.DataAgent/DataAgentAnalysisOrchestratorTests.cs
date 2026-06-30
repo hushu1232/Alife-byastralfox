@@ -169,6 +169,47 @@ public sealed class DataAgentAnalysisOrchestratorTests
     }
 
     [Test]
+    public void ContinueRouteDeniedForMissingSessionFailsClosedBeforeAnalysisService()
+    {
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero));
+        DataAgentToolRouteContext missingRoute = DataAgentToolRouteContext.Missing("dataagent_analysis_continue");
+
+        DataAgentOrchestrationResult denied = orchestrator.Continue(new DataAgentOrchestrationRequest(
+            "owner",
+            "\u7ee7\u7eed",
+            "missing-session",
+            missingRoute.AllowsQuery,
+            missingRoute));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.Zero);
+            Assert.That(denied.Response.Accepted, Is.False);
+            Assert.That(denied.Response.RejectedReason, Is.EqualTo("tool_route_required"));
+            Assert.That(denied.RouteContext, Is.EqualTo(missingRoute));
+            Assert.That(denied.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(denied.Steps[0].Status, Is.EqualTo(DataAgentOrchestrationStepStatus.Rejected));
+            Assert.That(denied.Steps[0].Reason, Is.EqualTo("tool_route_required"));
+            Assert.That(denied.Checkpoint.SessionId, Is.EqualTo("missing-session"));
+            Assert.That(denied.Checkpoint.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Rejected));
+        });
+    }
+
+    [Test]
     public void DeniedContinueResultPreservesRouteContextWithoutMutation()
     {
         int answerCalls = 0;
@@ -214,7 +255,7 @@ public sealed class DataAgentAnalysisOrchestratorTests
     }
 
     [Test]
-    public void ContinueSummarizeDoesNotRequireRouteAndDoesNotExecuteSql()
+    public void ContinueSummarizeRequiresToolRouteButDoesNotRequireQueryPermissionOrExecuteSql()
     {
         DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
         int answerCalls = 0;
@@ -232,12 +273,17 @@ public sealed class DataAgentAnalysisOrchestratorTests
             "Which documents describe DataAgent?",
             null,
             RouteAllowsQuery: true));
+        DataAgentToolRouteContext terminalRoute = AllowedRoute(
+            "dataagent_analysis_continue",
+            start.SessionId,
+            allowsQuery: false);
 
         DataAgentOrchestrationResult summary = orchestrator.Continue(new DataAgentOrchestrationRequest(
             "owner",
             "\u603b\u7ed3\u4e00\u4e0b",
             start.SessionId,
-            RouteAllowsQuery: false));
+            terminalRoute.AllowsQuery,
+            terminalRoute));
 
         Assert.Multiple(() =>
         {
@@ -253,11 +299,12 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
             Assert.That(summary.Checkpoint.CanContinue, Is.True);
             Assert.That(summary.Checkpoint.Terminal, Is.False);
+            Assert.That(summary.RouteContext, Is.EqualTo(terminalRoute));
         });
     }
 
     [Test]
-    public void ContinueEndDoesNotRequireRouteAndProducesTerminalCheckpoint()
+    public void ContinueEndRequiresToolRouteButDoesNotRequireQueryPermissionAndProducesTerminalCheckpoint()
     {
         DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
         int answerCalls = 0;
@@ -275,12 +322,17 @@ public sealed class DataAgentAnalysisOrchestratorTests
             "Which documents describe DataAgent?",
             null,
             RouteAllowsQuery: true));
+        DataAgentToolRouteContext terminalRoute = AllowedRoute(
+            "dataagent_analysis_continue",
+            start.SessionId,
+            allowsQuery: false);
 
         DataAgentOrchestrationResult end = orchestrator.Continue(new DataAgentOrchestrationRequest(
             "owner",
             "\u7ed3\u675f",
             start.SessionId,
-            RouteAllowsQuery: false));
+            terminalRoute.AllowsQuery,
+            terminalRoute));
 
         Assert.Multiple(() =>
         {
@@ -297,11 +349,12 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(end.Checkpoint.CanContinue, Is.False);
             Assert.That(end.Checkpoint.CanSummarize, Is.False);
             Assert.That(end.Checkpoint.Terminal, Is.True);
+            Assert.That(end.RouteContext, Is.EqualTo(terminalRoute));
         });
     }
 
     [Test]
-    public void SummarizeReturnsTerminalTraceWithoutRouteGateOrQuery()
+    public void SummarizeWithAllowedToolRouteReturnsTerminalTraceWithoutQuery()
     {
         DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
         int answerCalls = 0;
@@ -319,8 +372,9 @@ public sealed class DataAgentAnalysisOrchestratorTests
             "Which documents describe DataAgent?",
             null,
             RouteAllowsQuery: true));
+        DataAgentToolRouteContext summaryRoute = AllowedRoute("dataagent_analysis_summarize", start.SessionId);
 
-        DataAgentOrchestrationResult summary = orchestrator.Summarize(start.SessionId);
+        DataAgentOrchestrationResult summary = orchestrator.Summarize(start.SessionId, summaryRoute);
 
         Assert.Multiple(() =>
         {
@@ -336,11 +390,12 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
             Assert.That(summary.Checkpoint.SessionId, Is.EqualTo(start.SessionId));
             Assert.That(summary.Checkpoint.TurnCount, Is.EqualTo(2));
+            Assert.That(summary.RouteContext, Is.EqualTo(summaryRoute));
         });
     }
 
     [Test]
-    public void EndReturnsTerminalTraceWithoutRouteGateOrQuery()
+    public void SummarizeWithoutAllowedToolRouteFailsClosedWithoutMutation()
     {
         DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
         int answerCalls = 0;
@@ -358,8 +413,101 @@ public sealed class DataAgentAnalysisOrchestratorTests
             "Which documents describe DataAgent?",
             null,
             RouteAllowsQuery: true));
+        DataAgentToolRouteContext missingRoute = DataAgentToolRouteContext.Missing("dataagent_analysis_summarize");
 
-        DataAgentOrchestrationResult end = orchestrator.End(start.SessionId);
+        DataAgentOrchestrationResult summary = orchestrator.Summarize(start.SessionId, missingRoute);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(summary.Response.Accepted, Is.False);
+            Assert.That(summary.Response.RejectedReason, Is.EqualTo("tool_route_required"));
+            Assert.That(summary.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(summary.RouteContext, Is.EqualTo(missingRoute));
+            Assert.That(summary.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize), Is.False);
+            Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(summary.Checkpoint.TurnCount, Is.EqualTo(1));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void SummarizeSessionMismatchFailsClosedWithoutMutation()
+    {
+        DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        DataAgentToolRouteContext mismatchedRoute = new(
+            true,
+            "dataagent_analysis_summarize",
+            false,
+            false,
+            "route-summary",
+            "analysis_summarize",
+            DataAgentToolRouteContext.SessionNotAllowedReasonCode,
+            "other-session");
+
+        DataAgentOrchestrationResult summary = orchestrator.Summarize(start.SessionId, mismatchedRoute);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(summary.Response.Accepted, Is.False);
+            Assert.That(summary.Response.RejectedReason, Is.EqualTo(DataAgentToolRouteContext.SessionNotAllowedReasonCode));
+            Assert.That(summary.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(summary.RouteContext, Is.EqualTo(mismatchedRoute));
+            Assert.That(summary.Steps[0].Reason, Is.EqualTo(DataAgentToolRouteContext.SessionNotAllowedReasonCode));
+            Assert.That(summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize), Is.False);
+            Assert.That(summary.Checkpoint.TurnCount, Is.EqualTo(1));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void EndWithAllowedToolRouteReturnsTerminalTraceWithoutQuery()
+    {
+        DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        DataAgentToolRouteContext endRoute = AllowedRoute("dataagent_analysis_end", start.SessionId);
+
+        DataAgentOrchestrationResult end = orchestrator.End(start.SessionId, endRoute);
 
         Assert.Multiple(() =>
         {
@@ -376,6 +524,52 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(end.Checkpoint.CanContinue, Is.False);
             Assert.That(end.Checkpoint.CanSummarize, Is.False);
             Assert.That(end.Checkpoint.Terminal, Is.True);
+            Assert.That(end.RouteContext, Is.EqualTo(endRoute));
+        });
+    }
+
+    [Test]
+    public void EndWithoutAllowedToolRouteFailsClosedWithoutMutation()
+    {
+        DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+        DataAgentToolRouteContext missingRoute = DataAgentToolRouteContext.Missing("dataagent_analysis_end");
+
+        DataAgentOrchestrationResult end = orchestrator.End(start.SessionId, missingRoute);
+        DataAgentAnalysisSession session = store.Get(start.SessionId)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(end.Response.Accepted, Is.False);
+            Assert.That(end.Response.RejectedReason, Is.EqualTo("tool_route_required"));
+            Assert.That(end.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(end.RouteContext, Is.EqualTo(missingRoute));
+            Assert.That(end.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(end.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.End), Is.False);
+            Assert.That(end.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(end.Checkpoint.TurnCount, Is.EqualTo(1));
+            Assert.That(session.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
         });
     }
 
@@ -468,13 +662,16 @@ public sealed class DataAgentAnalysisOrchestratorTests
             new DataAgentFollowUpInterpreter());
     }
 
-    static DataAgentToolRouteContext AllowedRoute(string toolName, string? sessionId = null)
+    static DataAgentToolRouteContext AllowedRoute(
+        string toolName,
+        string? sessionId = null,
+        bool allowsQuery = true)
     {
         return new DataAgentToolRouteContext(
             true,
             toolName,
             true,
-            true,
+            allowsQuery,
             "route-test",
             "analysis_continue",
             "route_allowed",

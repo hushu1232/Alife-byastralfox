@@ -367,11 +367,21 @@ public static class DataAgentReadiness
                 RouteAllowsQuery: false));
             int answerCallsAfterDeniedContinue = orchestrationAnswerCalls;
             int turnsAfterDeniedContinue = orchestrationStore.Get(orchestrationStart.SessionId)?.Turns.Count ?? -1;
+            DataAgentToolRouteContext orchestrationTerminalContinueRoute = new(
+                true,
+                "dataagent_analysis_continue",
+                true,
+                false,
+                "route-terminal-continue",
+                "analysis_continue",
+                "route_allowed",
+                orchestrationStart.SessionId);
             DataAgentOrchestrationResult orchestrationSummary = orchestrator.Continue(new DataAgentOrchestrationRequest(
                 "readiness",
                 "\u603b\u7ed3\u4e00\u4e0b",
                 orchestrationStart.SessionId,
-                RouteAllowsQuery: false));
+                orchestrationTerminalContinueRoute.AllowsQuery,
+                orchestrationTerminalContinueRoute));
 
             checks.Add(typeof(IDataAgentAnalysisOrchestrator).IsAssignableFrom(typeof(DataAgentAnalysisOrchestrator)) &&
                        orchestrationStart.Response.Accepted
@@ -596,6 +606,14 @@ public static class DataAgentReadiness
                 "analysis_summarize",
                 "route_allowed",
                 terminalRouteStart.SessionId);
+            int turnsBeforeDeniedTerminalRoute = orchestrationStore.Get(terminalRouteStart.SessionId)?.Turns.Count ?? -1;
+            DataAgentToolRouteContext deniedTerminalRouteContext =
+                DataAgentToolRouteContext.Missing("dataagent_analysis_summarize");
+            DataAgentOrchestrationResult terminalRouteDeniedSummary = orchestrator.Summarize(
+                terminalRouteStart.SessionId,
+                deniedTerminalRouteContext);
+            int turnsAfterDeniedTerminalRoute = orchestrationStore.Get(terminalRouteStart.SessionId)?.Turns.Count ?? -1;
+            string terminalRouteDeniedSummaryContext = DataAgentOrchestrationContextProvider.Build(terminalRouteDeniedSummary);
             DataAgentOrchestrationResult terminalRouteSummary = orchestrator.Summarize(
                 terminalRouteStart.SessionId,
                 terminalRouteContext);
@@ -609,11 +627,19 @@ public static class DataAgentReadiness
                        terminalRouteSummary.Steps.Any(step => step.ExecutedSql) == false &&
                        terminalRouteSummary.RouteContext == terminalRouteContext &&
                        answerCallsAfterTerminalRoute == answerCallsBeforeTerminalRoute &&
+                       terminalRouteDeniedSummary.Response.Accepted == false &&
+                       terminalRouteDeniedSummary.Response.RejectedReason == DataAgentToolRouteContext.MissingRouteReasonCode &&
+                       terminalRouteDeniedSummary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize) == false &&
+                       terminalRouteDeniedSummary.Steps.Any(step => step.ExecutedSql) == false &&
+                       terminalRouteDeniedSummary.RouteContext == deniedTerminalRouteContext &&
+                       turnsBeforeDeniedTerminalRoute == 1 &&
+                       turnsAfterDeniedTerminalRoute == turnsBeforeDeniedTerminalRoute &&
+                       terminalRouteDeniedSummaryContext.Contains("orchestration_trace=RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded", StringComparison.Ordinal) &&
                        terminalRouteSummaryContext.Contains("route_tool=dataagent_analysis_summarize", StringComparison.Ordinal) &&
                        terminalRouteSummaryContext.Contains("route_allows_query=true", StringComparison.Ordinal) &&
                        terminalRouteSummaryContext.Contains($"route_session_id={terminalRouteStart.SessionId}", StringComparison.Ordinal)
-                ? Pass("TerminalRouteDoesNotQuery", $"route_tool=dataagent_analysis_summarize;route_allows_query=true;route_session_id={terminalRouteStart.SessionId};answer_calls_unchanged=true")
-                : Fail("TerminalRouteDoesNotQuery", $"answerCallsBefore={answerCallsBeforeTerminalRoute};answerCallsAfter={answerCallsAfterTerminalRoute};context={terminalRouteSummaryContext}"));
+                ? Pass("TerminalRouteDoesNotQuery", $"route_tool=dataagent_analysis_summarize;route_allows_query=true;route_session_id={terminalRouteStart.SessionId};answer_calls_unchanged=true;denied_terminal_fail_closed=true")
+                : Fail("TerminalRouteDoesNotQuery", $"answerCallsBefore={answerCallsBeforeTerminalRoute};answerCallsAfter={answerCallsAfterTerminalRoute};turnsBeforeDenied={turnsBeforeDeniedTerminalRoute};turnsAfterDenied={turnsAfterDeniedTerminalRoute};context={terminalRouteSummaryContext};deniedContext={terminalRouteDeniedSummaryContext}"));
         }
         catch (Exception ex)
         {

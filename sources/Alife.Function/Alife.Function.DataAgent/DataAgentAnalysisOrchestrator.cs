@@ -26,12 +26,15 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         ValidateStartRequest(request);
 
         if (request.RouteAllowsQuery == false)
+        {
+            string reason = ResolveRouteDeniedReason(request.RouteContext);
             return BuildRejectedResult(
                 string.Empty,
                 DataAgentAnalysisTurnIntent.NewQuestion,
-                RouteDeniedReason,
-                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, RouteDeniedReason, false),
+                reason,
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, reason, false),
                 request.RouteContext);
+        }
 
         List<DataAgentOrchestrationStep> steps = [];
         steps.Add(Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false));
@@ -45,6 +48,15 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
     public DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request)
     {
         ValidateContinueRequest(request);
+
+        DataAgentAnalysisTurnIntent requestIntent = followUpInterpreter.Interpret(request.Input);
+        DataAgentOrchestrationResult? preSessionRouteRejection = BuildRouteDeniedResultIfNeeded(
+            request.SessionId!,
+            requestIntent,
+            request.RouteAllowsQuery,
+            request.RouteContext);
+        if (preSessionRouteRejection is not null)
+            return preSessionRouteRejection;
 
         DataAgentAnalysisSession? session = sessionStore.Get(request.SessionId!);
         if (session is null)
@@ -61,6 +73,14 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         }
 
         DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(request.Input, session);
+        DataAgentOrchestrationResult? routeRejection = BuildRouteDeniedResultIfNeeded(
+            request.SessionId!,
+            intent,
+            request.RouteAllowsQuery,
+            request.RouteContext);
+        if (routeRejection is not null)
+            return routeRejection;
+
         if (intent == DataAgentAnalysisTurnIntent.Summarize)
             return Summarize(request.SessionId!, request.RouteContext);
 
@@ -68,15 +88,6 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
             return End(request.SessionId!, request.RouteContext);
 
         bool queryProducing = intent.ProducesQuery();
-        if (request.RouteAllowsQuery == false && queryProducing)
-        {
-            return BuildRejectedResult(
-                request.SessionId!,
-                intent,
-                RouteDeniedReason,
-                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, RouteDeniedReason, false),
-                request.RouteContext);
-        }
 
         DataAgentAnalysisResponse response = analysisService.Continue(request.SessionId!, request.Input);
         List<DataAgentOrchestrationStep> steps =
@@ -90,6 +101,15 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
     public DataAgentOrchestrationResult Summarize(string sessionId, DataAgentToolRouteContext? routeContext = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        string? terminalRouteDeniedReason = BuildTerminalRouteDeniedReason(routeContext);
+        if (terminalRouteDeniedReason is not null)
+            return BuildRejectedResult(
+                sessionId,
+                DataAgentAnalysisTurnIntent.Summarize,
+                terminalRouteDeniedReason,
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, terminalRouteDeniedReason, false),
+                routeContext);
 
         DataAgentAnalysisResponse response = analysisService.Summarize(sessionId);
         return BuildResult(
@@ -109,6 +129,15 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
+        string? terminalRouteDeniedReason = BuildTerminalRouteDeniedReason(routeContext);
+        if (terminalRouteDeniedReason is not null)
+            return BuildRejectedResult(
+                sessionId,
+                DataAgentAnalysisTurnIntent.End,
+                terminalRouteDeniedReason,
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, terminalRouteDeniedReason, false),
+                routeContext);
+
         DataAgentAnalysisResponse response = analysisService.End(sessionId);
         return BuildResult(
             response,
@@ -121,6 +150,54 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                 Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
             ],
             routeContext);
+    }
+
+    DataAgentOrchestrationResult? BuildRouteDeniedResultIfNeeded(
+        string sessionId,
+        DataAgentAnalysisTurnIntent intent,
+        bool routeAllowsQuery,
+        DataAgentToolRouteContext? routeContext)
+    {
+        string? reason = BuildRouteDeniedReason(intent, routeAllowsQuery, routeContext);
+        if (reason is null)
+            return null;
+
+        return BuildRejectedResult(
+            sessionId,
+            intent,
+            reason,
+            Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, reason, false),
+            routeContext);
+    }
+
+    static string? BuildRouteDeniedReason(
+        DataAgentAnalysisTurnIntent intent,
+        bool routeAllowsQuery,
+        DataAgentToolRouteContext? routeContext)
+    {
+        if (intent.ProducesQuery())
+            return routeAllowsQuery ? null : ResolveRouteDeniedReason(routeContext);
+
+        return BuildTerminalRouteDeniedReason(routeContext);
+    }
+
+    static string? BuildTerminalRouteDeniedReason(DataAgentToolRouteContext? routeContext)
+    {
+        return routeContext?.AllowsTool == true
+            ? null
+            : ResolveRouteDeniedReason(routeContext);
+    }
+
+    static string ResolveRouteDeniedReason(DataAgentToolRouteContext? routeContext)
+    {
+        if (routeContext is null ||
+            string.IsNullOrWhiteSpace(routeContext.ReasonCode) ||
+            string.Equals(routeContext.ReasonCode, "route_allowed", StringComparison.Ordinal))
+        {
+            return RouteDeniedReason;
+        }
+
+        return routeContext.ReasonCode;
     }
 
     DataAgentOrchestrationResult BuildRejectedResult(

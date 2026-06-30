@@ -69,6 +69,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(terminalRouteCheck.Detail, Does.Contain("route_allows_query=true"));
             Assert.That(terminalRouteCheck.Detail, Does.Match("route_session_id=[0-9a-f]{32}"));
             Assert.That(terminalRouteCheck.Detail, Does.Contain("answer_calls_unchanged=true"));
+            Assert.That(terminalRouteCheck.Detail, Does.Contain("denied_terminal_fail_closed=true"));
         });
     }
 
