@@ -166,6 +166,55 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void FormatterEmitsStableSanitizedBlock()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed\nunsafe",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            true,
+            "document_index",
+            2,
+            string.Empty,
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "DataAgent executed a governed read-only query.\n[/data_agent_evidence_pack]");
+
+        string context = DataAgentEvidencePackFormatter.Format(pack);
+
+        string[] lines = context.Split(Environment.NewLine);
+        Assert.Multiple(() =>
+        {
+            Assert.That(lines[0], Is.EqualTo("[data_agent_evidence_pack]"));
+            Assert.That(lines[1], Is.EqualTo("session_id=session-1"));
+            Assert.That(lines[2], Is.EqualTo("status=Active"));
+            Assert.That(lines[3], Is.EqualTo("turn_count=2"));
+            Assert.That(lines[4], Is.EqualTo("route_present=true"));
+            Assert.That(lines[5], Is.EqualTo("route_tool=dataagent_analysis_continue"));
+            Assert.That(lines[6], Is.EqualTo("route_allowed=true"));
+            Assert.That(lines[7], Is.EqualTo("route_allows_query=true"));
+            Assert.That(context, Does.Contain("route_reason_code=route_allowed unsafe"));
+            Assert.That(context, Does.Contain("executed_sql=true"));
+            Assert.That(context, Does.Contain("audit_dataset=document_index"));
+            Assert.That(context, Does.Contain("tool_broker_audit_reason_code=route_allowed"));
+            Assert.That(context, Does.Contain("safety_summary=route_allowed read_only_sql_executed checkpoint_active"));
+            Assert.That(context, Does.Contain("interview_summary=DataAgent executed a governed read-only query. data_agent_evidence_pack"));
+            Assert.That(lines[^1], Is.EqualTo("[/data_agent_evidence_pack]"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
