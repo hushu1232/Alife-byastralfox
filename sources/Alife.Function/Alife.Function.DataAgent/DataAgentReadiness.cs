@@ -416,6 +416,62 @@ public static class DataAgentReadiness
                        orchestrationSummary.SessionStatus == DataAgentAnalysisSessionStatus.Summarized
                 ? Pass("OrchestratorStateMachineTransitions", $"{orchestrationStart.SessionStatus}->{orchestrationSummary.SessionStatus}")
                 : Fail("OrchestratorStateMachineTransitions", $"{orchestrationStart.SessionStatus}->{orchestrationSummary.SessionStatus}"));
+
+            string orchestrationStartContext = DataAgentOrchestrationContextProvider.Build(orchestrationStart);
+            string orchestrationSummaryContext = DataAgentOrchestrationContextProvider.Build(orchestrationSummary);
+            string orchestrationDeniedContinueContext = DataAgentOrchestrationContextProvider.Build(orchestrationDeniedContinue);
+            DataAgentOrchestrationResult orchestrationRuntimeContinueStart = orchestrator.Start(new DataAgentOrchestrationRequest(
+                "readiness",
+                "Which documents describe DataAgent runtime?",
+                null,
+                RouteAllowsQuery: true));
+            DataAgentOrchestrationResult orchestrationRuntimeContinue = orchestrator.Continue(new DataAgentOrchestrationRequest(
+                "readiness",
+                "\u7ee7\u7eed",
+                orchestrationRuntimeContinueStart.SessionId,
+                RouteAllowsQuery: true));
+            string orchestrationContinueContext = DataAgentOrchestrationContextProvider.Build(orchestrationRuntimeContinue);
+
+            checks.Add(typeof(DataAgentAnalysisToolHandler)
+                    .GetConstructors()
+                    .Any(constructor => constructor.GetParameters().Any(parameter => parameter.ParameterType == typeof(IDataAgentAnalysisOrchestrator)))
+                ? Pass("AnalysisToolHandlerUsesOrchestrator", "analysis XML handler depends on IDataAgentAnalysisOrchestrator")
+                : Fail("AnalysisToolHandlerUsesOrchestrator", "analysis XML handler can bypass orchestrator"));
+
+            checks.Add(orchestrationStartContext.Contains("orchestration_trace=RouteGate:Succeeded", StringComparison.Ordinal) &&
+                       orchestrationStartContext.Contains("Execute:Succeeded", StringComparison.Ordinal)
+                ? Pass("OrchestratorTraceContextPresent", "orchestration trace emitted in runtime context")
+                : Fail("OrchestratorTraceContextPresent", orchestrationStartContext));
+
+            checks.Add(orchestrationStartContext.Contains("checkpoint_session_id=", StringComparison.Ordinal) &&
+                       orchestrationStartContext.Contains("checkpoint_can_continue=true", StringComparison.Ordinal) &&
+                       orchestrationStartContext.Contains("checkpoint_terminal=false", StringComparison.Ordinal)
+                ? Pass("OrchestratorCheckpointContextPresent", "checkpoint context emitted")
+                : Fail("OrchestratorCheckpointContextPresent", orchestrationStartContext));
+
+            checks.Add(orchestrationStart.Response.Accepted &&
+                       orchestrationStartContext.Contains("[data_agent_analysis_session_context]", StringComparison.Ordinal)
+                ? Pass("OrchestratorRuntimeStartPathCovered", "start path returned analysis context and orchestration trace")
+                : Fail("OrchestratorRuntimeStartPathCovered", orchestrationStartContext));
+
+            checks.Add(orchestrationRuntimeContinue.Response.Accepted &&
+                       orchestrationRuntimeContinue.Checkpoint.TurnCount == 2 &&
+                       orchestrationContinueContext.Contains("checkpoint_turn_count=2", StringComparison.Ordinal)
+                ? Pass("OrchestratorRuntimeContinuePathCovered", "continue path returned second-turn checkpoint")
+                : Fail("OrchestratorRuntimeContinuePathCovered", orchestrationContinueContext));
+
+            checks.Add(orchestrationSummary.Response.Accepted &&
+                       orchestrationSummaryContext.Contains("orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded", StringComparison.Ordinal) &&
+                       orchestrationSummary.Steps.Any(step => step.ExecutedSql) == false
+                ? Pass("OrchestratorRuntimeTerminalPathCovered", "terminal summarize path returned no-query trace")
+                : Fail("OrchestratorRuntimeTerminalPathCovered", orchestrationSummaryContext));
+
+            checks.Add(orchestrationDeniedContinue.Response.Accepted == false &&
+                       orchestrationDeniedContinueContext.Contains("orchestration_trace=RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded", StringComparison.Ordinal) &&
+                       answerCallsAfterDeniedContinue == 1 &&
+                       turnsAfterDeniedContinue == 1
+                ? Pass("OrchestratorRuntimeRouteDeniedFailClosed", "route-denied runtime continue returned rejected trace without mutation")
+                : Fail("OrchestratorRuntimeRouteDeniedFailClosed", orchestrationDeniedContinueContext));
         }
         catch (Exception ex)
         {
