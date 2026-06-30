@@ -194,24 +194,68 @@ public sealed class DataAgentEvidencePackTests
 
         string context = DataAgentEvidencePackFormatter.Format(pack);
 
-        string[] lines = context.Split(Environment.NewLine);
+        string[] expectedLines =
+        [
+            "[data_agent_evidence_pack]",
+            "session_id=session-1",
+            "status=Active",
+            "turn_count=2",
+            "route_present=true",
+            "route_tool=dataagent_analysis_continue",
+            "route_allowed=true",
+            "route_allows_query=true",
+            "route_reason_code=route_allowed unsafe",
+            "trace=RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            "executed_sql=true",
+            "terminal=false",
+            "can_continue=true",
+            "can_summarize=true",
+            "audit_validated=true",
+            "audit_dataset=document_index",
+            "audit_row_count=2",
+            "audit_rejected_reason=",
+            "tool_broker_audit_allowed=true",
+            "tool_broker_audit_reason_code=route_allowed",
+            "safety_summary=route_allowed read_only_sql_executed checkpoint_active",
+            "interview_summary=DataAgent executed a governed read-only query. data_agent_evidence_pack",
+            "[/data_agent_evidence_pack]"
+        ];
+        Assert.That(context.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void FormatterPreservesDiagnosticPunctuationOutsideEvidencePackTag()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            false,
+            "document_index",
+            0,
+            "policy(sql)/runtime/v2",
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "Observed policy(sql)/runtime/v2 outside tag");
+
+        string context = DataAgentEvidencePackFormatter.Format(pack);
+
         Assert.Multiple(() =>
         {
-            Assert.That(lines[0], Is.EqualTo("[data_agent_evidence_pack]"));
-            Assert.That(lines[1], Is.EqualTo("session_id=session-1"));
-            Assert.That(lines[2], Is.EqualTo("status=Active"));
-            Assert.That(lines[3], Is.EqualTo("turn_count=2"));
-            Assert.That(lines[4], Is.EqualTo("route_present=true"));
-            Assert.That(lines[5], Is.EqualTo("route_tool=dataagent_analysis_continue"));
-            Assert.That(lines[6], Is.EqualTo("route_allowed=true"));
-            Assert.That(lines[7], Is.EqualTo("route_allows_query=true"));
-            Assert.That(context, Does.Contain("route_reason_code=route_allowed unsafe"));
-            Assert.That(context, Does.Contain("executed_sql=true"));
-            Assert.That(context, Does.Contain("audit_dataset=document_index"));
-            Assert.That(context, Does.Contain("tool_broker_audit_reason_code=route_allowed"));
+            Assert.That(context, Does.Contain("audit_rejected_reason=policy(sql)/runtime/v2"));
+            Assert.That(context, Does.Contain("interview_summary=Observed policy(sql)/runtime/v2 outside tag"));
             Assert.That(context, Does.Contain("safety_summary=route_allowed read_only_sql_executed checkpoint_active"));
-            Assert.That(context, Does.Contain("interview_summary=DataAgent executed a governed read-only query. data_agent_evidence_pack"));
-            Assert.That(lines[^1], Is.EqualTo("[/data_agent_evidence_pack]"));
         });
     }
 
