@@ -28,10 +28,7 @@ public sealed class DataAgentCapabilityProviderTests
     public void AnalysisProviderDeclaresAndRegistersAnalysisTools()
     {
         RecordingRegistrar registrar = new();
-        DataAgentAnalysisService analysisService = new(
-            new DataAgentService(CreateDatabasePath()),
-            new InMemoryDataAgentAnalysisSessionStore());
-        DataAgentAnalysisCapabilityProvider provider = new(analysisService);
+        DataAgentAnalysisCapabilityProvider provider = new(CreateAnalysisOrchestrator());
 
         provider.Register(registrar);
 
@@ -60,10 +57,7 @@ public sealed class DataAgentCapabilityProviderTests
     public void ProvidersUseSharedToolBrokerManifestSource()
     {
         DataAgentQueryCapabilityProvider query = new(new DataAgentService(CreateDatabasePath()));
-        DataAgentAnalysisService analysisService = new(
-            new DataAgentService(CreateDatabasePath()),
-            new InMemoryDataAgentAnalysisSessionStore());
-        DataAgentAnalysisCapabilityProvider analysis = new(analysisService);
+        DataAgentAnalysisCapabilityProvider analysis = new(CreateAnalysisOrchestrator());
 
         string[] providerTools = query.ToolManifests.Concat(analysis.ToolManifests)
             .Select(manifest => manifest.Name)
@@ -73,6 +67,15 @@ public sealed class DataAgentCapabilityProviderTests
             .ToArray();
 
         Assert.That(providerTools, Is.EqualTo(sharedTools));
+    }
+
+    static DataAgentAnalysisOrchestrator CreateAnalysisOrchestrator()
+    {
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisService analysisService = new(
+            new DataAgentService(CreateDatabasePath()),
+            store);
+        return new DataAgentAnalysisOrchestrator(analysisService, store);
     }
 
     static string CreateDatabasePath()

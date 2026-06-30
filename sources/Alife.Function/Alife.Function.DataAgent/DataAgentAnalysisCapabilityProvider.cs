@@ -4,7 +4,7 @@ using Alife.Function.Interpreter;
 namespace Alife.Function.DataAgent;
 
 public sealed class DataAgentAnalysisCapabilityProvider(
-    DataAgentAnalysisService service,
+    IDataAgentAnalysisOrchestrator orchestrator,
     Action<string>? resultPublisher = null) : IDataAgentCapabilityProvider
 {
     public string Name => nameof(DataAgentAnalysisCapabilityProvider);
@@ -14,6 +14,6 @@ public sealed class DataAgentAnalysisCapabilityProvider(
     public void Register(IDataAgentCapabilityRegistrar registrar)
     {
         ArgumentNullException.ThrowIfNull(registrar);
-        registrar.RegisterXmlHandlerWithoutStaticDocument(new XmlHandler(new DataAgentAnalysisToolHandler(service, resultPublisher)));
+        registrar.RegisterXmlHandlerWithoutStaticDocument(new XmlHandler(new DataAgentAnalysisToolHandler(orchestrator, resultPublisher)));
     }
 }

@@ -6,111 +6,141 @@ namespace Alife.Test.DataAgent;
 [TestFixture]
 public sealed class DataAgentAnalysisToolHandlerTests
 {
-    static readonly DateTimeOffset Now = new(2026, 6, 28, 12, 0, 0, TimeSpan.Zero);
-
     [Test]
-    public void StartReturnsAndPublishesAnalysisSessionContext()
+    public void StartCallsOrchestratorAndPublishesOrchestratedContext()
     {
         List<string> published = [];
-        DataAgentAnalysisToolHandler handler = new(CreateService(_ => AcceptedAnswer()), published.Add);
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                1,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\ncaller_id=xiayu\n[/data_agent_analysis_session_context]")
+        });
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
 
         string context = handler.Start("xiayu", "Which documents describe DataAgent?");
 
         Assert.Multiple(() =>
         {
+            Assert.That(orchestrator.StartRequests, Has.Count.EqualTo(1));
+            Assert.That(orchestrator.StartRequests[0].CallerId, Is.EqualTo("xiayu"));
+            Assert.That(orchestrator.StartRequests[0].Input, Is.EqualTo("Which documents describe DataAgent?"));
+            Assert.That(orchestrator.StartRequests[0].SessionId, Is.Null);
+            Assert.That(orchestrator.StartRequests[0].RouteAllowsQuery, Is.True);
             Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
-            Assert.That(context, Does.Contain("caller_id=xiayu"));
-            Assert.That(context, Does.Contain("goal=Which documents describe DataAgent?"));
-            Assert.That(context, Does.Contain("[data_agent_context]"));
-            Assert.That(published, Has.Count.EqualTo(1));
-            Assert.That(published.Single(), Is.EqualTo(context));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("checkpoint_session_id=session-1"));
+            Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
 
     [Test]
-    public void ContinueReturnsAndPublishesAnalysisSessionContext()
+    public void ContinueCallsOrchestratorAndPublishesOrchestratedContext()
     {
         List<string> published = [];
-        InMemoryDataAgentAnalysisSessionStore store = new();
-        DataAgentAnalysisToolHandler handler = new(CreateService(_ => AcceptedAnswer(), store), published.Add);
-        string startContext = handler.Start("xiayu", "Which tests failed?");
-        string sessionId = GetContextValue(startContext, "session_id");
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["continue"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.Continue,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                2,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\nturn_count=2\n[/data_agent_analysis_session_context]")
+        });
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
 
-        string context = handler.Continue(sessionId, "continue");
+        string context = handler.Continue("session-1", "continue");
 
         Assert.Multiple(() =>
         {
-            Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
-            Assert.That(context, Does.Contain($"session_id={sessionId}"));
+            Assert.That(orchestrator.ContinueRequests, Has.Count.EqualTo(1));
+            Assert.That(orchestrator.ContinueRequests[0].CallerId, Is.EqualTo("local"));
+            Assert.That(orchestrator.ContinueRequests[0].SessionId, Is.EqualTo("session-1"));
+            Assert.That(orchestrator.ContinueRequests[0].Input, Is.EqualTo("continue"));
+            Assert.That(orchestrator.ContinueRequests[0].RouteAllowsQuery, Is.True);
             Assert.That(context, Does.Contain("turn_count=2"));
-            Assert.That(context, Does.Contain("[data_agent_context]"));
-            Assert.That(published, Has.Count.EqualTo(2));
-            Assert.That(published.Last(), Is.EqualTo(context));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
 
     [Test]
-    public void SummarizeUsesAnalysisServiceAndDoesNotCallAnswerBoundary()
+    public void SummarizeCallsOrchestratorAndPublishesTerminalContext()
     {
-        int answerCalls = 0;
         List<string> published = [];
-        InMemoryDataAgentAnalysisSessionStore store = new();
-        DataAgentAnalysisToolHandler handler = new(
-            CreateService(_ =>
-            {
-                answerCalls++;
-                return AcceptedAnswer();
-            }, store),
-            published.Add);
-        string startContext = handler.Start("xiayu", "Which tests failed?");
-        string sessionId = GetContextValue(startContext, "session_id");
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["summarize"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Summarized,
+                DataAgentAnalysisTurnIntent.Summarize,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Summarize, DataAgentOrchestrationStepStatus.Succeeded, "terminal_summary", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                2,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\nstatus=Summarized\n[/data_agent_analysis_session_context]")
+        });
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
 
-        string context = handler.Summarize(sessionId);
+        string context = handler.Summarize("session-1");
 
         Assert.Multiple(() =>
         {
-            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(orchestrator.SummarizeSessionIds, Is.EqualTo(new[] { "session-1" }));
             Assert.That(context, Does.Contain("status=Summarized"));
-            Assert.That(context, Does.Contain("turn_count=2"));
-            Assert.That(context, Does.Contain("last_summary="));
-            Assert.That(published, Has.Count.EqualTo(2));
-            Assert.That(published.Last(), Is.EqualTo(context));
+            Assert.That(context, Does.Contain("orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
 
     [Test]
-    public void EndUsesAnalysisServiceAndDoesNotCallAnswerBoundary()
+    public void EndCallsOrchestratorAndPublishesTerminalContext()
     {
-        int answerCalls = 0;
         List<string> published = [];
-        InMemoryDataAgentAnalysisSessionStore store = new();
-        DataAgentAnalysisToolHandler handler = new(
-            CreateService(_ =>
-            {
-                answerCalls++;
-                return AcceptedAnswer();
-            }, store),
-            published.Add);
-        string startContext = handler.Start("xiayu", "Which tests failed?");
-        string sessionId = GetContextValue(startContext, "session_id");
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["end"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Ended,
+                DataAgentAnalysisTurnIntent.End,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                2,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\nstatus=Ended\n[/data_agent_analysis_session_context]")
+        });
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
 
-        string context = handler.End(sessionId);
+        string context = handler.End("session-1");
 
         Assert.Multiple(() =>
         {
-            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(orchestrator.EndSessionIds, Is.EqualTo(new[] { "session-1" }));
             Assert.That(context, Does.Contain("status=Ended"));
-            Assert.That(context, Does.Contain("turn_count=2"));
-            Assert.That(context, Does.Contain("last_summary="));
-            Assert.That(published, Has.Count.EqualTo(2));
-            Assert.That(published.Last(), Is.EqualTo(context));
+            Assert.That(context, Does.Contain("orchestration_trace=End:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
 
     [Test]
     public void AnalysisMethodsAreRegisteredAsXmlFunctions()
     {
-        XmlHandler xmlHandler = new(new DataAgentAnalysisToolHandler(CreateService(_ => AcceptedAnswer())));
+        XmlHandler xmlHandler = new(new DataAgentAnalysisToolHandler(CreateOrchestrator()));
 
         Assert.Multiple(() =>
         {
@@ -133,7 +163,7 @@ public sealed class DataAgentAnalysisToolHandlerTests
     [Test]
     public void AnalysisMethodsRejectBlankRequiredArguments()
     {
-        DataAgentAnalysisToolHandler handler = new(CreateService(_ => AcceptedAnswer()));
+        DataAgentAnalysisToolHandler handler = new(CreateOrchestrator());
 
         Assert.Multiple(() =>
         {
@@ -146,44 +176,86 @@ public sealed class DataAgentAnalysisToolHandlerTests
         });
     }
 
-    static DataAgentAnalysisService CreateService(
-        Func<string, DataAgentAnswer> answer,
-        InMemoryDataAgentAnalysisSessionStore? store = null)
+    static RecordingOrchestrator CreateOrchestrator()
     {
-        return new DataAgentAnalysisService(
-            answer,
-            store ?? new InMemoryDataAgentAnalysisSessionStore(),
-            new DataAgentFollowUpInterpreter(),
-            () => Now);
+        return new RecordingOrchestrator(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Active, DataAgentAnalysisTurnIntent.NewQuestion, [], 1, string.Empty),
+            ["continue"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Active, DataAgentAnalysisTurnIntent.Continue, [], 2, string.Empty),
+            ["summarize"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Summarized, DataAgentAnalysisTurnIntent.Summarize, [], 2, string.Empty),
+            ["end"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Ended, DataAgentAnalysisTurnIntent.End, [], 2, string.Empty)
+        });
     }
 
-    static DataAgentAnswer AcceptedAnswer(string summary = "Found DataAgent documentation.")
+    static DataAgentOrchestrationResult OrchestratedResult(
+        string sessionId,
+        DataAgentAnalysisSessionStatus status,
+        DataAgentAnalysisTurnIntent intent,
+        IReadOnlyList<DataAgentOrchestrationStep> steps,
+        int turnCount,
+        string baseContext)
     {
-        return new DataAgentAnswer(
-            "document_index",
-            "SELECT path FROM document_index LIMIT 20",
-            2,
-            summary,
-            "[data_agent_context]\nsql_status=validated\n[/data_agent_context]",
-            true,
+        DataAgentAnalysisResponse response = new(
+            sessionId,
+            status,
+            intent,
+            null,
             string.Empty,
-            new DataAgentPlannerExplanation(
-                "TestPlanner",
-                "find_documents",
+            baseContext,
+            true,
+            string.Empty);
+
+        return new DataAgentOrchestrationResult(
+            sessionId,
+            status,
+            steps,
+            new DataAgentOrchestrationCheckpoint(
+                sessionId,
+                status,
                 "document_index",
-                "high",
-                ["test"],
-                "test accepted answer"));
+                turnCount,
+                CanContinue: status != DataAgentAnalysisSessionStatus.Ended,
+                CanSummarize: turnCount > 0 && status != DataAgentAnalysisSessionStatus.Ended,
+                Terminal: status == DataAgentAnalysisSessionStatus.Ended),
+            response);
     }
 
-    static string GetContextValue(string context, string field)
+    sealed class RecordingOrchestrator : IDataAgentAnalysisOrchestrator
     {
-        string prefix = $"{field}=";
-        string? line = context
-            .Split(Environment.NewLine)
-            .FirstOrDefault(value => value.StartsWith(prefix, StringComparison.Ordinal));
+        readonly Dictionary<string, DataAgentOrchestrationResult> results;
 
-        Assert.That(line, Is.Not.Null);
-        return line![prefix.Length..];
+        public RecordingOrchestrator(Dictionary<string, DataAgentOrchestrationResult> results)
+        {
+            this.results = results;
+        }
+
+        public List<DataAgentOrchestrationRequest> StartRequests { get; } = [];
+        public List<DataAgentOrchestrationRequest> ContinueRequests { get; } = [];
+        public List<string> SummarizeSessionIds { get; } = [];
+        public List<string> EndSessionIds { get; } = [];
+
+        public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
+        {
+            StartRequests.Add(request);
+            return results["start"];
+        }
+
+        public DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request)
+        {
+            ContinueRequests.Add(request);
+            return results["continue"];
+        }
+
+        public DataAgentOrchestrationResult Summarize(string sessionId)
+        {
+            SummarizeSessionIds.Add(sessionId);
+            return results["summarize"];
+        }
+
+        public DataAgentOrchestrationResult End(string sessionId)
+        {
+            EndSessionIds.Add(sessionId);
+            return results["end"];
+        }
     }
 }

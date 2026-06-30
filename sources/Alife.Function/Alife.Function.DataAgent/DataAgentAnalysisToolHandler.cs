@@ -4,7 +4,7 @@ using Alife.Function.Interpreter;
 namespace Alife.Function.DataAgent;
 
 [Description("Runs multi-turn DataAgent analysis sessions and returns data_agent_analysis_session_context blocks.")]
-public sealed class DataAgentAnalysisToolHandler(DataAgentAnalysisService service, Action<string>? resultPublisher = null)
+public sealed class DataAgentAnalysisToolHandler(IDataAgentAnalysisOrchestrator orchestrator, Action<string>? resultPublisher = null)
 {
     [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
     [Description("Start a DataAgent analysis session for a caller and goal or question.")]
@@ -13,7 +13,12 @@ public sealed class DataAgentAnalysisToolHandler(DataAgentAnalysisService servic
         ArgumentException.ThrowIfNullOrWhiteSpace(callerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(goalOrQuestion);
 
-        string context = service.Start(callerId, goalOrQuestion).Context;
+        DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
+            callerId,
+            goalOrQuestion,
+            null,
+            RouteAllowsQuery: true));
+        string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
     }
@@ -25,7 +30,12 @@ public sealed class DataAgentAnalysisToolHandler(DataAgentAnalysisService servic
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
-        string context = service.Continue(sessionId, question).Context;
+        DataAgentOrchestrationResult result = orchestrator.Continue(new DataAgentOrchestrationRequest(
+            "local",
+            question,
+            sessionId,
+            RouteAllowsQuery: true));
+        string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
     }
@@ -36,7 +46,8 @@ public sealed class DataAgentAnalysisToolHandler(DataAgentAnalysisService servic
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        string context = service.Summarize(sessionId).Context;
+        DataAgentOrchestrationResult result = orchestrator.Summarize(sessionId);
+        string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
     }
@@ -47,7 +58,8 @@ public sealed class DataAgentAnalysisToolHandler(DataAgentAnalysisService servic
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        string context = service.End(sessionId).Context;
+        DataAgentOrchestrationResult result = orchestrator.End(sessionId);
+        string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
     }

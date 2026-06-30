@@ -107,11 +107,15 @@ public static class DataAgentReadiness
 
             DataAgentCapabilityRegistry capabilityRegistry = new();
             DataAgentService readinessService = new(databasePath);
+            InMemoryDataAgentAnalysisSessionStore readinessAnalysisStore = new();
             DataAgentAnalysisService readinessAnalysisService = new(
                 readinessService,
-                new InMemoryDataAgentAnalysisSessionStore());
+                readinessAnalysisStore);
+            DataAgentAnalysisOrchestrator readinessAnalysisOrchestrator = new(
+                readinessAnalysisService,
+                readinessAnalysisStore);
             capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(readinessService));
-            capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(readinessAnalysisService));
+            capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(readinessAnalysisOrchestrator));
             checks.Add(capabilityRegistry.ProviderNames.SequenceEqual(new[]
                        {
                            nameof(DataAgentQueryCapabilityProvider),

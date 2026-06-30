@@ -25,10 +25,13 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentService service = new(store);
         InMemoryDataAgentAnalysisSessionStore analysisSessionStore = new InMemoryDataAgentAnalysisSessionStore();
         DataAgentAnalysisService analysisService = new DataAgentAnalysisService(service, analysisSessionStore);
+        IDataAgentAnalysisOrchestrator analysisOrchestrator = new DataAgentAnalysisOrchestrator(
+            analysisService,
+            analysisSessionStore);
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
-        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisService, PublishAnalysisContext));
+        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)

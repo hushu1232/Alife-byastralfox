@@ -65,6 +65,20 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
+    public void AwakeConstructsAnalysisOrchestratorForRuntimeTools()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("DataAgentAnalysisOrchestrator"));
+            Assert.That(source, Does.Contain("IDataAgentAnalysisOrchestrator"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisOrchestrator"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider(analysisOrchestrator"));
+        });
+    }
+
+    [Test]
     public void AwakeInjectsToolBrokerPromptWithoutStaticToolDocuments()
     {
         string source = ReadModuleSource();
