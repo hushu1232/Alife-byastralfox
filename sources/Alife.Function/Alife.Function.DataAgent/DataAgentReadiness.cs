@@ -1,4 +1,5 @@
 using Alife.Function.FunctionCaller;
+using Alife.Function.Interpreter;
 
 namespace Alife.Function.DataAgent;
 
@@ -371,6 +372,7 @@ public static class DataAgentReadiness
                 "\u603b\u7ed3\u4e00\u4e0b",
                 orchestrationStart.SessionId,
                 RouteAllowsQuery: false));
+            int answerCallsAfterTerminalSummary = orchestrationAnswerCalls;
 
             checks.Add(typeof(IDataAgentAnalysisOrchestrator).IsAssignableFrom(typeof(DataAgentAnalysisOrchestrator)) &&
                        orchestrationStart.Response.Accepted
@@ -472,6 +474,121 @@ public static class DataAgentReadiness
                        turnsAfterDeniedContinue == 1
                 ? Pass("OrchestratorRuntimeRouteDeniedFailClosed", "route-denied runtime continue returned rejected trace without mutation")
                 : Fail("OrchestratorRuntimeRouteDeniedFailClosed", orchestrationDeniedContinueContext));
+
+            DataAgentOrchestrationResult routeHandlerResult = new(
+                "route-readiness-session",
+                DataAgentAnalysisSessionStatus.Active,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                new DataAgentOrchestrationCheckpoint(
+                    "route-readiness-session",
+                    DataAgentAnalysisSessionStatus.Active,
+                    "document_index",
+                    1,
+                    CanContinue: true,
+                    CanSummarize: true,
+                    Terminal: false),
+                new DataAgentAnalysisResponse(
+                    "route-readiness-session",
+                    DataAgentAnalysisSessionStatus.Active,
+                    DataAgentAnalysisTurnIntent.NewQuestion,
+                    null,
+                    string.Empty,
+                    "[data_agent_analysis_session_context]\nsession_id=route-readiness-session\n[/data_agent_analysis_session_context]",
+                    true,
+                    string.Empty));
+            RecordingRouteContextAccessor recordingRouteAccessor = new(new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_start",
+                true,
+                true,
+                "route-readiness",
+                "analysis_start",
+                "route_allowed",
+                string.Empty));
+            RecordingOrchestrator recordingOrchestrator = new(routeHandlerResult);
+            DataAgentAnalysisToolHandler recordingHandler = new(recordingOrchestrator, null, recordingRouteAccessor);
+            string routedHandlerContext = recordingHandler.Start("readiness", "Which documents describe DataAgent route context?");
+            DataAgentOrchestrationRequest? routedStartRequest = recordingOrchestrator.StartRequests.Count == 1
+                ? recordingOrchestrator.StartRequests[0]
+                : null;
+
+            checks.Add(recordingRouteAccessor.Requests.SequenceEqual(new[] { ("dataagent_analysis_start", (string?)null) }) &&
+                       routedStartRequest?.RouteAllowsQuery == true &&
+                       routedStartRequest.RouteContext?.RouteId == "route-readiness"
+                ? Pass("AnalysisHandlerConsumesToolRouteContext", "analysis handler requested and forwarded Tool Broker route context")
+                : Fail("AnalysisHandlerConsumesToolRouteContext", $"requests={recordingRouteAccessor.Requests.Count};route={routedStartRequest?.RouteContext?.RouteId ?? string.Empty}"));
+
+            RecordingOrchestrator runtimeDecisionOrchestrator = new(routeHandlerResult);
+            DataAgentAnalysisToolHandler runtimeDecisionHandler = new(
+                runtimeDecisionOrchestrator,
+                null,
+                new RecordingRouteContextAccessor(new DataAgentToolRouteContext(
+                    true,
+                    "dataagent_analysis_start",
+                    false,
+                    false,
+                    "route-denied",
+                    "analysis_start",
+                    DataAgentToolRouteContext.ToolNotAllowedReasonCode,
+                    string.Empty)));
+            runtimeDecisionHandler.Start("readiness", "Which documents describe DataAgent denied route?");
+            DataAgentOrchestrationRequest? runtimeDecisionRequest = runtimeDecisionOrchestrator.StartRequests.Count == 1
+                ? runtimeDecisionOrchestrator.StartRequests[0]
+                : null;
+            checks.Add(runtimeDecisionRequest?.RouteAllowsQuery == false &&
+                       runtimeDecisionRequest.RouteContext?.AllowsQuery == false &&
+                       runtimeDecisionRequest.RouteContext?.RouteId == "route-denied"
+                ? Pass("OrchestrationRequestUsesRuntimeRouteDecision", "DataAgent orchestration request RouteAllowsQuery came from route context")
+                : Fail("OrchestrationRequestUsesRuntimeRouteDecision", $"routeAllowsQuery={runtimeDecisionRequest?.RouteAllowsQuery}"));
+
+            RecordingOrchestrator missingRouteOrchestrator = new(routeHandlerResult);
+            DataAgentAnalysisToolHandler missingRouteHandler = new(missingRouteOrchestrator);
+            missingRouteHandler.Start("readiness", "Which documents describe missing route?");
+            DataAgentOrchestrationRequest? missingRouteRequest = missingRouteOrchestrator.StartRequests.Count == 1
+                ? missingRouteOrchestrator.StartRequests[0]
+                : null;
+            checks.Add(missingRouteRequest?.RouteAllowsQuery == false &&
+                       missingRouteRequest.RouteContext?.Present == false &&
+                       missingRouteRequest.RouteContext?.ReasonCode == DataAgentToolRouteContext.MissingRouteReasonCode
+                ? Pass("RouteMissingRequestFailsClosed", "missing route created a fail-closed DataAgent request")
+                : Fail("RouteMissingRequestFailsClosed", missingRouteRequest?.RouteContext?.ReasonCode ?? "missing request"));
+
+            checks.Add(routedHandlerContext.Contains("route_present=true", StringComparison.Ordinal) &&
+                       routedHandlerContext.Contains("route_allows_query=true", StringComparison.Ordinal) &&
+                       routedHandlerContext.Contains("route_reason_code=route_allowed", StringComparison.Ordinal) &&
+                       routedHandlerContext.Contains("route_session_id=", StringComparison.Ordinal)
+                ? Pass("RouteEvidenceContextPresent", "route evidence fields emitted in orchestration context")
+                : Fail("RouteEvidenceContextPresent", routedHandlerContext));
+
+            XmlFunctionExecutionPolicy sessionPolicy = new();
+            sessionPolicy.CurrentRoute = new ToolRouteDecision(
+                "route-session",
+                ToolCapabilityDomain.DataAgent,
+                "analysis_continue",
+                ["dataagent_analysis_continue"],
+                [],
+                new ToolRouteState("session-allowed", "Active", true, true, true),
+                "route_allowed",
+                "route_allowed");
+            DataAgentToolRouteContext sessionMismatchRoute = new XmlPolicyDataAgentToolRouteContextAccessor(sessionPolicy)
+                .Get("dataagent_analysis_continue", "session-other");
+            checks.Add(sessionMismatchRoute.Present &&
+                       sessionMismatchRoute.AllowsQuery == false &&
+                       sessionMismatchRoute.ReasonCode == DataAgentToolRouteContext.SessionNotAllowedReasonCode &&
+                       sessionMismatchRoute.RouteSessionId == "session-allowed"
+                ? Pass("RouteSessionScopePreserved", "session-scoped route mismatch remains fail-closed")
+                : Fail("RouteSessionScopePreserved", sessionMismatchRoute.ReasonCode));
+
+            checks.Add(orchestrationSummary.Response.Accepted &&
+                       orchestrationSummary.Response.Answer is null &&
+                       orchestrationSummary.Steps.Any(step => step.ExecutedSql) == false &&
+                       orchestrationSummaryContext.Contains("orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded", StringComparison.Ordinal) &&
+                       answerCallsAfterTerminalSummary == 1
+                ? Pass("TerminalRouteDoesNotQuery", "terminal route path avoided query execution")
+                : Fail("TerminalRouteDoesNotQuery", $"answerCalls={answerCallsAfterTerminalSummary};context={orchestrationSummaryContext}"));
         }
         catch (Exception ex)
         {
@@ -504,6 +621,43 @@ public static class DataAgentReadiness
     sealed class FixedLlmClient(string raw) : ILlmDataAgentPlannerClient
     {
         public string Complete(DataAgentLlmPlannerPrompt prompt) => raw;
+    }
+
+    sealed class RecordingRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor
+    {
+        public List<(string ToolName, string? SessionId)> Requests { get; } = [];
+
+        public DataAgentToolRouteContext Get(string toolName, string? sessionId)
+        {
+            Requests.Add((toolName, sessionId));
+            return routeContext with { ToolName = toolName };
+        }
+    }
+
+    sealed class RecordingOrchestrator(DataAgentOrchestrationResult result) : IDataAgentAnalysisOrchestrator
+    {
+        public List<DataAgentOrchestrationRequest> StartRequests { get; } = [];
+
+        public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
+        {
+            StartRequests.Add(request);
+            return result with { RouteContext = request.RouteContext };
+        }
+
+        public DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request)
+        {
+            return result with { RouteContext = request.RouteContext };
+        }
+
+        public DataAgentOrchestrationResult Summarize(string sessionId, DataAgentToolRouteContext? routeContext = null)
+        {
+            return result with { RouteContext = routeContext };
+        }
+
+        public DataAgentOrchestrationResult End(string sessionId, DataAgentToolRouteContext? routeContext = null)
+        {
+            return result with { RouteContext = routeContext };
+        }
     }
 }
 

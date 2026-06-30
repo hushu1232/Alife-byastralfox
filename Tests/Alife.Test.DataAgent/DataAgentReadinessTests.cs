@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(49));
+            Assert.That(checks, Has.Count.EqualTo(55));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -58,6 +58,12 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorRuntimeContinuePathCovered"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorRuntimeTerminalPathCovered"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestratorRuntimeRouteDeniedFailClosed"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("AnalysisHandlerConsumesToolRouteContext"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("OrchestrationRequestUsesRuntimeRouteDecision"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("RouteMissingRequestFailsClosed"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("RouteEvidenceContextPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("RouteSessionScopePreserved"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("TerminalRouteDoesNotQuery"));
         });
     }
 
@@ -78,11 +84,14 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 63 required passed, 0 required missing"
+                "  Summary: 69 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorRuntimeRouteDeniedFailClosed"));
+            Assert.That(result.StandardOutput, Does.Contain("AnalysisHandlerConsumesToolRouteContext"));
+            Assert.That(result.StandardOutput, Does.Contain("RouteEvidenceContextPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("TerminalRouteDoesNotQuery"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
