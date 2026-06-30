@@ -259,6 +259,44 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void BuilderBuildsTerminalNoQueryEvidence()
+    {
+        DataAgentOrchestrationResult result = Result(
+            DataAgentAnalysisSessionStatus.Ended,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Ended, "document_index", 3, false, false, true),
+            new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_end",
+                true,
+                false,
+                "route-end",
+                "analysis_end",
+                "route_allowed",
+                "session-1"));
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+            Assert.That(pack.RouteTool, Is.EqualTo("dataagent_analysis_end"));
+            Assert.That(pack.RouteAllowed, Is.True);
+            Assert.That(pack.RouteAllowsQuery, Is.False);
+            Assert.That(pack.Trace, Is.EqualTo("End:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(pack.ExecutedSql, Is.False);
+            Assert.That(pack.Terminal, Is.True);
+            Assert.That(pack.CanContinue, Is.False);
+            Assert.That(pack.CanSummarize, Is.False);
+            Assert.That(pack.SafetySummary, Is.EqualTo("terminal_no_query;checkpoint_terminal"));
+            Assert.That(pack.InterviewSummary, Does.Contain("terminal no-query"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
