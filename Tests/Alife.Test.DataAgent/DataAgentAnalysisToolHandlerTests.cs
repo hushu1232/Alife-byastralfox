@@ -24,7 +24,16 @@ public sealed class DataAgentAnalysisToolHandlerTests
                 1,
                 "[data_agent_analysis_session_context]\nsession_id=session-1\ncaller_id=xiayu\n[/data_agent_analysis_session_context]")
         });
-        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_start",
+            true,
+            true,
+            "route-1",
+            "analysis_start",
+            "route_allowed",
+            string.Empty));
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor);
 
         string context = handler.Start("xiayu", "Which documents describe DataAgent?");
 
@@ -35,9 +44,12 @@ public sealed class DataAgentAnalysisToolHandlerTests
             Assert.That(orchestrator.StartRequests[0].Input, Is.EqualTo("Which documents describe DataAgent?"));
             Assert.That(orchestrator.StartRequests[0].SessionId, Is.Null);
             Assert.That(orchestrator.StartRequests[0].RouteAllowsQuery, Is.True);
+            Assert.That(routeAccessor.Requests, Is.EqualTo(new[] { ("dataagent_analysis_start", (string?)null) }));
+            Assert.That(orchestrator.StartRequests[0].RouteContext?.RouteId, Is.EqualTo("route-1"));
             Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
             Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded"));
             Assert.That(context, Does.Contain("checkpoint_session_id=session-1"));
+            Assert.That(context, Does.Contain("route_reason_code=route_allowed"));
             Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
@@ -60,7 +72,16 @@ public sealed class DataAgentAnalysisToolHandlerTests
                 2,
                 "[data_agent_analysis_session_context]\nsession_id=session-1\nturn_count=2\n[/data_agent_analysis_session_context]")
         });
-        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route-2",
+            "analysis_continue",
+            "route_allowed",
+            "session-1"));
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor);
 
         string context = handler.Continue("session-1", "continue");
 
@@ -71,9 +92,29 @@ public sealed class DataAgentAnalysisToolHandlerTests
             Assert.That(orchestrator.ContinueRequests[0].SessionId, Is.EqualTo("session-1"));
             Assert.That(orchestrator.ContinueRequests[0].Input, Is.EqualTo("continue"));
             Assert.That(orchestrator.ContinueRequests[0].RouteAllowsQuery, Is.True);
+            Assert.That(routeAccessor.Requests, Is.EqualTo(new[] { ("dataagent_analysis_continue", (string?)"session-1") }));
+            Assert.That(orchestrator.ContinueRequests[0].RouteContext?.RouteSessionId, Is.EqualTo("session-1"));
             Assert.That(context, Does.Contain("turn_count=2"));
             Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("route_session_id=session-1"));
             Assert.That(published, Is.EqualTo(new[] { context }));
+        });
+    }
+
+    [Test]
+    public void StartWithoutRouteContextFailsClosedAtRequestBoundary()
+    {
+        RecordingOrchestrator orchestrator = CreateOrchestrator();
+        DataAgentAnalysisToolHandler handler = new(orchestrator);
+
+        handler.Start("xiayu", "Which documents describe DataAgent?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(orchestrator.StartRequests, Has.Count.EqualTo(1));
+            Assert.That(orchestrator.StartRequests[0].RouteAllowsQuery, Is.False);
+            Assert.That(orchestrator.StartRequests[0].RouteContext?.Present, Is.False);
+            Assert.That(orchestrator.StartRequests[0].RouteContext?.ReasonCode, Is.EqualTo("tool_route_required"));
         });
     }
 
@@ -237,13 +278,13 @@ public sealed class DataAgentAnalysisToolHandlerTests
         public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
         {
             StartRequests.Add(request);
-            return results["start"];
+            return results["start"] with { RouteContext = request.RouteContext };
         }
 
         public DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request)
         {
             ContinueRequests.Add(request);
-            return results["continue"];
+            return results["continue"] with { RouteContext = request.RouteContext };
         }
 
         public DataAgentOrchestrationResult Summarize(string sessionId)
@@ -256,6 +297,17 @@ public sealed class DataAgentAnalysisToolHandlerTests
         {
             EndSessionIds.Add(sessionId);
             return results["end"];
+        }
+    }
+
+    sealed class RecordingRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor
+    {
+        public List<(string ToolName, string? SessionId)> Requests { get; } = [];
+
+        public DataAgentToolRouteContext Get(string toolName, string? sessionId)
+        {
+            Requests.Add((toolName, sessionId));
+            return routeContext with { ToolName = toolName };
         }
     }
 }

@@ -4,8 +4,14 @@ using Alife.Function.Interpreter;
 namespace Alife.Function.DataAgent;
 
 [Description("Runs multi-turn DataAgent analysis sessions and returns data_agent_analysis_session_context blocks.")]
-public sealed class DataAgentAnalysisToolHandler(IDataAgentAnalysisOrchestrator orchestrator, Action<string>? resultPublisher = null)
+public sealed class DataAgentAnalysisToolHandler(
+    IDataAgentAnalysisOrchestrator orchestrator,
+    Action<string>? resultPublisher = null,
+    IDataAgentToolRouteContextAccessor? routeContextAccessor = null)
 {
+    readonly IDataAgentToolRouteContextAccessor routeContextAccessor =
+        routeContextAccessor ?? MissingDataAgentToolRouteContextAccessor.Instance;
+
     [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
     [Description("Start a DataAgent analysis session for a caller and goal or question.")]
     public string Start(string callerId, string goalOrQuestion)
@@ -13,11 +19,13 @@ public sealed class DataAgentAnalysisToolHandler(IDataAgentAnalysisOrchestrator 
         ArgumentException.ThrowIfNullOrWhiteSpace(callerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(goalOrQuestion);
 
+        DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_start", null);
         DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
             callerId,
             goalOrQuestion,
             null,
-            RouteAllowsQuery: true));
+            routeContext.AllowsQuery,
+            routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
@@ -30,11 +38,13 @@ public sealed class DataAgentAnalysisToolHandler(IDataAgentAnalysisOrchestrator 
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(question);
 
+        DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_continue", sessionId);
         DataAgentOrchestrationResult result = orchestrator.Continue(new DataAgentOrchestrationRequest(
             "local",
             question,
             sessionId,
-            RouteAllowsQuery: true));
+            routeContext.AllowsQuery,
+            routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
