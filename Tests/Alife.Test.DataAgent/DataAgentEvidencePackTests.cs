@@ -353,6 +353,90 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void BuilderMatchesRejectedQueryAuditToResponseAnswerWithoutSqlExecution()
+    {
+        DataAgentAnswer rejectedAnswer = new(
+            "engineering_gate",
+            "SELECT name FROM engineering_gate",
+            0,
+            string.Empty,
+            "[data_agent_context]\nsql_status=rejected\n[/data_agent_context]",
+            false,
+            "unsupported_operator:starts_with",
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "find_missing_required_gates",
+                "engineering_gate",
+                "medium",
+                ["starts_with"],
+                "test rejected answer"));
+        DataAgentAnalysisResponse response = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Rejected,
+            DataAgentAnalysisTurnIntent.Continue,
+            rejectedAnswer,
+            string.Empty,
+            string.Empty,
+            false,
+            "unsupported_operator:starts_with");
+        DataAgentOrchestrationResult result = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Rejected,
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Rejected, "unsupported_operator:starts_with", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "unsupported_operator:starts_with", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Rejected, "engineering_gate", 1, true, false, false),
+            response,
+            new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_continue",
+                true,
+                true,
+                "route-1",
+                "analysis_continue",
+                "route_allowed",
+                "session-1"));
+        DataAgentAuditRecord matchingRejectedAudit = new(
+            "Which engineering gates start with runtime?",
+            "engineering_gate",
+            "{}",
+            "SELECT name FROM engineering_gate",
+            false,
+            "unsupported_operator:starts_with",
+            0,
+            TimeSpan.FromMilliseconds(5),
+            DateTimeOffset.UnixEpoch);
+        DataAgentAuditRecord newerUnrelatedAudit = new(
+            "Which documents describe DataAgent?",
+            "document_index",
+            "{}",
+            "SELECT path FROM document_index LIMIT 20",
+            false,
+            "different_reason",
+            7,
+            TimeSpan.FromMilliseconds(7),
+            DateTimeOffset.UnixEpoch.AddSeconds(1));
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(
+            result,
+            [matchingRejectedAudit, newerUnrelatedAudit]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pack.ExecutedSql, Is.False);
+            Assert.That(pack.AuditValidated, Is.False);
+            Assert.That(pack.AuditDataset, Is.EqualTo("engineering_gate"));
+            Assert.That(pack.AuditRowCount, Is.EqualTo(0));
+            Assert.That(pack.AuditRejectedReason, Is.EqualTo("unsupported_operator:starts_with"));
+            Assert.That(pack.AuditDataset, Is.Not.EqualTo("document_index"));
+            Assert.That(pack.AuditRowCount, Is.Not.EqualTo(7));
+            Assert.That(pack.AuditRejectedReason, Is.Not.EqualTo("different_reason"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,

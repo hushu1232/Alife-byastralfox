@@ -10,7 +10,7 @@ public sealed class DataAgentEvidencePackBuilder
         ArgumentNullException.ThrowIfNull(result);
 
         bool executedSql = result.Steps.Any(step => step.ExecutedSql);
-        DataAgentAuditRecord? latestAudit = FindQueryAudit(result, queryAudit, executedSql);
+        DataAgentAuditRecord? latestAudit = FindQueryAudit(result, queryAudit);
         DataAgentToolBrokerAuditRecord? latestToolAudit = FindToolBrokerAudit(result, toolBrokerAudit);
         string trace = BuildTrace(result.Steps);
         string routeReasonCode = result.RouteContext?.ReasonCode ?? string.Empty;
@@ -41,10 +41,9 @@ public sealed class DataAgentEvidencePackBuilder
 
     static DataAgentAuditRecord? FindQueryAudit(
         DataAgentOrchestrationResult result,
-        IReadOnlyList<DataAgentAuditRecord>? records,
-        bool executedSql)
+        IReadOnlyList<DataAgentAuditRecord>? records)
     {
-        if (executedSql == false || records is null || records.Count == 0)
+        if (records is null || records.Count == 0)
             return null;
 
         DataAgentAnswer? answer = result.Response.Answer;
