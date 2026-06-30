@@ -55,10 +55,47 @@ public sealed class DataAgentOrchestrationContextProviderTests
         });
     }
 
+    [Test]
+    public void BuildAppendsSanitizedRouteEvidenceWhenPresent()
+    {
+        DataAgentToolRouteContext routeContext = new(
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route\nunsafe",
+            "analysis_continue",
+            "route_allowed",
+            "session-1");
+        DataAgentOrchestrationResult result = Result(
+            "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]",
+            [
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            new DataAgentOrchestrationCheckpoint("session-1", DataAgentAnalysisSessionStatus.Active, "document_index", 2, true, true, false),
+            routeContext);
+
+        string context = DataAgentOrchestrationContextProvider.Build(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.Contain("route_present=true"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_continue"));
+            Assert.That(context, Does.Contain("route_allows_tool=true"));
+            Assert.That(context, Does.Contain("route_allows_query=true"));
+            Assert.That(context, Does.Contain("route_id=route unsafe"));
+            Assert.That(context, Does.Contain("route_intent=analysis_continue"));
+            Assert.That(context, Does.Contain("route_reason_code=route_allowed"));
+            Assert.That(context, Does.Contain("route_session_id=session-1"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         string context,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
-        DataAgentOrchestrationCheckpoint checkpoint)
+        DataAgentOrchestrationCheckpoint checkpoint,
+        DataAgentToolRouteContext? routeContext = null)
     {
         DataAgentAnalysisResponse response = new(
             checkpoint.SessionId,
@@ -75,6 +112,7 @@ public sealed class DataAgentOrchestrationContextProviderTests
             checkpoint.SessionStatus,
             steps,
             checkpoint,
-            response);
+            response,
+            routeContext);
     }
 }

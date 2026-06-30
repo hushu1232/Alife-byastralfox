@@ -19,6 +19,17 @@ public static class DataAgentOrchestrationContextProvider
         builder.AppendLine($"checkpoint_can_continue={ToLowerBool(result.Checkpoint.CanContinue)}");
         builder.AppendLine($"checkpoint_can_summarize={ToLowerBool(result.Checkpoint.CanSummarize)}");
         builder.AppendLine($"checkpoint_terminal={ToLowerBool(result.Checkpoint.Terminal)}");
+        if (result.RouteContext is not null)
+        {
+            builder.AppendLine($"route_present={ToLowerBool(result.RouteContext.Present)}");
+            builder.AppendLine($"route_tool={Sanitize(result.RouteContext.ToolName)}");
+            builder.AppendLine($"route_allows_tool={ToLowerBool(result.RouteContext.AllowsTool)}");
+            builder.AppendLine($"route_allows_query={ToLowerBool(result.RouteContext.AllowsQuery)}");
+            builder.AppendLine($"route_id={Sanitize(result.RouteContext.RouteId)}");
+            builder.AppendLine($"route_intent={Sanitize(result.RouteContext.Intent)}");
+            builder.AppendLine($"route_reason_code={Sanitize(result.RouteContext.ReasonCode)}");
+            builder.AppendLine($"route_session_id={Sanitize(result.RouteContext.RouteSessionId)}");
+        }
 
         return builder.ToString().Trim();
     }

@@ -42,11 +42,13 @@ public sealed record DataAgentOrchestrationRequest(
     string CallerId,
     string Input,
     string? SessionId,
-    bool RouteAllowsQuery);
+    bool RouteAllowsQuery,
+    DataAgentToolRouteContext? RouteContext = null);
 
 public sealed record DataAgentOrchestrationResult(
     string SessionId,
     DataAgentAnalysisSessionStatus SessionStatus,
     IReadOnlyList<DataAgentOrchestrationStep> Steps,
     DataAgentOrchestrationCheckpoint Checkpoint,
-    DataAgentAnalysisResponse Response);
+    DataAgentAnalysisResponse Response,
+    DataAgentToolRouteContext? RouteContext = null);
