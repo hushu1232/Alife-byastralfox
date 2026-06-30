@@ -182,7 +182,6 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(summary.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Summarized));
             Assert.That(summary.Steps.Select(step => step.Node), Is.EqualTo(new[]
             {
-                DataAgentOrchestrationNodeKind.RouteGate,
                 DataAgentOrchestrationNodeKind.Summarize,
                 DataAgentOrchestrationNodeKind.Checkpoint
             }));
@@ -226,7 +225,85 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(end.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
             Assert.That(end.Steps.Select(step => step.Node), Is.EqualTo(new[]
             {
-                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.End,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(end.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(end.Checkpoint.CanContinue, Is.False);
+            Assert.That(end.Checkpoint.CanSummarize, Is.False);
+            Assert.That(end.Checkpoint.Terminal, Is.True);
+        });
+    }
+
+    [Test]
+    public void SummarizeReturnsTerminalTraceWithoutRouteGateOrQuery()
+    {
+        DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+
+        DataAgentOrchestrationResult summary = orchestrator.Summarize(start.SessionId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(summary.Response.Accepted, Is.True);
+            Assert.That(summary.Response.Answer, Is.Null);
+            Assert.That(summary.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Summarized));
+            Assert.That(summary.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.Summarize,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(summary.Checkpoint.SessionId, Is.EqualTo(start.SessionId));
+            Assert.That(summary.Checkpoint.TurnCount, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void EndReturnsTerminalTraceWithoutRouteGateOrQuery()
+    {
+        DateTimeOffset now = new(2026, 6, 30, 12, 0, 0, TimeSpan.Zero);
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            RouteAllowsQuery: true));
+
+        DataAgentOrchestrationResult end = orchestrator.End(start.SessionId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(end.Response.Accepted, Is.True);
+            Assert.That(end.Response.Answer, Is.Null);
+            Assert.That(end.SessionStatus, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+            Assert.That(end.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
                 DataAgentOrchestrationNodeKind.End,
                 DataAgentOrchestrationNodeKind.Checkpoint
             }));

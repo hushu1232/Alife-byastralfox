@@ -59,6 +59,12 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         }
 
         DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(request.Input, session);
+        if (intent == DataAgentAnalysisTurnIntent.Summarize)
+            return Summarize(request.SessionId!);
+
+        if (intent == DataAgentAnalysisTurnIntent.End)
+            return End(request.SessionId!);
+
         bool queryProducing = intent.ProducesQuery();
         if (request.RouteAllowsQuery == false && queryProducing)
         {
@@ -76,6 +82,40 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         ];
         AppendAnswerSteps(steps, response);
         return BuildResult(response, steps);
+    }
+
+    public DataAgentOrchestrationResult Summarize(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        DataAgentAnalysisResponse response = analysisService.Summarize(sessionId);
+        return BuildResult(
+            response,
+            [
+                Step(
+                    DataAgentOrchestrationNodeKind.Summarize,
+                    response.Accepted ? DataAgentOrchestrationStepStatus.Succeeded : DataAgentOrchestrationStepStatus.Rejected,
+                    response.Accepted ? "terminal_summary" : response.RejectedReason,
+                    false),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ]);
+    }
+
+    public DataAgentOrchestrationResult End(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+
+        DataAgentAnalysisResponse response = analysisService.End(sessionId);
+        return BuildResult(
+            response,
+            [
+                Step(
+                    DataAgentOrchestrationNodeKind.End,
+                    response.Accepted ? DataAgentOrchestrationStepStatus.Succeeded : DataAgentOrchestrationStepStatus.Rejected,
+                    response.Accepted ? "terminal_end" : response.RejectedReason,
+                    false),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ]);
     }
 
     DataAgentOrchestrationResult BuildRejectedResult(
