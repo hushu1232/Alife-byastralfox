@@ -372,7 +372,6 @@ public static class DataAgentReadiness
                 "\u603b\u7ed3\u4e00\u4e0b",
                 orchestrationStart.SessionId,
                 RouteAllowsQuery: false));
-            int answerCallsAfterTerminalSummary = orchestrationAnswerCalls;
 
             checks.Add(typeof(IDataAgentAnalysisOrchestrator).IsAssignableFrom(typeof(DataAgentAnalysisOrchestrator)) &&
                        orchestrationStart.Response.Accepted
@@ -582,13 +581,39 @@ public static class DataAgentReadiness
                 ? Pass("RouteSessionScopePreserved", "session-scoped route mismatch remains fail-closed")
                 : Fail("RouteSessionScopePreserved", sessionMismatchRoute.ReasonCode));
 
-            checks.Add(orchestrationSummary.Response.Accepted &&
-                       orchestrationSummary.Response.Answer is null &&
-                       orchestrationSummary.Steps.Any(step => step.ExecutedSql) == false &&
-                       orchestrationSummaryContext.Contains("orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded", StringComparison.Ordinal) &&
-                       answerCallsAfterTerminalSummary == 1
-                ? Pass("TerminalRouteDoesNotQuery", "terminal route path avoided query execution")
-                : Fail("TerminalRouteDoesNotQuery", $"answerCalls={answerCallsAfterTerminalSummary};context={orchestrationSummaryContext}"));
+            DataAgentOrchestrationResult terminalRouteStart = orchestrator.Start(new DataAgentOrchestrationRequest(
+                "readiness",
+                "Which documents describe DataAgent terminal route context?",
+                null,
+                RouteAllowsQuery: true));
+            int answerCallsBeforeTerminalRoute = orchestrationAnswerCalls;
+            DataAgentToolRouteContext terminalRouteContext = new(
+                true,
+                "dataagent_analysis_summarize",
+                true,
+                true,
+                "route-terminal",
+                "analysis_summarize",
+                "route_allowed",
+                terminalRouteStart.SessionId);
+            DataAgentOrchestrationResult terminalRouteSummary = orchestrator.Summarize(
+                terminalRouteStart.SessionId,
+                terminalRouteContext);
+            int answerCallsAfterTerminalRoute = orchestrationAnswerCalls;
+            string terminalRouteSummaryContext = DataAgentOrchestrationContextProvider.Build(terminalRouteSummary);
+
+            checks.Add(terminalRouteSummary.Response.Accepted &&
+                       terminalRouteSummary.Response.Answer is null &&
+                       terminalRouteSummary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Summarize) &&
+                       terminalRouteSummary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute) == false &&
+                       terminalRouteSummary.Steps.Any(step => step.ExecutedSql) == false &&
+                       terminalRouteSummary.RouteContext == terminalRouteContext &&
+                       answerCallsAfterTerminalRoute == answerCallsBeforeTerminalRoute &&
+                       terminalRouteSummaryContext.Contains("route_tool=dataagent_analysis_summarize", StringComparison.Ordinal) &&
+                       terminalRouteSummaryContext.Contains("route_allows_query=true", StringComparison.Ordinal) &&
+                       terminalRouteSummaryContext.Contains($"route_session_id={terminalRouteStart.SessionId}", StringComparison.Ordinal)
+                ? Pass("TerminalRouteDoesNotQuery", $"route_tool=dataagent_analysis_summarize;route_allows_query=true;route_session_id={terminalRouteStart.SessionId};answer_calls_unchanged=true")
+                : Fail("TerminalRouteDoesNotQuery", $"answerCallsBefore={answerCallsBeforeTerminalRoute};answerCallsAfter={answerCallsAfterTerminalRoute};context={terminalRouteSummaryContext}"));
         }
         catch (Exception ex)
         {

@@ -64,6 +64,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("RouteEvidenceContextPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("RouteSessionScopePreserved"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("TerminalRouteDoesNotQuery"));
+            DataAgentReadinessCheck terminalRouteCheck = checks.Single(check => check.Name == "TerminalRouteDoesNotQuery");
+            Assert.That(terminalRouteCheck.Detail, Does.Contain("route_tool=dataagent_analysis_summarize"));
+            Assert.That(terminalRouteCheck.Detail, Does.Contain("route_allows_query=true"));
+            Assert.That(terminalRouteCheck.Detail, Does.Match("route_session_id=[0-9a-f]{32}"));
+            Assert.That(terminalRouteCheck.Detail, Does.Contain("answer_calls_unchanged=true"));
         });
     }
 
@@ -90,9 +95,33 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorRuntimeRouteDeniedFailClosed"));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisHandlerConsumesToolRouteContext"));
+            Assert.That(result.StandardOutput, Does.Contain("OrchestrationRequestUsesRuntimeRouteDecision"));
+            Assert.That(result.StandardOutput, Does.Contain("RouteMissingRequestFailsClosed"));
             Assert.That(result.StandardOutput, Does.Contain("RouteEvidenceContextPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("RouteSessionScopePreserved"));
             Assert.That(result.StandardOutput, Does.Contain("TerminalRouteDoesNotQuery"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
+        });
+    }
+
+    [Test]
+    public void ReadinessScriptProtectsV23RouteGateContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "OrchestrationRequestUsesRuntimeRouteDecision");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("$expectedRequired = 69"));
+            Assert.That(script, Does.Contain("readiness check count mismatch"));
+            Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
+            Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
+            Assert.That(declaration, Does.Contain("new DataAgentOrchestrationRequest("));
+            Assert.That(declaration, Does.Contain("routeContext.AllowsQuery"));
+            Assert.That(declaration, Does.Contain("routeContext))"));
         });
     }
 
@@ -215,6 +244,23 @@ public sealed class DataAgentReadinessTests
             return string.Empty;
 
         int next = script.IndexOf("Add-Check", nameIndex + marker.Length, StringComparison.Ordinal);
+        return next < 0
+            ? script[start..]
+            : script[start..next];
+    }
+
+    static string FindNewCheckDeclaration(string script, string checkName)
+    {
+        string marker = $"-Name \"{checkName}\"";
+        int nameIndex = script.IndexOf(marker, StringComparison.Ordinal);
+        if (nameIndex < 0)
+            return string.Empty;
+
+        int start = script.LastIndexOf("New-Check", nameIndex, StringComparison.Ordinal);
+        if (start < 0)
+            return string.Empty;
+
+        int next = script.IndexOf("New-Check", nameIndex + marker.Length, StringComparison.Ordinal);
         return next < 0
             ? script[start..]
             : script[start..next];

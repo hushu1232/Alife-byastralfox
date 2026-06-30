@@ -41,6 +41,31 @@ function Test-FileMarker {
     return $true
 }
 
+function Test-FileOrderedMarkers {
+    param(
+        [string]$RelativePath,
+        [string[]]$Markers
+    )
+
+    $fullPath = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return $false
+    }
+
+    $content = Get-Content -LiteralPath $fullPath -Raw
+    $startIndex = 0
+    foreach ($marker in $Markers) {
+        $markerIndex = $content.IndexOf($marker, $startIndex, [System.StringComparison]::Ordinal)
+        if ($markerIndex -lt 0) {
+            return $false
+        }
+
+        $startIndex = $markerIndex + $marker.Length
+    }
+
+    return $true
+}
+
 function Test-FileOmitsMarker {
     param(
         [string]$RelativePath,
@@ -123,7 +148,7 @@ $checks = @(
     New-Check -Group "Analysis" -Name "OrchestratorRuntimeTerminalPathCovered" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("OrchestratorRuntimeTerminalPathCovered", "Summarize:Succeeded>Checkpoint:Succeeded", "ExecutedSql")) -Detail "runtime orchestrator terminal path markers"
     New-Check -Group "Analysis" -Name "OrchestratorRuntimeRouteDeniedFailClosed" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("OrchestratorRuntimeRouteDeniedFailClosed", "RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded", "turnsAfterDeniedContinue")) -Detail "runtime route-denied fail-closed markers"
     New-Check -Group "Analysis" -Name "AnalysisHandlerConsumesToolRouteContext" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("IDataAgentToolRouteContextAccessor", "routeContextAccessor.Get", "routeContext.AllowsQuery")) -Detail "analysis handler consumes Tool Broker route context"
-    New-Check -Group "Analysis" -Name "OrchestrationRequestUsesRuntimeRouteDecision" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("routeContext.AllowsQuery", "DataAgentOrchestrationRequest")) -and (Test-FileOmitsMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("RouteAllowsQuery: true"))) -Detail "orchestration request route permission is runtime-derived"
+    New-Check -Group "Analysis" -Name "OrchestrationRequestUsesRuntimeRouteDecision" -Passed ((Test-FileOrderedMarkers "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("orchestrator.Start(new DataAgentOrchestrationRequest(", "routeContext.AllowsQuery", "routeContext));")) -and (Test-FileOrderedMarkers "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("orchestrator.Continue(new DataAgentOrchestrationRequest(", "routeContext.AllowsQuery", "routeContext));")) -and (Test-FileOmitsMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("RouteAllowsQuery: true"))) -Detail "orchestration request route permission is runtime-derived"
     New-Check -Group "Analysis" -Name "RouteMissingRequestFailsClosed" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolRouteContext.cs" @("MissingRouteReasonCode", "tool_route_required", "MissingDataAgentToolRouteContextAccessor")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs" @("StartWithoutRouteContextFailsClosedAtRequestBoundary", "RouteAllowsQuery, Is.False"))) -Detail "missing route creates fail-closed DataAgent request"
     New-Check -Group "Analysis" -Name "RouteEvidenceContextPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentOrchestrationContextProvider.cs" @("route_present", "route_allows_query", "route_reason_code", "route_session_id")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentOrchestrationContextProviderTests.cs" @("BuildAppendsSanitizedRouteEvidenceWhenPresent"))) -Detail "orchestration context emits sanitized route evidence"
     New-Check -Group "Analysis" -Name "RouteSessionScopePreserved" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolRouteContext.cs" @("tool_session_not_allowed_in_current_route", "IsSessionScopedDataAgentTool")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentToolRouteContextAccessorTests.cs" @("XmlPolicyAccessorRejectsSessionScopedMismatchForDefenseInDepth"))) -Detail "session scoped route context remains fail-closed"
@@ -149,9 +174,16 @@ foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", 
 
 $requiredPassed = @($checks | Where-Object { $_.Passed }).Count
 $requiredMissing = @($checks | Where-Object { -not $_.Passed }).Count
+$expectedRequired = 69
+$requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output "[Summary]"
 Write-Output ("  Summary: {0} required passed, {1} required missing" -f $requiredPassed, $requiredMissing)
+
+if ($requiredTotal -ne $expectedRequired) {
+    Write-Output ("  ERROR readiness check count mismatch: expected {0}, found {1}" -f $expectedRequired, $requiredTotal)
+    exit 1
+}
 
 if ($requiredMissing -gt 0) {
     exit 1
