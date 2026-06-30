@@ -56,7 +56,8 @@ public sealed class DataAgentAnalysisToolHandler(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        DataAgentOrchestrationResult result = orchestrator.Summarize(sessionId);
+        DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_summarize", sessionId);
+        DataAgentOrchestrationResult result = orchestrator.Summarize(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;
@@ -68,7 +69,8 @@ public sealed class DataAgentAnalysisToolHandler(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
 
-        DataAgentOrchestrationResult result = orchestrator.End(sessionId);
+        DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_end", sessionId);
+        DataAgentOrchestrationResult result = orchestrator.End(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
         resultPublisher?.Invoke(context);
         return context;

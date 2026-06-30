@@ -135,15 +135,26 @@ public sealed class DataAgentAnalysisToolHandlerTests
                 2,
                 "[data_agent_analysis_session_context]\nsession_id=session-1\nstatus=Summarized\n[/data_agent_analysis_session_context]")
         });
-        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_summarize",
+            true,
+            true,
+            "route-summary",
+            "analysis_summarize",
+            "route_allowed",
+            "session-1"));
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor);
 
         string context = handler.Summarize("session-1");
 
         Assert.Multiple(() =>
         {
             Assert.That(orchestrator.SummarizeSessionIds, Is.EqualTo(new[] { "session-1" }));
+            Assert.That(orchestrator.SummarizeRequests[0].RouteContext?.RouteId, Is.EqualTo("route-summary"));
             Assert.That(context, Does.Contain("status=Summarized"));
             Assert.That(context, Does.Contain("orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_summarize"));
             Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
@@ -165,15 +176,26 @@ public sealed class DataAgentAnalysisToolHandlerTests
                 2,
                 "[data_agent_analysis_session_context]\nsession_id=session-1\nstatus=Ended\n[/data_agent_analysis_session_context]")
         });
-        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add);
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_end",
+            true,
+            true,
+            "route-end",
+            "analysis_end",
+            "route_allowed",
+            "session-1"));
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor);
 
         string context = handler.End("session-1");
 
         Assert.Multiple(() =>
         {
             Assert.That(orchestrator.EndSessionIds, Is.EqualTo(new[] { "session-1" }));
+            Assert.That(orchestrator.EndRequests[0].RouteContext?.RouteId, Is.EqualTo("route-end"));
             Assert.That(context, Does.Contain("status=Ended"));
             Assert.That(context, Does.Contain("orchestration_trace=End:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_end"));
             Assert.That(published, Is.EqualTo(new[] { context }));
         });
     }
@@ -274,6 +296,8 @@ public sealed class DataAgentAnalysisToolHandlerTests
         public List<DataAgentOrchestrationRequest> ContinueRequests { get; } = [];
         public List<string> SummarizeSessionIds { get; } = [];
         public List<string> EndSessionIds { get; } = [];
+        public List<(string SessionId, DataAgentToolRouteContext? RouteContext)> SummarizeRequests { get; } = [];
+        public List<(string SessionId, DataAgentToolRouteContext? RouteContext)> EndRequests { get; } = [];
 
         public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
         {
@@ -287,16 +311,18 @@ public sealed class DataAgentAnalysisToolHandlerTests
             return results["continue"] with { RouteContext = request.RouteContext };
         }
 
-        public DataAgentOrchestrationResult Summarize(string sessionId)
+        public DataAgentOrchestrationResult Summarize(string sessionId, DataAgentToolRouteContext? routeContext = null)
         {
             SummarizeSessionIds.Add(sessionId);
-            return results["summarize"];
+            SummarizeRequests.Add((sessionId, routeContext));
+            return results["summarize"] with { RouteContext = routeContext };
         }
 
-        public DataAgentOrchestrationResult End(string sessionId)
+        public DataAgentOrchestrationResult End(string sessionId, DataAgentToolRouteContext? routeContext = null)
         {
             EndSessionIds.Add(sessionId);
-            return results["end"];
+            EndRequests.Add((sessionId, routeContext));
+            return results["end"] with { RouteContext = routeContext };
         }
     }
 

@@ -6,7 +6,7 @@ public interface IDataAgentAnalysisOrchestrator
 
     DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request);
 
-    DataAgentOrchestrationResult Summarize(string sessionId);
+    DataAgentOrchestrationResult Summarize(string sessionId, DataAgentToolRouteContext? routeContext = null);
 
-    DataAgentOrchestrationResult End(string sessionId);
+    DataAgentOrchestrationResult End(string sessionId, DataAgentToolRouteContext? routeContext = null);
 }

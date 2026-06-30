@@ -54,6 +54,26 @@ public sealed class DataAgentAnalysisOrchestratorTests
     }
 
     [Test]
+    public void StartResultPreservesRouteContext()
+    {
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ => AcceptedAnswer(),
+            new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero));
+        DataAgentToolRouteContext routeContext = AllowedRoute("dataagent_analysis_start");
+
+        DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            routeContext.AllowsQuery,
+            routeContext));
+
+        Assert.That(result.RouteContext, Is.EqualTo(routeContext));
+    }
+
+    [Test]
     public void StartRouteDeniedFailsClosedWithoutCallingAnswer()
     {
         DateTimeOffset now = new(2026, 6, 29, 12, 0, 0, TimeSpan.Zero);
@@ -145,6 +165,51 @@ public sealed class DataAgentAnalysisOrchestratorTests
             Assert.That(denied.Checkpoint.CanContinue, Is.True);
             Assert.That(denied.Checkpoint.Terminal, Is.False);
             Assert.That(session.Turns, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void DeniedContinueResultPreservesRouteContextWithoutMutation()
+    {
+        int answerCalls = 0;
+        InMemoryDataAgentAnalysisSessionStore store = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(
+            store,
+            _ =>
+            {
+                answerCalls++;
+                return AcceptedAnswer();
+            },
+            new DateTimeOffset(2026, 6, 30, 12, 0, 0, TimeSpan.Zero));
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "Which documents describe DataAgent?",
+            null,
+            true,
+            AllowedRoute("dataagent_analysis_start")));
+        DataAgentToolRouteContext deniedRoute = new(
+            true,
+            "dataagent_analysis_continue",
+            false,
+            false,
+            "route-denied",
+            "analysis_continue",
+            "tool_session_not_allowed_in_current_route",
+            "other-session");
+
+        DataAgentOrchestrationResult denied = orchestrator.Continue(new DataAgentOrchestrationRequest(
+            "owner",
+            "\u7ee7\u7eed",
+            start.SessionId,
+            deniedRoute.AllowsQuery,
+            deniedRoute));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(answerCalls, Is.EqualTo(1));
+            Assert.That(denied.Response.Accepted, Is.False);
+            Assert.That(denied.RouteContext, Is.EqualTo(deniedRoute));
+            Assert.That(store.Get(start.SessionId)?.Turns, Has.Count.EqualTo(1));
         });
     }
 
@@ -401,6 +466,19 @@ public sealed class DataAgentAnalysisOrchestratorTests
             analysisService,
             store,
             new DataAgentFollowUpInterpreter());
+    }
+
+    static DataAgentToolRouteContext AllowedRoute(string toolName, string? sessionId = null)
+    {
+        return new DataAgentToolRouteContext(
+            true,
+            toolName,
+            true,
+            true,
+            "route-test",
+            "analysis_continue",
+            "route_allowed",
+            sessionId ?? string.Empty);
     }
 
     static DataAgentAnswer AcceptedAnswer(string summary = "Found DataAgent documentation.")
