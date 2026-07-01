@@ -22,6 +22,8 @@ public sealed class QChatCommandAccessPolicyTests
     }
 
     [TestCase("/dataagent diag evidence")]
+    [TestCase("/dataagent diagnostics evidence")]
+    [TestCase("/dataagent diag evidence - DataAgent evidence diagnostics")]
     [TestCase("  /DATAAGENT diag evidence  ")]
     public void OwnerDataAgentDiagnosticCommandIsAllowed(string text)
     {
@@ -52,10 +54,24 @@ public sealed class QChatCommandAccessPolicyTests
 
     [TestCase(QChatSenderRole.PrivateGuest)]
     [TestCase(QChatSenderRole.GroupMember)]
-    public void NonOwnerDataAgentDiagnosticCommandIsDroppedSilently(QChatSenderRole role)
+    public void NonOwnerDataAgentDiagEvidenceCommandIsDroppedSilently(QChatSenderRole role)
     {
         QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
             new QChatCommandAccessContext("/dataagent diag evidence", role));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.DropSilently));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_qchat_command"));
+        });
+    }
+
+    [TestCase(QChatSenderRole.PrivateGuest)]
+    [TestCase(QChatSenderRole.GroupMember)]
+    public void NonOwnerDataAgentDiagnosticsEvidenceCommandIsDroppedSilently(QChatSenderRole role)
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext("/dataagent diagnostics evidence", role));
 
         Assert.Multiple(() =>
         {
@@ -69,6 +85,22 @@ public sealed class QChatCommandAccessPolicyTests
     {
         QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
             new QChatCommandAccessContext("dataagent diag evidence", QChatSenderRole.GroupMember));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.NotCommand));
+            Assert.That(decision.Reason, Is.EqualTo("not_qchat_command"));
+        });
+    }
+
+    [TestCase("/dataagent")]
+    [TestCase("/dataagent nope")]
+    [TestCase("/dataagentx diag evidence")]
+    [TestCase("/dataagent/diag evidence")]
+    public void UnknownDataAgentCommandsPassThrough(string text)
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext(text, QChatSenderRole.GroupMember));
 
         Assert.Multiple(() =>
         {

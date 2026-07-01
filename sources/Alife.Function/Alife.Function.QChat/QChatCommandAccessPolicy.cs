@@ -49,7 +49,7 @@ public static class QChatCommandAccessPolicy
     public static bool IsOwnerDiagnosticCommand(string? text)
     {
         return IsCommandWithPrefix(text, QChatPrefix) ||
-               IsCommandWithPrefix(text, DataAgentPrefix);
+               IsDataAgentEvidenceDiagnosticCommand(text);
     }
 
     static bool IsCommandWithPrefix(string? text, string prefix)
@@ -60,5 +60,29 @@ public static class QChatCommandAccessPolicy
 
         return trimmed.Length == prefix.Length ||
                char.IsWhiteSpace(trimmed[prefix.Length]);
+    }
+
+    static bool IsDataAgentEvidenceDiagnosticCommand(string? text)
+    {
+        string trimmed = text?.TrimStart() ?? string.Empty;
+        if (trimmed.StartsWith(DataAgentPrefix, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        if (trimmed.Length <= DataAgentPrefix.Length ||
+            char.IsWhiteSpace(trimmed[DataAgentPrefix.Length]) == false)
+        {
+            return false;
+        }
+
+        string command = trimmed[DataAgentPrefix.Length..].Trim();
+        command = StripCopiedMenuDescription(command);
+        return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string StripCopiedMenuDescription(string command)
+    {
+        int descriptionStart = command.IndexOf(" - ", StringComparison.Ordinal);
+        return descriptionStart >= 0 ? command[..descriptionStart].TrimEnd() : command;
     }
 }

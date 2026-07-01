@@ -40,9 +40,27 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
 
     public static bool IsDiagnosticsCommand(string text)
     {
-        const string prefix = "/qchat";
-        return text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-               && (text.Length == prefix.Length || char.IsWhiteSpace(text[prefix.Length]));
+        const string qchatPrefix = "/qchat";
+        if (text.StartsWith(qchatPrefix, StringComparison.OrdinalIgnoreCase) &&
+            (text.Length == qchatPrefix.Length || char.IsWhiteSpace(text[qchatPrefix.Length])))
+        {
+            return true;
+        }
+
+        const string dataAgentPrefix = "/dataagent";
+        if (text.StartsWith(dataAgentPrefix, StringComparison.OrdinalIgnoreCase) == false ||
+            (text.Length > dataAgentPrefix.Length && char.IsWhiteSpace(text[dataAgentPrefix.Length]) == false))
+        {
+            return false;
+        }
+
+        string command = text.Length == dataAgentPrefix.Length
+            ? string.Empty
+            : text[dataAgentPrefix.Length..].Trim();
+        command = StripCopiedMenuDescription(command);
+
+        return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHelpAliasCommand(string text)
@@ -89,7 +107,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         QChatConfig config,
         Func<OneBotMessageType, long, string, Task> sendAsync,
         Action<string, string, object?, Exception?> writeDiagnostic,
-        Func<string>? recentToolRouteTrace = null)
+        Func<string>? recentToolRouteTrace = null,
+        Func<string>? recentSemanticEstimate = null,
+        Func<string>? recentDataAgentEvidence = null)
     {
         ArgumentNullException.ThrowIfNull(messageEvent);
 
@@ -135,7 +155,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 ReplyTimingDelayEnabled: config.EnableReplyTimingDelay,
                 ConversationSettleWindowEnabled: config.EnableConversationSettleWindow,
                 InternetAccessEnabled: config.EnableInternetAccess,
-                RecentToolRouteTrace: recentToolRouteTrace?.Invoke()));
+                RecentToolRouteTrace: recentToolRouteTrace?.Invoke(),
+                RecentSemanticEstimate: recentSemanticEstimate?.Invoke(),
+                RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke()));
         if (result.Handled)
         {
             await sendAsync(targetType, targetId, result.Text);
@@ -208,6 +230,12 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
     static bool ContainsAny(string text, params string[] values)
     {
         return values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string StripCopiedMenuDescription(string command)
+    {
+        int descriptionStart = command.IndexOf(" - ", StringComparison.Ordinal);
+        return descriptionStart >= 0 ? command[..descriptionStart].TrimEnd() : command;
     }
 
     static (OneBotMessageType Type, long TargetId) GetReplyTarget(OneBotMessageEvent messageEvent)

@@ -2448,6 +2448,8 @@ public partial class QChatService(
     static readonly TimeSpan EmptyGroupFlushDiagnosticInterval = TimeSpan.FromMinutes(5);
     readonly object recentSentMessagesGate = new();
     readonly object toolRouteDiagnosticsGate = new();
+    readonly object semanticDiagnosticsGate = new();
+    readonly object dataAgentEvidenceDiagnosticsGate = new();
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
     readonly object pokeCooldownGate = new();
     readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
@@ -2459,6 +2461,8 @@ public partial class QChatService(
     const int MaxRecentSentMessages = 40;
     long outboundMessageVersion;
     string recentToolRouteTrace = "none";
+    string recentSemanticDiagnostics = CreateUnavailableSemanticDiagnosticsText();
+    string recentDataAgentEvidenceDiagnostics = string.Empty;
 
     sealed record QChatProfileRuntimeServices(
         QChatUserProfileService UserProfiles,
@@ -6704,7 +6708,9 @@ public partial class QChatService(
             Configuration ?? new QChatConfig(),
             (type, targetId, message) => SendCommandReplyAsync(messageEvent, senderRole, type, targetId, message),
             WriteQChatDiagnostic,
-            GetRecentToolRouteTrace);
+            GetRecentToolRouteTrace,
+            GetRecentSemanticDiagnostics,
+            GetRecentDataAgentEvidenceDiagnostics);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -8361,6 +8367,7 @@ public partial class QChatService(
             {
                 Formatted = BuildSettledSemanticFormatted(session.SemanticMessages, session.Message.Formatted)
             };
+            UpdateRecentSemanticDiagnostics(session, now, CreateSemanticDiagnosticsSettleOptions(message));
             session.Cancellation?.Cancel();
             session.Cancellation?.Dispose();
             cancellation = new CancellationTokenSource();
@@ -8408,6 +8415,7 @@ public partial class QChatService(
             allSourcesRecalled = message?.SourceMessageIds is { Count: > 0 } sourceIds
                                 && sourceIds.Where(id => id > 0).All(session.RecalledMessageIds.Contains);
             session.Cancellation = null;
+            RefreshRecentSemanticDiagnosticsFromPendingSessionsLocked(DateTimeOffset.Now);
         }
 
         cancellation.Dispose();
@@ -8608,6 +8616,7 @@ public partial class QChatService(
                             Formatted = BuildSettledSemanticFormatted(session.SemanticMessages, session.Message.Formatted)
                         };
                     }
+                    RefreshRecentSemanticDiagnosticsFromPendingSessionsLocked(DateTimeOffset.Now);
                     continue;
                 }
 
@@ -8615,6 +8624,7 @@ public partial class QChatService(
                 session.Cancellation?.Dispose();
                 session.Cancellation = null;
                 pendingDispatchSessions.Remove(key);
+                RefreshRecentSemanticDiagnosticsFromPendingSessionsLocked(DateTimeOffset.Now);
                 dropped.Add((key, message));
             }
         }
@@ -8920,6 +8930,115 @@ public partial class QChatService(
         {
             return recentToolRouteTrace;
         }
+    }
+
+    public void RecordRecentDataAgentEvidenceDiagnostics(string? diagnostics)
+    {
+        string normalized = NormalizeCachedDiagnosticText(diagnostics);
+        lock (dataAgentEvidenceDiagnosticsGate)
+        {
+            recentDataAgentEvidenceDiagnostics = normalized;
+        }
+    }
+
+    string GetRecentSemanticDiagnostics()
+    {
+        lock (semanticDiagnosticsGate)
+        {
+            return recentSemanticDiagnostics;
+        }
+    }
+
+    string GetRecentDataAgentEvidenceDiagnostics()
+    {
+        lock (dataAgentEvidenceDiagnosticsGate)
+        {
+            return recentDataAgentEvidenceDiagnostics;
+        }
+    }
+
+    void UpdateRecentSemanticDiagnostics(
+        QChatPendingDispatchSession session,
+        DateTimeOffset now,
+        QChatSemanticSettleOptions options)
+    {
+        if (session.SemanticMessages.Count == 0)
+        {
+            SetRecentSemanticDiagnosticsUnavailable();
+            return;
+        }
+
+        DateTimeOffset createdAt = session.SemanticMessages.Min(message => message.Timestamp);
+        DateTimeOffset updatedAt = session.SemanticMessages.Max(message => message.Timestamp);
+        QChatSemanticWindowSnapshot snapshot = new(session.SemanticMessages.ToArray(), createdAt, updatedAt);
+        QChatSemanticStateEstimate estimate = QChatSemanticStateEstimator.Estimate(snapshot, now, options);
+        string diagnostics = QChatSemanticDiagnosticsFormatter.Format(new QChatSemanticDiagnosticsSnapshot(
+            estimate,
+            snapshot.Messages.Count,
+            now - snapshot.CreatedAt,
+            now - snapshot.LastUpdatedAt));
+
+        lock (semanticDiagnosticsGate)
+        {
+            recentSemanticDiagnostics = diagnostics;
+        }
+    }
+
+    void SetRecentSemanticDiagnosticsUnavailable()
+    {
+        lock (semanticDiagnosticsGate)
+        {
+            recentSemanticDiagnostics = CreateUnavailableSemanticDiagnosticsText();
+        }
+    }
+
+    void RefreshRecentSemanticDiagnosticsFromPendingSessionsLocked(DateTimeOffset now)
+    {
+        QChatPendingDispatchSession? latestSession = pendingDispatchSessions.Values
+            .Where(session => session.Message != null && session.SemanticMessages.Count > 0)
+            .OrderByDescending(session => session.SemanticMessages.Max(message => message.Timestamp))
+            .FirstOrDefault();
+        if (latestSession?.Message == null)
+        {
+            SetRecentSemanticDiagnosticsUnavailable();
+            return;
+        }
+
+        UpdateRecentSemanticDiagnostics(
+            latestSession,
+            now,
+            CreateSemanticDiagnosticsSettleOptions(latestSession.Message));
+    }
+
+    QChatSemanticSettleOptions CreateSemanticDiagnosticsSettleOptions(QChatInboundMessage message)
+    {
+        int configuredDelayMs = message.MessageType == OneBotMessageType.Group
+            ? Configuration?.GroupSettleMilliseconds ?? 1500
+            : Configuration?.PrivateSettleMilliseconds ?? 700;
+        int recallGraceMs = Configuration?.RecallGraceMilliseconds ?? 2000;
+        if (recallGraceMs > 0)
+            configuredDelayMs = Math.Max(configuredDelayMs, recallGraceMs);
+
+        int configuredMaxMs = Configuration?.MaxSettleMilliseconds ?? 3500;
+        int delayMs = Math.Clamp(configuredDelayMs, 1, Math.Max(1, configuredMaxMs));
+        return new QChatSemanticSettleOptions
+        {
+            SettleDelay = TimeSpan.FromMilliseconds(delayMs),
+            MaxWindowDuration = TimeSpan.FromMilliseconds(Math.Max(1, configuredMaxMs))
+        };
+    }
+
+    static string CreateUnavailableSemanticDiagnosticsText()
+    {
+        return QChatSemanticDiagnosticsFormatter.Format(
+            new QChatSemanticDiagnosticsSnapshot(null, 0, TimeSpan.Zero, TimeSpan.Zero));
+    }
+
+    static string NormalizeCachedDiagnosticText(string? diagnostics)
+    {
+        return string.IsNullOrWhiteSpace(diagnostics)
+            ? string.Empty
+            : diagnostics.ReplaceLineEndings(Environment.NewLine).Trim();
     }
 
     static string FormatToolRouteTrace(ToolRouteDecision? route)

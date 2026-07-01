@@ -81,6 +81,46 @@ public class QChatOwnerCommandServiceTests
             Assert.That(sent[0].Message, Does.Not.Contain("[tool_route_context]"));
         });
     }
+
+    [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncSendsOwnerDataAgentEvidenceDiagnostics()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag evidence"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentDataAgentEvidence: () => string.Join(Environment.NewLine,
+                "DataAgent evidence diagnostics",
+                "analysis_confidence=0.781",
+                "risk_level=0.287"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent[0].Message, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(sent[0].Message, Does.Contain("analysis_confidence=0.781"));
+        });
+    }
+
     [Test]
     public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerWithoutRouteLeak()
     {
@@ -107,6 +147,42 @@ public class QChatOwnerCommandServiceTests
                 return Task.CompletedTask;
             },
             (eventName, _, _, _) => diagnostics.Add(eventName));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Is.Empty);
+            Assert.That(diagnostics, Does.Contain("qchat-diagnostics-denied"));
+        });
+    }
+
+    [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerDataAgentEvidenceDiagnostics()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        List<string> diagnostics = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/dataagent diag evidence"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.PrivateGuest,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (eventName, _, _, _) => diagnostics.Add(eventName),
+            recentDataAgentEvidence: () => "should not leak");
 
         Assert.Multiple(() =>
         {
@@ -297,9 +373,15 @@ public class QChatOwnerCommandServiceTests
     [TestCase("/qchat", true)]
     [TestCase("/qchat route", true)]
     [TestCase("  /QCHAT identity  ", true)]
+    [TestCase("/dataagent diag evidence", true)]
+    [TestCase("/dataagent diag evidence - DataAgent evidence diagnostics", true)]
+    [TestCase("/dataagent diagnostics evidence", true)]
     [TestCase("/qchatx route", false)]
+    [TestCase("/dataagent", false)]
+    [TestCase("/dataagent nope", false)]
+    [TestCase("/dataagentx diag evidence", false)]
     [TestCase("hello /qchat route", false)]
-    public void IsDiagnosticsCommandMatchesOnlyQChatCommandPrefix(string text, bool expected)
+    public void IsDiagnosticsCommandMatchesOnlyQChatAndDataAgentDiagnosticsCommands(string text, bool expected)
     {
         Assert.That(QChatOwnerCommandService.IsDiagnosticsCommand(text.Trim()), Is.EqualTo(expected));
     }

@@ -3319,6 +3319,197 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateDataAgentEvidenceCommandReturnsUnavailableWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag evidence"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(reply, Does.Contain("state=unavailable"));
+            Assert.That(reply, Does.Contain("reason=evidence_pack_unavailable"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateDataAgentEvidenceCommandUsesRecordedSafeDiagnostics()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        service.RecordRecentDataAgentEvidenceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.781",
+            "risk_level=0.287"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag evidence"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(reply, Does.Contain("analysis_confidence=0.781"));
+            Assert.That(reply, Does.Contain("risk_level=0.287"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateQChatSemanticDiagnosticsUsesRecentSettleWindowState()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new()
+            {
+                BotId = 2905391496
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 5000,
+                RecallGraceMilliseconds = 1,
+                MaxSettleMilliseconds = 6000
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                MessageId = 7001,
+                UserId = 3045846738,
+                RawMessage = "how should we test this?"
+            });
+            await WaitForQChatDiagnosticEventAsync(storageRoot, "qchat-settle-dispatch-scheduled");
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat diag semantic"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string reply = runtime.PrivateMessages.Single().Message;
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(reply, Does.Contain("QChat semantic diagnostics"));
+                Assert.That(reply, Does.Contain("semantic_completion="));
+                Assert.That(reply, Does.Contain("continuation_likelihood="));
+                Assert.That(reply, Does.Contain("window_messages=1"));
+                Assert.That(reply, Does.Not.Contain("state=unavailable"));
+            });
+
+            runtime.Raise(new OneBotNoticeEvent
+            {
+                SelfId = 2905391496,
+                NoticeType = "friend_recall",
+                MessageId = 7001,
+                UserId = 3045846738,
+                OperatorId = 3045846738
+            });
+            await WaitForQChatDiagnosticEventAsync(storageRoot, "qchat-settle-pending-recalled");
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateQChatSemanticDiagnosticsReturnsUnavailableAfterSettleDispatchCompletes()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false,
+            EnableConversationSettleWindow = true,
+            PrivateSettleMilliseconds = 80,
+            RecallGraceMilliseconds = 1,
+            MaxSettleMilliseconds = 300
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 7101,
+            UserId = 3045846738,
+            RawMessage = "how should we test this?"
+        });
+        await WaitUntilAsync(() => dispatchCount == 1);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag semantic"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("QChat semantic diagnostics"));
+            Assert.That(reply, Does.Contain("state=unavailable"));
+            Assert.That(reply, Does.Contain("reason=semantic_window_empty"));
+            Assert.That(reply, Does.Not.Contain("window_messages=1"));
+        });
+    }
+
+    [Test]
     public async Task OwnerPrivateQChatRouteCommandWritesEventRouteDiagnostic()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
@@ -14850,6 +15041,17 @@ public class QChatServiceAdapterTests
         await WaitUntilAsync(() =>
             File.Exists(diagnosticsPath) &&
             ReadAllTextWithSharing(diagnosticsPath).Contains("\"eventName\":\"qchat-command-dropped\"", StringComparison.Ordinal));
+
+        return ReadAllTextWithSharing(diagnosticsPath);
+    }
+
+    static async Task<string> WaitForQChatDiagnosticEventAsync(string storageRoot, string eventName)
+    {
+        string diagnosticsPath = Path.Combine(storageRoot, "AgentWorkspace", "qchat-diagnostics.jsonl");
+        string expected = $"\"eventName\":\"{eventName}\"";
+        await WaitUntilAsync(() =>
+            File.Exists(diagnosticsPath) &&
+            ReadAllTextWithSharing(diagnosticsPath).Contains(expected, StringComparison.Ordinal));
 
         return ReadAllTextWithSharing(diagnosticsPath);
     }

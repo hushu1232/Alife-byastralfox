@@ -8,11 +8,14 @@ public sealed record QChatDiagnosticsRuntimeState(
     bool ReplyTimingDelayEnabled = false,
     bool ConversationSettleWindowEnabled = false,
     bool InternetAccessEnabled = false,
-    string? RecentToolRouteTrace = null);
+    string? RecentToolRouteTrace = null,
+    string? RecentSemanticEstimate = null,
+    string? RecentDataAgentEvidence = null);
 
 public static class QChatDiagnosticsService
 {
     const string CommandPrefix = "/qchat";
+    const string DataAgentCommandPrefix = "/dataagent";
 
     public static string FormatDecisionTrace(QChatDecisionTrace trace)
     {
@@ -32,17 +35,30 @@ public static class QChatDiagnosticsService
         QChatDiagnosticsRuntimeState runtimeState)
     {
         string commandText = text?.Trim() ?? string.Empty;
-        if (!IsQChatCommand(commandText))
+        bool qchatCommand = IsQChatCommand(commandText);
+        bool dataAgentCommand = IsDataAgentCommand(commandText);
+        if (qchatCommand == false && dataAgentCommand == false)
             return new QChatDiagnosticsResult(false, string.Empty);
 
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(runtimeState);
 
-        string command = commandText.Length == CommandPrefix.Length
-            ? string.Empty
-            : commandText[CommandPrefix.Length..].Trim();
+        string command = qchatCommand
+            ? commandText.Length == CommandPrefix.Length
+                ? string.Empty
+                : commandText[CommandPrefix.Length..].Trim()
+            : commandText.Length == DataAgentCommandPrefix.Length
+                ? string.Empty
+                : commandText[DataAgentCommandPrefix.Length..].Trim();
         command = StripCopiedMenuDescription(command);
+
+        if (dataAgentCommand)
+            return command.ToLowerInvariant() switch
+            {
+                "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState)),
+                _ => new QChatDiagnosticsResult(false, string.Empty)
+            };
 
         return command.ToLowerInvariant() switch
         {
@@ -62,6 +78,8 @@ public static class QChatDiagnosticsService
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
             "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState)),
+            "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState)),
+            "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -78,6 +96,14 @@ public static class QChatDiagnosticsService
             return false;
 
         return text.Length == CommandPrefix.Length || char.IsWhiteSpace(text[CommandPrefix.Length]);
+    }
+
+    static bool IsDataAgentCommand(string text)
+    {
+        if (!text.StartsWith(DataAgentCommandPrefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return text.Length == DataAgentCommandPrefix.Length || char.IsWhiteSpace(text[DataAgentCommandPrefix.Length]);
     }
 
     static string StripCopiedMenuDescription(string command)
@@ -147,14 +173,61 @@ public static class QChatDiagnosticsService
             $"recent={trace}");
     }
 
+    static string BuildSemanticDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
+    {
+        string sanitized = SanitizeDiagnosticText(
+            runtimeState.RecentSemanticEstimate,
+            "QChat semantic diagnostics");
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? QChatSemanticDiagnosticsFormatter.Format(new QChatSemanticDiagnosticsSnapshot(null, 0, TimeSpan.Zero, TimeSpan.Zero))
+            : sanitized;
+    }
+
+    static string BuildDataAgentEvidenceDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
+    {
+        string sanitized = SanitizeDiagnosticText(
+            runtimeState.RecentDataAgentEvidence,
+            "DataAgent evidence diagnostics");
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? string.Join(Environment.NewLine,
+                "DataAgent evidence diagnostics",
+                "state=unavailable",
+                "reason=evidence_pack_unavailable")
+            : sanitized;
+    }
+
+    static string SanitizeDiagnosticText(string? text, string title)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return string.Empty;
+
+        if (ContainsHiddenDiagnosticContext(text))
+            return string.Join(Environment.NewLine,
+                title,
+                "state=redacted",
+                "reason=hidden_context_redacted");
+
+        string normalized = text.ReplaceLineEndings(Environment.NewLine).Trim();
+        return normalized.Length <= 900
+            ? normalized
+            : normalized[..900] + "...";
+    }
+
+    static bool ContainsHiddenDiagnosticContext(string text)
+    {
+        return text.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("[data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("[/data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase);
+    }
+
     static string SanitizeToolRouteTrace(string? trace)
     {
         if (string.IsNullOrWhiteSpace(trace))
             return "none";
 
-        if (trace.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-            trace.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-            trace.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase))
+        if (ContainsHiddenDiagnosticContext(trace))
         {
             return "redacted";
         }
@@ -351,6 +424,8 @@ public static class QChatDiagnosticsService
             "/qchat identity - 查看当前 agent 身份",
             "/qchat profile - 查看模型、人设、记忆配置",
             "/qchat status - 查看在线和回复窗口状态",
+            "/qchat diag semantic - QChat semantic state diagnostics",
+            "/dataagent diag evidence - DataAgent evidence diagnostics",
             "",
             "说明：",
             "诊断信息只给主人账号开放，用来排查 QQ 链路。");

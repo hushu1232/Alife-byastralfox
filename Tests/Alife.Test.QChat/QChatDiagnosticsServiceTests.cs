@@ -315,6 +315,155 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Text, Does.Not.Contain("[tool_route_context]"));
         });
     }
+
+    [TestCase("/qchat diag semantic")]
+    [TestCase("/qchat diagnostics semantic")]
+    public void TryHandleSemanticDiagnosticsShowsRecentEstimateForOwner(string command)
+    {
+        string semanticText = QChatSemanticDiagnosticsFormatter.Format(new QChatSemanticDiagnosticsSnapshot(
+            new QChatSemanticStateEstimate(
+                SemanticCompletion: 0.7345,
+                ContinuationLikelihood: 0.2214,
+                TopicStability: 0.8,
+                SummaryIntent: 0.05,
+                ShouldWait: false,
+                ShouldAnswer: true,
+                ShouldSummarize: false,
+                ReasonCode: "semantic_completion_stable"),
+            WindowMessageCount: 1,
+            WindowAge: TimeSpan.FromSeconds(6),
+            LastUpdateAge: TimeSpan.FromSeconds(3)));
+        QChatDiagnosticsRuntimeState state = new(RecentSemanticEstimate: semanticText);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QChat semantic diagnostics"));
+            Assert.That(result.Text, Does.Contain("semantic_completion=0.735"));
+            Assert.That(result.Text, Does.Contain("continuation_likelihood=0.221"));
+            Assert.That(result.Text, Does.Contain("should_answer=true"));
+            Assert.That(result.Text, Does.Contain("reason_code=semantic_completion_stable"));
+        });
+    }
+
+    [Test]
+    public void TryHandleSemanticDiagnosticsReturnsUnavailableWhenNoEstimateExists()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag semantic",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QChat semantic diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=unavailable"));
+            Assert.That(result.Text, Does.Contain("reason=semantic_window_empty"));
+        });
+    }
+
+    [TestCase("/dataagent diag evidence")]
+    [TestCase("/dataagent diagnostics evidence")]
+    [TestCase("/qchat diag dataagent evidence")]
+    [TestCase("/qchat diagnostics dataagent evidence")]
+    public void TryHandleDataAgentEvidenceDiagnosticsShowsRecentEvidenceForOwner(string command)
+    {
+        string evidenceText = string.Join(Environment.NewLine,
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.781",
+            "answer_stability=0.733",
+            "clarification_need=0.242",
+            "risk_level=0.287",
+            "state_estimate_reason_code=analysis_evidence_stable",
+            "route_allowed=true",
+            "route_allows_query=true",
+            "executed_sql=true",
+            "terminal=false",
+            "tool_broker_audit_allowed=true");
+        QChatDiagnosticsRuntimeState state = new(RecentDataAgentEvidence: evidenceText);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(result.Text, Does.Contain("analysis_confidence=0.781"));
+            Assert.That(result.Text, Does.Contain("risk_level=0.287"));
+            Assert.That(result.Text, Does.Contain("state_estimate_reason_code=analysis_evidence_stable"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentEvidenceDiagnosticsReturnsUnavailableWhenNoEvidenceExists()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=unavailable"));
+            Assert.That(result.Text, Does.Contain("reason=evidence_pack_unavailable"));
+        });
+    }
+
+    [TestCase("/dataagent nope")]
+    [TestCase("/dataagent")]
+    public void TryHandleDataAgentEvidenceDiagnosticsDoesNotHandleUnknownDataAgentCommands(string command)
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void TryHandleDiagnosticsRedactsHiddenToolContext()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentEvidence: "[tool_route_context]\nAllowed XML tools: dataagent_query\n[/tool_route_context]");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain("[tool_route_context]"));
+            Assert.That(result.Text, Does.Not.Contain("Allowed XML tools"));
+        });
+    }
+
     [Test]
     public void TryHandleQChatCommandThrowsForNullRoute()
     {
