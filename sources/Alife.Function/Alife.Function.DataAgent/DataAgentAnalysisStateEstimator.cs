@@ -19,7 +19,6 @@ public static class DataAgentAnalysisStateEstimator
         ArgumentNullException.ThrowIfNull(pack);
 
         bool routeDenied = pack.RouteAllowed == false ||
-            pack.RouteAllowsQuery == false ||
             pack.Trace.Contains("RouteGate:Rejected", StringComparison.Ordinal);
         bool acceptedQuery = pack.RouteAllowed &&
             pack.RouteAllowsQuery &&
@@ -59,7 +58,7 @@ public static class DataAgentAnalysisStateEstimator
             risk.Value,
             shouldContinue,
             shouldSummarize,
-            pack.RouteAllowed && pack.RouteAllowsQuery,
+            pack.RouteAllowed,
             reasonCode);
     }
 }

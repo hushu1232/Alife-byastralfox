@@ -526,6 +526,44 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void AnalysisEstimatorTreatsTerminalNoQueryAsTerminalInsteadOfRouteDenied()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Ended,
+            3,
+            true,
+            "dataagent_analysis_end",
+            true,
+            false,
+            "route_allowed",
+            "End:Succeeded>Checkpoint:Succeeded",
+            false,
+            true,
+            false,
+            false,
+            false,
+            string.Empty,
+            0,
+            string.Empty,
+            true,
+            "route_allowed",
+            "terminal_no_query;checkpoint_terminal",
+            "DataAgent completed a terminal no-query step while preserving checkpoint evidence.");
+
+        DataAgentAnalysisStateEstimate estimate = DataAgentAnalysisStateEstimator.Estimate(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(estimate.ToolPermissionAllowed, Is.True);
+            Assert.That(estimate.ShouldContinue, Is.False);
+            Assert.That(estimate.ShouldSummarize, Is.True);
+            Assert.That(estimate.ReasonCode, Is.EqualTo("terminal_no_query"));
+            Assert.That(estimate.RiskLevel, Is.LessThan(0.70));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
