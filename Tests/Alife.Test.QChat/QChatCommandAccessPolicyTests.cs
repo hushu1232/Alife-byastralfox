@@ -21,6 +21,20 @@ public sealed class QChatCommandAccessPolicyTests
         });
     }
 
+    [TestCase("/dataagent diag evidence")]
+    [TestCase("  /DATAAGENT diag evidence  ")]
+    public void OwnerDataAgentDiagnosticCommandIsAllowed(string text)
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext(text, QChatSenderRole.Owner));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.AllowOwnerCommand));
+            Assert.That(decision.Reason, Is.EqualTo("owner_qchat_command"));
+        });
+    }
+
     [TestCase(QChatSenderRole.PrivateGuest)]
     [TestCase(QChatSenderRole.GroupMember)]
     [TestCase((QChatSenderRole)(-1))]
@@ -33,6 +47,33 @@ public sealed class QChatCommandAccessPolicyTests
         {
             Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.DropSilently));
             Assert.That(decision.Reason, Is.EqualTo("non_owner_qchat_command"));
+        });
+    }
+
+    [TestCase(QChatSenderRole.PrivateGuest)]
+    [TestCase(QChatSenderRole.GroupMember)]
+    public void NonOwnerDataAgentDiagnosticCommandIsDroppedSilently(QChatSenderRole role)
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext("/dataagent diag evidence", role));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.DropSilently));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_qchat_command"));
+        });
+    }
+
+    [Test]
+    public void DataAgentWordsWithoutCommandPrefixPassThrough()
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext("dataagent diag evidence", QChatSenderRole.GroupMember));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.NotCommand));
+            Assert.That(decision.Reason, Is.EqualTo("not_qchat_command"));
         });
     }
 

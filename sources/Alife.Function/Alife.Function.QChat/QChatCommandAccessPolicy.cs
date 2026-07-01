@@ -19,13 +19,14 @@ public sealed record QChatCommandAccessDecision(
 
 public static class QChatCommandAccessPolicy
 {
-    const string Prefix = "/qchat";
+    const string QChatPrefix = "/qchat";
+    const string DataAgentPrefix = "/dataagent";
 
     public static QChatCommandAccessDecision Evaluate(QChatCommandAccessContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (IsQChatCommand(context.PlainText) == false)
+        if (IsOwnerDiagnosticCommand(context.PlainText) == false)
             return new QChatCommandAccessDecision(
                 QChatCommandAccessAction.NotCommand,
                 "not_qchat_command");
@@ -42,11 +43,22 @@ public static class QChatCommandAccessPolicy
 
     public static bool IsQChatCommand(string? text)
     {
+        return IsCommandWithPrefix(text, QChatPrefix);
+    }
+
+    public static bool IsOwnerDiagnosticCommand(string? text)
+    {
+        return IsCommandWithPrefix(text, QChatPrefix) ||
+               IsCommandWithPrefix(text, DataAgentPrefix);
+    }
+
+    static bool IsCommandWithPrefix(string? text, string prefix)
+    {
         string trimmed = text?.TrimStart() ?? string.Empty;
-        if (trimmed.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase) == false)
+        if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == false)
             return false;
 
-        return trimmed.Length == Prefix.Length ||
-               char.IsWhiteSpace(trimmed[Prefix.Length]);
+        return trimmed.Length == prefix.Length ||
+               char.IsWhiteSpace(trimmed[prefix.Length]);
     }
 }
