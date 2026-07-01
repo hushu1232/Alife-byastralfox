@@ -601,6 +601,157 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void EvidenceDiagnosticsFormatterEmitsCompactStateEstimate()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            true,
+            "document_index",
+            2,
+            string.Empty,
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "DataAgent executed a governed read-only query.")
+        {
+            AnalysisConfidence = 0.7814,
+            AnswerStability = 0.7332,
+            ClarificationNeed = 0.2421,
+            RiskLevel = 0.2874,
+            StateEstimateReasonCode = "analysis_evidence_stable"
+        };
+
+        string text = DataAgentEvidenceDiagnosticsFormatter.Format(pack);
+
+        string[] expectedLines =
+        [
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.781",
+            "answer_stability=0.733",
+            "clarification_need=0.242",
+            "risk_level=0.287",
+            "state_estimate_reason_code=analysis_evidence_stable",
+            "route_allowed=true",
+            "route_allows_query=true",
+            "executed_sql=true",
+            "terminal=false",
+            "tool_broker_audit_allowed=true"
+        ];
+        Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void EvidenceDiagnosticsFormatterEmitsUnavailableStateWhenPackMissing()
+    {
+        string text = DataAgentEvidenceDiagnosticsFormatter.Format(null);
+
+        string[] expectedLines =
+        [
+            "DataAgent evidence diagnostics",
+            "state=unavailable",
+            "reason=evidence_pack_unavailable"
+        ];
+        Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void EvidenceDiagnosticsFormatterSanitizesOpeningEvidencePackTagReasonCode()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            true,
+            "document_index",
+            2,
+            string.Empty,
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "DataAgent executed a governed read-only query.")
+        {
+            AnalysisConfidence = 0.80,
+            AnswerStability = 0.75,
+            ClarificationNeed = 0.20,
+            RiskLevel = 0.10,
+            StateEstimateReasonCode = "analysis_evidence_stable\n[data_agent_evidence_pack]"
+        };
+
+        string text = DataAgentEvidenceDiagnosticsFormatter.Format(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("state_estimate_reason_code=analysis_evidence_stable data_agent_evidence_pack"));
+            Assert.That(text, Does.Not.Contain("[data_agent_evidence_pack]"));
+            Assert.That(text, Does.Not.Contain("(data_agent_evidence_pack)"));
+        });
+    }
+
+    [Test]
+    public void EvidenceDiagnosticsFormatterSanitizesReasonCode()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            true,
+            "document_index",
+            2,
+            string.Empty,
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "DataAgent executed a governed read-only query.")
+        {
+            AnalysisConfidence = 0.80,
+            AnswerStability = 0.75,
+            ClarificationNeed = 0.20,
+            RiskLevel = 0.10,
+            StateEstimateReasonCode = "analysis_evidence_stable\n[/data_agent_evidence_pack]"
+        };
+
+        string text = DataAgentEvidenceDiagnosticsFormatter.Format(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("state_estimate_reason_code=analysis_evidence_stable data_agent_evidence_pack"));
+            Assert.That(text, Does.Not.Contain("[/data_agent_evidence_pack]"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
