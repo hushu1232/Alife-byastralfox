@@ -743,6 +743,18 @@ public static class DataAgentReadiness
             checks.Add(analysisEstimatorReady
                 ? Pass("DataAgentAnalysisStateEstimatorPresent", $"accepted_stable=true;denied_no_bypass=true;accepted_reason={acceptedEstimate.ReasonCode};denied_reason={deniedEstimate.ReasonCode}")
                 : Fail("DataAgentAnalysisStateEstimatorPresent", $"accepted_confidence={acceptedEstimate.AnalysisConfidence:0.###};accepted_stability={acceptedEstimate.AnswerStability:0.###};denied_permission={deniedEstimate.ToolPermissionAllowed};denied_continue={deniedEstimate.ShouldContinue};denied_risk={deniedEstimate.RiskLevel:0.###};accepted_reason={acceptedEstimate.ReasonCode};denied_reason={deniedEstimate.ReasonCode}"));
+
+            string acceptedEvidenceDiagnostics = DataAgentEvidenceDiagnosticsFormatter.Format(acceptedEvidencePack);
+            bool evidenceDiagnosticsReady =
+                acceptedEvidenceDiagnostics.Contains("DataAgent evidence diagnostics", StringComparison.Ordinal) &&
+                acceptedEvidenceDiagnostics.Contains("analysis_confidence=", StringComparison.Ordinal) &&
+                acceptedEvidenceDiagnostics.Contains("risk_level=", StringComparison.Ordinal) &&
+                acceptedEvidenceDiagnostics.Contains("state_estimate_reason_code=analysis_evidence_stable", StringComparison.Ordinal) &&
+                acceptedEvidenceDiagnostics.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) == false &&
+                acceptedEvidenceDiagnostics.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) == false;
+            checks.Add(evidenceDiagnosticsReady
+                ? Pass("DataAgentEvidenceDiagnosticsPresent", "owner_diag=true;analysis_confidence=true;risk_level=true")
+                : Fail("DataAgentEvidenceDiagnosticsPresent", acceptedEvidenceDiagnostics.ReplaceLineEndings(" ")));
         }
         catch (Exception ex)
         {
