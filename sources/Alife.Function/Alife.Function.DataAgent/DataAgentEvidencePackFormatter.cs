@@ -32,6 +32,11 @@ public static class DataAgentEvidencePackFormatter
         Append(builder, "tool_broker_audit_reason_code", pack.ToolBrokerAuditReasonCode);
         Append(builder, "safety_summary", pack.SafetySummary, SanitizeTokenList);
         Append(builder, "interview_summary", pack.InterviewSummary);
+        Append(builder, "analysis_confidence", pack.AnalysisConfidence.ToString("0.###", CultureInfo.InvariantCulture));
+        Append(builder, "answer_stability", pack.AnswerStability.ToString("0.###", CultureInfo.InvariantCulture));
+        Append(builder, "clarification_need", pack.ClarificationNeed.ToString("0.###", CultureInfo.InvariantCulture));
+        Append(builder, "risk_level", pack.RiskLevel.ToString("0.###", CultureInfo.InvariantCulture));
+        Append(builder, "state_estimate_reason_code", pack.StateEstimateReasonCode);
         builder.Append("[/data_agent_evidence_pack]");
         return builder.ToString();
     }

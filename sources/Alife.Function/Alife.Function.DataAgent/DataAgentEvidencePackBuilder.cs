@@ -15,7 +15,7 @@ public sealed class DataAgentEvidencePackBuilder
         string trace = BuildTrace(result.Steps);
         string routeReasonCode = result.RouteContext?.ReasonCode ?? string.Empty;
 
-        return new DataAgentEvidencePack(
+        DataAgentEvidencePack pack = new(
             result.SessionId,
             result.Checkpoint.SessionStatus,
             result.Checkpoint.TurnCount,
@@ -37,6 +37,16 @@ public sealed class DataAgentEvidencePackBuilder
             latestToolAudit?.ReasonCode ?? string.Empty,
             BuildSafetySummary(result, executedSql),
             BuildInterviewSummary(result, executedSql, routeReasonCode));
+
+        DataAgentAnalysisStateEstimate estimate = DataAgentAnalysisStateEstimator.Estimate(pack);
+        return pack with
+        {
+            AnalysisConfidence = estimate.AnalysisConfidence,
+            AnswerStability = estimate.AnswerStability,
+            ClarificationNeed = estimate.ClarificationNeed,
+            RiskLevel = estimate.RiskLevel,
+            StateEstimateReasonCode = estimate.ReasonCode
+        };
     }
 
     static DataAgentAuditRecord? FindQueryAudit(

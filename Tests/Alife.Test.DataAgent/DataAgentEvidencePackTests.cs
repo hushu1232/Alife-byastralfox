@@ -69,6 +69,11 @@ public sealed class DataAgentEvidencePackTests
             Assert.That(pack.ToolBrokerAuditReasonCode, Is.EqualTo("route_allowed"));
             Assert.That(pack.SafetySummary, Is.EqualTo("route_allowed;read_only_sql_executed;checkpoint_active"));
             Assert.That(pack.InterviewSummary, Does.Contain("governed read-only query"));
+            Assert.That(pack.AnalysisConfidence, Is.GreaterThanOrEqualTo(0.75));
+            Assert.That(pack.AnswerStability, Is.GreaterThanOrEqualTo(0.70));
+            Assert.That(pack.ClarificationNeed, Is.LessThan(0.35));
+            Assert.That(pack.RiskLevel, Is.LessThan(0.35));
+            Assert.That(pack.StateEstimateReasonCode, Is.EqualTo("analysis_evidence_stable"));
         });
     }
 
@@ -103,6 +108,9 @@ public sealed class DataAgentEvidencePackTests
             Assert.That(pack.ToolBrokerAuditReasonCode, Is.Empty);
             Assert.That(pack.SafetySummary, Is.EqualTo("route_rejected;sql_not_executed;checkpoint_unchanged"));
             Assert.That(pack.InterviewSummary, Does.Contain("rejected before SQL execution"));
+            Assert.That(pack.AnalysisConfidence, Is.LessThan(0.50));
+            Assert.That(pack.RiskLevel, Is.GreaterThanOrEqualTo(0.70));
+            Assert.That(pack.StateEstimateReasonCode, Is.EqualTo("route_denied_no_query"));
         });
     }
 
@@ -219,6 +227,11 @@ public sealed class DataAgentEvidencePackTests
             "tool_broker_audit_reason_code=route_allowed",
             "safety_summary=route_allowed read_only_sql_executed checkpoint_active",
             "interview_summary=DataAgent executed a governed read-only query. data_agent_evidence_pack",
+            "analysis_confidence=0",
+            "answer_stability=0",
+            "clarification_need=0",
+            "risk_level=0",
+            "state_estimate_reason_code=",
             "[/data_agent_evidence_pack]"
         ];
         Assert.That(context.Split(Environment.NewLine), Is.EqualTo(expectedLines));

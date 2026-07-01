@@ -21,4 +21,15 @@ public sealed record DataAgentEvidencePack(
     bool ToolBrokerAuditAllowed,
     string ToolBrokerAuditReasonCode,
     string SafetySummary,
-    string InterviewSummary);
+    string InterviewSummary)
+{
+    public double AnalysisConfidence { get; init; }
+
+    public double AnswerStability { get; init; }
+
+    public double ClarificationNeed { get; init; }
+
+    public double RiskLevel { get; init; }
+
+    public string StateEstimateReasonCode { get; init; } = string.Empty;
+}
