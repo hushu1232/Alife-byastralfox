@@ -65,7 +65,7 @@ public static class QChatSemanticStateEstimator
         bool shouldAnswer = delaySatisfied &&
             latestIncomplete == false &&
             shouldSummarize == false &&
-            completion.Value >= 0.75 &&
+            completion.Value >= 0.70 &&
             continuation.Value <= 0.45;
         bool shouldWait = shouldAnswer == false && shouldSummarize == false;
         string reasonCode = shouldSummarize

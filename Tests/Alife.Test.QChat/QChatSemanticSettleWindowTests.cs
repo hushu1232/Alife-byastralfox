@@ -91,6 +91,18 @@ public sealed class QChatSemanticSettleWindowTests
     }
 
     [Test]
+    public void ShouldSettleUsesStablePlainCompletionAfterDelay()
+    {
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        QChatSemanticSettleWindow window = new(createdAt: start);
+        window.AddMessage(CreateMessage("Tell me about DataAgent", start));
+
+        bool shouldSettle = window.ShouldSettle(start.AddSeconds(6));
+
+        Assert.That(shouldSettle, Is.True);
+    }
+
+    [Test]
     public void EmptyWindowNeverSettles()
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-06-26T00:00:00Z");

@@ -564,6 +564,43 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void AnalysisEstimatorDoesNotTreatRejectedTerminalEvidenceAsTerminalNoQuery()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Rejected,
+            3,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            false,
+            "analysis_session_ended",
+            "Reject:Rejected>Checkpoint:Succeeded",
+            false,
+            true,
+            false,
+            false,
+            false,
+            string.Empty,
+            0,
+            "analysis_session_ended",
+            true,
+            "route_allowed",
+            "sql_not_executed;checkpoint_rejected",
+            "DataAgent rejected a terminal analysis request without SQL execution.");
+
+        DataAgentAnalysisStateEstimate estimate = DataAgentAnalysisStateEstimator.Estimate(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(estimate.ToolPermissionAllowed, Is.True);
+            Assert.That(estimate.ShouldContinue, Is.False);
+            Assert.That(estimate.ShouldSummarize, Is.False);
+            Assert.That(estimate.ReasonCode, Is.EqualTo("analysis_needs_more_evidence"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,

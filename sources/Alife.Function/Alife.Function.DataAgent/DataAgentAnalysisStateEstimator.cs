@@ -24,8 +24,9 @@ public static class DataAgentAnalysisStateEstimator
             pack.RouteAllowsQuery &&
             pack.ExecutedSql &&
             pack.AuditValidated;
-        bool terminalNoQuery = pack.Terminal ||
-            pack.SafetySummary.Contains("terminal_no_query", StringComparison.Ordinal);
+        bool terminalNoQuery = pack.SafetySummary.Contains("terminal_no_query", StringComparison.Ordinal) ||
+            pack.Trace.Contains("Summarize:Succeeded", StringComparison.Ordinal) ||
+            pack.Trace.Contains("End:Succeeded", StringComparison.Ordinal);
 
         KalmanScalarFilter confidence = new(0.35, 0.60);
         KalmanScalarFilter stability = new(0.35, 0.60);
