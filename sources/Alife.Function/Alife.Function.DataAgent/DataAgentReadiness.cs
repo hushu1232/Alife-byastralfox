@@ -1,5 +1,6 @@
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
+using Alife.Framework.Models.StateEstimation;
 
 namespace Alife.Function.DataAgent;
 
@@ -719,6 +720,29 @@ public static class DataAgentReadiness
             checks.Add(acceptedEvidenceReady && deniedEvidenceReady && terminalEvidenceReady
                 ? Pass("DataAgentEvidencePackPresent", $"accepted=true;accepted_route_context=runtime;denied=true;terminal=true;accepted_trace={acceptedEvidencePack.Trace};accepted_safety={acceptedEvidencePack.SafetySummary};denied_trace={deniedEvidencePack.Trace};denied_safety={deniedEvidencePack.SafetySummary};terminal_trace={terminalEvidencePack.Trace};terminal_safety={terminalEvidencePack.SafetySummary}")
                 : Fail("DataAgentEvidencePackPresent", $"accepted={acceptedEvidenceReady};denied={deniedEvidenceReady};terminal={terminalEvidenceReady};accepted_trace={acceptedEvidencePack.Trace};accepted_safety={acceptedEvidencePack.SafetySummary};denied_trace={deniedEvidencePack.Trace};denied_safety={deniedEvidencePack.SafetySummary};terminal_trace={terminalEvidencePack.Trace};terminal_safety={terminalEvidencePack.SafetySummary}"));
+
+            KalmanScalarFilter semanticFilter = new(0.20, 0.50);
+            KalmanScalarFilter semanticUpdated = semanticFilter.Predict(0.05).Update(0.90, 0.20);
+            checks.Add(semanticUpdated.Value > 0.20 &&
+                       semanticUpdated.Value < 0.90 &&
+                       semanticUpdated.Uncertainty > 0.0 &&
+                       semanticUpdated.Uncertainty < 0.55
+                ? Pass("SemanticStateEstimatorCorePresent", $"scalar_filter=true;application_layer=true;value={semanticUpdated.Value:0.###};uncertainty={semanticUpdated.Uncertainty:0.###}")
+                : Fail("SemanticStateEstimatorCorePresent", $"scalar_filter=false;value={semanticUpdated.Value:0.###};uncertainty={semanticUpdated.Uncertainty:0.###}"));
+
+            DataAgentAnalysisStateEstimate acceptedEstimate = DataAgentAnalysisStateEstimator.Estimate(acceptedEvidencePack);
+            DataAgentAnalysisStateEstimate deniedEstimate = DataAgentAnalysisStateEstimator.Estimate(deniedEvidencePack);
+            bool analysisEstimatorReady =
+                acceptedEstimate.AnalysisConfidence >= 0.70 &&
+                acceptedEstimate.AnswerStability >= 0.70 &&
+                acceptedEstimate.ReasonCode == "analysis_evidence_stable" &&
+                deniedEstimate.ToolPermissionAllowed == false &&
+                deniedEstimate.ShouldContinue == false &&
+                deniedEstimate.RiskLevel >= 0.70 &&
+                deniedEstimate.ReasonCode == "route_denied_no_query";
+            checks.Add(analysisEstimatorReady
+                ? Pass("DataAgentAnalysisStateEstimatorPresent", $"accepted_stable=true;denied_no_bypass=true;accepted_reason={acceptedEstimate.ReasonCode};denied_reason={deniedEstimate.ReasonCode}")
+                : Fail("DataAgentAnalysisStateEstimatorPresent", $"accepted_confidence={acceptedEstimate.AnalysisConfidence:0.###};accepted_stability={acceptedEstimate.AnswerStability:0.###};denied_permission={deniedEstimate.ToolPermissionAllowed};denied_continue={deniedEstimate.ShouldContinue};denied_risk={deniedEstimate.RiskLevel:0.###};accepted_reason={acceptedEstimate.ReasonCode};denied_reason={deniedEstimate.ReasonCode}"));
         }
         catch (Exception ex)
         {

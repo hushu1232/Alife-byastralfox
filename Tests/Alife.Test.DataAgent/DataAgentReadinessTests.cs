@@ -15,7 +15,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(56));
+            Assert.That(checks, Has.Count.EqualTo(58));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -76,6 +76,8 @@ public sealed class DataAgentReadinessTests
             Assert.That(evidencePackCheck.Detail, Does.Contain("accepted_route_context=runtime"));
             Assert.That(evidencePackCheck.Detail, Does.Contain("denied=true"));
             Assert.That(evidencePackCheck.Detail, Does.Contain("terminal=true"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("SemanticStateEstimatorCorePresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentAnalysisStateEstimatorPresent"));
         });
     }
 
@@ -96,7 +98,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 70 required passed, 0 required missing"
+                "  Summary: 72 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -108,6 +110,8 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("RouteSessionScopePreserved"));
             Assert.That(result.StandardOutput, Does.Contain("TerminalRouteDoesNotQuery"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEvidencePackPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("SemanticStateEstimatorCorePresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentAnalysisStateEstimatorPresent"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
@@ -123,7 +127,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 70"));
+            Assert.That(script, Does.Contain("$expectedRequired = 72"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -213,7 +217,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 43 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 45 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }

@@ -24,7 +24,9 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "Tool broker runtime wiring",
         "QChat tool route state wiring",
         "DataAgent dynamic tool route contract",
-        "QChat owner Tool Broker diagnostics"
+        "QChat owner Tool Broker diagnostics",
+        "QChat Kalman semantic state estimator",
+        "QChat Kalman settle window integration"
     ];
 
     [Test]
