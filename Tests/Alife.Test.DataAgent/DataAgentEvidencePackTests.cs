@@ -437,6 +437,82 @@ public sealed class DataAgentEvidencePackTests
         });
     }
 
+    [Test]
+    public void AnalysisEstimatorMarksAcceptedEvidenceAsStableWithoutChangingPermission()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            2,
+            true,
+            "dataagent_analysis_continue",
+            true,
+            true,
+            "route_allowed",
+            "RouteGate:Succeeded>Execute:Succeeded>Checkpoint:Succeeded",
+            true,
+            false,
+            true,
+            true,
+            true,
+            "document_index",
+            2,
+            string.Empty,
+            true,
+            "route_allowed",
+            "route_allowed;read_only_sql_executed;checkpoint_active",
+            "DataAgent executed a governed read-only query after route, planning, validation, and checkpoint gates.");
+
+        DataAgentAnalysisStateEstimate estimate = DataAgentAnalysisStateEstimator.Estimate(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(estimate.AnalysisConfidence, Is.GreaterThanOrEqualTo(0.75));
+            Assert.That(estimate.AnswerStability, Is.GreaterThanOrEqualTo(0.70));
+            Assert.That(estimate.ClarificationNeed, Is.LessThan(0.35));
+            Assert.That(estimate.ToolPermissionAllowed, Is.True);
+            Assert.That(estimate.ReasonCode, Is.EqualTo("analysis_evidence_stable"));
+        });
+    }
+
+    [Test]
+    public void AnalysisEstimatorDoesNotTurnRouteDeniedEvidenceIntoAllowedQuery()
+    {
+        DataAgentEvidencePack pack = new(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            1,
+            false,
+            "dataagent_analysis_continue",
+            false,
+            false,
+            "tool_route_required",
+            "RouteGate:Rejected>Reject:Rejected>Checkpoint:Succeeded",
+            false,
+            false,
+            true,
+            true,
+            false,
+            string.Empty,
+            0,
+            string.Empty,
+            false,
+            string.Empty,
+            "route_rejected;sql_not_executed;checkpoint_unchanged",
+            "DataAgent rejected before SQL execution because route_reason_code=tool_route_required.");
+
+        DataAgentAnalysisStateEstimate estimate = DataAgentAnalysisStateEstimator.Estimate(pack);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(estimate.AnalysisConfidence, Is.LessThan(0.50));
+            Assert.That(estimate.RiskLevel, Is.GreaterThanOrEqualTo(0.70));
+            Assert.That(estimate.ToolPermissionAllowed, Is.False);
+            Assert.That(estimate.ShouldContinue, Is.False);
+            Assert.That(estimate.ReasonCode, Is.EqualTo("route_denied_no_query"));
+        });
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus responseStatus,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
