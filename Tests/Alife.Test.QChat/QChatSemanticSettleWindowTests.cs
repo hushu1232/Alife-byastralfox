@@ -67,6 +67,30 @@ public sealed class QChatSemanticSettleWindowTests
     }
 
     [Test]
+    public void ShouldSettleWaitsWhenLatestMessageLooksLikeContinuation()
+    {
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        QChatSemanticSettleWindow window = new(createdAt: start);
+        window.AddMessage(CreateMessage("关于 DataAgent 还有", start));
+
+        bool shouldSettle = window.ShouldSettle(start.AddSeconds(10));
+
+        Assert.That(shouldSettle, Is.False);
+    }
+
+    [Test]
+    public void ShouldSettleUsesStableSemanticCompletionAfterDelay()
+    {
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        QChatSemanticSettleWindow window = new(createdAt: start);
+        window.AddMessage(CreateMessage("DataAgent V2.5 应该怎么接卡尔曼滤波？", start));
+
+        bool shouldSettle = window.ShouldSettle(start.AddSeconds(6));
+
+        Assert.That(shouldSettle, Is.True);
+    }
+
+    [Test]
     public void EmptyWindowNeverSettles()
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-06-26T00:00:00Z");

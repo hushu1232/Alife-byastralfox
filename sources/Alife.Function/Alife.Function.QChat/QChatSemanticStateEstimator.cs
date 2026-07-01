@@ -45,7 +45,7 @@ public static class QChatSemanticStateEstimator
                     ? 0.92
                     : question
                         ? 0.88
-                        : 0.72;
+                        : 0.80;
 
             completion = completion.Predict(0.08).Update(completionObservation, observationNoise);
             continuation = continuation.Predict(0.06).Update(incomplete ? 0.88 : 0.22, observationNoise);

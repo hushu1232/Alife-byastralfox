@@ -52,7 +52,14 @@ public sealed class QChatSemanticSettleWindow(QChatSemanticSettleOptions? option
         if (now - createdAt >= options.MaxWindowDuration)
             return true;
 
-        return now - lastUpdatedAt >= options.SettleDelay && LooksIncomplete(messages[^1].Text) == false;
+        if (now - lastUpdatedAt < options.SettleDelay)
+            return false;
+
+        if (LooksIncomplete(messages[^1].Text))
+            return false;
+
+        QChatSemanticStateEstimate estimate = QChatSemanticStateEstimator.Estimate(Snapshot(), now, options);
+        return estimate.ShouldAnswer || estimate.ShouldSummarize;
     }
 
     public QChatSemanticWindowSnapshot Snapshot()
