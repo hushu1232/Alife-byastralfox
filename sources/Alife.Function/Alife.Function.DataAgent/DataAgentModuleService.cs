@@ -33,7 +33,11 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
-        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext, routeContextAccessor));
+        capabilityRegistry.Add(new DataAgentAnalysisCapabilityProvider(
+            analysisOrchestrator,
+            PublishAnalysisContext,
+            routeContextAccessor,
+            functionService.RecordRecentDataAgentEvidenceDiagnostics));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)

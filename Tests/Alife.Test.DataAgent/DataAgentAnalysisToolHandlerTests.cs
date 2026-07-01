@@ -10,6 +10,7 @@ public sealed class DataAgentAnalysisToolHandlerTests
     public void StartCallsOrchestratorAndPublishesOrchestratedContext()
     {
         List<string> published = [];
+        List<string> evidenceDiagnostics = [];
         RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
         {
             ["start"] = OrchestratedResult(
@@ -33,7 +34,7 @@ public sealed class DataAgentAnalysisToolHandlerTests
             "analysis_start",
             "route_allowed",
             string.Empty));
-        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor);
+        DataAgentAnalysisToolHandler handler = new(orchestrator, published.Add, routeAccessor, evidenceDiagnostics.Add);
 
         string context = handler.Start("xiayu", "Which documents describe DataAgent?");
 
@@ -51,6 +52,14 @@ public sealed class DataAgentAnalysisToolHandlerTests
             Assert.That(context, Does.Contain("checkpoint_session_id=session-1"));
             Assert.That(context, Does.Contain("route_reason_code=route_allowed"));
             Assert.That(published, Is.EqualTo(new[] { context }));
+            Assert.That(evidenceDiagnostics, Has.Count.EqualTo(1));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("analysis_confidence="));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("route_allowed=true"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("route_allows_query=true"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("executed_sql=true"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Not.Contain("[data_agent_evidence_pack]"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Not.Contain("[data_agent_context]"));
         });
     }
 

@@ -3393,6 +3393,52 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateDataAgentEvidenceCommandUsesFunctionCallerRecordedDiagnostics()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller.RecordRecentDataAgentEvidenceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.812",
+            "risk_level=0.188",
+            "route_allowed=true"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, functionCaller: functionCaller);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag evidence"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(reply, Does.Contain("analysis_confidence=0.812"));
+            Assert.That(reply, Does.Contain("risk_level=0.188"));
+            Assert.That(reply, Does.Contain("route_allowed=true"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
+        });
+    }
+
+    [Test]
     public async Task OwnerPrivateQChatSemanticDiagnosticsUsesRecentSettleWindowState()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
@@ -14941,10 +14987,11 @@ public class QChatServiceAdapterTests
         IAgentBrowserProvider? browserProvider = null,
         AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
         AgentBrowserMediaOutputService? browserMediaOutputService = null,
-        Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null)
+        Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
+        XmlFunctionCaller? functionCaller = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
-        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller ??= new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>());
         QChatService service = new(
             functionCaller,
             new NullLogger<QChatService>(),

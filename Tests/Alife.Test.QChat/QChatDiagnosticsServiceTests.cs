@@ -465,6 +465,29 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleDataAgentEvidenceDiagnosticsRedactsRawEvidencePackContext()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentEvidence: "[data_agent_evidence_pack]\nanalysis_confidence=0.9\n[/data_agent_evidence_pack]");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain("[data_agent_evidence_pack]"));
+            Assert.That(result.Text, Does.Not.Contain("[/data_agent_evidence_pack]"));
+        });
+    }
+
+    [Test]
     public void TryHandleQChatCommandThrowsForNullRoute()
     {
         Assert.That(

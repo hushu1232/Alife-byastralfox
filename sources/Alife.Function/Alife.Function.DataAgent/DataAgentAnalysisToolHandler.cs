@@ -7,7 +7,8 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentAnalysisToolHandler(
     IDataAgentAnalysisOrchestrator orchestrator,
     Action<string>? resultPublisher = null,
-    IDataAgentToolRouteContextAccessor? routeContextAccessor = null)
+    IDataAgentToolRouteContextAccessor? routeContextAccessor = null,
+    Action<string>? evidenceDiagnosticsPublisher = null)
 {
     readonly IDataAgentToolRouteContextAccessor routeContextAccessor =
         routeContextAccessor ?? MissingDataAgentToolRouteContextAccessor.Instance;
@@ -27,7 +28,7 @@ public sealed class DataAgentAnalysisToolHandler(
             routeContext.AllowsQuery,
             routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        resultPublisher?.Invoke(context);
+        PublishResult(result, context);
         return context;
     }
 
@@ -46,7 +47,7 @@ public sealed class DataAgentAnalysisToolHandler(
             routeContext.AllowsQuery,
             routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        resultPublisher?.Invoke(context);
+        PublishResult(result, context);
         return context;
     }
 
@@ -59,7 +60,7 @@ public sealed class DataAgentAnalysisToolHandler(
         DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_summarize", sessionId);
         DataAgentOrchestrationResult result = orchestrator.Summarize(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        resultPublisher?.Invoke(context);
+        PublishResult(result, context);
         return context;
     }
 
@@ -72,7 +73,17 @@ public sealed class DataAgentAnalysisToolHandler(
         DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_end", sessionId);
         DataAgentOrchestrationResult result = orchestrator.End(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        resultPublisher?.Invoke(context);
+        PublishResult(result, context);
         return context;
+    }
+
+    void PublishResult(DataAgentOrchestrationResult result, string context)
+    {
+        resultPublisher?.Invoke(context);
+        if (evidenceDiagnosticsPublisher is null)
+            return;
+
+        DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(result);
+        evidenceDiagnosticsPublisher(DataAgentEvidenceDiagnosticsFormatter.Format(pack));
     }
 }

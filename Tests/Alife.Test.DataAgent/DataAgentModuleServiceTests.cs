@@ -74,7 +74,8 @@ public sealed class DataAgentModuleServiceTests
             Assert.That(source, Does.Contain("DataAgentAnalysisOrchestrator"));
             Assert.That(source, Does.Contain("IDataAgentAnalysisOrchestrator"));
             Assert.That(source, Does.Contain("new DataAgentAnalysisOrchestrator"));
-            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider(analysisOrchestrator"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider("));
+            Assert.That(source, Does.Contain("analysisOrchestrator"));
         });
     }
 
@@ -87,7 +88,21 @@ public sealed class DataAgentModuleServiceTests
         {
             Assert.That(source, Does.Contain("XmlPolicyDataAgentToolRouteContextAccessor"));
             Assert.That(source, Does.Contain("functionService.ExecutionPolicy"));
-            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider(analysisOrchestrator, PublishAnalysisContext, routeContextAccessor)"));
+            Assert.That(source, Does.Contain("new DataAgentAnalysisCapabilityProvider("));
+            Assert.That(source, Does.Contain("analysisOrchestrator"));
+            Assert.That(source, Does.Contain("PublishAnalysisContext"));
+            Assert.That(source, Does.Contain("routeContextAccessor"));
+        });
+    }
+
+    [Test]
+    public void AwakeWiresEvidenceDiagnosticsToFunctionCallerBridge()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("functionService.RecordRecentDataAgentEvidenceDiagnostics"));
         });
     }
 

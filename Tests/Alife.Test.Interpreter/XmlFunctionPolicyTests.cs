@@ -26,6 +26,22 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void FunctionCallerStoresRecentDataAgentEvidenceDiagnosticsAsStringOnlyBridge()
+    {
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+
+        caller.RecordRecentDataAgentEvidenceDiagnostics("DataAgent evidence diagnostics\r\nanalysis_confidence=0.8");
+
+        Assert.That(
+            caller.RecentDataAgentEvidenceDiagnostics,
+            Is.EqualTo("DataAgent evidence diagnostics\nanalysis_confidence=0.8"));
+
+        caller.RecordRecentDataAgentEvidenceDiagnostics(" ");
+
+        Assert.That(caller.RecentDataAgentEvidenceDiagnostics, Is.Empty);
+    }
+
+    [Test]
     public void Handle_BlocksHighRiskFunctionByDefault()
     {
         PolicyHandler handler = new();

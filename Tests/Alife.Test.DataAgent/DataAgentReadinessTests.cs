@@ -153,9 +153,15 @@ public sealed class DataAgentReadinessTests
         Assert.Multiple(() =>
         {
             Assert.That(declaration, Does.Contain("DataAgentEvidenceDiagnosticsFormatter.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentAnalysisToolHandler.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentModuleService.cs"));
             Assert.That(declaration, Does.Contain("DataAgent evidence diagnostics"));
             Assert.That(declaration, Does.Contain("state_estimate_reason_code"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidenceDiagnosticsFormatter.Format"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidencePackBuilder"));
+            Assert.That(declaration, Does.Contain("functionService.RecordRecentDataAgentEvidenceDiagnostics"));
             Assert.That(declaration, Does.Contain("EvidenceDiagnosticsFormatterEmitsCompactStateEstimate"));
+            Assert.That(declaration, Does.Contain("StartCallsOrchestratorAndPublishesOrchestratedContext"));
         });
     }
 

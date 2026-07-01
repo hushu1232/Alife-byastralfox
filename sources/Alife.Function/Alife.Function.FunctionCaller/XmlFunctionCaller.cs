@@ -36,6 +36,29 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         }
     }
 
+    public string RecentDataAgentEvidenceDiagnostics
+    {
+        get
+        {
+            lock (dataAgentEvidenceDiagnosticsGate)
+            {
+                return recentDataAgentEvidenceDiagnostics;
+            }
+        }
+    }
+
+    public void RecordRecentDataAgentEvidenceDiagnostics(string? diagnostics)
+    {
+        string normalized = string.IsNullOrWhiteSpace(diagnostics)
+            ? string.Empty
+            : diagnostics.ReplaceLineEndings("\n").Trim();
+
+        lock (dataAgentEvidenceDiagnosticsGate)
+        {
+            recentDataAgentEvidenceDiagnostics = normalized;
+        }
+    }
+
     public ToolRouteDecision RouteCurrentTurn(string utterance, ToolRouteState state)
     {
         handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
@@ -151,8 +174,10 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
     readonly object dataAgentRouteGate = new();
     readonly object recentToolRouteGate = new();
+    readonly object dataAgentEvidenceDiagnosticsGate = new();
     string activeDataAgentSessionId = string.Empty;
     string activeDataAgentSessionStatus = string.Empty;
+    string recentDataAgentEvidenceDiagnostics = string.Empty;
     ToolRouteDecision? recentToolRouteDecision;
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;

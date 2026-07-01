@@ -219,6 +219,8 @@ public static class QChatDiagnosticsService
                text.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("[data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("[/data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("[/data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase);
     }
 

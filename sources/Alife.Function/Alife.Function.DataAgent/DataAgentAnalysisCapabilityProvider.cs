@@ -6,7 +6,8 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentAnalysisCapabilityProvider(
     IDataAgentAnalysisOrchestrator orchestrator,
     Action<string>? resultPublisher = null,
-    IDataAgentToolRouteContextAccessor? routeContextAccessor = null) : IDataAgentCapabilityProvider
+    IDataAgentToolRouteContextAccessor? routeContextAccessor = null,
+    Action<string>? evidenceDiagnosticsPublisher = null) : IDataAgentCapabilityProvider
 {
     public string Name => nameof(DataAgentAnalysisCapabilityProvider);
 
@@ -18,6 +19,7 @@ public sealed class DataAgentAnalysisCapabilityProvider(
         registrar.RegisterXmlHandlerWithoutStaticDocument(new XmlHandler(new DataAgentAnalysisToolHandler(
             orchestrator,
             resultPublisher,
-            routeContextAccessor)));
+            routeContextAccessor,
+            evidenceDiagnosticsPublisher)));
     }
 }

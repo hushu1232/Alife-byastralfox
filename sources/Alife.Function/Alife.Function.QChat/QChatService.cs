@@ -8939,6 +8939,8 @@ public partial class QChatService(
         {
             recentDataAgentEvidenceDiagnostics = normalized;
         }
+
+        functionService.RecordRecentDataAgentEvidenceDiagnostics(normalized);
     }
 
     string GetRecentSemanticDiagnostics()
@@ -8953,8 +8955,11 @@ public partial class QChatService(
     {
         lock (dataAgentEvidenceDiagnosticsGate)
         {
-            return recentDataAgentEvidenceDiagnostics;
+            if (string.IsNullOrWhiteSpace(recentDataAgentEvidenceDiagnostics) == false)
+                return recentDataAgentEvidenceDiagnostics;
         }
+
+        return functionService.RecentDataAgentEvidenceDiagnostics;
     }
 
     void UpdateRecentSemanticDiagnostics(
