@@ -1,0 +1,157 @@
+using Alife.Function.QChat;
+using NUnit.Framework;
+
+namespace Alife.Test.QChat;
+
+[TestFixture]
+public sealed class QChatRecentDiagnosticsCacheTests
+{
+    [Test]
+    public void GetLatestReturnsNewestEntryForSessionAndKind()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "qchat_semantic_window", "old", start);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "qchat_semantic_window", "new", start.AddSeconds(5));
+
+        QChatRecentDiagnosticEntry? latest = cache.GetLatest(
+            "session-a",
+            QChatRecentDiagnosticKind.SemanticState,
+            start.AddSeconds(6));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest, Is.Not.Null);
+            Assert.That(latest!.Text, Is.EqualTo("new"));
+            Assert.That(latest.Source, Is.EqualTo("qchat_semantic_window"));
+            Assert.That(latest.Redacted, Is.False);
+            Assert.That(latest.ReasonCode, Is.EqualTo("ok"));
+        });
+    }
+
+    [Test]
+    public void GetLatestIsolatesSessionsAndKinds()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "qchat_semantic_window", "semantic-a", now);
+        cache.Record(QChatRecentDiagnosticKind.DataAgentEvidence, "session-a", "dataagent_analysis", "evidence-a", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-b", "qchat_semantic_window", "semantic-b", now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(cache.GetLatest("session-a", QChatRecentDiagnosticKind.SemanticState, now)!.Text, Is.EqualTo("semantic-a"));
+            Assert.That(cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentEvidence, now)!.Text, Is.EqualTo("evidence-a"));
+            Assert.That(cache.GetLatest("session-b", QChatRecentDiagnosticKind.SemanticState, now)!.Text, Is.EqualTo("semantic-b"));
+            Assert.That(cache.GetLatest("session-b", QChatRecentDiagnosticKind.DataAgentEvidence, now), Is.Null);
+        });
+    }
+
+    [Test]
+    public void RecordEvictsOldestEntriesWithinSessionCapacity()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 2, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "first", start);
+        cache.Record(QChatRecentDiagnosticKind.DataAgentEvidence, "session-a", "source", "second", start.AddSeconds(1));
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-a", "source", "third", start.AddSeconds(2));
+
+        IReadOnlyList<QChatRecentDiagnosticEntry> entries = cache.GetRecent("session-a", start.AddSeconds(3));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(entries.Select(entry => entry.Text), Is.EqualTo(new[] { "second", "third" }));
+            Assert.That(cache.GetLatest("session-a", QChatRecentDiagnosticKind.SemanticState, start.AddSeconds(3)), Is.Null);
+        });
+    }
+
+    [Test]
+    public void GetRecentIgnoresExpiredEntries()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(1));
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "expired", start);
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-a", "source", "fresh", start.AddSeconds(70));
+
+        IReadOnlyList<QChatRecentDiagnosticEntry> entries = cache.GetRecent("session-a", start.AddSeconds(75));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(entries, Has.Count.EqualTo(1));
+            Assert.That(entries[0].Text, Is.EqualTo("fresh"));
+            Assert.That(cache.GetLatest("session-a", QChatRecentDiagnosticKind.SemanticState, start.AddSeconds(75)), Is.Null);
+        });
+    }
+
+    [TestCase("[tool_route_context]\nAllowed XML tools: dataagent_query\n[/tool_route_context]")]
+    [TestCase("[data_agent_evidence_pack]\nanalysis_confidence=0.9\n[/data_agent_evidence_pack]")]
+    [TestCase("connection_string=Host=localhost;Username=test")]
+    [TestCase("api_key=sk-test")]
+    [TestCase("SELECT * FROM users")]
+    public void RecordRedactsUnsafeDiagnosticText(string unsafeText)
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.DataAgentEvidence, "session-a", "dataagent_analysis", unsafeText, now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentEvidence, now)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Redacted, Is.True);
+            Assert.That(latest.ReasonCode, Is.EqualTo("hidden_context_redacted"));
+            Assert.That(latest.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(latest.Text, Does.Contain("state=redacted"));
+            Assert.That(latest.Text, Does.Not.Contain("[tool_route_context]"));
+            Assert.That(latest.Text, Does.Not.Contain("Allowed XML tools"));
+            Assert.That(latest.Text, Does.Not.Contain("sk-test"));
+            Assert.That(latest.Text, Does.Not.Contain("SELECT"));
+        });
+    }
+
+    [Test]
+    public void FormatSummaryEmitsStableRecentDiagnosticsLines()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "qchat_semantic_window", "QChat semantic diagnostics", now.AddSeconds(-3));
+        cache.Record(QChatRecentDiagnosticKind.DataAgentEvidence, "session-a", "dataagent_analysis", "DataAgent evidence diagnostics", now.AddSeconds(-12));
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-a", "tool_broker", "allowed=dataagent_analysis_start", now.AddSeconds(-2));
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary(
+            cache.GetRecent("session-a", now),
+            "session-a",
+            now);
+
+        string[] expectedLines =
+        [
+            "QChat recent diagnostics",
+            "semantic_state_recent=available age_seconds=3 source=qchat_semantic_window redacted=false",
+            "dataagent_evidence_recent=available age_seconds=12 source=dataagent_analysis redacted=false",
+            "tool_route_recent=available age_seconds=2 source=tool_broker redacted=false",
+            "session=session-a"
+        ];
+        Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void FormatSummaryEmitsUnavailableWhenEmpty()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary([], "session-a", now);
+
+        string[] expectedLines =
+        [
+            "QChat recent diagnostics",
+            "state=unavailable",
+            "reason=recent_diagnostics_empty",
+            "session=session-a"
+        ];
+        Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+}
