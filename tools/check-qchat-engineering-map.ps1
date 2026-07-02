@@ -57,6 +57,9 @@ Add-Check -Group "Harness" -Name "QChat tool route state wiring" -Path "Tests/Al
 Add-Check -Group "Harness" -Name "QChat owner Tool Broker diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentToolRouteTrace", "Tool Broker diagnostics", "SanitizeToolRouteTrace")
 Add-Check -Group "Harness" -Name "QChat semantic diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentSemanticEstimate", "diag semantic", "BuildSemanticDiagnosticsText")
 Add-Check -Group "Harness" -Name "DataAgent owner evidence diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("DataAgentCommandPrefix", "diag evidence", "RecentDataAgentEvidence", "BuildDataAgentEvidenceDiagnosticsText", "[data_agent_evidence_pack]", "hidden_context_redacted")
+Add-Check -Group "Harness" -Name "QChat recent diagnostics cache" -Path "sources/Alife.Function/Alife.Function.QChat/QChatRecentDiagnosticsCache.cs" -Patterns @("QChatRecentDiagnosticsCache", "maxEntriesPerSession", "GetLatest", "GetRecent", "PruneExpiredLocked")
+Add-Check -Group "Harness" -Name "QChat recent diagnostics command" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("diag recent", "BuildRecentDiagnosticsText", "QChatRecentDiagnosticsFormatter.FormatSummary")
+Add-Check -Group "Harness" -Name "QChat diagnostics cache redaction" -Path "sources/Alife.Function/Alife.Function.QChat/QChatRecentDiagnosticsCache.cs" -Patterns @("hidden_context_redacted", "[tool_route_context]", "[data_agent_evidence_pack]", "Allowed XML tools")
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
@@ -117,7 +120,7 @@ $requiredPassed = @($results | Where-Object { $_.Required -and $_.Ok }).Count
 $requiredMissing = @($results | Where-Object { $_.Required -and -not $_.Ok }).Count
 $optionalPresent = @($results | Where-Object { -not $_.Required -and $_.Ok }).Count
 $optionalMissing = @($results | Where-Object { -not $_.Required -and -not $_.Ok }).Count
-$expectedRequired = 47
+$expectedRequired = 50
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output ("Summary: {0} required passed, {1} required missing, {2} optional present, {3} optional missing" -f $requiredPassed, $requiredMissing, $optionalPresent, $optionalMissing)

@@ -27,6 +27,9 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "QChat owner Tool Broker diagnostics",
         "QChat semantic diagnostics",
         "DataAgent owner evidence diagnostics",
+        "QChat recent diagnostics cache",
+        "QChat recent diagnostics command",
+        "QChat diagnostics cache redaction",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration"
     ];

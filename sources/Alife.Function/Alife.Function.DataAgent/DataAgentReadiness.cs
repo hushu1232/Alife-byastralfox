@@ -755,6 +755,15 @@ public static class DataAgentReadiness
             checks.Add(evidenceDiagnosticsReady
                 ? Pass("DataAgentEvidenceDiagnosticsPresent", "owner_diag=true;analysis_confidence=true;risk_level=true")
                 : Fail("DataAgentEvidenceDiagnosticsPresent", acceptedEvidenceDiagnostics.ReplaceLineEndings(" ")));
+
+            bool recentDiagnosticsBridgeReady =
+                typeof(DataAgentAnalysisToolHandler).GetConstructors().Any(ctor =>
+                    ctor.GetParameters().Any(parameter => parameter.Name == "evidenceDiagnosticsPublisher")) &&
+                typeof(DataAgentModuleService).Assembly.GetType("Alife.Function.DataAgent.DataAgentEvidenceDiagnosticsFormatter") is not null &&
+                typeof(DataAgentModuleService).Assembly.GetType("Alife.Function.QChat.QChatRecentDiagnosticsCache") is null;
+            checks.Add(recentDiagnosticsBridgeReady
+                ? Pass("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=true;cache_ready=true")
+                : Fail("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=false;cache_ready=false"));
         }
         catch (Exception ex)
         {
