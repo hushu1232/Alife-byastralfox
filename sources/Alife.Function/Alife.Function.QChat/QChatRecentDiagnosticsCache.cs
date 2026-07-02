@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 
 namespace Alife.Function.QChat;
 
@@ -24,12 +23,6 @@ public sealed record QChatRecentDiagnosticEntry(
 public sealed class QChatRecentDiagnosticsCache
 {
     const int MaxTextChars = 900;
-    const string TruncationEllipsis = "...";
-
-    static readonly Regex ApiKeyPattern = new(@"\bapi[-_]?key\s*[:=]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    static readonly Regex AuthorizationBearerPattern = new(@"\bauthorization\s*:\s*bearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    static readonly Regex ConnectionSecretPattern = new(@"\b(connection_string|host|username|user\s*id|password)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    static readonly Regex SqlStatementPattern = new(@"\b(select|insert|update|delete)\b\s+|\bdrop\s+(table|database|schema)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     readonly object gate = new();
     readonly int maxEntriesPerSession;
@@ -112,7 +105,7 @@ public sealed class QChatRecentDiagnosticsCache
         string text,
         DateTimeOffset createdAt)
     {
-        if (ContainsUnsafeDiagnosticText(text))
+        if (QChatDiagnosticTextSanitizer.ContainsUnsafeDiagnosticText(text))
         {
             return new QChatRecentDiagnosticEntry(
                 kind,
@@ -128,7 +121,7 @@ public sealed class QChatRecentDiagnosticsCache
             kind,
             sessionKey,
             source,
-            NormalizeDiagnosticText(text),
+            QChatDiagnosticTextSanitizer.NormalizeDiagnosticText(text, MaxTextChars),
             createdAt,
             Redacted: false,
             ReasonCode: "ok");
@@ -160,34 +153,9 @@ public sealed class QChatRecentDiagnosticsCache
             entries.Remove(entryToRemove);
     }
 
-    static string NormalizeDiagnosticText(string text)
-    {
-        string normalized = text.ReplaceLineEndings(Environment.NewLine).Trim();
-        return normalized.Length <= MaxTextChars
-            ? normalized
-            : normalized[..(MaxTextChars - TruncationEllipsis.Length)] + TruncationEllipsis;
-    }
-
     static string NormalizeToken(string value)
     {
         return value.ReplaceLineEndings(" ").Replace(';', ',').Trim();
-    }
-
-    static bool ContainsUnsafeDiagnosticText(string text)
-    {
-        return text.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("connection_string", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("sk-", StringComparison.OrdinalIgnoreCase) ||
-               ApiKeyPattern.IsMatch(text) ||
-               AuthorizationBearerPattern.IsMatch(text) ||
-               ConnectionSecretPattern.IsMatch(text) ||
-               SqlStatementPattern.IsMatch(text);
     }
 
     sealed class QChatRecentDiagnosticRecord

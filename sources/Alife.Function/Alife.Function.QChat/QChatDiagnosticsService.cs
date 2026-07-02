@@ -243,47 +243,14 @@ public static class QChatDiagnosticsService
 
     static string SanitizeDiagnosticText(string? text, string title)
     {
-        if (string.IsNullOrWhiteSpace(text))
-            return string.Empty;
-
-        if (ContainsHiddenDiagnosticContext(text))
-            return string.Join(Environment.NewLine,
-                title,
-                "state=redacted",
-                "reason=hidden_context_redacted");
-
-        string normalized = text.ReplaceLineEndings(Environment.NewLine).Trim();
-        return normalized.Length <= 900
-            ? normalized
-            : normalized[..900] + "...";
-    }
-
-    static bool ContainsHiddenDiagnosticContext(string text)
-    {
-        return text.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/tool_route_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/data_agent_context]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("[/data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase);
+        return QChatDiagnosticTextSanitizer.SanitizeDiagnosticText(text, title);
     }
 
     static string SanitizeToolRouteTrace(string? trace)
     {
-        if (string.IsNullOrWhiteSpace(trace))
-            return "none";
-
-        if (ContainsHiddenDiagnosticContext(trace))
-        {
-            return "redacted";
-        }
-
-        string normalized = trace.ReplaceLineEndings(" ").Trim();
-        return normalized.Length <= 240
-            ? normalized
-            : normalized[..240] + "...";
+        return QChatDiagnosticTextSanitizer.SanitizeToolRouteTrace(trace);
     }
+
     static string FormatEnabled(bool value)
     {
         return value ? "enabled" : "disabled";

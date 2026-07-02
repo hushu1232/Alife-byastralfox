@@ -487,6 +487,56 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("connection_string=Host=localhost;Username=alife;Password=secret", "connection_string")]
+    [TestCase("api_key=sk-test-secret", "sk-test-secret")]
+    [TestCase("Authorization: Bearer token-abcdef123456", "token-abcdef123456")]
+    [TestCase("SELECT*FROM users", "SELECT")]
+    [TestCase("CREATE TABLE secrets(id int)", "CREATE TABLE")]
+    public void TryHandleDataAgentEvidenceDiagnosticsRedactsUnsafeLegacyFallbackText(
+        string unsafeText,
+        string forbiddenText)
+    {
+        QChatDiagnosticsRuntimeState state = new(RecentDataAgentEvidence: unsafeText);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain(forbiddenText));
+            Assert.That(result.Text, Does.Not.Contain("Password=secret"));
+        });
+    }
+
+    [Test]
+    public void TryHandleToolBrokerDiagnosticsRedactsUnsafeLegacyFallbackTrace()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentToolRouteTrace: "allowed=none; Authorization: Bearer token-abcdef123456; SELECT*FROM users");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag toolbroker",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("Tool Broker diagnostics"));
+            Assert.That(result.Text, Does.Contain("recent=redacted"));
+            Assert.That(result.Text, Does.Not.Contain("token-abcdef123456"));
+            Assert.That(result.Text, Does.Not.Contain("SELECT"));
+        });
+    }
+
     [Test]
     public void TryHandleRecentDiagnosticsReturnsSessionCacheSummary()
     {

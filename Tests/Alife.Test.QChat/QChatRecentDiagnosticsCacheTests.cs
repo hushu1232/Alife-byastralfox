@@ -220,9 +220,15 @@ public sealed class QChatRecentDiagnosticsCacheTests
     [TestCase("api-key=secret")]
     [TestCase("apiKey=secret")]
     [TestCase("SELECT * FROM users")]
+    [TestCase("SELECT*FROM users")]
     [TestCase("SELECT\n* FROM users")]
     [TestCase("DELETE\nFROM query_audit")]
     [TestCase("DROP TABLE users")]
+    [TestCase("CREATE TABLE secrets(id int)")]
+    [TestCase("ALTER TABLE users ADD COLUMN secret text")]
+    [TestCase("TRUNCATE TABLE audit_log")]
+    [TestCase("MERGE INTO users USING source")]
+    [TestCase("EXEC sp_read_secret")]
     public void RecordRedactsUnsafeDiagnosticText(string unsafeText)
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
