@@ -60,7 +60,7 @@ public static class QChatDiagnosticsService
         if (dataAgentCommand)
             return command.ToLowerInvariant() switch
             {
-                "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState)),
+                "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
                 _ => new QChatDiagnosticsResult(false, string.Empty)
             };
 
@@ -82,9 +82,9 @@ public static class QChatDiagnosticsService
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
             "diag recent" or "diagnostics recent" => Handled(BuildRecentDiagnosticsText(runtimeState, route)),
-            "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState)),
-            "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState)),
-            "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState)),
+            "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState, route)),
+            "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState, route)),
+            "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -178,9 +178,9 @@ public static class QChatDiagnosticsService
         return QChatRecentDiagnosticsFormatter.FormatSummary(entries, sessionKey, now);
     }
 
-    static string BuildToolBrokerText(QChatDiagnosticsRuntimeState runtimeState)
+    static string BuildToolBrokerText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
     {
-        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.ToolRoute);
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.ToolRoute);
         if (string.IsNullOrWhiteSpace(cached) == false)
             return cached;
 
@@ -190,9 +190,9 @@ public static class QChatDiagnosticsService
             $"recent={trace}");
     }
 
-    static string BuildSemanticDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
+    static string BuildSemanticDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
     {
-        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.SemanticState);
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.SemanticState);
         if (string.IsNullOrWhiteSpace(cached) == false)
             return cached;
 
@@ -204,9 +204,9 @@ public static class QChatDiagnosticsService
             : sanitized;
     }
 
-    static string BuildDataAgentEvidenceDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
+    static string BuildDataAgentEvidenceDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
     {
-        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.DataAgentEvidence);
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.DataAgentEvidence);
         if (string.IsNullOrWhiteSpace(cached) == false)
             return cached;
 
@@ -221,13 +221,17 @@ public static class QChatDiagnosticsService
             : sanitized;
     }
 
-    static string? GetRecentCachedText(QChatDiagnosticsRuntimeState runtimeState, QChatRecentDiagnosticKind kind)
+    static string? GetRecentCachedText(
+        QChatDiagnosticsRuntimeState runtimeState,
+        QChatAgentRoute route,
+        QChatRecentDiagnosticKind kind)
     {
-        if (runtimeState.RecentDiagnosticsCache is null || string.IsNullOrWhiteSpace(runtimeState.SessionKey))
+        if (runtimeState.RecentDiagnosticsCache is null)
             return null;
 
+        string sessionKey = GetDiagnosticsSessionKey(runtimeState, route);
         DateTimeOffset now = runtimeState.DiagnosticsNow ?? DateTimeOffset.UtcNow;
-        return runtimeState.RecentDiagnosticsCache.GetLatest(runtimeState.SessionKey, kind, now)?.Text;
+        return runtimeState.RecentDiagnosticsCache.GetLatest(sessionKey, kind, now)?.Text;
     }
 
     static string GetDiagnosticsSessionKey(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)

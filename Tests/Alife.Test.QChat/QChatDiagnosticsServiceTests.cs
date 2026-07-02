@@ -669,6 +669,107 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleSemanticDiagnosticsUsesRouteSessionKeyWhenRuntimeSessionKeyIsOmitted()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatAgentRoute route = CreateRoute();
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.SemanticState,
+            route.SessionKey,
+            "qchat_semantic_window",
+            string.Join(Environment.NewLine,
+                "QChat semantic diagnostics",
+                "semantic_completion=0.801",
+                "reason_code=route_session_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentSemanticEstimate: "legacy semantic text",
+            RecentDiagnosticsCache: cache,
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag semantic",
+            route,
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("semantic_completion=0.801"));
+            Assert.That(result.Text, Does.Contain("reason_code=route_session_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy semantic text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentEvidenceDiagnosticsUsesRouteSessionKeyWhenRuntimeSessionKeyIsOmitted()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatAgentRoute route = CreateRoute();
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentEvidence,
+            route.SessionKey,
+            "dataagent_analysis",
+            string.Join(Environment.NewLine,
+                "DataAgent evidence diagnostics",
+                "analysis_confidence=0.812",
+                "risk_level=0.202"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentEvidence: "legacy evidence text",
+            RecentDiagnosticsCache: cache,
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            route,
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("analysis_confidence=0.812"));
+            Assert.That(result.Text, Does.Contain("risk_level=0.202"));
+            Assert.That(result.Text, Does.Not.Contain("legacy evidence text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleToolBrokerDiagnosticsUsesRouteSessionKeyWhenRuntimeSessionKeyIsOmitted()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatAgentRoute route = CreateRoute();
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.ToolRoute,
+            route.SessionKey,
+            "tool_broker",
+            string.Join(Environment.NewLine,
+                "Tool Broker diagnostics",
+                "recent=allowed=dataagent_analysis_start; denied=none; reason=route_session_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentToolRouteTrace: "legacy-route-trace",
+            RecentDiagnosticsCache: cache,
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag toolbroker",
+            route,
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("allowed=dataagent_analysis_start"));
+            Assert.That(result.Text, Does.Contain("reason=route_session_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy-route-trace"));
+        });
+    }
+
+    [Test]
     public void TryHandleSemanticDiagnosticsFallsBackToLegacyRecentStringWhenCacheMissesKind()
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
