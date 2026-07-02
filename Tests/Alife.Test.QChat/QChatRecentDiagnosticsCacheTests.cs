@@ -225,6 +225,7 @@ public sealed class QChatRecentDiagnosticsCacheTests
     [TestCase("SELECT*FROM users")]
     [TestCase("SELECT COUNT(*) FROM users")]
     [TestCase("SELECT u.id FROM users")]
+    [TestCase("SELECT very_long_column_name_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa FROM users")]
     [TestCase("SELECT\n* FROM users")]
     [TestCase("DELETE\nFROM query_audit")]
     [TestCase("DROP TABLE users")]

@@ -10,8 +10,9 @@ static class QChatDiagnosticTextSanitizer
     static readonly Regex ApiKeyPattern = new(@"\bapi[-_]?key\s*[:=]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex AuthorizationBearerPattern = new(@"\b(?:authorization\s*:\s*)?bearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex ConnectionSecretPattern = new(@"\b(connection[_\s-]?string|host|server|data\s+source|username|user\s*id|userid|uid|user|password|pwd)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex SqlSelectPattern = new(@"\bselect\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex SqlStatementPattern = new(
-        @"\bselect\b[\s\S]{0,200}\bfrom\b|\b(insert\s+into|update\s+\w+|delete\s+from|drop\s+(table|database|schema)|create\s+(table|database|schema|index|view)|alter\s+(table|database|schema|index|view)|truncate\s+(table|database)|merge\s+into|exec(ute)?\s+\w+)\b",
+        @"\b(insert\s+into|update\s+\w+|delete\s+from|drop\s+(table|database|schema)|create\s+(table|database|schema|index|view)|alter\s+(table|database|schema|index|view)|truncate\s+(table|database)|merge\s+into|exec(ute)?\s+\w+)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
 
     public static bool ContainsUnsafeDiagnosticText(string text)
@@ -28,6 +29,7 @@ static class QChatDiagnosticTextSanitizer
                ApiKeyPattern.IsMatch(text) ||
                AuthorizationBearerPattern.IsMatch(text) ||
                ConnectionSecretPattern.IsMatch(text) ||
+               SqlSelectPattern.IsMatch(text) ||
                SqlStatementPattern.IsMatch(text);
     }
 

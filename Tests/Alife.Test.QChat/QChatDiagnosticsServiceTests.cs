@@ -495,6 +495,7 @@ public class QChatDiagnosticsServiceTests
     [TestCase("SELECT*FROM users", "SELECT")]
     [TestCase("SELECT COUNT(*) FROM users", "SELECT")]
     [TestCase("SELECT u.id FROM users", "SELECT")]
+    [TestCase("SELECT very_long_column_name_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa FROM users", "SELECT")]
     [TestCase("CREATE TABLE secrets(id int)", "CREATE TABLE")]
     public void TryHandleDataAgentEvidenceDiagnosticsRedactsUnsafeLegacyFallbackText(
         string unsafeText,
