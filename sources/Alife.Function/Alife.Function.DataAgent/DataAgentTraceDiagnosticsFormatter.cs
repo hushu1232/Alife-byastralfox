@@ -11,7 +11,7 @@ public static class DataAgentTraceDiagnosticsFormatter
     const int MaxFieldLength = 160;
 
     static readonly Regex SqlLikePattern = new(
-        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with)\b",
+        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with|from|join|where|having|limit)\b|\border\s+by\b|\bgroup\s+by\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex BearerPattern = new(
@@ -119,9 +119,8 @@ public static class DataAgentTraceDiagnosticsFormatter
     static bool ShouldRedactFactKey(string key)
     {
         return key.Contains("sql", StringComparison.OrdinalIgnoreCase) ||
-            key.Equals("table", StringComparison.OrdinalIgnoreCase) ||
-            key.Contains("_table", StringComparison.OrdinalIgnoreCase) ||
-            key.Equals("dataset", StringComparison.OrdinalIgnoreCase);
+            key.Contains("table", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("dataset", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsUnsafe(string value)

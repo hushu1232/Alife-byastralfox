@@ -175,6 +175,97 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
     }
 
     [Test]
+    public void FormatRedactsTableAndDatasetIdentifierKeyVariants()
+    {
+        DataAgentTraceTimeline timeline = Timeline(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            1,
+            Terminal: false,
+            [
+                Event(
+                    DataAgentTraceEventKind.Execute,
+                    DataAgentTraceEventStatus.Succeeded,
+                    "read_only_query_executed",
+                    queryAllowed: true,
+                    executedSql: true,
+                    terminal: false,
+                    new Dictionary<string, string>
+                    {
+                        ["table_name"] = "document_index",
+                        ["tableName"] = "orders",
+                        ["tables"] = "users,orders",
+                        ["dataset_name"] = "finance_records",
+                        ["source_dataset"] = "private_metrics",
+                        ["raw_dataset"] = "tenant_audit",
+                        ["rows"] = "3",
+                        ["risk"] = "low",
+                        ["analysis_confidence"] = "0.9",
+                        ["route_allowed"] = "true",
+                        ["can_continue"] = "true"
+                    })
+            ]);
+
+        string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("analysis_confidence=0.9"));
+            Assert.That(text, Does.Contain("can_continue=true"));
+            Assert.That(text, Does.Contain("dataset_name=redacted"));
+            Assert.That(text, Does.Contain("raw_dataset=redacted"));
+            Assert.That(text, Does.Contain("risk=low"));
+            Assert.That(text, Does.Contain("route_allowed=true"));
+            Assert.That(text, Does.Contain("rows=3"));
+            Assert.That(text, Does.Contain("source_dataset=redacted"));
+            Assert.That(text, Does.Contain("tableName=redacted"));
+            Assert.That(text, Does.Contain("tables=redacted"));
+            Assert.That(text, Does.Contain("table_name=redacted"));
+            Assert.That(text, Does.Not.Contain("document_index"));
+            Assert.That(text, Does.Not.Contain("orders"));
+            Assert.That(text, Does.Not.Contain("users"));
+            Assert.That(text, Does.Not.Contain("finance_records"));
+            Assert.That(text, Does.Not.Contain("private_metrics"));
+            Assert.That(text, Does.Not.Contain("tenant_audit"));
+        });
+    }
+
+    [TestCase("FROM document_index WHERE tenant_id = 1", "document_index", "tenant_id")]
+    [TestCase("JOIN users ON users.id = document_index.owner_id", "JOIN users", "owner_id")]
+    [TestCase("ORDER BY created_at DESC", "ORDER BY", "created_at")]
+    [TestCase("WHERE deleted_at IS NULL", "WHERE", "deleted_at")]
+    public void FormatRedactsSqlFragments(string unsafeValue, string firstUnsafeSubstring, string secondUnsafeSubstring)
+    {
+        DataAgentTraceTimeline timeline = Timeline(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            1,
+            Terminal: false,
+            [
+                Event(
+                    DataAgentTraceEventKind.Execute,
+                    DataAgentTraceEventStatus.Succeeded,
+                    "read_only_query_executed",
+                    queryAllowed: true,
+                    executedSql: true,
+                    terminal: false,
+                    new Dictionary<string, string>
+                    {
+                        ["detail"] = unsafeValue
+                    })
+            ]);
+
+        string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("detail=redacted"));
+            Assert.That(text, Does.Not.Contain(firstUnsafeSubstring));
+            Assert.That(text, Does.Not.Contain(secondUnsafeSubstring));
+        });
+    }
+
+    [Test]
     public void FormatEmitsTimelineTurnCountFaithfully()
     {
         DataAgentTraceTimeline timeline = Timeline(
