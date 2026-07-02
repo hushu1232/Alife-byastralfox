@@ -2451,6 +2451,7 @@ public partial class QChatService(
     readonly object semanticDiagnosticsGate = new();
     readonly object dataAgentEvidenceDiagnosticsGate = new();
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
+    readonly QChatRecentDiagnosticsCache recentDiagnosticsCache = new();
     readonly object pokeCooldownGate = new();
     readonly Dictionary<string, DateTimeOffset> pokeCooldownTimes = new();
     static readonly Regex BrowserMediaUrl = new(
@@ -6710,7 +6711,8 @@ public partial class QChatService(
             WriteQChatDiagnostic,
             GetRecentToolRouteTrace,
             GetRecentSemanticDiagnostics,
-            GetRecentDataAgentEvidenceDiagnostics);
+            GetRecentDataAgentEvidenceDiagnostics,
+            recentDiagnosticsCache);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -8916,10 +8918,21 @@ public partial class QChatService(
 
         using IDisposable _ = functionService.UseToolRouteState(routeState);
         string response = await ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+        string trace;
         lock (toolRouteDiagnosticsGate)
         {
             recentToolRouteTrace = FormatToolRouteTrace(functionService.RecentToolRouteDecision);
+            trace = recentToolRouteTrace;
         }
+
+        recentDiagnosticsCache.Record(
+            QChatRecentDiagnosticKind.ToolRoute,
+            BuildRecentDiagnosticsSessionKey(message),
+            "tool_broker",
+            string.Join(Environment.NewLine,
+                "Tool Broker diagnostics",
+                $"recent={trace}"),
+            DateTimeOffset.UtcNow);
 
         return response;
     }
@@ -8941,6 +8954,15 @@ public partial class QChatService(
         }
 
         functionService.RecordRecentDataAgentEvidenceDiagnostics(normalized);
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        recentDiagnosticsCache.Record(
+            QChatRecentDiagnosticKind.DataAgentEvidence,
+            replySession != null
+                ? BuildRecentDiagnosticsSessionKey(replySession)
+                : BuildOwnerPrivateRecentDiagnosticsSessionKey(),
+            "dataagent_analysis",
+            normalized,
+            DateTimeOffset.UtcNow);
     }
 
     string GetRecentSemanticDiagnostics()
@@ -8986,6 +9008,16 @@ public partial class QChatService(
         lock (semanticDiagnosticsGate)
         {
             recentSemanticDiagnostics = diagnostics;
+        }
+
+        if (session.Message != null)
+        {
+            recentDiagnosticsCache.Record(
+                QChatRecentDiagnosticKind.SemanticState,
+                BuildRecentDiagnosticsSessionKey(session.Message),
+                "qchat_semantic_window",
+                diagnostics,
+                now);
         }
     }
 
@@ -9044,6 +9076,47 @@ public partial class QChatService(
         return string.IsNullOrWhiteSpace(diagnostics)
             ? string.Empty
             : diagnostics.ReplaceLineEndings(Environment.NewLine).Trim();
+    }
+
+    string BuildRecentDiagnosticsSessionKey(QChatInboundMessage message)
+    {
+        long botAccountId = message.ResolvedBotId > 0
+            ? message.ResolvedBotId
+            : Math.Max(0, Configuration?.BotId ?? 0);
+        string kindSegment = message.MessageType == OneBotMessageType.Group ? "group" : "private";
+        long peerId = message.MessageType == OneBotMessageType.Group
+            ? message.TargetId
+            : message.SenderId > 0 ? message.SenderId : message.TargetId;
+
+        return BuildRecentDiagnosticsSessionKey(botAccountId, kindSegment, peerId);
+    }
+
+    string BuildRecentDiagnosticsSessionKey(QChatReplySession session)
+    {
+        long botAccountId = session.ResolvedBotId > 0
+            ? session.ResolvedBotId
+            : Math.Max(0, Configuration?.BotId ?? 0);
+        string kindSegment = session.MessageType == OneBotMessageType.Group ? "group" : "private";
+        long peerId = session.MessageType == OneBotMessageType.Group
+            ? session.TargetId
+            : session.SenderId > 0 ? session.SenderId : session.TargetId;
+
+        return BuildRecentDiagnosticsSessionKey(botAccountId, kindSegment, peerId);
+    }
+
+    string BuildOwnerPrivateRecentDiagnosticsSessionKey()
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        long botAccountId = Math.Max(0, config.BotId);
+        long peerId = Math.Max(0, config.OwnerId);
+        return BuildRecentDiagnosticsSessionKey(botAccountId, "private", peerId);
+    }
+
+    static string BuildRecentDiagnosticsSessionKey(long botAccountId, string kindSegment, long peerId)
+    {
+        string agentId = QChatAgentIdentityRegistry.CreateDefault().ResolveByBotId(botAccountId)?.AgentId
+                         ?? $"qq-{botAccountId}";
+        return $"qq:{agentId}:{botAccountId}:{kindSegment}:{peerId}";
     }
 
     static string FormatToolRouteTrace(ToolRouteDecision? route)

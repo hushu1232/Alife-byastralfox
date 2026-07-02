@@ -3505,7 +3505,159 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task OwnerPrivateQChatSemanticDiagnosticsReturnsUnavailableAfterSettleDispatchCompletes()
+    public async Task OwnerPrivateQChatRecentDiagnosticsUsesPendingSemanticSettleWindowCache()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new()
+            {
+                BotId = 2905391496
+            };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 5000,
+                RecallGraceMilliseconds = 1,
+                MaxSettleMilliseconds = 6000
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                MessageId = 7201,
+                UserId = 3045846738,
+                RawMessage = "keep this semantic window pending"
+            });
+            await WaitForQChatDiagnosticEventAsync(storageRoot, "qchat-settle-dispatch-scheduled");
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/qchat diag recent"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string reply = runtime.PrivateMessages.Single().Message;
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(reply, Does.Contain("QChat recent diagnostics"));
+                Assert.That(reply, Does.Contain("semantic_state_recent=available"));
+                Assert.That(reply, Does.Contain("source=qchat_semantic_window"));
+                Assert.That(reply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+                Assert.That(reply, Does.Not.Contain("reason=recent_diagnostics_empty"));
+            });
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateDataAgentEvidenceCommandUsesRecordedCacheWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+        service.RecordRecentDataAgentEvidenceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.913",
+            "risk_level=0.144"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag evidence"
+        });
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+        string evidenceReply = runtime.PrivateMessages[0].Message;
+        string recentReply = runtime.PrivateMessages[1].Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(evidenceReply, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(evidenceReply, Does.Contain("analysis_confidence=0.913"));
+            Assert.That(evidenceReply, Does.Not.Contain("state=unavailable"));
+            Assert.That(recentReply, Does.Contain("dataagent_evidence_recent=available"));
+            Assert.That(recentReply, Does.Contain("source=dataagent_analysis"));
+            Assert.That(recentReply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+        });
+    }
+
+    [Test]
+    public async Task QChatRecentDiagnosticsAreSessionScopedBetweenPrivateAndGroup()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        service.RecordRecentDataAgentEvidenceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent evidence diagnostics",
+            "analysis_confidence=0.667"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            GroupId = 778899,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1 && runtime.GroupMessages.Count == 1);
+        string privateReply = runtime.PrivateMessages.Single().Message;
+        string groupReply = runtime.GroupMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(privateReply, Does.Contain("dataagent_evidence_recent=available"));
+            Assert.That(privateReply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+            Assert.That(groupReply, Does.Contain("reason=recent_diagnostics_empty"));
+            Assert.That(groupReply, Does.Contain("session=qq:xiayu:2905391496:group:778899"));
+            Assert.That(groupReply, Does.Not.Contain("analysis_confidence=0.667"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateQChatSemanticDiagnosticsUsesCachedStateAfterSettleDispatchCompletes()
     {
         FakeOneBotRuntime runtime = new()
         {
@@ -3549,9 +3701,10 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(reply, Does.Contain("QChat semantic diagnostics"));
-            Assert.That(reply, Does.Contain("state=unavailable"));
-            Assert.That(reply, Does.Contain("reason=semantic_window_empty"));
-            Assert.That(reply, Does.Not.Contain("window_messages=1"));
+            Assert.That(reply, Does.Contain("semantic_completion="));
+            Assert.That(reply, Does.Contain("continuation_likelihood="));
+            Assert.That(reply, Does.Contain("window_messages=1"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
         });
     }
 
