@@ -111,6 +111,149 @@ public sealed class DataAgentAnalysisToolHandlerTests
     }
 
     [Test]
+    public void StartPublishesTraceDiagnosticsForAcceptedQuery()
+    {
+        List<string> traceDiagnostics = [];
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.SchemaContext, DataAgentOrchestrationStepStatus.Succeeded, "schema_context_ready", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Plan, DataAgentOrchestrationStepStatus.Succeeded, "plan_created", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "read_only_sql_validated", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                1,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]")
+        });
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_start",
+            true,
+            true,
+            "route-1",
+            "analysis_start",
+            "route_allowed",
+            string.Empty));
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            routeContextAccessor: routeAccessor,
+            traceDiagnosticsPublisher: traceDiagnostics.Add);
+
+        handler.Start("xiayu", "Which documents describe DataAgent?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(traceDiagnostics, Has.Count.EqualTo(1));
+            string trace = traceDiagnostics.Single();
+            Assert.That(trace, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(trace, Does.Contain("session=session-1"));
+            Assert.That(trace, Does.Contain("RouteGate Succeeded reason=route_allowed"));
+            Assert.That(trace, Does.Contain("SchemaContext Succeeded reason=schema_context_ready"));
+            Assert.That(trace, Does.Contain("Planner Succeeded reason=plan_created"));
+            Assert.That(trace, Does.Contain("SqlSafety Succeeded reason=read_only_sql_validated"));
+            Assert.That(trace, Does.Contain("Execute Succeeded reason=read_only_query_executed"));
+            Assert.That(trace, Does.Contain("EvidencePack Succeeded"));
+            Assert.That(trace, Does.Contain("Checkpoint Succeeded reason=checkpoint_created"));
+            Assert.That(trace, Does.Contain("executed_sql=true"));
+            Assert.That(trace, Does.Not.Contain("[data_agent_evidence_pack]"));
+        });
+    }
+
+    [Test]
+    public void StartRouteDeniedTraceDoesNotContainExecuteEvent()
+    {
+        List<string> traceDiagnostics = [];
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                0,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]")
+        });
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_start",
+            true,
+            false,
+            "route-denied",
+            "analysis_start",
+            "tool_route_required",
+            string.Empty));
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            routeContextAccessor: routeAccessor,
+            traceDiagnosticsPublisher: traceDiagnostics.Add);
+
+        handler.Start("xiayu", "Which documents describe DataAgent?");
+
+        Assert.Multiple(() =>
+        {
+            string trace = traceDiagnostics.Single();
+            Assert.That(trace, Does.Contain("RouteGate Rejected reason=tool_route_required"));
+            Assert.That(trace, Does.Contain("Reject Rejected reason=tool_route_required"));
+            Assert.That(trace, Does.Contain("Checkpoint Succeeded reason=checkpoint_created"));
+            Assert.That(trace, Does.Not.Contain("Execute Succeeded"));
+            Assert.That(trace, Does.Contain("query_allowed=false"));
+        });
+    }
+
+    [Test]
+    public void SummarizePublishesTerminalTraceWithoutSqlExecution()
+    {
+        List<string> traceDiagnostics = [];
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["summarize"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Summarized,
+                DataAgentAnalysisTurnIntent.Summarize,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Summarize, DataAgentOrchestrationStepStatus.Succeeded, "terminal_summary", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                2,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\nstatus=Summarized\n[/data_agent_analysis_session_context]")
+        });
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_summarize",
+            true,
+            true,
+            "route-summary",
+            "analysis_summarize",
+            "route_allowed",
+            "session-1"));
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            routeContextAccessor: routeAccessor,
+            traceDiagnosticsPublisher: traceDiagnostics.Add);
+
+        handler.Summarize("session-1");
+
+        Assert.Multiple(() =>
+        {
+            string trace = traceDiagnostics.Single();
+            Assert.That(trace, Does.Contain("Summarize Succeeded reason=terminal_summary"));
+            Assert.That(trace, Does.Contain("terminal=true"));
+            Assert.That(trace, Does.Contain("executed_sql=false"));
+            Assert.That(trace, Does.Not.Contain("Execute Succeeded"));
+        });
+    }
+
+    [Test]
     public void StartWithoutRouteContextFailsClosedAtRequestBoundary()
     {
         RecordingOrchestrator orchestrator = CreateOrchestrator();
@@ -440,7 +583,7 @@ public sealed class DataAgentAnalysisToolHandlerTests
                 turnCount,
                 CanContinue: status != DataAgentAnalysisSessionStatus.Ended,
                 CanSummarize: turnCount > 0 && status != DataAgentAnalysisSessionStatus.Ended,
-                Terminal: status == DataAgentAnalysisSessionStatus.Ended),
+                Terminal: status is DataAgentAnalysisSessionStatus.Summarized or DataAgentAnalysisSessionStatus.Ended),
             response);
     }
 

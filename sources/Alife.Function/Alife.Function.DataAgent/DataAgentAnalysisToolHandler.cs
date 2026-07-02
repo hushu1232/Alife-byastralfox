@@ -8,10 +8,16 @@ public sealed class DataAgentAnalysisToolHandler(
     IDataAgentAnalysisOrchestrator orchestrator,
     Action<string>? resultPublisher = null,
     IDataAgentToolRouteContextAccessor? routeContextAccessor = null,
-    Action<string>? evidenceDiagnosticsPublisher = null)
+    Action<string>? evidenceDiagnosticsPublisher = null,
+    Action<string>? traceDiagnosticsPublisher = null,
+    IDataAgentTraceRecorder? traceRecorder = null,
+    Func<DateTimeOffset>? traceClock = null)
 {
     readonly IDataAgentToolRouteContextAccessor routeContextAccessor =
         routeContextAccessor ?? MissingDataAgentToolRouteContextAccessor.Instance;
+    readonly IDataAgentTraceRecorder? traceRecorder =
+        traceDiagnosticsPublisher is null ? null : traceRecorder ?? new DataAgentTraceRecorder();
+    readonly Func<DateTimeOffset> traceClock = traceClock ?? (() => DateTimeOffset.UtcNow);
 
     [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
     [Description("Start a DataAgent analysis session for a caller and goal or question.")]
@@ -80,10 +86,20 @@ public sealed class DataAgentAnalysisToolHandler(
     void PublishResult(DataAgentOrchestrationResult result, string context)
     {
         resultPublisher?.Invoke(context);
-        if (evidenceDiagnosticsPublisher is null)
+
+        if (evidenceDiagnosticsPublisher is null && traceDiagnosticsPublisher is null)
             return;
 
         DataAgentEvidencePack pack = new DataAgentEvidencePackBuilder().Build(result);
-        evidenceDiagnosticsPublisher(DataAgentEvidenceDiagnosticsFormatter.Format(pack));
+        evidenceDiagnosticsPublisher?.Invoke(DataAgentEvidenceDiagnosticsFormatter.Format(pack));
+
+        if (traceDiagnosticsPublisher is null || traceRecorder is null)
+            return;
+
+        DateTimeOffset now = traceClock();
+        DataAgentTraceTimeline timeline = new DataAgentTraceTimelineBuilder().Build(result, pack, now);
+        traceRecorder.Record(timeline);
+        DataAgentTraceTimeline? latestTimeline = traceRecorder.GetLatest(result.SessionId, now);
+        traceDiagnosticsPublisher(DataAgentTraceDiagnosticsFormatter.Format(latestTimeline));
     }
 }

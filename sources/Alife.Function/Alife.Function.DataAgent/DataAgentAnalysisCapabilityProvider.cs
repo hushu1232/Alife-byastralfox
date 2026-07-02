@@ -7,7 +7,9 @@ public sealed class DataAgentAnalysisCapabilityProvider(
     IDataAgentAnalysisOrchestrator orchestrator,
     Action<string>? resultPublisher = null,
     IDataAgentToolRouteContextAccessor? routeContextAccessor = null,
-    Action<string>? evidenceDiagnosticsPublisher = null) : IDataAgentCapabilityProvider
+    Action<string>? evidenceDiagnosticsPublisher = null,
+    Action<string>? traceDiagnosticsPublisher = null,
+    IDataAgentTraceRecorder? traceRecorder = null) : IDataAgentCapabilityProvider
 {
     public string Name => nameof(DataAgentAnalysisCapabilityProvider);
 
@@ -20,6 +22,8 @@ public sealed class DataAgentAnalysisCapabilityProvider(
             orchestrator,
             resultPublisher,
             routeContextAccessor,
-            evidenceDiagnosticsPublisher)));
+            evidenceDiagnosticsPublisher,
+            traceDiagnosticsPublisher,
+            traceRecorder)));
     }
 }
