@@ -488,9 +488,13 @@ public class QChatDiagnosticsServiceTests
     }
 
     [TestCase("connection_string=Host=localhost;Username=alife;Password=secret", "connection_string")]
+    [TestCase("Server=db.internal;Uid=alife;Pwd=secret", "Pwd=secret")]
     [TestCase("api_key=sk-test-secret", "sk-test-secret")]
     [TestCase("Authorization: Bearer token-abcdef123456", "token-abcdef123456")]
+    [TestCase("Bearer token-abcdef123456", "token-abcdef123456")]
     [TestCase("SELECT*FROM users", "SELECT")]
+    [TestCase("SELECT COUNT(*) FROM users", "SELECT")]
+    [TestCase("SELECT u.id FROM users", "SELECT")]
     [TestCase("CREATE TABLE secrets(id int)", "CREATE TABLE")]
     public void TryHandleDataAgentEvidenceDiagnosticsRedactsUnsafeLegacyFallbackText(
         string unsafeText,
@@ -519,7 +523,7 @@ public class QChatDiagnosticsServiceTests
     public void TryHandleToolBrokerDiagnosticsRedactsUnsafeLegacyFallbackTrace()
     {
         QChatDiagnosticsRuntimeState state = new(
-            RecentToolRouteTrace: "allowed=none; Authorization: Bearer token-abcdef123456; SELECT*FROM users");
+            RecentToolRouteTrace: "allowed=none; Bearer token-abcdef123456; SELECT COUNT(*) FROM users");
 
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
             "/qchat diag toolbroker",

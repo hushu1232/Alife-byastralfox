@@ -8,10 +8,10 @@ static class QChatDiagnosticTextSanitizer
     const string TruncationEllipsis = "...";
 
     static readonly Regex ApiKeyPattern = new(@"\bapi[-_]?key\s*[:=]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    static readonly Regex AuthorizationBearerPattern = new(@"\bauthorization\s*:\s*bearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    static readonly Regex ConnectionSecretPattern = new(@"\b(connection_string|host|username|user\s*id|password)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex AuthorizationBearerPattern = new(@"\b(?:authorization\s*:\s*)?bearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex ConnectionSecretPattern = new(@"\b(connection[_\s-]?string|host|server|data\s+source|username|user\s*id|userid|uid|user|password|pwd)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     static readonly Regex SqlStatementPattern = new(
-        @"\bselect\s*[\*\w\[]+\s*from\b|\b(insert\s+into|update\s+\w+|delete\s+from|drop\s+(table|database|schema)|create\s+(table|database|schema|index|view)|alter\s+(table|database|schema|index|view)|truncate\s+(table|database)|merge\s+into|exec(ute)?\s+\w+)\b",
+        @"\bselect\b[\s\S]{0,200}\bfrom\b|\b(insert\s+into|update\s+\w+|delete\s+from|drop\s+(table|database|schema)|create\s+(table|database|schema|index|view)|alter\s+(table|database|schema|index|view)|truncate\s+(table|database)|merge\s+into|exec(ute)?\s+\w+)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Singleline);
 
     public static bool ContainsUnsafeDiagnosticText(string text)
