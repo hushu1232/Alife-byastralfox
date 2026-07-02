@@ -488,6 +488,161 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleRecentDiagnosticsReturnsSessionCacheSummary()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "qq:xiayu:2905391496:private:3045846738", "qchat_semantic_window", "QChat semantic diagnostics", now.AddSeconds(-3));
+        cache.Record(QChatRecentDiagnosticKind.DataAgentEvidence, "qq:xiayu:2905391496:private:3045846738", "dataagent_analysis", "DataAgent evidence diagnostics", now.AddSeconds(-12));
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "qq:xiayu:2905391496:private:3045846738", "tool_broker", "allowed=dataagent_analysis_start", now.AddSeconds(-2));
+
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag recent",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QChat recent diagnostics"));
+            Assert.That(result.Text, Does.Contain("semantic_state_recent=available age_seconds=3"));
+            Assert.That(result.Text, Does.Contain("dataagent_evidence_recent=available age_seconds=12"));
+            Assert.That(result.Text, Does.Contain("tool_route_recent=available age_seconds=2"));
+            Assert.That(result.Text, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+        });
+    }
+
+    [Test]
+    public void TryHandleRecentDiagnosticsReturnsUnavailableWhenSessionCacheIsEmpty()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDiagnosticsCache: new QChatRecentDiagnosticsCache(),
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag recent",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("QChat recent diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=unavailable"));
+            Assert.That(result.Text, Does.Contain("reason=recent_diagnostics_empty"));
+        });
+    }
+
+    [Test]
+    public void TryHandleSemanticDiagnosticsPrefersSessionCacheOverLegacyRecentString()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.SemanticState,
+            "qq:xiayu:2905391496:private:3045846738",
+            "qchat_semantic_window",
+            string.Join(Environment.NewLine,
+                "QChat semantic diagnostics",
+                "semantic_completion=0.901",
+                "reason_code=from_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentSemanticEstimate: "legacy semantic text",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag semantic",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("semantic_completion=0.901"));
+            Assert.That(result.Text, Does.Contain("reason_code=from_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy semantic text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentEvidenceDiagnosticsPrefersSessionCacheOverLegacyRecentString()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentEvidence,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_analysis",
+            string.Join(Environment.NewLine,
+                "DataAgent evidence diagnostics",
+                "analysis_confidence=0.912",
+                "risk_level=0.101"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentEvidence: "legacy evidence text",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("analysis_confidence=0.912"));
+            Assert.That(result.Text, Does.Contain("risk_level=0.101"));
+            Assert.That(result.Text, Does.Not.Contain("legacy evidence text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleToolBrokerDiagnosticsPrefersSessionCacheOverLegacyTrace()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.ToolRoute,
+            "qq:xiayu:2905391496:private:3045846738",
+            "tool_broker",
+            string.Join(Environment.NewLine,
+                "Tool Broker diagnostics",
+                "recent=allowed=dataagent_analysis_start; denied=none; reason=route_allowed"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentToolRouteTrace: "legacy-route-trace",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/qchat diag toolbroker",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("allowed=dataagent_analysis_start"));
+            Assert.That(result.Text, Does.Not.Contain("legacy-route-trace"));
+        });
+    }
+
+    [Test]
     public void TryHandleQChatCommandThrowsForNullRoute()
     {
         Assert.That(

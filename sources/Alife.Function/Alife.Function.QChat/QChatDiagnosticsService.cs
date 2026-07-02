@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Alife.Function.QChat;
 
@@ -10,7 +11,10 @@ public sealed record QChatDiagnosticsRuntimeState(
     bool InternetAccessEnabled = false,
     string? RecentToolRouteTrace = null,
     string? RecentSemanticEstimate = null,
-    string? RecentDataAgentEvidence = null);
+    string? RecentDataAgentEvidence = null,
+    QChatRecentDiagnosticsCache? RecentDiagnosticsCache = null,
+    string? SessionKey = null,
+    DateTimeOffset? DiagnosticsNow = null);
 
 public static class QChatDiagnosticsService
 {
@@ -77,6 +81,7 @@ public static class QChatDiagnosticsService
             "rag" or "rag status" => Handled(BuildRagMenuText()),
             "timing" => Handled(BuildTimingMenuText()),
             "events" => Handled(BuildEventsMenuText()),
+            "diag recent" or "diagnostics recent" => Handled(BuildRecentDiagnosticsText(runtimeState, route)),
             "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState)),
             "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState)),
             "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState)),
@@ -165,8 +170,20 @@ public static class QChatDiagnosticsService
             "status=online");
     }
 
+    static string BuildRecentDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
+    {
+        string sessionKey = GetDiagnosticsSessionKey(runtimeState, route);
+        DateTimeOffset now = runtimeState.DiagnosticsNow ?? DateTimeOffset.UtcNow;
+        IReadOnlyList<QChatRecentDiagnosticEntry> entries = runtimeState.RecentDiagnosticsCache?.GetRecent(sessionKey, now) ?? [];
+        return QChatRecentDiagnosticsFormatter.FormatSummary(entries, sessionKey, now);
+    }
+
     static string BuildToolBrokerText(QChatDiagnosticsRuntimeState runtimeState)
     {
+        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.ToolRoute);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
         string trace = SanitizeToolRouteTrace(runtimeState.RecentToolRouteTrace);
         return string.Join(Environment.NewLine,
             "Tool Broker diagnostics",
@@ -175,6 +192,10 @@ public static class QChatDiagnosticsService
 
     static string BuildSemanticDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
     {
+        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.SemanticState);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
         string sanitized = SanitizeDiagnosticText(
             runtimeState.RecentSemanticEstimate,
             "QChat semantic diagnostics");
@@ -185,6 +206,10 @@ public static class QChatDiagnosticsService
 
     static string BuildDataAgentEvidenceDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
     {
+        string? cached = GetRecentCachedText(runtimeState, QChatRecentDiagnosticKind.DataAgentEvidence);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
         string sanitized = SanitizeDiagnosticText(
             runtimeState.RecentDataAgentEvidence,
             "DataAgent evidence diagnostics");
@@ -194,6 +219,22 @@ public static class QChatDiagnosticsService
                 "state=unavailable",
                 "reason=evidence_pack_unavailable")
             : sanitized;
+    }
+
+    static string? GetRecentCachedText(QChatDiagnosticsRuntimeState runtimeState, QChatRecentDiagnosticKind kind)
+    {
+        if (runtimeState.RecentDiagnosticsCache is null || string.IsNullOrWhiteSpace(runtimeState.SessionKey))
+            return null;
+
+        DateTimeOffset now = runtimeState.DiagnosticsNow ?? DateTimeOffset.UtcNow;
+        return runtimeState.RecentDiagnosticsCache.GetLatest(runtimeState.SessionKey, kind, now)?.Text;
+    }
+
+    static string GetDiagnosticsSessionKey(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
+    {
+        return string.IsNullOrWhiteSpace(runtimeState.SessionKey)
+            ? route.SessionKey
+            : runtimeState.SessionKey;
     }
 
     static string SanitizeDiagnosticText(string? text, string title)
@@ -426,6 +467,7 @@ public static class QChatDiagnosticsService
             "/qchat identity - 查看当前 agent 身份",
             "/qchat profile - 查看模型、人设、记忆配置",
             "/qchat status - 查看在线和回复窗口状态",
+            "/qchat diag recent - Recent diagnostics cache summary",
             "/qchat diag semantic - QChat semantic state diagnostics",
             "/dataagent diag evidence - DataAgent evidence diagnostics",
             "",
