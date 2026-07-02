@@ -1,16 +1,20 @@
+using System.Collections.ObjectModel;
+
 namespace Alife.Function.DataAgent;
 
 public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
 {
     readonly object gate = new();
     readonly int maxTimelinesPerSession;
+    readonly int maxTimelinesTotal;
     readonly TimeSpan ttl;
     readonly List<DataAgentTraceTimelineRecord> timelines = [];
     long nextSequence;
 
-    public DataAgentTraceRecorder(int maxTimelinesPerSession = 4, TimeSpan? ttl = null)
+    public DataAgentTraceRecorder(int maxTimelinesPerSession = 4, TimeSpan? ttl = null, int maxTimelinesTotal = 128)
     {
         this.maxTimelinesPerSession = Math.Max(1, maxTimelinesPerSession);
+        this.maxTimelinesTotal = Math.Max(1, maxTimelinesTotal);
         this.ttl = ttl ?? TimeSpan.FromMinutes(30);
     }
 
@@ -23,7 +27,7 @@ public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
             return;
         }
 
-        DataAgentTraceTimeline normalized = timeline with
+        DataAgentTraceTimeline normalized = SnapshotTimeline(timeline) with
         {
             SessionId = NormalizeSessionId(timeline.SessionId)
         };
@@ -33,6 +37,7 @@ public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
             PruneExpiredLocked(normalized.EndedAt);
             timelines.Add(new DataAgentTraceTimelineRecord(normalized, nextSequence++));
             PruneCapacityLocked(normalized.SessionId);
+            PruneGlobalCapacityLocked();
         }
     }
 
@@ -49,7 +54,7 @@ public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
                                  string.Equals(record.Timeline.SessionId, normalizedSessionId, StringComparison.Ordinal))
                 .OrderByDescending(record => record.Timeline.EndedAt)
                 .ThenByDescending(record => record.Sequence)
-                .Select(record => record.Timeline)
+                .Select(record => SnapshotTimeline(record.Timeline))
                 .FirstOrDefault();
         }
     }
@@ -67,7 +72,7 @@ public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
                                  string.Equals(record.Timeline.SessionId, normalizedSessionId, StringComparison.Ordinal))
                 .OrderBy(record => record.Timeline.EndedAt)
                 .ThenBy(record => record.Sequence)
-                .Select(record => record.Timeline)
+                .Select(record => SnapshotTimeline(record.Timeline))
                 .ToArray();
         }
     }
@@ -96,6 +101,38 @@ public sealed class DataAgentTraceRecorder : IDataAgentTraceRecorder
 
         foreach (DataAgentTraceTimelineRecord record in sessionTimelines.Take(excess))
             timelines.Remove(record);
+    }
+
+    void PruneGlobalCapacityLocked()
+    {
+        int excess = timelines.Count - maxTimelinesTotal;
+        if (excess <= 0)
+            return;
+
+        List<DataAgentTraceTimelineRecord> oldestTimelines = timelines
+            .OrderBy(record => record.Timeline.EndedAt)
+            .ThenBy(record => record.Sequence)
+            .Take(excess)
+            .ToList();
+
+        foreach (DataAgentTraceTimelineRecord record in oldestTimelines)
+            timelines.Remove(record);
+    }
+
+    static DataAgentTraceTimeline SnapshotTimeline(DataAgentTraceTimeline timeline)
+    {
+        return timeline with
+        {
+            Events = timeline.Events.Select(SnapshotEvent).ToArray()
+        };
+    }
+
+    static DataAgentTraceEvent SnapshotEvent(DataAgentTraceEvent traceEvent)
+    {
+        return traceEvent with
+        {
+            Facts = new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(traceEvent.Facts))
+        };
     }
 
     static string NormalizeSessionId(string value)
