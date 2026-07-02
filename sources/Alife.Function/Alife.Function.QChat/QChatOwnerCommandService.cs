@@ -109,7 +109,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         Action<string, string, object?, Exception?> writeDiagnostic,
         Func<string>? recentToolRouteTrace = null,
         Func<string>? recentSemanticEstimate = null,
-        Func<string>? recentDataAgentEvidence = null)
+        Func<string>? recentDataAgentEvidence = null,
+        QChatRecentDiagnosticsCache? recentDiagnosticsCache = null,
+        Func<DateTimeOffset>? diagnosticsNow = null)
     {
         ArgumentNullException.ThrowIfNull(messageEvent);
 
@@ -157,7 +159,10 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 InternetAccessEnabled: config.EnableInternetAccess,
                 RecentToolRouteTrace: recentToolRouteTrace?.Invoke(),
                 RecentSemanticEstimate: recentSemanticEstimate?.Invoke(),
-                RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke()));
+                RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke(),
+                RecentDiagnosticsCache: recentDiagnosticsCache,
+                SessionKey: route.SessionKey,
+                DiagnosticsNow: diagnosticsNow?.Invoke()));
         if (result.Handled)
         {
             await sendAsync(targetType, targetId, result.Text);

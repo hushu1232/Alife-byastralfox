@@ -83,6 +83,61 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncPassesRecentDiagnosticsCacheToOwnerDiagnostics()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        cache.Record(
+            QChatRecentDiagnosticKind.SemanticState,
+            "qq:xiayu:2905391496:private:3045846738",
+            "qchat_semantic_window",
+            "QChat semantic diagnostics",
+            now.AddSeconds(-5));
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentEvidence,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_analysis",
+            "DataAgent evidence diagnostics",
+            now.AddSeconds(-11));
+
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentDiagnosticsCache: cache,
+            diagnosticsNow: () => now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent[0].Message, Does.Contain("QChat recent diagnostics"));
+            Assert.That(sent[0].Message, Does.Contain("semantic_state_recent=available age_seconds=5"));
+            Assert.That(sent[0].Message, Does.Contain("dataagent_evidence_recent=available age_seconds=11"));
+            Assert.That(sent[0].Message, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+            Assert.That(sent[0].Message, Does.Not.Contain("reason=recent_diagnostics_empty"));
+        });
+    }
+
+    [Test]
     public async Task TryHandleDiagnosticsCommandAsyncSendsOwnerDataAgentEvidenceDiagnostics()
     {
         List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
@@ -118,6 +173,70 @@ public class QChatOwnerCommandServiceTests
             Assert.That(sent, Has.Count.EqualTo(1));
             Assert.That(sent[0].Message, Does.Contain("DataAgent evidence diagnostics"));
             Assert.That(sent[0].Message, Does.Contain("analysis_confidence=0.781"));
+        });
+    }
+
+    [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerRecentDiagnosticsWithoutInvokingCallbacks()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.SemanticState,
+            "qq:xiayu:2905391496:private:100200300",
+            "qchat_semantic_window",
+            "should not leak",
+            now);
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        int recentToolRouteTraceCalls = 0;
+        int recentSemanticEstimateCalls = 0;
+        int recentDataAgentEvidenceCalls = 0;
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 100200300,
+            RawMessage = "/qchat diag recent"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.PrivateGuest,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentToolRouteTrace: () =>
+            {
+                recentToolRouteTraceCalls++;
+                return "tool callback should not run";
+            },
+            recentSemanticEstimate: () =>
+            {
+                recentSemanticEstimateCalls++;
+                return "semantic callback should not run";
+            },
+            recentDataAgentEvidence: () =>
+            {
+                recentDataAgentEvidenceCalls++;
+                return "evidence callback should not run";
+            },
+            recentDiagnosticsCache: cache,
+            diagnosticsNow: () => now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Is.Empty);
+            Assert.That(recentToolRouteTraceCalls, Is.Zero);
+            Assert.That(recentSemanticEstimateCalls, Is.Zero);
+            Assert.That(recentDataAgentEvidenceCalls, Is.Zero);
         });
     }
 
