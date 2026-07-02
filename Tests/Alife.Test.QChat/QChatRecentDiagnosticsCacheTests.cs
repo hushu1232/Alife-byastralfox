@@ -69,6 +69,25 @@ public sealed class QChatRecentDiagnosticsCacheTests
     }
 
     [Test]
+    public void RecordEvictsOnlyOldestEntryWhenDuplicateEntriesHaveEqualValues()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 2, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "duplicate", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "duplicate", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "duplicate", now);
+
+        IReadOnlyList<QChatRecentDiagnosticEntry> entries = cache.GetRecent("session-a", now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(entries, Has.Count.EqualTo(2));
+            Assert.That(entries.Select(entry => entry.Text), Is.EqualTo(new[] { "duplicate", "duplicate" }));
+        });
+    }
+
+    [Test]
     public void GetRecentIgnoresExpiredEntries()
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(1));
@@ -84,6 +103,25 @@ public sealed class QChatRecentDiagnosticsCacheTests
             Assert.That(entries, Has.Count.EqualTo(1));
             Assert.That(entries[0].Text, Is.EqualTo("fresh"));
             Assert.That(cache.GetLatest("session-a", QChatRecentDiagnosticKind.SemanticState, start.AddSeconds(75)), Is.Null);
+        });
+    }
+
+    [Test]
+    public void RecordCapsLongDiagnosticTextAtNineHundredCharacters()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+        string longText = new('a', 1_000);
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", longText, now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.SemanticState, now)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Text, Has.Length.EqualTo(900));
+            Assert.That(latest.Text, Does.EndWith("..."));
+            Assert.That(latest.Redacted, Is.False);
         });
     }
 

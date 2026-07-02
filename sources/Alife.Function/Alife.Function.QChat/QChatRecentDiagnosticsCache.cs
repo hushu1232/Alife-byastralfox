@@ -23,6 +23,7 @@ public sealed record QChatRecentDiagnosticEntry(
 public sealed class QChatRecentDiagnosticsCache
 {
     const int MaxTextChars = 900;
+    const string TruncationEllipsis = "...";
 
     readonly object gate = new();
     readonly int maxEntriesPerSession;
@@ -137,8 +138,12 @@ public sealed class QChatRecentDiagnosticsCache
         if (excess <= 0)
             return;
 
-        HashSet<QChatRecentDiagnosticEntry> toRemove = sessionEntries.Take(excess).ToHashSet();
-        entries.RemoveAll(toRemove.Contains);
+        foreach (QChatRecentDiagnosticEntry entryToRemove in sessionEntries.Take(excess))
+        {
+            int index = entries.FindIndex(entry => ReferenceEquals(entry, entryToRemove));
+            if (index >= 0)
+                entries.RemoveAt(index);
+        }
     }
 
     static string NormalizeDiagnosticText(string text)
@@ -146,7 +151,7 @@ public sealed class QChatRecentDiagnosticsCache
         string normalized = text.ReplaceLineEndings(Environment.NewLine).Trim();
         return normalized.Length <= MaxTextChars
             ? normalized
-            : normalized[..MaxTextChars] + "...";
+            : normalized[..(MaxTextChars - TruncationEllipsis.Length)] + TruncationEllipsis;
     }
 
     static string NormalizeToken(string value)
