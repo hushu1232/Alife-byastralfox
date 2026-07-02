@@ -19,7 +19,11 @@ public static class DataAgentTraceDiagnosticsFormatter
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex SecretPattern = new(
-        @"\b(api[_-]?key|secret|token|password|pwd)\s*=",
+        @"(api[_-]?key|secret|token|password|pwd)\s*[:=]",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    static readonly Regex ApiKeyPattern = new(
+        @"\bsk-[A-Za-z0-9]{10,}",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex ConnectionStringPattern = new(
@@ -27,7 +31,7 @@ public static class DataAgentTraceDiagnosticsFormatter
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex UnsafeContextPattern = new(
-        @"tool_route_context|data_agent_evidence_pack|allowed\s+xml\s+tools",
+        @"tool_route_context|data_agent_evidence_pack|hidden_context|hidden\s+context|allowed\s+xml\s+tool",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string Format(DataAgentTraceTimeline? timeline, int maxChars = 1800)
@@ -40,8 +44,8 @@ public static class DataAgentTraceDiagnosticsFormatter
 
         StringBuilder builder = new();
         AppendLine(builder, "DataAgent trace diagnostics");
-        AppendLine(builder, $"session={SafeValue(timeline.SessionId, keyIsSql: false)}");
-        AppendLine(builder, $"turn={Math.Max(0, timeline.TurnCount).ToString(CultureInfo.InvariantCulture)}");
+        AppendLine(builder, $"session={SafeValue(timeline.SessionId, shouldRedact: false)}");
+        AppendLine(builder, $"turn={timeline.TurnCount.ToString(CultureInfo.InvariantCulture)}");
         AppendLine(builder, $"status={timeline.SessionStatus}");
         AppendLine(builder, $"terminal={Bool(timeline.Terminal)}");
         AppendLine(builder, $"events={timeline.Events.Count.ToString(CultureInfo.InvariantCulture)}");
@@ -55,7 +59,7 @@ public static class DataAgentTraceDiagnosticsFormatter
             builder.Append(' ');
             builder.Append(traceEvent.Status);
             builder.Append(" reason=");
-            builder.Append(SafeValue(traceEvent.ReasonCode, keyIsSql: false));
+            builder.Append(SafeValue(traceEvent.ReasonCode, shouldRedact: false));
             builder.Append(" query_allowed=");
             builder.Append(Bool(traceEvent.QueryAllowed));
             builder.Append(" executed_sql=");
@@ -69,7 +73,7 @@ public static class DataAgentTraceDiagnosticsFormatter
                 builder.Append(' ');
                 builder.Append(key);
                 builder.Append('=');
-                builder.Append(SafeValue(fact.Value, IsSqlKey(key)));
+                builder.Append(SafeValue(fact.Value, ShouldRedactFactKey(key)));
             }
 
             builder.AppendLine();
@@ -100,10 +104,10 @@ public static class DataAgentTraceDiagnosticsFormatter
         return key.Length == 0 ? "fact" : key;
     }
 
-    static string SafeValue(string value, bool keyIsSql)
+    static string SafeValue(string value, bool shouldRedact)
     {
         value ??= string.Empty;
-        if (keyIsSql || IsUnsafe(value))
+        if (shouldRedact || IsUnsafe(value))
             return Redacted;
 
         string sanitized = DataAgentContextFieldSanitizer.Sanitize(value, MaxFieldLength);
@@ -112,9 +116,12 @@ public static class DataAgentTraceDiagnosticsFormatter
         return sanitized.Length == 0 ? "empty" : sanitized;
     }
 
-    static bool IsSqlKey(string key)
+    static bool ShouldRedactFactKey(string key)
     {
-        return key.Contains("sql", StringComparison.OrdinalIgnoreCase);
+        return key.Contains("sql", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("table", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("_table", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("dataset", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsUnsafe(string value)
@@ -122,6 +129,7 @@ public static class DataAgentTraceDiagnosticsFormatter
         return SqlLikePattern.IsMatch(value) ||
             BearerPattern.IsMatch(value) ||
             SecretPattern.IsMatch(value) ||
+            ApiKeyPattern.IsMatch(value) ||
             ConnectionStringPattern.IsMatch(value) ||
             UnsafeContextPattern.IsMatch(value);
     }

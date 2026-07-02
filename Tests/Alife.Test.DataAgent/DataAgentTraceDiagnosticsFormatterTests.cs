@@ -23,7 +23,8 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
                     terminal: false,
                     new Dictionary<string, string>
                     {
-                        ["route"] = "analysis_continue"
+                        ["route_allowed"] = "true",
+                        ["can_continue"] = "true"
                     }),
                 Event(
                     DataAgentTraceEventKind.Execute,
@@ -51,17 +52,22 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
 
         string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
 
+        string[] expectedLines =
+        [
+            "DataAgent trace diagnostics",
+            "session=session-1",
+            "turn=2",
+            "status=Active",
+            "terminal=false",
+            "events=3",
+            "1 RouteGate Succeeded reason=route_allowed query_allowed=true executed_sql=false terminal=false can_continue=true route_allowed=true",
+            "2 Execute Succeeded reason=read_only_query_executed query_allowed=true executed_sql=true terminal=false sql=redacted",
+            "3 Checkpoint Succeeded reason=checkpoint_created query_allowed=false executed_sql=false terminal=false checkpoint=created"
+        ];
+
         Assert.Multiple(() =>
         {
-            Assert.That(text, Does.Contain("DataAgent trace diagnostics"));
-            Assert.That(text, Does.Contain("session=session-1"));
-            Assert.That(text, Does.Contain("turn=2"));
-            Assert.That(text, Does.Contain("status=Active"));
-            Assert.That(text, Does.Contain("terminal=false"));
-            Assert.That(text, Does.Contain("events=3"));
-            Assert.That(text, Does.Contain("1 RouteGate Succeeded reason=route_allowed query_allowed=true executed_sql=false terminal=false route=analysis_continue"));
-            Assert.That(text, Does.Contain("2 Execute Succeeded reason=read_only_query_executed query_allowed=true executed_sql=true terminal=false sql=redacted"));
-            Assert.That(text, Does.Contain("3 Checkpoint Succeeded reason=checkpoint_created query_allowed=false executed_sql=false terminal=false checkpoint=created"));
+            Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
             Assert.That(text, Does.Not.Contain("SELECT"));
             Assert.That(text, Does.Not.Contain("document_index"));
         });
@@ -86,6 +92,13 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
     [TestCase("[tool_route_context]\nAllowed XML tools: dataagent_query\n[/tool_route_context]", "tool_route_context", "dataagent_query")]
     [TestCase("[data_agent_evidence_pack]\ntrace=unsafe\n[/data_agent_evidence_pack]", "data_agent_evidence_pack", "trace=unsafe")]
     [TestCase("api_key=sk-test", "api_key", "sk-test")]
+    [TestCase("[hidden_context]secret[/hidden_context]", "hidden_context", "secret")]
+    [TestCase("hidden context: internal route decision", "hidden context", "internal route decision")]
+    [TestCase("Allowed XML tool text: <dataagent_query>", "Allowed XML tool text", "dataagent_query")]
+    [TestCase("api_key: sk-test", "api_key", "sk-test")]
+    [TestCase("OPENAI_API_KEY: sk-test", "OPENAI_API_KEY", "sk-test")]
+    [TestCase("token: abcdef123456", "token", "abcdef123456")]
+    [TestCase("sk-ORklQekAufyaZ26NHLLXiLnHUvVfake", "sk-", "ORklQekAufyaZ26NHLLXiLnHUvVfake")]
     [TestCase("SELECT COUNT(*) FROM users", "SELECT", "users")]
     public void FormatRedactsUnsafeFactValues(string unsafeValue, string firstUnsafeSubstring, string secondUnsafeSubstring)
     {
@@ -116,6 +129,76 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
             Assert.That(text, Does.Not.Contain(firstUnsafeSubstring));
             Assert.That(text, Does.Not.Contain(secondUnsafeSubstring));
         });
+    }
+
+    [Test]
+    public void FormatRedactsTableAndDatasetFactValues()
+    {
+        DataAgentTraceTimeline timeline = Timeline(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            1,
+            Terminal: false,
+            [
+                Event(
+                    DataAgentTraceEventKind.Execute,
+                    DataAgentTraceEventStatus.Succeeded,
+                    "read_only_query_executed",
+                    queryAllowed: true,
+                    executedSql: true,
+                    terminal: false,
+                    new Dictionary<string, string>
+                    {
+                        ["table"] = "document_index",
+                        ["source_table"] = "users",
+                        ["dataset"] = "finance_records",
+                        ["rows"] = "3",
+                        ["route_allowed"] = "true",
+                        ["can_continue"] = "true"
+                    })
+            ]);
+
+        string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("can_continue=true"));
+            Assert.That(text, Does.Contain("dataset=redacted"));
+            Assert.That(text, Does.Contain("route_allowed=true"));
+            Assert.That(text, Does.Contain("rows=3"));
+            Assert.That(text, Does.Contain("source_table=redacted"));
+            Assert.That(text, Does.Contain("table=redacted"));
+            Assert.That(text, Does.Not.Contain("document_index"));
+            Assert.That(text, Does.Not.Contain("finance_records"));
+            Assert.That(text, Does.Not.Contain("users"));
+        });
+    }
+
+    [Test]
+    public void FormatEmitsTimelineTurnCountFaithfully()
+    {
+        DataAgentTraceTimeline timeline = Timeline(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            -1,
+            Terminal: false,
+            [
+                Event(
+                    DataAgentTraceEventKind.RouteGate,
+                    DataAgentTraceEventStatus.Succeeded,
+                    "route_allowed",
+                    queryAllowed: true,
+                    executedSql: false,
+                    terminal: false,
+                    new Dictionary<string, string>
+                    {
+                        ["route_allowed"] = "true"
+                    })
+            ]);
+
+        string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
+
+        Assert.That(text.Split(Environment.NewLine)[2], Is.EqualTo("turn=-1"));
     }
 
     [Test]
