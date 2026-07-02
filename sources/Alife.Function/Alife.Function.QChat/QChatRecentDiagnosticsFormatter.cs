@@ -53,8 +53,11 @@ public static class QChatRecentDiagnosticsFormatter
         DateTimeOffset now)
     {
         QChatRecentDiagnosticEntry? latest = entries
-            .Where(entry => entry.Kind == kind)
-            .OrderByDescending(entry => entry.CreatedAt)
+            .Select((entry, index) => new { Entry = entry, Index = index })
+            .Where(entry => entry.Entry.Kind == kind)
+            .OrderByDescending(entry => entry.Entry.CreatedAt)
+            .ThenByDescending(entry => entry.Index)
+            .Select(entry => entry.Entry)
             .FirstOrDefault();
 
         if (latest is null)

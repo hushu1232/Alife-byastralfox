@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Alife.Function.QChat;
 
@@ -25,10 +26,16 @@ public sealed class QChatRecentDiagnosticsCache
     const int MaxTextChars = 900;
     const string TruncationEllipsis = "...";
 
+    static readonly Regex ApiKeyPattern = new(@"\bapi[-_]?key\s*[:=]", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex AuthorizationBearerPattern = new(@"\bauthorization\s*:\s*bearer\s+\S+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex ConnectionSecretPattern = new(@"\b(connection_string|host|username|user\s*id|password)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    static readonly Regex SqlStatementPattern = new(@"\b(select|insert|update|delete)\b\s+|\bdrop\s+(table|database|schema)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     readonly object gate = new();
     readonly int maxEntriesPerSession;
     readonly TimeSpan ttl;
-    readonly List<QChatRecentDiagnosticEntry> entries = [];
+    readonly List<QChatRecentDiagnosticRecord> entries = [];
+    long nextSequence;
 
     public QChatRecentDiagnosticsCache(int maxEntriesPerSession = 12, TimeSpan? ttl = null)
     {
@@ -53,7 +60,7 @@ public sealed class QChatRecentDiagnosticsCache
         lock (gate)
         {
             PruneExpiredLocked(createdAt);
-            entries.Add(entry);
+            entries.Add(new QChatRecentDiagnosticRecord(entry, nextSequence++));
             PruneCapacityLocked(normalizedSessionKey);
         }
     }
@@ -71,8 +78,10 @@ public sealed class QChatRecentDiagnosticsCache
         {
             PruneExpiredLocked(now);
             return entries
-                .Where(entry => entry.Kind == kind && string.Equals(entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
-                .OrderByDescending(entry => entry.CreatedAt)
+                .Where(entry => entry.Entry.Kind == kind && string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
+                .OrderByDescending(entry => entry.Entry.CreatedAt)
+                .ThenByDescending(entry => entry.Sequence)
+                .Select(entry => entry.Entry)
                 .FirstOrDefault();
         }
     }
@@ -87,8 +96,10 @@ public sealed class QChatRecentDiagnosticsCache
         {
             PruneExpiredLocked(now);
             return entries
-                .Where(entry => string.Equals(entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
-                .OrderBy(entry => entry.CreatedAt)
+                .Where(entry => string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
+                .OrderBy(entry => entry.Entry.CreatedAt)
+                .ThenBy(entry => entry.Sequence)
+                .Select(entry => entry.Entry)
                 .ToArray();
         }
     }
@@ -124,26 +135,23 @@ public sealed class QChatRecentDiagnosticsCache
 
     void PruneExpiredLocked(DateTimeOffset now)
     {
-        entries.RemoveAll(entry => now - entry.CreatedAt > ttl);
+        entries.RemoveAll(entry => now - entry.Entry.CreatedAt > ttl);
     }
 
     void PruneCapacityLocked(string sessionKey)
     {
-        List<QChatRecentDiagnosticEntry> sessionEntries = entries
-            .Where(entry => string.Equals(entry.SessionKey, sessionKey, StringComparison.Ordinal))
-            .OrderBy(entry => entry.CreatedAt)
+        List<QChatRecentDiagnosticRecord> sessionEntries = entries
+            .Where(entry => string.Equals(entry.Entry.SessionKey, sessionKey, StringComparison.Ordinal))
+            .OrderBy(entry => entry.Entry.CreatedAt)
+            .ThenBy(entry => entry.Sequence)
             .ToList();
 
         int excess = sessionEntries.Count - maxEntriesPerSession;
         if (excess <= 0)
             return;
 
-        foreach (QChatRecentDiagnosticEntry entryToRemove in sessionEntries.Take(excess))
-        {
-            int index = entries.FindIndex(entry => ReferenceEquals(entry, entryToRemove));
-            if (index >= 0)
-                entries.RemoveAt(index);
-        }
+        foreach (QChatRecentDiagnosticRecord entryToRemove in sessionEntries.Take(excess))
+            entries.Remove(entryToRemove);
     }
 
     static string NormalizeDiagnosticText(string text)
@@ -169,11 +177,23 @@ public sealed class QChatRecentDiagnosticsCache
                text.Contains("[/data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("connection_string", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("api_key", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("sk-", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("SELECT ", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("INSERT ", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("UPDATE ", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("DELETE ", StringComparison.OrdinalIgnoreCase);
+               ApiKeyPattern.IsMatch(text) ||
+               AuthorizationBearerPattern.IsMatch(text) ||
+               ConnectionSecretPattern.IsMatch(text) ||
+               SqlStatementPattern.IsMatch(text);
+    }
+
+    sealed class QChatRecentDiagnosticRecord
+    {
+        public QChatRecentDiagnosticRecord(QChatRecentDiagnosticEntry entry, long sequence)
+        {
+            Entry = entry;
+            Sequence = sequence;
+        }
+
+        public QChatRecentDiagnosticEntry Entry { get; }
+
+        public long Sequence { get; }
     }
 }

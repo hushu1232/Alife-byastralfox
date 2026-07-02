@@ -31,6 +31,28 @@ public sealed class QChatRecentDiagnosticsCacheTests
     }
 
     [Test]
+    public void GetLatestUsesInsertionOrderWhenEntriesShareTimestamp()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "old_source", "old", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "new_source", "new", now);
+
+        QChatRecentDiagnosticEntry? latest = cache.GetLatest(
+            "session-a",
+            QChatRecentDiagnosticKind.SemanticState,
+            now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest, Is.Not.Null);
+            Assert.That(latest!.Text, Is.EqualTo("new"));
+            Assert.That(latest.Source, Is.EqualTo("new_source"));
+        });
+    }
+
+    [Test]
     public void GetLatestIsolatesSessionsAndKinds()
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
@@ -88,6 +110,21 @@ public sealed class QChatRecentDiagnosticsCacheTests
     }
 
     [Test]
+    public void RecordIgnoresEmptySessionOrText()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "", "source", "text", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "   ", "source", "text", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "   ", now);
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", null, now);
+
+        Assert.That(cache.GetRecent("session-a", now), Is.Empty);
+    }
+
+    [Test]
     public void GetRecentIgnoresExpiredEntries()
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(1));
@@ -129,7 +166,14 @@ public sealed class QChatRecentDiagnosticsCacheTests
     [TestCase("[data_agent_evidence_pack]\nanalysis_confidence=0.9\n[/data_agent_evidence_pack]")]
     [TestCase("connection_string=Host=localhost;Username=test")]
     [TestCase("api_key=sk-test")]
+    [TestCase("Host=postgres.example;Username=alife;Password=secret")]
+    [TestCase("Authorization: Bearer token-abcdef123456")]
+    [TestCase("api-key=secret")]
+    [TestCase("apiKey=secret")]
     [TestCase("SELECT * FROM users")]
+    [TestCase("SELECT\n* FROM users")]
+    [TestCase("DELETE\nFROM query_audit")]
+    [TestCase("DROP TABLE users")]
     public void RecordRedactsUnsafeDiagnosticText(string unsafeText)
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
@@ -148,6 +192,9 @@ public sealed class QChatRecentDiagnosticsCacheTests
             Assert.That(latest.Text, Does.Not.Contain("Allowed XML tools"));
             Assert.That(latest.Text, Does.Not.Contain("sk-test"));
             Assert.That(latest.Text, Does.Not.Contain("SELECT"));
+            Assert.That(latest.Text, Does.Not.Contain("secret"));
+            Assert.That(latest.Text, Does.Not.Contain("token-abcdef123456"));
+            Assert.That(latest.Text, Does.Not.Contain("DROP TABLE"));
         });
     }
 
@@ -174,6 +221,26 @@ public sealed class QChatRecentDiagnosticsCacheTests
             "session=session-a"
         ];
         Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void FormatSummaryUsesInsertionOrderWhenEntriesShareTimestamp()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-a", "old_source", "allowed=old", now.AddSeconds(-2));
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-a", "new_source", "api_key=sk-test", now.AddSeconds(-2));
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary(
+            cache.GetRecent("session-a", now),
+            "session-a",
+            now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("tool_route_recent=available age_seconds=2 source=new_source redacted=true"));
+            Assert.That(text, Does.Not.Contain("source=old_source"));
+        });
     }
 
     [Test]
