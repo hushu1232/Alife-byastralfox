@@ -144,6 +144,55 @@ public sealed class QChatRecentDiagnosticsCacheTests
     }
 
     [Test]
+    public void GetRecentDoesNotPruneExpiredEntriesForOtherSessions()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromSeconds(30));
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "session-a-before-expiry", start);
+        cache.Record(QChatRecentDiagnosticKind.ToolRoute, "session-b", "source", "session-b-fresh", start.AddSeconds(20));
+
+        IReadOnlyList<QChatRecentDiagnosticEntry> sessionBEntries = cache.GetRecent("session-b", start.AddSeconds(40));
+        IReadOnlyList<QChatRecentDiagnosticEntry> sessionAEntriesBeforeExpiry = cache.GetRecent("session-a", start.AddSeconds(20));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sessionBEntries.Select(entry => entry.Text), Is.EqualTo(new[] { "session-b-fresh" }));
+            Assert.That(sessionAEntriesBeforeExpiry.Select(entry => entry.Text), Is.EqualTo(new[] { "session-a-before-expiry" }));
+        });
+    }
+
+    [Test]
+    public void ReadsFilterExpiredEntriesWithoutRemovingThem()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(1));
+        DateTimeOffset start = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.SemanticState, "session-a", "source", "semantic-before-expiry", start);
+
+        DateTimeOffset afterExpiry = start.AddSeconds(90);
+        IReadOnlyList<QChatRecentDiagnosticEntry> laterEntries = cache.GetRecent("session-a", afterExpiry);
+        QChatRecentDiagnosticEntry? laterLatest = cache.GetLatest(
+            "session-a",
+            QChatRecentDiagnosticKind.SemanticState,
+            afterExpiry);
+        IReadOnlyList<QChatRecentDiagnosticEntry> earlierEntries = cache.GetRecent("session-a", start.AddSeconds(30));
+        QChatRecentDiagnosticEntry? earlierLatest = cache.GetLatest(
+            "session-a",
+            QChatRecentDiagnosticKind.SemanticState,
+            start.AddSeconds(30));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(laterEntries, Is.Empty);
+            Assert.That(laterLatest, Is.Null);
+            Assert.That(earlierEntries.Select(entry => entry.Text), Is.EqualTo(new[] { "semantic-before-expiry" }));
+            Assert.That(earlierLatest, Is.Not.Null);
+            Assert.That(earlierLatest!.Text, Is.EqualTo("semantic-before-expiry"));
+        });
+    }
+
+    [Test]
     public void RecordCapsLongDiagnosticTextAtNineHundredCharacters()
     {
         QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));

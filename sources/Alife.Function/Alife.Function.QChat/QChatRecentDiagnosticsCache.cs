@@ -76,9 +76,10 @@ public sealed class QChatRecentDiagnosticsCache
         string normalizedSessionKey = NormalizeToken(sessionKey);
         lock (gate)
         {
-            PruneExpiredLocked(now);
             return entries
-                .Where(entry => entry.Entry.Kind == kind && string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
+                .Where(entry => IsExpired(entry, now) == false &&
+                                entry.Entry.Kind == kind &&
+                                string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
                 .OrderByDescending(entry => entry.Entry.CreatedAt)
                 .ThenByDescending(entry => entry.Sequence)
                 .Select(entry => entry.Entry)
@@ -94,9 +95,9 @@ public sealed class QChatRecentDiagnosticsCache
         string normalizedSessionKey = NormalizeToken(sessionKey);
         lock (gate)
         {
-            PruneExpiredLocked(now);
             return entries
-                .Where(entry => string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
+                .Where(entry => IsExpired(entry, now) == false &&
+                                string.Equals(entry.Entry.SessionKey, normalizedSessionKey, StringComparison.Ordinal))
                 .OrderBy(entry => entry.Entry.CreatedAt)
                 .ThenBy(entry => entry.Sequence)
                 .Select(entry => entry.Entry)
@@ -135,7 +136,12 @@ public sealed class QChatRecentDiagnosticsCache
 
     void PruneExpiredLocked(DateTimeOffset now)
     {
-        entries.RemoveAll(entry => now - entry.Entry.CreatedAt > ttl);
+        entries.RemoveAll(entry => IsExpired(entry, now));
+    }
+
+    bool IsExpired(QChatRecentDiagnosticRecord entry, DateTimeOffset now)
+    {
+        return now - entry.Entry.CreatedAt > ttl;
     }
 
     void PruneCapacityLocked(string sessionKey)
