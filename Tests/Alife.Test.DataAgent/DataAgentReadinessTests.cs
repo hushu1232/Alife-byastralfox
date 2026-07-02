@@ -188,7 +188,10 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgentModuleService.cs"));
             Assert.That(declaration, Does.Contain("functionService.RecordRecentDataAgentEvidenceDiagnostics"));
             Assert.That(declaration, Does.Contain("QChatRecentDiagnosticsCache.cs"));
+            Assert.That(declaration, Does.Contain("QChatDiagnosticTextSanitizer.cs"));
             Assert.That(declaration, Does.Contain("DataAgentEvidence"));
+            Assert.That(declaration, Does.Contain("[tool_route_context]"));
+            Assert.That(declaration, Does.Contain("[data_agent_evidence_pack]"));
             Assert.That(declaration, Does.Contain("hidden_context_redacted"));
         });
     }
