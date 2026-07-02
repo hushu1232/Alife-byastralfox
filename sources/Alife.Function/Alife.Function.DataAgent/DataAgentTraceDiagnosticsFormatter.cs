@@ -37,10 +37,10 @@ public static class DataAgentTraceDiagnosticsFormatter
     public static string Format(DataAgentTraceTimeline? timeline, int maxChars = 1800)
     {
         if (timeline is null)
-            return string.Join(Environment.NewLine,
+            return Bound(string.Join(Environment.NewLine,
                 "DataAgent trace diagnostics",
                 "state=unavailable",
-                "reason=trace_unavailable");
+                "reason=trace_unavailable"), maxChars);
 
         StringBuilder builder = new();
         AppendLine(builder, "DataAgent trace diagnostics");
@@ -120,7 +120,16 @@ public static class DataAgentTraceDiagnosticsFormatter
     {
         return key.Contains("sql", StringComparison.OrdinalIgnoreCase) ||
             key.Contains("table", StringComparison.OrdinalIgnoreCase) ||
-            key.Contains("dataset", StringComparison.OrdinalIgnoreCase);
+            key.Contains("dataset", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("api", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("pwd", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("authorization", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("credential", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsUnsafe(string value)

@@ -87,6 +87,18 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
         Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
     }
 
+    [Test]
+    public void FormatUnavailableHonorsMaxChars()
+    {
+        string text = DataAgentTraceDiagnosticsFormatter.Format(null, maxChars: 24);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text.Length, Is.LessThanOrEqualTo(24));
+            Assert.That(text, Does.EndWith("..."));
+        });
+    }
+
     [TestCase("Bearer token-abcdef123456", "Bearer", "token-abcdef123456")]
     [TestCase("Server=db.internal;Uid=alife;Pwd=secret", "db.internal", "secret")]
     [TestCase("[tool_route_context]\nAllowed XML tools: dataagent_query\n[/tool_route_context]", "tool_route_context", "dataagent_query")]
@@ -171,6 +183,71 @@ public sealed class DataAgentTraceDiagnosticsFormatterTests
             Assert.That(text, Does.Not.Contain("document_index"));
             Assert.That(text, Does.Not.Contain("finance_records"));
             Assert.That(text, Does.Not.Contain("users"));
+        });
+    }
+
+    [Test]
+    public void FormatRedactsSensitiveFactKeys()
+    {
+        DataAgentTraceTimeline timeline = Timeline(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            1,
+            Terminal: false,
+            [
+                Event(
+                    DataAgentTraceEventKind.RouteGate,
+                    DataAgentTraceEventStatus.Succeeded,
+                    "route_allowed",
+                    queryAllowed: true,
+                    executedSql: false,
+                    terminal: false,
+                    new Dictionary<string, string>
+                    {
+                        ["api_key"] = "sk-test",
+                        ["apiKey"] = "sk-test",
+                        ["token"] = "abcdef123456",
+                        ["access-token"] = "abcdef123456",
+                        ["password"] = "secret",
+                        ["pwd"] = "secret",
+                        ["secret"] = "value",
+                        ["authorization"] = "Bearer abc",
+                        ["connection_string"] = "Server=db;Uid=u;Pwd=p",
+                        ["db.password"] = "secret",
+                        ["rows"] = "3",
+                        ["route_allowed"] = "true",
+                        ["can_continue"] = "true",
+                        ["risk"] = "low",
+                        ["analysis_confidence"] = "0.9"
+                    })
+            ]);
+
+        string text = DataAgentTraceDiagnosticsFormatter.Format(timeline);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("access-token=redacted"));
+            Assert.That(text, Does.Contain("analysis_confidence=0.9"));
+            Assert.That(text, Does.Contain("apiKey=redacted"));
+            Assert.That(text, Does.Contain("api_key=redacted"));
+            Assert.That(text, Does.Contain("authorization=redacted"));
+            Assert.That(text, Does.Contain("can_continue=true"));
+            Assert.That(text, Does.Contain("connection_string=redacted"));
+            Assert.That(text, Does.Contain("db.password=redacted"));
+            Assert.That(text, Does.Contain("password=redacted"));
+            Assert.That(text, Does.Contain("pwd=redacted"));
+            Assert.That(text, Does.Contain("risk=low"));
+            Assert.That(text, Does.Contain("route_allowed=true"));
+            Assert.That(text, Does.Contain("rows=3"));
+            Assert.That(text, Does.Contain("secret=redacted"));
+            Assert.That(text, Does.Contain("token=redacted"));
+            Assert.That(text, Does.Not.Contain("sk-test"));
+            Assert.That(text, Does.Not.Contain("abcdef123456"));
+            Assert.That(text, Does.Not.Contain("password=secret"));
+            Assert.That(text, Does.Not.Contain("pwd=secret"));
+            Assert.That(text, Does.Not.Contain("secret=value"));
+            Assert.That(text, Does.Not.Contain("Bearer abc"));
+            Assert.That(text, Does.Not.Contain("Server=db"));
         });
     }
 
