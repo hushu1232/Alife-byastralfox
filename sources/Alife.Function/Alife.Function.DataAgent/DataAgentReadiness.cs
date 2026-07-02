@@ -756,14 +756,24 @@ public static class DataAgentReadiness
                 ? Pass("DataAgentEvidenceDiagnosticsPresent", "owner_diag=true;analysis_confidence=true;risk_level=true")
                 : Fail("DataAgentEvidenceDiagnosticsPresent", acceptedEvidenceDiagnostics.ReplaceLineEndings(" ")));
 
+            System.Reflection.ParameterInfo? evidenceDiagnosticsPublisherParameter =
+                typeof(DataAgentAnalysisToolHandler).GetConstructors()
+                    .SelectMany(ctor => ctor.GetParameters())
+                    .FirstOrDefault(parameter => parameter.Name == "evidenceDiagnosticsPublisher");
+            bool evidenceDiagnosticsPublisherIsStringAction =
+                evidenceDiagnosticsPublisherParameter?.ParameterType == typeof(Action<string>);
+            bool evidenceDiagnosticsFormatterPresent =
+                typeof(DataAgentModuleService).Assembly.GetType("Alife.Function.DataAgent.DataAgentEvidenceDiagnosticsFormatter") is not null;
+            bool dataAgentAvoidsQChatReference =
+                typeof(DataAgentModuleService).Assembly.GetReferencedAssemblies().Any(assemblyName =>
+                    string.Equals(assemblyName.Name, "Alife.Function.QChat", StringComparison.Ordinal)) == false;
             bool recentDiagnosticsBridgeReady =
-                typeof(DataAgentAnalysisToolHandler).GetConstructors().Any(ctor =>
-                    ctor.GetParameters().Any(parameter => parameter.Name == "evidenceDiagnosticsPublisher")) &&
-                typeof(DataAgentModuleService).Assembly.GetType("Alife.Function.DataAgent.DataAgentEvidenceDiagnosticsFormatter") is not null &&
-                typeof(DataAgentModuleService).Assembly.GetType("Alife.Function.QChat.QChatRecentDiagnosticsCache") is null;
+                evidenceDiagnosticsPublisherIsStringAction &&
+                evidenceDiagnosticsFormatterPresent &&
+                dataAgentAvoidsQChatReference;
             checks.Add(recentDiagnosticsBridgeReady
-                ? Pass("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=true;cache_ready=true")
-                : Fail("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=false;cache_ready=false"));
+                ? Pass("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=true;cache_ready=true;publisher_type=Action<string>;no_qchat_reference=true")
+                : Fail("DataAgentEvidenceRecentDiagnosticsBridgePresent", $"safe_bridge={evidenceDiagnosticsPublisherIsStringAction.ToString().ToLowerInvariant()};cache_ready={evidenceDiagnosticsFormatterPresent.ToString().ToLowerInvariant()};publisher_type={evidenceDiagnosticsPublisherParameter?.ParameterType.Name ?? "missing"};no_qchat_reference={dataAgentAvoidsQChatReference.ToString().ToLowerInvariant()}"));
         }
         catch (Exception ex)
         {

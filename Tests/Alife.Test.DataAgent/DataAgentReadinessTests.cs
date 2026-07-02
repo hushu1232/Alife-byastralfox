@@ -80,6 +80,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentAnalysisStateEstimatorPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEvidenceDiagnosticsPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEvidenceRecentDiagnosticsBridgePresent"));
+            DataAgentReadinessCheck recentDiagnosticsBridgeCheck = checks.Single(check => check.Name == "DataAgentEvidenceRecentDiagnosticsBridgePresent");
+            Assert.That(recentDiagnosticsBridgeCheck.Detail, Does.Contain("publisher_type=Action<string>"));
+            Assert.That(recentDiagnosticsBridgeCheck.Detail, Does.Contain("no_qchat_reference=true"));
             string[] readinessNames = checks.Select(check => check.Name).ToArray();
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentAnalysisStateEstimatorPresent") + 1));
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceRecentDiagnosticsBridgePresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent") + 1));
@@ -184,6 +187,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgentEvidenceDiagnosticsFormatter.Format"));
             Assert.That(declaration, Does.Contain("DataAgentModuleService.cs"));
             Assert.That(declaration, Does.Contain("functionService.RecordRecentDataAgentEvidenceDiagnostics"));
+            Assert.That(declaration, Does.Contain("QChatRecentDiagnosticsCache.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentEvidence"));
+            Assert.That(declaration, Does.Contain("hidden_context_redacted"));
         });
     }
 
