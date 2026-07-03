@@ -1,4 +1,5 @@
 using Alife.Function.DataAgent;
+using System.Text.Json;
 
 namespace Alife.Test.DataAgent;
 
@@ -27,6 +28,25 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
             Assert.That(pack.Terms.Select(term => term.Term), Does.Contain("缺失项"));
             Assert.That(pack.Metrics.Select(metric => metric.Name), Does.Contain("失败"));
             Assert.That(pack.Metrics.Select(metric => metric.Name), Does.Contain("必需"));
+        });
+    }
+
+    [Test]
+    public void EngineeringPackNormalizesMetricValuesToScalarDotNetTypes()
+    {
+        DataAgentScenarioKnowledgePack pack = LoadEngineeringPack();
+
+        DataAgentScenarioMetric failed = pack.Metrics.Single(metric => metric.Name == "失败");
+        DataAgentScenarioMetric required = pack.Metrics.Single(metric => metric.Name == "必需");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(failed.Value, Is.EqualTo("passed"));
+            Assert.That(failed.Value, Is.TypeOf<string>());
+            Assert.That(failed.Value, Is.Not.TypeOf<JsonElement>());
+            Assert.That(required.Value, Is.EqualTo(true));
+            Assert.That(required.Value, Is.TypeOf<bool>());
+            Assert.That(required.Value, Is.Not.TypeOf<JsonElement>());
         });
     }
 
@@ -70,6 +90,68 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
         Assert.That(exception.Message, Does.Contain("Duplicate scenario term"));
     }
 
+    [TestCase(
+        """{ "name": " ", "field": "status", "operator": "=", "value": "passed" }""",
+        "name")]
+    [TestCase(
+        """{ "name": "失败", "field": " ", "operator": "=", "value": "passed" }""",
+        "field")]
+    [TestCase(
+        """{ "name": "失败", "field": "status", "operator": " ", "value": "passed" }""",
+        "operator")]
+    [TestCase(
+        """{ "name": "失败", "field": "status", "operator": "starts_with", "value": "passed" }""",
+        "operator")]
+    [TestCase(
+        """{ "name": "失败", "field": "status", "operator": "=", "value": { "nested": true } }""",
+        "value")]
+    public void PackValidationRejectsInvalidMetrics(string metricJson, string expectedMessagePart)
+    {
+        string path = WriteScenarioPackWithMetric(metricJson);
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+            DataAgentScenarioKnowledgePackProvider.Load(path))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Does.Contain("Scenario metric"));
+            Assert.That(exception.Message, Does.Contain(expectedMessagePart).IgnoreCase);
+        });
+    }
+
+    [Test]
+    public void LoadedPackCollectionsAreDefensiveReadOnlySnapshots()
+    {
+        DataAgentScenarioKnowledgePack pack = LoadEngineeringPack();
+        DataAgentScenarioTerm engineeringGate = pack.Terms.Single(term => term.Term == "工程门禁");
+
+        AssertCannotPollute(
+            pack.Terms,
+            new DataAgentScenarioTerm("污染", [], "engineering_gate", ["name"]),
+            new DataAgentScenarioTerm("新增", [], "engineering_gate", ["status"]));
+        AssertCannotPollute(
+            pack.Metrics,
+            new DataAgentScenarioMetric("污染", "status", "=", "passed"),
+            new DataAgentScenarioMetric("新增", "required", "=", true));
+        AssertCannotPollute(engineeringGate.Aliases, "污染", "新增");
+        AssertCannotPollute(engineeringGate.Fields, "polluted", "added");
+
+        DataAgentScenarioKnowledgePack fresh = LoadEngineeringPack();
+        DataAgentScenarioTerm freshEngineeringGate = fresh.Terms.Single(term => term.Term == "工程门禁");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(fresh.Terms.Select(term => term.Term), Does.Not.Contain("污染"));
+            Assert.That(fresh.Terms.Select(term => term.Term), Does.Not.Contain("新增"));
+            Assert.That(fresh.Metrics.Select(metric => metric.Name), Does.Not.Contain("污染"));
+            Assert.That(fresh.Metrics.Select(metric => metric.Name), Does.Not.Contain("新增"));
+            Assert.That(freshEngineeringGate.Aliases, Does.Not.Contain("污染"));
+            Assert.That(freshEngineeringGate.Aliases, Does.Not.Contain("新增"));
+            Assert.That(freshEngineeringGate.Fields, Does.Not.Contain("polluted"));
+            Assert.That(freshEngineeringGate.Fields, Does.Not.Contain("added"));
+        });
+    }
+
     [Test]
     public void ResolverReturnsEmptyForUnmatchedUtterance()
     {
@@ -90,6 +172,46 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
             "scenario-packs",
             "engineering.zh-CN.json");
         return DataAgentScenarioKnowledgePackProvider.Load(packPath);
+    }
+
+    static string WriteScenarioPackWithMetric(string metricJson)
+    {
+        string path = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"{Guid.NewGuid():N}-scenario-pack.json");
+        File.WriteAllText(path, $$"""
+        {
+          "scenario": "validation",
+          "culture": "zh-CN",
+          "terms": [
+            { "term": "工程门禁", "aliases": [], "dataset": "engineering_gate", "fields": ["name"] }
+          ],
+          "metrics": [
+            {{metricJson}}
+          ]
+        }
+        """);
+
+        return path;
+    }
+
+    static void AssertCannotPollute<T>(IReadOnlyList<T> values, T replacement, T addition)
+    {
+        Assert.That(values, Is.Not.TypeOf<T[]>());
+
+        if (values is not IList<T> list)
+        {
+            return;
+        }
+
+        Assert.That(list.IsReadOnly, Is.True);
+
+        if (list.Count > 0)
+        {
+            Assert.Throws<NotSupportedException>(() => { list[0] = replacement; });
+        }
+
+        Assert.Throws<NotSupportedException>(() => list.Add(addition));
     }
 
     static string FindRepoRoot(string startDirectory)

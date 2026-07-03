@@ -4,6 +4,17 @@ namespace Alife.Function.DataAgent;
 
 public static class DataAgentScenarioKnowledgePackProvider
 {
+    static readonly string[] SupportedMetricOperators =
+    [
+        "=",
+        "!=",
+        ">",
+        ">=",
+        "<",
+        "<=",
+        "contains"
+    ];
+
     static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
@@ -25,12 +36,14 @@ public static class DataAgentScenarioKnowledgePackProvider
     {
         if (string.IsNullOrWhiteSpace(utterance))
         {
-            return [];
+            return Array.AsReadOnly(Array.Empty<DataAgentScenarioTerm>());
         }
 
-        return pack.Terms
+        DataAgentScenarioTerm[] matches = pack.Terms
             .Where(term => MatchesTerm(term, utterance))
             .ToArray();
+
+        return Array.AsReadOnly(matches);
     }
 
     static bool MatchesTerm(DataAgentScenarioTerm term, string utterance)
@@ -73,18 +86,14 @@ public static class DataAgentScenarioKnowledgePackProvider
             .Select(term => SnapshotTerm(term, terms))
             .ToArray();
         DataAgentScenarioMetric[] metricSnapshots = pack.Metrics
-            .Select(metric => new DataAgentScenarioMetric(
-                metric.Name,
-                metric.Field,
-                metric.Operator,
-                metric.Value))
+            .Select(SnapshotMetric)
             .ToArray();
 
         return new DataAgentScenarioKnowledgePack(
             pack.Scenario,
             pack.Culture,
-            termSnapshots,
-            metricSnapshots);
+            Array.AsReadOnly(termSnapshots),
+            Array.AsReadOnly(metricSnapshots));
     }
 
     static DataAgentScenarioTerm SnapshotTerm(
@@ -111,10 +120,101 @@ public static class DataAgentScenarioKnowledgePackProvider
             throw new InvalidOperationException($"Scenario term '{term.Term}' fields are required.");
         }
 
+        string[] aliases = term.Aliases?.ToArray() ?? [];
+        string[] fields = term.Fields.ToArray();
+
         return new DataAgentScenarioTerm(
             term.Term,
-            term.Aliases?.ToArray() ?? [],
+            Array.AsReadOnly(aliases),
             term.Dataset,
-            term.Fields.ToArray());
+            Array.AsReadOnly(fields));
+    }
+
+    static DataAgentScenarioMetric SnapshotMetric(DataAgentScenarioMetric metric)
+    {
+        if (string.IsNullOrWhiteSpace(metric.Name))
+        {
+            throw new InvalidOperationException("Scenario metric name is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(metric.Field))
+        {
+            throw new InvalidOperationException($"Scenario metric '{metric.Name}' field is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(metric.Operator))
+        {
+            throw new InvalidOperationException($"Scenario metric '{metric.Name}' operator is required.");
+        }
+
+        if (!SupportedMetricOperators.Contains(metric.Operator, StringComparer.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Scenario metric '{metric.Name}' operator '{metric.Operator}' is not supported.");
+        }
+
+        return new DataAgentScenarioMetric(
+            metric.Name,
+            metric.Field,
+            metric.Operator,
+            NormalizeMetricValue(metric.Name, metric.Value));
+    }
+
+    static object? NormalizeMetricValue(string metricName, object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonElement jsonElement)
+        {
+            return NormalizeJsonMetricValue(metricName, jsonElement);
+        }
+
+        if (value is string or bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal)
+        {
+            return value;
+        }
+
+        throw new InvalidOperationException($"Scenario metric '{metricName}' value must be a scalar.");
+    }
+
+    static object? NormalizeJsonMetricValue(string metricName, JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => NormalizeJsonMetricNumber(metricName, value),
+            JsonValueKind.Null => null,
+            _ => throw new InvalidOperationException($"Scenario metric '{metricName}' value must be a scalar.")
+        };
+    }
+
+    static object NormalizeJsonMetricNumber(string metricName, JsonElement value)
+    {
+        if (value.TryGetInt32(out int intValue))
+        {
+            return intValue;
+        }
+
+        if (value.TryGetInt64(out long longValue))
+        {
+            return longValue;
+        }
+
+        if (value.TryGetDecimal(out decimal decimalValue))
+        {
+            return decimalValue;
+        }
+
+        if (value.TryGetDouble(out double doubleValue))
+        {
+            return doubleValue;
+        }
+
+        throw new InvalidOperationException($"Scenario metric '{metricName}' value must be a scalar number.");
     }
 }
