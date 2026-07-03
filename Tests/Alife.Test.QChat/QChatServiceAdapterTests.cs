@@ -3439,6 +3439,49 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateDataAgentTraceCommandUsesFunctionCallerRecordedDiagnostics()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller.RecordRecentDataAgentTraceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "session=qq:xiayu:2905391496:private:3045846738",
+            "1 RouteGate Succeeded reason=route_allowed"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, functionCaller: functionCaller);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag trace"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(reply, Does.Contain("RouteGate Succeeded"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
+        });
+    }
+
+    [Test]
     public async Task OwnerPrivateQChatSemanticDiagnosticsUsesRecentSettleWindowState()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
@@ -3609,6 +3652,84 @@ public class QChatServiceAdapterTests
             Assert.That(recentReply, Does.Contain("dataagent_evidence_recent=available"));
             Assert.That(recentReply, Does.Contain("source=dataagent_analysis"));
             Assert.That(recentReply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+        });
+    }
+
+    [Test]
+    public async Task OwnerPrivateDataAgentTraceCommandUsesRecordedCacheWithoutModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+        service.RecordRecentDataAgentTraceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "session=qq:xiayu:2905391496:private:3045846738",
+            "1 RouteGate Succeeded reason=route_allowed"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag trace"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(reply, Does.Contain("RouteGate Succeeded"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
+        });
+    }
+
+    [Test]
+    public async Task RecentDiagnosticsSummaryIncludesDataAgentTraceAfterTraceRecorded()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        service.RecordRecentDataAgentTraceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "session=qq:xiayu:2905391496:private:3045846738",
+            "1 RouteGate Succeeded reason=route_allowed"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply, Does.Contain("QChat recent diagnostics"));
+            Assert.That(reply, Does.Contain("dataagent_trace_recent=available"));
+            Assert.That(reply, Does.Contain("source=dataagent_trace"));
+            Assert.That(reply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
         });
     }
 
