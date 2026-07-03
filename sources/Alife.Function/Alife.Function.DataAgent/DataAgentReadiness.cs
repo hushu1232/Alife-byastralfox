@@ -811,6 +811,94 @@ public static class DataAgentReadiness
             checks.Add(traceTimelineReady
                 ? Pass("DataAgentTraceTimelinePresent", traceTimelineReadyDetail)
                 : Fail("DataAgentTraceTimelinePresent", traceTimelineFailureDetail));
+
+            DateTimeOffset progressNow = new(2026, 7, 3, 10, 0, 0, TimeSpan.Zero);
+            DataAgentProgressRecorder progressRecorder = new();
+            List<string> progressDiagnostics = [];
+            IDataAgentProgressSink progressSink = new DataAgentProgressDiagnosticsPublisher(
+                progressRecorder,
+                progressDiagnostics.Add,
+                () => progressNow);
+            InMemoryDataAgentAnalysisSessionStore progressStore = new();
+            DataAgentAnalysisService progressAnalysisService = new(
+                new DataAgentService(databasePath),
+                progressStore,
+                progressSink: progressSink,
+                clock: () => progressNow);
+            DataAgentAnalysisOrchestrator progressOrchestrator = new(
+                progressAnalysisService,
+                progressStore,
+                progressSink: progressSink,
+                progressClock: () => progressNow);
+            DataAgentOrchestrationResult progressResult = progressOrchestrator.Start(new DataAgentOrchestrationRequest(
+                "owner",
+                "Which required gates are not passing?",
+                null,
+                RouteAllowsQuery: true,
+                RouteContext: new DataAgentToolRouteContext(
+                    true,
+                    "dataagent_analysis_start",
+                    true,
+                    true,
+                    "route-progress",
+                    "analysis_start",
+                    "route_allowed",
+                    string.Empty)));
+            progressSink.Publish(new DataAgentProgressEvent(
+                progressResult.SessionId,
+                DataAgentProgressEventKind.Execute,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Succeeded,
+                "read_only_query_executed",
+                progressResult.Checkpoint.TurnCount,
+                progressNow,
+                true,
+                true,
+                false,
+                new Dictionary<string, string>
+                {
+                    ["sql"] = "SELECT * FROM engineering_gate WHERE required = 1",
+                    ["hidden_context"] = "[hidden_context]secret[/hidden_context]",
+                    ["data_agent_evidence_pack"] = "[data_agent_evidence_pack]secret[/data_agent_evidence_pack]",
+                    ["tool_route_context"] = "Allowed XML tools for this turn: dataagent_query"
+                }));
+            IReadOnlyList<DataAgentProgressEvent> progressEvents = progressRecorder.GetRecent(progressResult.SessionId, progressNow);
+            string progressDiagnosticsText = progressDiagnostics.LastOrDefault() ??
+                DataAgentProgressDiagnosticsFormatter.Format(progressEvents, progressResult.SessionId, progressNow);
+            bool progressStructuralReady =
+                progressResult.Response.Accepted &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.RouteGate) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Planner) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Execute) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Checkpoint);
+            bool progressOwnerDiagnosticsReady =
+                progressDiagnosticsText.Contains("DataAgent progress diagnostics", StringComparison.Ordinal);
+            bool progressSqlRedacted =
+                progressDiagnosticsText.Contains("sql=redacted", StringComparison.Ordinal) &&
+                progressDiagnosticsText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("engineering_gate", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressHiddenContextRedacted =
+                progressDiagnosticsText.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("hidden context", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressEvidencePackRedacted =
+                progressDiagnosticsText.Contains("data_agent_evidence_pack", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressToolRouteRedacted =
+                progressDiagnosticsText.Contains("tool_route_context", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressStreamingReady =
+                progressStructuralReady &&
+                progressOwnerDiagnosticsReady &&
+                progressSqlRedacted &&
+                progressHiddenContextRedacted &&
+                progressEvidencePackRedacted &&
+                progressToolRouteRedacted;
+            const string progressStreamingReadyDetail =
+                "progress_stream=true;owner_diag=true;sql_redacted=true;hidden_context_redacted=true;evidence_pack_redacted=true;tool_route_redacted=true";
+            string progressStreamingFailureDetail =
+                $"progress_stream={LowerBool(progressStructuralReady)};owner_diag={LowerBool(progressOwnerDiagnosticsReady)};sql_redacted={LowerBool(progressSqlRedacted)};hidden_context_redacted={LowerBool(progressHiddenContextRedacted)};evidence_pack_redacted={LowerBool(progressEvidencePackRedacted)};tool_route_redacted={LowerBool(progressToolRouteRedacted)}";
+            checks.Add(progressStreamingReady
+                ? Pass("DataAgentProgressStreamingPresent", progressStreamingReadyDetail)
+                : Fail("DataAgentProgressStreamingPresent", progressStreamingFailureDetail));
         }
         catch (Exception ex)
         {

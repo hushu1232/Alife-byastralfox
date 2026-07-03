@@ -31,6 +31,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "QChat recent diagnostics command",
         "QChat diagnostics cache redaction",
         "DataAgent trace diagnostics",
+        "DataAgent progress diagnostics",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration"
     ];
