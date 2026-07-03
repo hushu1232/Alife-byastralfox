@@ -30,6 +30,7 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             analysisSessionStore);
         IDataAgentToolRouteContextAccessor routeContextAccessor =
             new XmlPolicyDataAgentToolRouteContextAccessor(functionService.ExecutionPolicy);
+        IDataAgentTraceRecorder traceRecorder = new DataAgentTraceRecorder();
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
@@ -37,7 +38,9 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             analysisOrchestrator,
             PublishAnalysisContext,
             routeContextAccessor,
-            functionService.RecordRecentDataAgentEvidenceDiagnostics));
+            functionService.RecordRecentDataAgentEvidenceDiagnostics,
+            functionService.RecordRecentDataAgentTraceDiagnostics,
+            traceRecorder));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)

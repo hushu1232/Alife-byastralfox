@@ -1,4 +1,5 @@
 using Alife.Function.DataAgent;
+using Alife.Function.FunctionCaller;
 using System.Diagnostics;
 
 namespace Alife.Test.DataAgent;
@@ -193,6 +194,22 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("[tool_route_context]"));
             Assert.That(declaration, Does.Contain("[data_agent_evidence_pack]"));
             Assert.That(declaration, Does.Contain("hidden_context_redacted"));
+        });
+    }
+
+    [Test]
+    public void FunctionCallerStoresRecentDataAgentTraceDiagnostics()
+    {
+        Type functionCallerType = typeof(XmlFunctionCaller);
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(functionCallerType.GetProperty("RecentDataAgentTraceDiagnostics"), Is.Not.Null);
+            Assert.That(functionCallerType.GetMethod("RecordRecentDataAgentTraceDiagnostics"), Is.Not.Null);
+            Assert.That(
+                File.ReadAllText(Path.Combine(repoRoot, "sources", "Alife.Function", "Alife.Function.DataAgent", "DataAgentModuleService.cs")),
+                Does.Contain("functionService.RecordRecentDataAgentTraceDiagnostics"));
         });
     }
 
