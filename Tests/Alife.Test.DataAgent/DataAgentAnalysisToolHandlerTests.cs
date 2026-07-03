@@ -254,6 +254,52 @@ public sealed class DataAgentAnalysisToolHandlerTests
     }
 
     [Test]
+    public void TraceDiagnosticsSanitizesStructuredReasonCodes()
+    {
+        const string RawReason = "unsupported_operator_for_field:contains:engineering_gate.required";
+        List<string> traceDiagnostics = [];
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Rejected, RawReason, false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, RawReason, false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                1,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]")
+        });
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_start",
+            true,
+            true,
+            "route-1",
+            "analysis_start",
+            "route_allowed",
+            string.Empty));
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            routeContextAccessor: routeAccessor,
+            traceDiagnosticsPublisher: traceDiagnostics.Add);
+
+        handler.Start("xiayu", "Which documents describe DataAgent?");
+
+        Assert.Multiple(() =>
+        {
+            string trace = traceDiagnostics.Single();
+            Assert.That(trace, Does.Contain("reason=unsupported_operator_for_field"));
+            Assert.That(trace, Does.Not.Contain(RawReason));
+            Assert.That(trace, Does.Not.Contain("engineering_gate"));
+            Assert.That(trace, Does.Not.Contain("required"));
+        });
+    }
+
+    [Test]
     public void StartWithoutRouteContextFailsClosedAtRequestBoundary()
     {
         RecordingOrchestrator orchestrator = CreateOrchestrator();

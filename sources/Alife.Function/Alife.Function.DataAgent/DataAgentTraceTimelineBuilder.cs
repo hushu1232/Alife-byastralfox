@@ -59,7 +59,7 @@ public sealed class DataAgentTraceTimelineBuilder
         return new DataAgentTraceEvent(
             MapKind(step.Node),
             MapStatus(step.Status),
-            step.Reason,
+            NormalizeReasonCode(step.Reason),
             step.ExecutedSql,
             result.RouteContext?.AllowsQuery == true,
             result.Checkpoint.Terminal || step.Node is DataAgentOrchestrationNodeKind.Summarize or DataAgentOrchestrationNodeKind.End,
@@ -78,7 +78,7 @@ public sealed class DataAgentTraceTimelineBuilder
             facts["route_present"] = Bool(result.RouteContext?.Present == true);
             facts["route_allowed"] = Bool(result.RouteContext?.AllowsTool == true);
             facts["route_allows_query"] = Bool(result.RouteContext?.AllowsQuery == true);
-            facts["route_reason"] = result.RouteContext?.ReasonCode ?? string.Empty;
+            facts["route_reason"] = NormalizeReasonCode(result.RouteContext?.ReasonCode ?? string.Empty);
         }
         else if (step.Node == DataAgentOrchestrationNodeKind.Checkpoint)
         {
@@ -107,7 +107,7 @@ public sealed class DataAgentTraceTimelineBuilder
         return new DataAgentTraceEvent(
             DataAgentTraceEventKind.EvidencePack,
             DataAgentTraceEventStatus.Succeeded,
-            pack.StateEstimateReasonCode,
+            NormalizeReasonCode(pack.StateEstimateReasonCode),
             pack.ExecutedSql,
             pack.RouteAllowsQuery,
             pack.Terminal,
@@ -148,5 +148,37 @@ public sealed class DataAgentTraceTimelineBuilder
     static string Bool(bool value)
     {
         return value ? "true" : "false";
+    }
+
+    static string NormalizeReasonCode(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "reason_redacted";
+
+        string trimmed = value.Trim();
+        int separatorIndex = trimmed.IndexOf(':', StringComparison.Ordinal);
+        if (separatorIndex > 0)
+        {
+            string leadingCode = trimmed[..separatorIndex];
+            return IsSafeReasonCode(leadingCode) ? leadingCode : "reason_redacted";
+        }
+
+        return IsSafeReasonCode(trimmed) ? trimmed : "reason_redacted";
+    }
+
+    static bool IsSafeReasonCode(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        foreach (char current in value)
+        {
+            if (char.IsAsciiLetterOrDigit(current) || current is '_' or '-')
+                continue;
+
+            return false;
+        }
+
+        return true;
     }
 }
