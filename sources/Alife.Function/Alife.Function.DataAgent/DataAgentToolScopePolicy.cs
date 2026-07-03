@@ -33,22 +33,22 @@ public static class DataAgentNodeCapabilities
     public const string ReadEvidenceDiagnostics = "dataagent.diagnostics.evidence.read";
 }
 
-public sealed record DataAgentNodeToolScope
+public sealed class DataAgentNodeToolScope
 {
     public DataAgentNodeToolScope(
-        string NodeName,
-        bool AllowsModelCall,
-        IReadOnlyList<string> AllowedCapabilities,
-        string Reason)
+        string nodeName,
+        bool allowsModelCall,
+        IReadOnlyList<string> allowedCapabilities,
+        string reason)
     {
-        ArgumentNullException.ThrowIfNull(NodeName);
-        ArgumentNullException.ThrowIfNull(AllowedCapabilities);
-        ArgumentNullException.ThrowIfNull(Reason);
+        ArgumentNullException.ThrowIfNull(nodeName);
+        ArgumentNullException.ThrowIfNull(allowedCapabilities);
+        ArgumentNullException.ThrowIfNull(reason);
 
-        this.NodeName = NodeName;
-        this.AllowsModelCall = AllowsModelCall;
-        this.AllowedCapabilities = Array.AsReadOnly(AllowedCapabilities.ToArray());
-        this.Reason = Reason;
+        NodeName = nodeName;
+        AllowsModelCall = allowsModelCall;
+        AllowedCapabilities = Array.AsReadOnly(allowedCapabilities.ToArray());
+        Reason = reason;
     }
 
     public string NodeName { get; }

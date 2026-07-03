@@ -1,3 +1,4 @@
+using System.Reflection;
 using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
@@ -66,6 +67,49 @@ public sealed class DataAgentToolScopePolicyTests
             Assert.That(scope.AllowedCapabilities, Is.Empty);
             Assert.That(scope.Reason, Is.EqualTo("unknown_node_fail_closed"));
         });
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void BlankNodeFailsClosed(string? nodeName)
+    {
+        DataAgentNodeToolScope scope = DataAgentToolScopePolicy.ForNode(nodeName!);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(scope.AllowsModelCall, Is.False);
+            Assert.That(scope.AllowedCapabilities, Is.Empty);
+            Assert.That(scope.Reason, Is.EqualTo("unknown_node_fail_closed"));
+            Assert.That(scope.NodeName, Is.Not.Null);
+        });
+    }
+
+    [Test]
+    public void RepeatedPlannerScopesExposeSamePropertyValues()
+    {
+        DataAgentNodeToolScope first = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
+        DataAgentNodeToolScope second = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(first.NodeName, Is.EqualTo(second.NodeName));
+            Assert.That(first.AllowsModelCall, Is.EqualTo(second.AllowsModelCall));
+            Assert.That(first.AllowedCapabilities, Is.EqualTo(second.AllowedCapabilities));
+            Assert.That(first.Reason, Is.EqualTo(second.Reason));
+            Assert.That(first.AllowedCapabilities, Is.Not.SameAs(second.AllowedCapabilities));
+        });
+    }
+
+    [Test]
+    public void ScopeTypeDoesNotExposeGeneratedRecordValueEquality()
+    {
+        IEnumerable<string> equalityOperators = typeof(DataAgentNodeToolScope)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(method => method.Name is "op_Equality" or "op_Inequality")
+            .Select(method => method.Name);
+
+        Assert.That(equalityOperators, Is.Empty);
     }
 
     [Test]
