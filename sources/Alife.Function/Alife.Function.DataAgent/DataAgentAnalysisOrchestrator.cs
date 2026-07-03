@@ -7,11 +7,15 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
     readonly DataAgentAnalysisService analysisService;
     readonly IDataAgentAnalysisSessionStore sessionStore;
     readonly DataAgentFollowUpInterpreter followUpInterpreter;
+    readonly IDataAgentProgressSink? progressSink;
+    readonly Func<DateTimeOffset> progressClock;
 
     public DataAgentAnalysisOrchestrator(
         DataAgentAnalysisService analysisService,
         IDataAgentAnalysisSessionStore sessionStore,
-        DataAgentFollowUpInterpreter? followUpInterpreter = null)
+        DataAgentFollowUpInterpreter? followUpInterpreter = null,
+        IDataAgentProgressSink? progressSink = null,
+        Func<DateTimeOffset>? progressClock = null)
     {
         ArgumentNullException.ThrowIfNull(analysisService);
         ArgumentNullException.ThrowIfNull(sessionStore);
@@ -19,6 +23,8 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         this.analysisService = analysisService;
         this.sessionStore = sessionStore;
         this.followUpInterpreter = followUpInterpreter ?? new DataAgentFollowUpInterpreter();
+        this.progressSink = progressSink;
+        this.progressClock = progressClock ?? (() => DateTimeOffset.UtcNow);
     }
 
     public DataAgentOrchestrationResult Start(DataAgentOrchestrationRequest request)
@@ -42,7 +48,20 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
 
         DataAgentAnalysisResponse response = analysisService.Start(request.CallerId, request.Input);
         AppendAnswerSteps(steps, response);
-        return BuildResult(response, steps, request.RouteContext);
+        DataAgentOrchestrationResult result = BuildResult(response, steps, request.RouteContext);
+        PublishRouteAllowed(result.SessionId, result.Checkpoint.TurnCount);
+        PublishProgress(
+            result.SessionId,
+            DataAgentProgressEventKind.SchemaContext,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "dataagent_catalog_available",
+            result.Checkpoint.TurnCount,
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
+        PublishCheckpointProgress(result.Checkpoint);
+        return result;
     }
 
     public DataAgentOrchestrationResult Continue(DataAgentOrchestrationRequest request)
@@ -62,7 +81,7 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         if (session is null)
         {
             DataAgentAnalysisResponse missingSessionResponse = analysisService.Continue(request.SessionId!, request.Input);
-            return BuildResult(
+            DataAgentOrchestrationResult missingSessionResult = BuildResult(
                 missingSessionResponse,
                 [
                     Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
@@ -70,6 +89,9 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                     Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
                 ],
                 request.RouteContext);
+            PublishRouteAllowed(missingSessionResult.SessionId, missingSessionResult.Checkpoint.TurnCount);
+            PublishCheckpointProgress(missingSessionResult.Checkpoint);
+            return missingSessionResult;
         }
 
         DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(request.Input, session);
@@ -95,7 +117,10 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
             Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, queryProducing ? "route_allowed" : "terminal_route_not_required", false)
         ];
         AppendAnswerSteps(steps, response);
-        return BuildResult(response, steps, request.RouteContext);
+        DataAgentOrchestrationResult result = BuildResult(response, steps, request.RouteContext);
+        PublishRouteAllowed(result.SessionId, result.Checkpoint.TurnCount);
+        PublishCheckpointProgress(result.Checkpoint);
+        return result;
     }
 
     public DataAgentOrchestrationResult Summarize(string sessionId, DataAgentToolRouteContext? routeContext = null)
@@ -112,7 +137,7 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                 routeContext);
 
         DataAgentAnalysisResponse response = analysisService.Summarize(sessionId);
-        return BuildResult(
+        DataAgentOrchestrationResult result = BuildResult(
             response,
             [
                 Step(
@@ -123,6 +148,8 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                 Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
             ],
             routeContext);
+        PublishCheckpointProgress(result.Checkpoint);
+        return result;
     }
 
     public DataAgentOrchestrationResult End(string sessionId, DataAgentToolRouteContext? routeContext = null)
@@ -139,7 +166,7 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                 routeContext);
 
         DataAgentAnalysisResponse response = analysisService.End(sessionId);
-        return BuildResult(
+        DataAgentOrchestrationResult result = BuildResult(
             response,
             [
                 Step(
@@ -150,6 +177,8 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
                 Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
             ],
             routeContext);
+        PublishCheckpointProgress(result.Checkpoint);
+        return result;
     }
 
     DataAgentOrchestrationResult? BuildRouteDeniedResultIfNeeded(
@@ -225,6 +254,28 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         ];
 
         DataAgentOrchestrationCheckpoint checkpoint = BuildCheckpoint(sessionId, response.Status);
+        string progressSessionId = string.IsNullOrWhiteSpace(sessionId) ? "pending" : sessionId;
+        PublishProgress(
+            progressSessionId,
+            DataAgentProgressEventKind.RouteGate,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Rejected,
+            reason,
+            checkpoint.TurnCount,
+            executedSql: false,
+            queryAllowed: false,
+            terminal: checkpoint.Terminal);
+        PublishProgress(
+            progressSessionId,
+            DataAgentProgressEventKind.Reject,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Rejected,
+            reason,
+            checkpoint.TurnCount,
+            executedSql: false,
+            queryAllowed: false,
+            terminal: checkpoint.Terminal);
+        PublishCheckpointProgress(checkpoint, progressSessionId);
         return new DataAgentOrchestrationResult(
             sessionId,
             checkpoint.SessionStatus,
@@ -317,6 +368,59 @@ public sealed class DataAgentAnalysisOrchestrator : IDataAgentAnalysisOrchestrat
         bool executedSql)
     {
         return new DataAgentOrchestrationStep(node, status, reason, executedSql);
+    }
+
+    void PublishRouteAllowed(string sessionId, int turnCount)
+    {
+        PublishProgress(
+            sessionId,
+            DataAgentProgressEventKind.RouteGate,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "route_allowed",
+            turnCount,
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
+    }
+
+    void PublishCheckpointProgress(DataAgentOrchestrationCheckpoint checkpoint, string? overrideSessionId = null)
+    {
+        PublishProgress(
+            overrideSessionId ?? checkpoint.SessionId,
+            DataAgentProgressEventKind.Checkpoint,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "checkpoint_created",
+            checkpoint.TurnCount,
+            executedSql: false,
+            queryAllowed: checkpoint.Terminal == false,
+            terminal: checkpoint.Terminal);
+    }
+
+    void PublishProgress(
+        string sessionId,
+        DataAgentProgressEventKind kind,
+        DataAgentProgressEventPhase phase,
+        DataAgentProgressEventStatus status,
+        string reasonCode,
+        int turnCount,
+        bool executedSql,
+        bool queryAllowed,
+        bool terminal)
+    {
+        progressSink?.Publish(new DataAgentProgressEvent(
+            sessionId,
+            kind,
+            phase,
+            status,
+            reasonCode,
+            turnCount,
+            progressClock(),
+            executedSql,
+            queryAllowed,
+            terminal,
+            new Dictionary<string, string>()));
     }
 
     static void ValidateStartRequest(DataAgentOrchestrationRequest request)
