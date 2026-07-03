@@ -9015,7 +9015,25 @@ public partial class QChatService(
                 return recentDataAgentTraceDiagnostics;
         }
 
-        return functionService.RecentDataAgentTraceDiagnostics;
+        string fallback = NormalizeCachedDiagnosticText(functionService.RecentDataAgentTraceDiagnostics);
+        if (string.IsNullOrWhiteSpace(fallback))
+            return fallback;
+
+        lock (dataAgentTraceDiagnosticsGate)
+        {
+            if (string.IsNullOrWhiteSpace(recentDataAgentTraceDiagnostics) == false)
+                return recentDataAgentTraceDiagnostics;
+
+            recentDataAgentTraceDiagnostics = fallback;
+        }
+
+        recentDiagnosticsCache.Record(
+            QChatRecentDiagnosticKind.DataAgentTrace,
+            BuildOwnerPrivateRecentDiagnosticsSessionKey(),
+            "dataagent_trace",
+            fallback,
+            DateTimeOffset.UtcNow);
+        return fallback;
     }
 
     void UpdateRecentSemanticDiagnostics(
