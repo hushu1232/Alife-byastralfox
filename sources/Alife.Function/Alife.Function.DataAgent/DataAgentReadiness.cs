@@ -774,6 +774,24 @@ public static class DataAgentReadiness
             checks.Add(recentDiagnosticsBridgeReady
                 ? Pass("DataAgentEvidenceRecentDiagnosticsBridgePresent", "safe_bridge=true;cache_ready=true;publisher_type=Action<string>;no_qchat_reference=true")
                 : Fail("DataAgentEvidenceRecentDiagnosticsBridgePresent", $"safe_bridge={evidenceDiagnosticsPublisherIsStringAction.ToString().ToLowerInvariant()};cache_ready={evidenceDiagnosticsFormatterPresent.ToString().ToLowerInvariant()};publisher_type={evidenceDiagnosticsPublisherParameter?.ParameterType.Name ?? "missing"};no_qchat_reference={dataAgentAvoidsQChatReference.ToString().ToLowerInvariant()}"));
+
+            DataAgentTraceTimeline traceTimeline = new DataAgentTraceTimelineBuilder().Build(
+                orchestrationStart,
+                acceptedEvidencePack,
+                DateTimeOffset.UtcNow);
+            string traceDiagnostics = DataAgentTraceDiagnosticsFormatter.Format(traceTimeline);
+            bool traceTimelineReady =
+                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.RouteGate) &&
+                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.Execute) &&
+                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.EvidencePack) &&
+                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.Checkpoint) &&
+                traceDiagnostics.Contains("DataAgent trace diagnostics", StringComparison.Ordinal) &&
+                traceDiagnostics.Contains("sql=redacted", StringComparison.Ordinal) &&
+                traceDiagnostics.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) == false &&
+                traceDiagnostics.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) == false;
+            checks.Add(traceTimelineReady
+                ? Pass("DataAgentTraceTimelinePresent", "trace_timeline=true;owner_diag=true;sql_redacted=true")
+                : Fail("DataAgentTraceTimelinePresent", traceDiagnostics.ReplaceLineEndings(" ")));
         }
         catch (Exception ex)
         {

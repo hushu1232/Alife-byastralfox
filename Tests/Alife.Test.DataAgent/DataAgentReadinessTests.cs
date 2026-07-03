@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(60));
+            Assert.That(checks, Has.Count.EqualTo(61));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -84,9 +84,15 @@ public sealed class DataAgentReadinessTests
             DataAgentReadinessCheck recentDiagnosticsBridgeCheck = checks.Single(check => check.Name == "DataAgentEvidenceRecentDiagnosticsBridgePresent");
             Assert.That(recentDiagnosticsBridgeCheck.Detail, Does.Contain("publisher_type=Action<string>"));
             Assert.That(recentDiagnosticsBridgeCheck.Detail, Does.Contain("no_qchat_reference=true"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentTraceTimelinePresent"));
+            DataAgentReadinessCheck traceTimelineCheck = checks.Single(check => check.Name == "DataAgentTraceTimelinePresent");
+            Assert.That(traceTimelineCheck.Detail, Does.Contain("trace_timeline=true"));
+            Assert.That(traceTimelineCheck.Detail, Does.Contain("owner_diag=true"));
+            Assert.That(traceTimelineCheck.Detail, Does.Contain("sql_redacted=true"));
             string[] readinessNames = checks.Select(check => check.Name).ToArray();
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentAnalysisStateEstimatorPresent") + 1));
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceRecentDiagnosticsBridgePresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent") + 1));
+            Assert.That(Array.IndexOf(readinessNames, "DataAgentTraceTimelinePresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentEvidenceRecentDiagnosticsBridgePresent") + 1));
         });
     }
 
@@ -107,7 +113,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 74 required passed, 0 required missing"
+                "  Summary: 75 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -123,6 +129,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentAnalysisStateEstimatorPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEvidenceDiagnosticsPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEvidenceRecentDiagnosticsBridgePresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentTraceTimelinePresent"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
@@ -138,7 +145,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 74"));
+            Assert.That(script, Does.Contain("$expectedRequired = 75"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -194,6 +201,30 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("[tool_route_context]"));
             Assert.That(declaration, Does.Contain("[data_agent_evidence_pack]"));
             Assert.That(declaration, Does.Contain("hidden_context_redacted"));
+        });
+    }
+
+    [Test]
+    public void ReadinessScriptProtectsV28TraceTimelineContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "DataAgentTraceTimelinePresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentTraceModels.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentTraceRecorder.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentTraceDiagnosticsFormatter.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentAnalysisToolHandler.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentTraceTimelineBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(declaration, Does.Contain("trace_unavailable"));
+            Assert.That(declaration, Does.Contain("sql=redacted"));
+            Assert.That(declaration, Does.Contain("GetLatestReturnsNewestTimelineForSession"));
+            Assert.That(declaration, Does.Contain("FormatRedactsUnsafeFactValues"));
         });
     }
 
@@ -293,7 +324,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 50 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 51 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -307,7 +338,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 50"));
+            Assert.That(script, Does.Contain("$expectedRequired = 51"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
