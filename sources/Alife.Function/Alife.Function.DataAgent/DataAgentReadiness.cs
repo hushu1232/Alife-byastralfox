@@ -780,18 +780,37 @@ public static class DataAgentReadiness
                 acceptedEvidencePack,
                 DateTimeOffset.UtcNow);
             string traceDiagnostics = DataAgentTraceDiagnosticsFormatter.Format(traceTimeline);
-            bool traceTimelineReady =
+            bool traceTimelineStructuralReady =
                 traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.RouteGate) &&
                 traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.Execute) &&
                 traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.EvidencePack) &&
-                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.Checkpoint) &&
-                traceDiagnostics.Contains("DataAgent trace diagnostics", StringComparison.Ordinal) &&
-                traceDiagnostics.Contains("sql=redacted", StringComparison.Ordinal) &&
-                traceDiagnostics.Contains("[data_agent_evidence_pack]", StringComparison.OrdinalIgnoreCase) == false &&
-                traceDiagnostics.Contains("[tool_route_context]", StringComparison.OrdinalIgnoreCase) == false;
+                traceTimeline.Events.Any(traceEvent => traceEvent.Kind == DataAgentTraceEventKind.Checkpoint);
+            bool traceOwnerDiagnosticsReady =
+                traceDiagnostics.Contains("DataAgent trace diagnostics", StringComparison.Ordinal);
+            bool traceSqlRedacted =
+                traceDiagnostics.Contains("sql=redacted", StringComparison.Ordinal);
+            bool traceEvidencePackRedacted =
+                traceDiagnostics.Contains("data_agent_evidence_pack", StringComparison.OrdinalIgnoreCase) == false;
+            bool traceToolRouteRedacted =
+                traceDiagnostics.Contains("tool_route_context", StringComparison.OrdinalIgnoreCase) == false &&
+                traceDiagnostics.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase) == false;
+            bool traceHiddenContextRedacted =
+                traceDiagnostics.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                traceDiagnostics.Contains("hidden context", StringComparison.OrdinalIgnoreCase) == false;
+            bool traceTimelineReady =
+                traceTimelineStructuralReady &&
+                traceOwnerDiagnosticsReady &&
+                traceSqlRedacted &&
+                traceEvidencePackRedacted &&
+                traceToolRouteRedacted &&
+                traceHiddenContextRedacted;
+            const string traceTimelineReadyDetail =
+                "trace_timeline=true;owner_diag=true;sql_redacted=true;hidden_context_redacted=true;evidence_pack_redacted=true;tool_route_redacted=true";
+            string traceTimelineFailureDetail =
+                $"trace_timeline={LowerBool(traceTimelineStructuralReady)};owner_diag={LowerBool(traceOwnerDiagnosticsReady)};sql_redacted={LowerBool(traceSqlRedacted)};hidden_context_redacted={LowerBool(traceHiddenContextRedacted)};evidence_pack_redacted={LowerBool(traceEvidencePackRedacted)};tool_route_redacted={LowerBool(traceToolRouteRedacted)}";
             checks.Add(traceTimelineReady
-                ? Pass("DataAgentTraceTimelinePresent", "trace_timeline=true;owner_diag=true;sql_redacted=true")
-                : Fail("DataAgentTraceTimelinePresent", traceDiagnostics.ReplaceLineEndings(" ")));
+                ? Pass("DataAgentTraceTimelinePresent", traceTimelineReadyDetail)
+                : Fail("DataAgentTraceTimelinePresent", traceTimelineFailureDetail));
         }
         catch (Exception ex)
         {
@@ -804,6 +823,8 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Pass(string name, string detail) => new(name, true, detail);
 
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
+
+    static string LowerBool(bool value) => value ? "true" : "false";
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {

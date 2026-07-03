@@ -89,6 +89,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(traceTimelineCheck.Detail, Does.Contain("trace_timeline=true"));
             Assert.That(traceTimelineCheck.Detail, Does.Contain("owner_diag=true"));
             Assert.That(traceTimelineCheck.Detail, Does.Contain("sql_redacted=true"));
+            Assert.That(traceTimelineCheck.Detail, Does.Contain("hidden_context_redacted=true"));
             string[] readinessNames = checks.Select(check => check.Name).ToArray();
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentAnalysisStateEstimatorPresent") + 1));
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceRecentDiagnosticsBridgePresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent") + 1));
@@ -223,6 +224,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgent trace diagnostics"));
             Assert.That(declaration, Does.Contain("trace_unavailable"));
             Assert.That(declaration, Does.Contain("sql=redacted"));
+            Assert.That(declaration, Does.Contain("hidden_context_redacted=true"));
             Assert.That(declaration, Does.Contain("GetLatestReturnsNewestTimelineForSession"));
             Assert.That(declaration, Does.Contain("FormatRedactsUnsafeFactValues"));
         });
