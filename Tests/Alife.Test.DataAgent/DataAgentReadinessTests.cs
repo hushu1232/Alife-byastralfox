@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(62));
+            Assert.That(checks, Has.Count.EqualTo(65));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -91,6 +91,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(traceTimelineCheck.Detail, Does.Contain("sql_redacted=true"));
             Assert.That(traceTimelineCheck.Detail, Does.Contain("hidden_context_redacted=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentProgressStreamingPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentScenarioKnowledgePackPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentNodeToolScopePolicyPresent"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             DataAgentReadinessCheck progressStreamingCheck = checks.Single(check => check.Name == "DataAgentProgressStreamingPresent");
             Assert.That(progressStreamingCheck.Detail, Does.Contain("progress_stream=true"));
             Assert.That(progressStreamingCheck.Detail, Does.Contain("owner_diag=true"));
@@ -123,7 +126,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 76 required passed, 0 required missing"
+                "  Summary: 79 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -141,6 +144,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEvidenceRecentDiagnosticsBridgePresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentTraceTimelinePresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentProgressStreamingPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentScenarioKnowledgePackPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
         });
     }
@@ -156,7 +162,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 76"));
+            Assert.That(script, Does.Contain("$expectedRequired = 79"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -383,7 +389,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 52 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 54 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -397,7 +403,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 52"));
+            Assert.That(script, Does.Contain("$expectedRequired = 54"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });

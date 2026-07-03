@@ -899,6 +899,44 @@ public static class DataAgentReadiness
             checks.Add(progressStreamingReady
                 ? Pass("DataAgentProgressStreamingPresent", progressStreamingReadyDetail)
                 : Fail("DataAgentProgressStreamingPresent", progressStreamingFailureDetail));
+
+            string repoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+            string scenarioPackPath = Path.Combine(repoRoot, "docs", "dataagent", "scenario-packs", "engineering.zh-CN.json");
+            DataAgentScenarioKnowledgePack pack = DataAgentScenarioKnowledgePackProvider.Load(scenarioPackPath);
+            IReadOnlyList<DataAgentScenarioTerm> resolvedTerms =
+                DataAgentScenarioKnowledgePackProvider.ResolveTerms(pack, "看看工程门禁里最近失败的必需项");
+            bool scenarioPackReady =
+                string.Equals(pack.Scenario, "engineering_readiness", StringComparison.Ordinal) &&
+                resolvedTerms.Any(term =>
+                    string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&
+                    term.Fields.Contains("status", StringComparer.Ordinal));
+            checks.Add(scenarioPackReady
+                ? Pass("DataAgentScenarioKnowledgePackPresent", "scenario=engineering_readiness;dataset=engineering_gate;field=status")
+                : Fail("DataAgentScenarioKnowledgePackPresent", $"path={scenarioPackPath};terms={string.Join(",", resolvedTerms.Select(term => term.Dataset))}"));
+
+            DataAgentNodeToolScope plannerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
+            DataAgentNodeToolScope diagnosticsScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.DiagnosticsRouter);
+            bool nodeToolScopePolicyReady =
+                plannerScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.GenerateQueryPlan, StringComparer.Ordinal) &&
+                plannerScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false &&
+                diagnosticsScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ReadProgressDiagnostics, StringComparer.Ordinal) &&
+                diagnosticsScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false;
+            checks.Add(nodeToolScopePolicyReady
+                ? Pass("DataAgentNodeToolScopePolicyPresent", "planner_generate=true;planner_execute=false;diagnostics_progress=true;diagnostics_execute=false")
+                : Fail("DataAgentNodeToolScopePolicyPresent", $"planner={string.Join(",", plannerScope.AllowedCapabilities)};diagnostics={string.Join(",", diagnosticsScope.AllowedCapabilities)}"));
+
+            DataAgentNodeToolScope validatorScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanValidator);
+            DataAgentNodeToolScope compilerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.SqlCompiler);
+            DataAgentNodeToolScope safetyScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.SqlSafety);
+            DataAgentNodeToolScope executeScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.ReadOnlyExecute);
+            bool deterministicSafetyReady =
+                validatorScope.AllowsModelCall == false &&
+                compilerScope.AllowsModelCall == false &&
+                safetyScope.AllowsModelCall == false &&
+                executeScope.AllowsModelCall == false;
+            checks.Add(deterministicSafetyReady
+                ? Pass("DataAgentSafetyCapabilitiesRemainDeterministic", "validator_model=false;compiler_model=false;safety_model=false;execute_model=false")
+                : Fail("DataAgentSafetyCapabilitiesRemainDeterministic", $"validator={LowerBool(validatorScope.AllowsModelCall)};compiler={LowerBool(compilerScope.AllowsModelCall)};safety={LowerBool(safetyScope.AllowsModelCall)};execute={LowerBool(executeScope.AllowsModelCall)}"));
         }
         catch (Exception ex)
         {
@@ -913,6 +951,23 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
 
     static string LowerBool(bool value) => value ? "true" : "false";
+
+    static string FindRepositoryRoot(string startDirectory)
+    {
+        DirectoryInfo? directory = new(startDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "docs")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return Directory.GetCurrentDirectory();
+    }
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {

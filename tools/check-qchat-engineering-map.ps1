@@ -65,6 +65,9 @@ Add-Check -Group "Harness" -Name "DataAgent progress diagnostics" -Path "sources
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
+# V2.10 governance readiness gates
+Add-Check -Group "Harness" -Name "Alife capability governance catalog" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/AlifeCapabilityGovernanceCatalog.cs" -Patterns @("AlifeCapabilityGovernanceCatalog", "QChat", "DataAgent", "DesktopControl", "AgentWorkflowCandidate", "DeterministicSafetyGate")
+Add-Check -Group "Harness" -Name "DataAgent node tool scope policy" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" -Patterns @("DataAgentToolScopePolicy", "QueryPlanner", "DiagnosticsRouter", "ExecuteReadOnlyQuery", "ReadProgressDiagnostics")
 
 Add-Check -Group "Loop" -Name "OneBot receive loop" -Path "sources/Alife.Function/Alife.Function.QChat/OneBotClient.cs" -Patterns @("ReceiveLoop", "while (ws.State == WebSocketState.Open")
 Add-Check -Group "Loop" -Name "QChat event queue loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ProcessOneBotEventQueueAsync", "oneBotEventProcessingTask")
@@ -122,7 +125,7 @@ $requiredPassed = @($results | Where-Object { $_.Required -and $_.Ok }).Count
 $requiredMissing = @($results | Where-Object { $_.Required -and -not $_.Ok }).Count
 $optionalPresent = @($results | Where-Object { -not $_.Required -and $_.Ok }).Count
 $optionalMissing = @($results | Where-Object { -not $_.Required -and -not $_.Ok }).Count
-$expectedRequired = 52
+$expectedRequired = 54
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output ("Summary: {0} required passed, {1} required missing, {2} optional present, {3} optional missing" -f $requiredPassed, $requiredMissing, $optionalPresent, $optionalMissing)

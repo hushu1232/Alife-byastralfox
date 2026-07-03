@@ -127,6 +127,10 @@ $checks = @(
     New-Check -Group "Store" -Name "PostgresStoreProviderPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/PostgresDataAgentStore.cs" @("PostgresDataAgentStore", "NpgsqlConnection", "tool_broker_audit", "query_audit")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj" @("Npgsql"))) -Detail "PostgreSQL store provider markers"
     New-Check -Group "Store" -Name "PostgresLiveTestsEnvironmentGated" -Passed (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentPostgresStoreTests.cs" @("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION", "Assert.Ignore", "LivePostgresStoreInitializesImportsFixturesAndExecutesReadOnlyQuery")) -Detail "PostgreSQL live tests environment gate"
     New-Check -Group "Store" -Name "DataAgentServiceUsesStoreBoundary" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentService.cs" @("IDataAgentStore", "new SqliteDataAgentStore", "store.Query", "store.RecordAccepted", "store.RecordRejected")) -Detail "DataAgentService store boundary usage"
+    # V2.10 governance readiness gates
+    New-Check -Group "Governance" -Name "DataAgentScenarioKnowledgePackPresent" -Passed ((Test-FileMarker "docs/dataagent/scenario-packs/engineering.zh-CN.json" @("engineering_readiness", "engineering_gate", "status", "required")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentScenarioKnowledgePackProvider.cs" @("DataAgentScenarioKnowledgePackProvider", "Load", "ResolveTerms")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentScenarioKnowledgePackPresent", "ResolveTerms(pack", "engineering_gate", "field=status"))) -Detail "V2.10 scenario knowledge pack runtime readiness"
+    New-Check -Group "Governance" -Name "DataAgentNodeToolScopePolicyPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" @("DataAgentToolScopePolicy", "QueryPlanner", "GenerateQueryPlan", "DiagnosticsRouter", "ReadProgressDiagnostics", "ExecuteReadOnlyQuery")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentNodeToolScopePolicyPresent", "planner_generate=true", "diagnostics_progress=true"))) -Detail "V2.10 node capability scope policy markers"
+    New-Check -Group "Governance" -Name "DataAgentSafetyCapabilitiesRemainDeterministic" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" @("QueryPlanValidator", "SqlCompiler", "SqlSafety", "ReadOnlyExecute", "AllowsModelCall")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentSafetyCapabilitiesRemainDeterministic", "validator_model=false", "compiler_model=false", "safety_model=false", "execute_model=false"))) -Detail "V2.10 deterministic safety capability markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionServicePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("DataAgentAnalysisService", "DataAgentService", "ExecuteQueryTurn", "analysis_session_ended")) -Detail "analysis session service markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStorePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/InMemoryDataAgentAnalysisSessionStore.cs" @("InMemoryDataAgentAnalysisSessionStore", "ConcurrentDictionary", "IDataAgentAnalysisSessionStore")) -Detail "in-memory analysis session store markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStateMachineTransitions" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("AwaitingClarification", "ReadyToSummarize", "Summarized", "Ended")) -Detail "analysis session state transition markers"
@@ -167,7 +171,7 @@ $checks = @(
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Store", "Analysis")) {
+foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Store", "Governance", "Analysis")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {
@@ -181,7 +185,7 @@ foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", 
 
 $requiredPassed = @($checks | Where-Object { $_.Passed }).Count
 $requiredMissing = @($checks | Where-Object { -not $_.Passed }).Count
-$expectedRequired = 76
+$expectedRequired = 79
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output "[Summary]"

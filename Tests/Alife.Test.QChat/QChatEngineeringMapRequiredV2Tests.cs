@@ -33,7 +33,9 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent trace diagnostics",
         "DataAgent progress diagnostics",
         "QChat Kalman semantic state estimator",
-        "QChat Kalman settle window integration"
+        "QChat Kalman settle window integration",
+        "Alife capability governance catalog",
+        "DataAgent node tool scope policy"
     ];
 
     [Test]
