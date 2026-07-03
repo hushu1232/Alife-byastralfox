@@ -24,10 +24,18 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
 
         DataAgentService service = new(store);
         InMemoryDataAgentAnalysisSessionStore analysisSessionStore = new InMemoryDataAgentAnalysisSessionStore();
-        DataAgentAnalysisService analysisService = new DataAgentAnalysisService(service, analysisSessionStore);
+        DataAgentProgressRecorder progressRecorder = new();
+        IDataAgentProgressSink progressSink = new DataAgentProgressDiagnosticsPublisher(
+            progressRecorder,
+            functionService.RecordRecentDataAgentProgressDiagnostics);
+        DataAgentAnalysisService analysisService = new DataAgentAnalysisService(
+            service,
+            analysisSessionStore,
+            progressSink: progressSink);
         IDataAgentAnalysisOrchestrator analysisOrchestrator = new DataAgentAnalysisOrchestrator(
             analysisService,
-            analysisSessionStore);
+            analysisSessionStore,
+            progressSink: progressSink);
         IDataAgentToolRouteContextAccessor routeContextAccessor =
             new XmlPolicyDataAgentToolRouteContextAccessor(functionService.ExecutionPolicy);
         IDataAgentTraceRecorder traceRecorder = new DataAgentTraceRecorder();
