@@ -9009,30 +9009,30 @@ public partial class QChatService(
 
     string GetRecentDataAgentTraceDiagnostics()
     {
-        lock (dataAgentTraceDiagnosticsGate)
-        {
-            if (string.IsNullOrWhiteSpace(recentDataAgentTraceDiagnostics) == false)
-                return recentDataAgentTraceDiagnostics;
-        }
-
         string fallback = NormalizeCachedDiagnosticText(functionService.RecentDataAgentTraceDiagnostics);
-        if (string.IsNullOrWhiteSpace(fallback))
-            return fallback;
-
+        bool shouldRecordFallback = false;
         lock (dataAgentTraceDiagnosticsGate)
         {
-            if (string.IsNullOrWhiteSpace(recentDataAgentTraceDiagnostics) == false)
+            if (string.IsNullOrWhiteSpace(fallback))
+                return recentDataAgentTraceDiagnostics;
+
+            if (string.Equals(recentDataAgentTraceDiagnostics, fallback, StringComparison.Ordinal))
                 return recentDataAgentTraceDiagnostics;
 
             recentDataAgentTraceDiagnostics = fallback;
+            shouldRecordFallback = true;
         }
 
-        recentDiagnosticsCache.Record(
-            QChatRecentDiagnosticKind.DataAgentTrace,
-            BuildOwnerPrivateRecentDiagnosticsSessionKey(),
-            "dataagent_trace",
-            fallback,
-            DateTimeOffset.UtcNow);
+        if (shouldRecordFallback)
+        {
+            recentDiagnosticsCache.Record(
+                QChatRecentDiagnosticKind.DataAgentTrace,
+                BuildOwnerPrivateRecentDiagnosticsSessionKey(),
+                "dataagent_trace",
+                fallback,
+                DateTimeOffset.UtcNow);
+        }
+
         return fallback;
     }
 

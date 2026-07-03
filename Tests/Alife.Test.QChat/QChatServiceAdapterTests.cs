@@ -3778,6 +3778,62 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerPrivateDataAgentTraceCommandRefreshesFunctionCallerFallbackAfterRecentSummarySync()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller.RecordRecentDataAgentTraceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "1 RouteGate Succeeded trace_marker=a_first"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, functionCaller: functionCaller);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        functionCaller.RecordRecentDataAgentTraceDiagnostics(string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "2 RouteGate Succeeded trace_marker=b_second"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag trace"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
+        string summaryReply = runtime.PrivateMessages[0].Message;
+        string traceReply = runtime.PrivateMessages[1].Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(summaryReply, Does.Contain("dataagent_trace_recent=available"));
+            Assert.That(traceReply, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(traceReply, Does.Contain("trace_marker=b_second"));
+            Assert.That(traceReply, Does.Not.Contain("trace_marker=a_first"));
+        });
+    }
+
+    [Test]
     public async Task QChatRecentDiagnosticsAreSessionScopedBetweenPrivateAndGroup()
     {
         FakeOneBotRuntime runtime = new()
