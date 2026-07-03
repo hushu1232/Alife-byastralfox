@@ -277,10 +277,35 @@ public sealed class QChatRecentDiagnosticsCacheTests
             "QChat recent diagnostics",
             "semantic_state_recent=available age_seconds=3 source=qchat_semantic_window redacted=false",
             "dataagent_evidence_recent=available age_seconds=12 source=dataagent_analysis redacted=false",
+            "dataagent_trace_recent=missing",
             "tool_route_recent=available age_seconds=2 source=tool_broker redacted=false",
             "session=session-a"
         ];
         Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void FormatSummaryIncludesDataAgentTraceRecentLine()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentTrace,
+            "session-a",
+            "dataagent_trace",
+            "DataAgent trace diagnostics",
+            now.AddSeconds(-4));
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary(
+            cache.GetRecent("session-a", now),
+            "session-a",
+            now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("dataagent_trace_recent=available age_seconds=4 source=dataagent_trace redacted=false"));
+            Assert.That(text, Does.Contain("session=session-a"));
+        });
     }
 
     [Test]

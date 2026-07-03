@@ -8,6 +8,7 @@ public enum QChatRecentDiagnosticKind
 {
     SemanticState,
     DataAgentEvidence,
+    DataAgentTrace,
     ToolRoute
 }
 

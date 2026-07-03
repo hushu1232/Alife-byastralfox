@@ -60,7 +60,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         command = StripCopiedMenuDescription(command);
 
         return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase);
+               || command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diag trace", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHelpAliasCommand(string text)
@@ -107,9 +109,36 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         QChatConfig config,
         Func<OneBotMessageType, long, string, Task> sendAsync,
         Action<string, string, object?, Exception?> writeDiagnostic,
+        Func<string>? recentToolRouteTrace,
+        Func<string>? recentSemanticEstimate,
+        Func<string>? recentDataAgentEvidence,
+        QChatRecentDiagnosticsCache? recentDiagnosticsCache,
+        Func<DateTimeOffset>? diagnosticsNow = null)
+    {
+        return await TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            senderRole,
+            config,
+            sendAsync,
+            writeDiagnostic,
+            recentToolRouteTrace,
+            recentSemanticEstimate,
+            recentDataAgentEvidence,
+            recentDataAgentTrace: null,
+            recentDiagnosticsCache,
+            diagnosticsNow);
+    }
+
+    public static async Task<bool> TryHandleDiagnosticsCommandAsync(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatConfig config,
+        Func<OneBotMessageType, long, string, Task> sendAsync,
+        Action<string, string, object?, Exception?> writeDiagnostic,
         Func<string>? recentToolRouteTrace = null,
         Func<string>? recentSemanticEstimate = null,
         Func<string>? recentDataAgentEvidence = null,
+        Func<string>? recentDataAgentTrace = null,
         QChatRecentDiagnosticsCache? recentDiagnosticsCache = null,
         Func<DateTimeOffset>? diagnosticsNow = null)
     {
@@ -160,6 +189,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 RecentToolRouteTrace: recentToolRouteTrace?.Invoke(),
                 RecentSemanticEstimate: recentSemanticEstimate?.Invoke(),
                 RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke(),
+                RecentDataAgentTrace: recentDataAgentTrace?.Invoke(),
                 RecentDiagnosticsCache: recentDiagnosticsCache,
                 SessionKey: route.SessionKey,
                 DiagnosticsNow: diagnosticsNow?.Invoke()));

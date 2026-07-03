@@ -424,6 +424,107 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("/dataagent diag trace")]
+    [TestCase("/dataagent diagnostics trace")]
+    [TestCase("/qchat diag dataagent trace")]
+    [TestCase("/qchat diagnostics dataagent trace")]
+    public void TryHandleDataAgentTraceDiagnosticsShowsRecentTraceForOwner(string command)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentTrace: "DataAgent trace diagnostics\nsession=session-1\n1 RouteGate Succeeded reason=route_allowed");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(result.Text, Does.Contain("RouteGate Succeeded"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentTraceDiagnosticsReturnsUnavailableWhenNoTraceExists()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag trace",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        string[] expectedLines =
+        [
+            "DataAgent trace diagnostics",
+            "state=unavailable",
+            "reason=trace_unavailable"
+        ];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentTraceDiagnosticsPrefersSessionCacheOverLegacyTrace()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentTrace,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_trace",
+            string.Join(Environment.NewLine,
+                "DataAgent trace diagnostics",
+                "reason=from_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentTrace: "legacy trace text",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag trace",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("reason=from_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy trace text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentTraceDiagnosticsRedactsUnsafeLegacyFallbackText()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentTrace: "sql=SELECT COUNT(*) FROM users; Bearer token-abcdef123456");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag trace",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Not.Contain("SELECT"));
+            Assert.That(result.Text, Does.Not.Contain("token-abcdef123456"));
+        });
+    }
+
     [TestCase("/dataagent nope")]
     [TestCase("/dataagent")]
     public void TryHandleDataAgentEvidenceDiagnosticsDoesNotHandleUnknownDataAgentCommands(string command)

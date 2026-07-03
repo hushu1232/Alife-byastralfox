@@ -177,6 +177,42 @@ public class QChatOwnerCommandServiceTests
     }
 
     [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncPassesRecentTraceToOwnerDiagnostics()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag trace"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentDataAgentTrace: () => "DataAgent trace diagnostics\n1 RouteGate Succeeded reason=route_allowed");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent[0].Message, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(sent[0].Message, Does.Contain("RouteGate Succeeded"));
+        });
+    }
+
+    [Test]
     public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerRecentDiagnosticsWithoutInvokingCallbacks()
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
@@ -191,6 +227,7 @@ public class QChatOwnerCommandServiceTests
         int recentToolRouteTraceCalls = 0;
         int recentSemanticEstimateCalls = 0;
         int recentDataAgentEvidenceCalls = 0;
+        int recentDataAgentTraceCalls = 0;
         OneBotMessageEvent messageEvent = new()
         {
             SelfId = 2905391496,
@@ -227,6 +264,11 @@ public class QChatOwnerCommandServiceTests
                 recentDataAgentEvidenceCalls++;
                 return "evidence callback should not run";
             },
+            recentDataAgentTrace: () =>
+            {
+                recentDataAgentTraceCalls++;
+                return "trace callback should not run";
+            },
             recentDiagnosticsCache: cache,
             diagnosticsNow: () => now);
 
@@ -237,6 +279,7 @@ public class QChatOwnerCommandServiceTests
             Assert.That(recentToolRouteTraceCalls, Is.Zero);
             Assert.That(recentSemanticEstimateCalls, Is.Zero);
             Assert.That(recentDataAgentEvidenceCalls, Is.Zero);
+            Assert.That(recentDataAgentTraceCalls, Is.Zero);
         });
     }
 
@@ -495,6 +538,8 @@ public class QChatOwnerCommandServiceTests
     [TestCase("/dataagent diag evidence", true)]
     [TestCase("/dataagent diag evidence - DataAgent evidence diagnostics", true)]
     [TestCase("/dataagent diagnostics evidence", true)]
+    [TestCase("/dataagent diag trace", true)]
+    [TestCase("/dataagent diagnostics trace", true)]
     [TestCase("/qchatx route", false)]
     [TestCase("/dataagent", false)]
     [TestCase("/dataagent nope", false)]

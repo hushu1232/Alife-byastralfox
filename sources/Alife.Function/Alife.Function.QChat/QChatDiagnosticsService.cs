@@ -12,6 +12,7 @@ public sealed record QChatDiagnosticsRuntimeState(
     string? RecentToolRouteTrace = null,
     string? RecentSemanticEstimate = null,
     string? RecentDataAgentEvidence = null,
+    string? RecentDataAgentTrace = null,
     QChatRecentDiagnosticsCache? RecentDiagnosticsCache = null,
     string? SessionKey = null,
     DateTimeOffset? DiagnosticsNow = null);
@@ -61,6 +62,7 @@ public static class QChatDiagnosticsService
             return command.ToLowerInvariant() switch
             {
                 "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
+                "diag trace" or "diagnostics trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
                 _ => new QChatDiagnosticsResult(false, string.Empty)
             };
 
@@ -85,6 +87,7 @@ public static class QChatDiagnosticsService
             "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState, route)),
             "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState, route)),
             "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
+            "diag dataagent trace" or "diagnostics dataagent trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -221,6 +224,24 @@ public static class QChatDiagnosticsService
             : sanitized;
     }
 
+    static string BuildDataAgentTraceDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
+    {
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.DataAgentTrace);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
+        string sanitized = SanitizeDiagnosticText(
+            runtimeState.RecentDataAgentTrace,
+            "DataAgent trace diagnostics",
+            maxChars: 1800);
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? string.Join(Environment.NewLine,
+                "DataAgent trace diagnostics",
+                "state=unavailable",
+                "reason=trace_unavailable")
+            : sanitized;
+    }
+
     static string? GetRecentCachedText(
         QChatDiagnosticsRuntimeState runtimeState,
         QChatAgentRoute route,
@@ -241,9 +262,9 @@ public static class QChatDiagnosticsService
             : runtimeState.SessionKey;
     }
 
-    static string SanitizeDiagnosticText(string? text, string title)
+    static string SanitizeDiagnosticText(string? text, string title, int maxChars = 900)
     {
-        return QChatDiagnosticTextSanitizer.SanitizeDiagnosticText(text, title);
+        return QChatDiagnosticTextSanitizer.SanitizeDiagnosticText(text, title, maxChars);
     }
 
     static string SanitizeToolRouteTrace(string? trace)
@@ -441,6 +462,7 @@ public static class QChatDiagnosticsService
             "/qchat diag recent - Recent diagnostics cache summary",
             "/qchat diag semantic - QChat semantic state diagnostics",
             "/dataagent diag evidence - DataAgent evidence diagnostics",
+            "/dataagent diag trace - DataAgent trace diagnostics",
             "",
             "说明：",
             "诊断信息只给主人账号开放，用来排查 QQ 链路。");
