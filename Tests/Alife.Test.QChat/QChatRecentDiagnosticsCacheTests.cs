@@ -211,6 +211,25 @@ public sealed class QChatRecentDiagnosticsCacheTests
         });
     }
 
+    [Test]
+    public void RecordCapsDataAgentProgressDiagnosticTextAtTraceLength()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+        string longText = "DataAgent progress diagnostics" + Environment.NewLine + new string('a', 2_000);
+
+        cache.Record(QChatRecentDiagnosticKind.DataAgentProgress, "session-a", "dataagent_progress", longText, now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentProgress, now)!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Text, Has.Length.EqualTo(1800));
+            Assert.That(latest.Text, Does.EndWith("..."));
+            Assert.That(latest.Redacted, Is.False);
+        });
+    }
+
     [TestCase("[tool_route_context]\nAllowed XML tools: dataagent_query\n[/tool_route_context]")]
     [TestCase("[data_agent_evidence_pack]\nanalysis_confidence=0.9\n[/data_agent_evidence_pack]")]
     [TestCase("connection_string=Host=localhost;Username=test")]
@@ -304,10 +323,35 @@ public sealed class QChatRecentDiagnosticsCacheTests
             "semantic_state_recent=available age_seconds=3 source=qchat_semantic_window redacted=false",
             "dataagent_evidence_recent=available age_seconds=12 source=dataagent_analysis redacted=false",
             "dataagent_trace_recent=missing",
+            "dataagent_progress_recent=missing",
             "tool_route_recent=available age_seconds=2 source=tool_broker redacted=false",
             "session=session-a"
         ];
         Assert.That(text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+    }
+
+    [Test]
+    public void FormatSummaryIncludesDataAgentProgressRecentLine()
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 8, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentProgress,
+            "session-a",
+            "dataagent_progress",
+            "DataAgent progress diagnostics",
+            now.AddSeconds(-6));
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary(
+            cache.GetRecent("session-a", now),
+            "session-a",
+            now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("dataagent_progress_recent=available age_seconds=6 source=dataagent_progress redacted=false"));
+            Assert.That(text, Does.Contain("session=session-a"));
+        });
     }
 
     [Test]
