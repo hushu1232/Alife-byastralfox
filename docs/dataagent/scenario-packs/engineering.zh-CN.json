@@ -1,0 +1,44 @@
+{
+  "scenario": "engineering_readiness",
+  "culture": "zh-CN",
+  "terms": [
+    {
+      "term": "工程门禁",
+      "aliases": ["门禁", "工程检查", "质量门禁"],
+      "dataset": "engineering_gate",
+      "fields": ["name", "status", "required", "evidence_path"]
+    },
+    {
+      "term": "最近失败的测试",
+      "aliases": ["失败测试", "测试失败", "最近测试失败"],
+      "dataset": "test_run",
+      "fields": ["name", "status", "failed_count", "started_at"]
+    },
+    {
+      "term": "缺失项",
+      "aliases": ["缺口", "未完成项", "缺失检查"],
+      "dataset": "runtime_readiness_check",
+      "fields": ["name", "status", "required", "evidence_path"]
+    },
+    {
+      "term": "文档证据",
+      "aliases": ["证据文档", "设计文档", "计划文档"],
+      "dataset": "document_index",
+      "fields": ["path", "title", "tags"]
+    }
+  ],
+  "metrics": [
+    {
+      "name": "失败",
+      "field": "status",
+      "operator": "!=",
+      "value": "passed"
+    },
+    {
+      "name": "必需",
+      "field": "required",
+      "operator": "=",
+      "value": true
+    }
+  ]
+}
