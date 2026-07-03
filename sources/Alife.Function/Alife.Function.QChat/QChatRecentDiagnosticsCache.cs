@@ -24,6 +24,7 @@ public sealed record QChatRecentDiagnosticEntry(
 public sealed class QChatRecentDiagnosticsCache
 {
     const int MaxTextChars = 900;
+    const int DataAgentTraceMaxTextChars = 1800;
 
     readonly object gate = new();
     readonly int maxEntriesPerSession;
@@ -122,10 +123,17 @@ public sealed class QChatRecentDiagnosticsCache
             kind,
             sessionKey,
             source,
-            QChatDiagnosticTextSanitizer.NormalizeDiagnosticText(text, MaxTextChars),
+            QChatDiagnosticTextSanitizer.NormalizeDiagnosticText(text, GetMaxTextChars(kind)),
             createdAt,
             Redacted: false,
             ReasonCode: "ok");
+    }
+
+    static int GetMaxTextChars(QChatRecentDiagnosticKind kind)
+    {
+        return kind == QChatRecentDiagnosticKind.DataAgentTrace
+            ? DataAgentTraceMaxTextChars
+            : MaxTextChars;
     }
 
     void PruneExpiredLocked(DateTimeOffset now)

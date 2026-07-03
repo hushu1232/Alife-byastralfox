@@ -504,6 +504,41 @@ public class QChatDiagnosticsServiceTests
     }
 
     [Test]
+    public void TryHandleDataAgentTraceDiagnosticsPreservesLongCachedTraceWindow()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        string traceText = string.Join(Environment.NewLine,
+            "DataAgent trace diagnostics",
+            "trace_filler=" + new string('a', 1_000),
+            "late_trace_marker=preserved");
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentTrace,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_trace",
+            traceText,
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag trace",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("late_trace_marker=preserved"));
+            Assert.That(result.Text.Length, Is.GreaterThan(900));
+            Assert.That(result.Text.Length, Is.LessThanOrEqualTo(1800));
+        });
+    }
+
+    [Test]
     public void TryHandleDataAgentTraceDiagnosticsRedactsUnsafeLegacyFallbackText()
     {
         QChatDiagnosticsRuntimeState state = new(
