@@ -627,3 +627,9 @@ dataagent-v1.6-tool-broker-observability
 ```
 
 Base it on `dataagent-v1.5-tool-broker`, not on `master`, until V1.5 is merged.
+
+## V2.10 Capability Governance Update
+
+The LangGraph rollout is intentionally preceded by `docs/superpowers/plans/2026-07-03-alife-v2.10-capability-agent-orchestration.md`. V2.10 keeps LangGraph out of runtime and instead classifies existing Alife plugin capabilities, preserves deterministic safety boundaries, adds a DataAgent scenario knowledge pack contract, and defines DataAgent node-level tool scopes.
+
+LangGraph remains a later optional workflow runtime, not the authority for QChat permissions, SQL safety, desktop approval, audit, or redaction. The practical near-term value is smaller and sharper: reduce attention dilution by narrowing each node's available capabilities, keep similarly named tools behind explicit owner and node gates, and make DataAgent the first workflow candidate only because it already has observable route, plan, validation, SQL safety, execution, evidence, checkpoint, progress, and trace boundaries.
