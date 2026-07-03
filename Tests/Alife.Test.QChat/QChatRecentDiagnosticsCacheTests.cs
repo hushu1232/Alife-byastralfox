@@ -258,6 +258,32 @@ public sealed class QChatRecentDiagnosticsCacheTests
         });
     }
 
+    [TestCase("[hidden_context]internal route details[/hidden_context]", "[hidden_context]")]
+    [TestCase("hidden context: internal route decision", "hidden context")]
+    [TestCase("FROM document_index WHERE tenant_id = 1", "document_index")]
+    [TestCase("JOIN users ON users.id = document_index.owner_id", "JOIN users")]
+    [TestCase("ORDER BY created_at DESC", "ORDER BY")]
+    [TestCase("GROUP BY owner_id", "GROUP BY")]
+    public void RecordRedactsUnsafeDataAgentTraceDiagnosticText(string unsafeText, string forbiddenText)
+    {
+        QChatRecentDiagnosticsCache cache = new(maxEntriesPerSession: 4, ttl: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:00:00Z");
+
+        cache.Record(QChatRecentDiagnosticKind.DataAgentTrace, "session-a", "dataagent_trace", unsafeText, now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentTrace, now)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Redacted, Is.True);
+            Assert.That(latest.ReasonCode, Is.EqualTo("hidden_context_redacted"));
+            Assert.That(latest.Text, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(latest.Text, Does.Contain("state=redacted"));
+            Assert.That(latest.Text, Does.Not.Contain(forbiddenText));
+            Assert.That(latest.Text, Does.Not.Contain("tenant_id"));
+            Assert.That(latest.Text, Does.Not.Contain("owner_id"));
+        });
+    }
+
     [Test]
     public void FormatSummaryEmitsStableRecentDiagnosticsLines()
     {

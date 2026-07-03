@@ -538,11 +538,19 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
-    [Test]
-    public void TryHandleDataAgentTraceDiagnosticsRedactsUnsafeLegacyFallbackText()
+    [TestCase("sql=SELECT COUNT(*) FROM users; Bearer token-abcdef123456", "SELECT")]
+    [TestCase("[hidden_context]internal route details[/hidden_context]", "[hidden_context]")]
+    [TestCase("hidden context: internal route decision", "hidden context")]
+    [TestCase("FROM document_index WHERE tenant_id = 1", "document_index")]
+    [TestCase("JOIN users ON users.id = document_index.owner_id", "JOIN users")]
+    [TestCase("ORDER BY created_at DESC", "ORDER BY")]
+    [TestCase("GROUP BY owner_id", "GROUP BY")]
+    public void TryHandleDataAgentTraceDiagnosticsRedactsUnsafeLegacyFallbackText(
+        string unsafeText,
+        string forbiddenText)
     {
         QChatDiagnosticsRuntimeState state = new(
-            RecentDataAgentTrace: "sql=SELECT COUNT(*) FROM users; Bearer token-abcdef123456");
+            RecentDataAgentTrace: unsafeText);
 
         QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
             "/dataagent diag trace",
@@ -555,8 +563,11 @@ public class QChatDiagnosticsServiceTests
             Assert.That(result.Handled, Is.True);
             Assert.That(result.Text, Does.Contain("DataAgent trace diagnostics"));
             Assert.That(result.Text, Does.Contain("state=redacted"));
-            Assert.That(result.Text, Does.Not.Contain("SELECT"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain(forbiddenText));
             Assert.That(result.Text, Does.Not.Contain("token-abcdef123456"));
+            Assert.That(result.Text, Does.Not.Contain("tenant_id"));
+            Assert.That(result.Text, Does.Not.Contain("owner_id"));
         });
     }
 

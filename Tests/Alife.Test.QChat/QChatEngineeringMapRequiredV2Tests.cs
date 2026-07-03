@@ -54,6 +54,22 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         }
     }
 
+    [Test]
+    public void DiagnosticsCacheRedactionCheckRequiresUnsafeInputDetectors()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "QChat diagnostics cache redaction");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("HiddenContextPattern"));
+            Assert.That(declaration, Does.Contain("SqlFragmentPattern"));
+        });
+    }
+
     static string FindAddCheckDeclaration(string script, string checkName)
     {
         string marker = $"-Name \"{checkName}\"";
