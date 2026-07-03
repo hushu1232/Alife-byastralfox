@@ -24,7 +24,47 @@ public sealed class AlifeCapabilityGovernanceCatalogTests
             Assert.That(catalog.Select(item => item.Owner), Does.Contain("DeskPet"));
             Assert.That(catalog.Select(item => item.Owner), Does.Contain("Emotion"));
             Assert.That(catalog.Select(item => item.Owner), Does.Contain("Mcp"));
+            Assert.That(catalog.Select(item => item.Owner), Does.Contain("Python"));
             Assert.That(catalog.Select(item => item.Owner), Does.Contain("Developer"));
+        });
+    }
+
+    [Test]
+    public void CreateDefaultReturnsDefensiveSnapshots()
+    {
+        IReadOnlyList<AlifeCapabilityGovernanceDescriptor> first =
+            AlifeCapabilityGovernanceCatalog.CreateDefault();
+        IReadOnlyList<AlifeCapabilityGovernanceDescriptor> second =
+            AlifeCapabilityGovernanceCatalog.CreateDefault();
+        AlifeCapabilityGovernanceDescriptor injected = new(
+            "Injected",
+            null,
+            AlifeCapabilityGovernanceRole.ExternalBridge,
+            AlifeCapabilityOrchestrationKind.FutureLangGraphCandidate,
+            AlifeCapabilityRiskBoundary.ApprovalRequired,
+            "Injected test descriptor.");
+
+        if (first is IList<AlifeCapabilityGovernanceDescriptor> list)
+        {
+            Assert.That(list.IsReadOnly, Is.True);
+            Assert.Throws<NotSupportedException>(() => list.Add(injected));
+        }
+        else if (first is ICollection<AlifeCapabilityGovernanceDescriptor> collection)
+        {
+            Assert.That(collection.IsReadOnly, Is.True);
+            Assert.Throws<NotSupportedException>(() => collection.Add(injected));
+        }
+
+        IReadOnlyList<AlifeCapabilityGovernanceDescriptor> afterMutationAttempt =
+            AlifeCapabilityGovernanceCatalog.CreateDefault();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(second, Is.Not.SameAs(first));
+            Assert.That(afterMutationAttempt, Is.Not.SameAs(first));
+            Assert.That(afterMutationAttempt.Select(item => item.Owner),
+                Is.EqualTo(second.Select(item => item.Owner)));
+            Assert.That(afterMutationAttempt.Select(item => item.Owner), Does.Not.Contain("Injected"));
         });
     }
 
@@ -114,6 +154,8 @@ public sealed class AlifeCapabilityGovernanceCatalogTests
             Assert.That(AlifeCapabilityGovernanceCatalog.FindByOwner("dataagent"), Is.Not.Null);
             Assert.That(AlifeCapabilityGovernanceCatalog.FindByOwner("DATAAGENT"), Is.Not.Null);
             Assert.That(AlifeCapabilityGovernanceCatalog.FindByOwner("unknown-plugin"), Is.Null);
+            Assert.That(AlifeCapabilityGovernanceCatalog.FindByOwner(""), Is.Null);
+            Assert.That(AlifeCapabilityGovernanceCatalog.FindByOwner("   "), Is.Null);
         });
     }
 }
