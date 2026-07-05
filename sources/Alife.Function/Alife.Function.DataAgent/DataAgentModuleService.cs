@@ -23,7 +23,8 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         store.ImportFixtures();
 
         DataAgentService service = new(store);
-        InMemoryDataAgentAnalysisSessionStore analysisSessionStore = new InMemoryDataAgentAnalysisSessionStore();
+        IDataAgentAnalysisSessionStore analysisSessionStore = DataAgentAnalysisSessionStoreFactory.Create(
+            DataAgentAnalysisSessionStoreFactory.FromEnvironment());
         DataAgentProgressRecorder progressRecorder = new();
         IDataAgentProgressSink progressSink = new DataAgentProgressDiagnosticsPublisher(
             progressRecorder,
