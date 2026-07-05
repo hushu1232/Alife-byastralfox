@@ -1,3 +1,8 @@
 namespace Alife.Function.DataAgent;
 
-public sealed record DataAgentQueryRequest(string Question, string Role, string Locale, bool AllowLiveSources);
+public sealed record DataAgentQueryRequest(
+    string Question,
+    string Role,
+    string Locale,
+    bool AllowLiveSources,
+    DataAgentScenarioContext? ScenarioContext = null);

@@ -65,6 +65,34 @@ public sealed class LlmDataAgentQueryPlannerTests
     }
 
     [Test]
+    public void PlanPassesScenarioContextToPromptFormatter()
+    {
+        DataAgentLlmPlannerPrompt? capturedPrompt = null;
+        string databasePath = CreateDatabasePath();
+        LlmDataAgentQueryPlanner planner = new(
+            databasePath,
+            new FakeLlmPlannerClient(ValidPlanJson, prompt => capturedPrompt = prompt),
+            new DeterministicDataAgentQueryPlanner());
+        DataAgentScenarioContext context = CreateMatchedScenarioContext();
+
+        planner.Plan(new DataAgentQueryRequest(
+            "Show required failed engineering gates.",
+            "developer",
+            "zh-CN",
+            false,
+            context));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(capturedPrompt, Is.Not.Null);
+            Assert.That(capturedPrompt!.Schema, Does.Contain("Scenario context:"));
+            Assert.That(capturedPrompt.Schema, Does.Contain("scenario: engineering_readiness"));
+            Assert.That(capturedPrompt.Schema, Does.Contain("\u5de5\u7a0b\u95e8\u7981 -> engineering_gate(name,status,required,evidence_path)"));
+            Assert.That(capturedPrompt.System, Does.Contain("Do not output SQL"));
+        });
+    }
+
+    [Test]
     public void PlanFallsBackForInvalidOutputAndKeepsSafetySignal()
     {
         string databasePath = CreateDatabasePath();
@@ -229,7 +257,35 @@ public sealed class LlmDataAgentQueryPlannerTests
         return databasePath;
     }
 
-    sealed class FakeLlmPlannerClient(string output) : ILlmDataAgentPlannerClient
+    static DataAgentScenarioContext CreateMatchedScenarioContext()
+    {
+        return new DataAgentScenarioContextBuilder().Build(
+            DataAgentCatalog.CreateDefault(),
+            new DataAgentScenarioKnowledgePack(
+                "engineering_readiness",
+                "zh-CN",
+                [
+                    new DataAgentScenarioTerm(
+                        "\u5de5\u7a0b\u95e8\u7981",
+                        [],
+                        "engineering_gate",
+                        ["name", "status", "required", "evidence_path"]),
+                    new DataAgentScenarioTerm(
+                        "\u6700\u8fd1\u5931\u8d25\u7684\u6d4b\u8bd5",
+                        [],
+                        "test_run",
+                        ["suite_name", "failed"])
+                ],
+                [
+                    new DataAgentScenarioMetric("\u5931\u8d25", "status", "!=", "passed"),
+                    new DataAgentScenarioMetric("\u5fc5\u9700", "required", "=", true)
+                ]),
+            "\u5de5\u7a0b\u95e8\u7981 \u6700\u8fd1\u5931\u8d25\u7684\u6d4b\u8bd5 \u5931\u8d25 \u5fc5\u9700");
+    }
+
+    sealed class FakeLlmPlannerClient(
+        string output,
+        Action<DataAgentLlmPlannerPrompt>? onPrompt = null) : ILlmDataAgentPlannerClient
     {
         public string Complete(DataAgentLlmPlannerPrompt prompt)
         {
@@ -240,6 +296,8 @@ public sealed class LlmDataAgentQueryPlannerTests
                 Assert.That(prompt.Contract, Does.Contain("\"planner_name\":\"LlmDataAgentQueryPlanner\""));
                 Assert.That(prompt.User, Does.Contain("Role: developer"));
             });
+
+            onPrompt?.Invoke(prompt);
 
             return output;
         }
