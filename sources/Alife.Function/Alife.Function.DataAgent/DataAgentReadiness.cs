@@ -999,6 +999,62 @@ public static class DataAgentReadiness
                 ? Pass("DataAgentScenarioContextIntegrated", "scenario_context=true;prompt_hint=true;owner_diag=true;sql_boundary=true")
                 : Fail("DataAgentScenarioContextIntegrated", $"scenario_context={LowerBool(scenarioContextMatched)};prompt_hint={LowerBool(scenarioPromptHintReady)};owner_diag={LowerBool(scenarioOwnerDiagnosticsReady)};sql_boundary={LowerBool(scenarioSqlBoundaryReady)};reason={scenarioContext.ReasonCode};datasets={string.Join(",", scenarioContext.CandidateDatasets)};fields={string.Join(",", scenarioContext.CandidateFields)};metrics={string.Join(",", scenarioContext.Metrics.Select(metric => metric.Name))}"));
 
+            const string runtimeScenarioQuestion = "\u770b\u770b\u5de5\u7a0b\u95e8\u7981\u91cc\u6700\u8fd1\u5931\u8d25\u7684\u5fc5\u9700\u9879";
+            RecordingPlanner runtimeScenarioPlanner = new(new DataAgentQueryPlan(
+                "engineering_gate",
+                "runtime_scenario_context_activation",
+                ["name", "status", "required"],
+                [new DataAgentFilter("required", "=", true)],
+                [],
+                20));
+            DataAgentService runtimeScenarioService = new(
+                databasePath,
+                runtimeScenarioPlanner,
+                new DataAgentScenarioContextProvider(scenarioPackPath));
+            DataAgentAnswer runtimeScenarioAnswer = runtimeScenarioService.Answer(runtimeScenarioQuestion);
+            DataAgentScenarioContext? runtimeScenarioContext =
+                runtimeScenarioPlanner.Requests.SingleOrDefault()?.ScenarioContext;
+            DataAgentLlmPlannerPrompt? runtimeScenarioPrompt = null;
+            DataAgentService runtimeLlmScenarioService = new(
+                databasePath,
+                new LlmDataAgentQueryPlanner(
+                    databasePath,
+                    new CapturingFixedLlmClient(
+                        """
+                        {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"bad_operator","dataset":"engineering_gate","confidence":"medium","signals":["scenario"],"reason":"bad operator","select_fields":["name"],"filters":[{"field":"status","operator":"starts_with","value":"fail"}],"sorts":[],"limit":20}
+                        """,
+                        prompt => runtimeScenarioPrompt = prompt),
+                    new DeterministicDataAgentQueryPlanner()),
+                new DataAgentScenarioContextProvider(scenarioPackPath));
+            DataAgentAnswer runtimeLlmScenarioAnswer = runtimeLlmScenarioService.Answer(runtimeScenarioQuestion);
+            bool runtimeServiceContextReady =
+                runtimeScenarioAnswer.Validated &&
+                runtimeScenarioContext is not null &&
+                string.Equals(runtimeScenarioContext.ReasonCode, DataAgentScenarioContext.ReasonMatched, StringComparison.Ordinal) &&
+                runtimeScenarioContext.CandidateDatasets.SequenceEqual(["engineering_gate", "test_run"], StringComparer.Ordinal);
+            bool runtimeLlmPromptReady =
+                runtimeLlmScenarioAnswer.Validated &&
+                runtimeLlmScenarioAnswer.PlannerExplanation.Signals.Contains("llm_invalid_output_fallback", StringComparer.OrdinalIgnoreCase) &&
+                runtimeScenarioPrompt?.Schema.Contains("Scenario context:", StringComparison.Ordinal) == true &&
+                runtimeScenarioPrompt.Schema.Contains("engineering_gate", StringComparison.Ordinal) &&
+                runtimeScenarioPrompt.Schema.Contains("test_run", StringComparison.Ordinal);
+            bool runtimeQChatBoundaryReady =
+                typeof(DataAgentModuleService).Assembly.GetReferencedAssemblies().Any(assemblyName =>
+                    string.Equals(assemblyName.Name, "Alife.Function.QChat", StringComparison.Ordinal)) == false;
+            bool runtimeSqlBoundaryReady =
+                typeof(DataAgentQueryPlanValidator).IsClass &&
+                typeof(DataAgentSqlCompiler).IsClass &&
+                typeof(DataAgentSqlSafetyValidator).IsClass &&
+                typeof(DataAgentQueryExecutor).IsClass;
+            bool runtimeActivationReady =
+                runtimeServiceContextReady &&
+                runtimeLlmPromptReady &&
+                runtimeQChatBoundaryReady &&
+                runtimeSqlBoundaryReady;
+            checks.Add(runtimeActivationReady
+                ? Pass("DataAgentRuntimeScenarioContextActivationPresent", "service_context=true;llm_prompt=true;qchat_boundary=true;sql_boundary=true")
+                : Fail("DataAgentRuntimeScenarioContextActivationPresent", $"service_context={LowerBool(runtimeServiceContextReady)};llm_prompt={LowerBool(runtimeLlmPromptReady)};qchat_boundary={LowerBool(runtimeQChatBoundaryReady)};sql_boundary={LowerBool(runtimeSqlBoundaryReady)}"));
+
             DataAgentNodeToolScope plannerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
             DataAgentNodeToolScope diagnosticsScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.DiagnosticsRouter);
             bool nodeToolScopePolicyReady =
@@ -1067,6 +1123,25 @@ public static class DataAgentReadiness
                     "low",
                     ["readiness-test"],
                     "readiness fixed query plan"));
+        }
+    }
+
+    sealed class RecordingPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public List<DataAgentQueryRequest> Requests { get; } = [];
+
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            Requests.Add(request);
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(RecordingPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "medium",
+                    ["runtime_scenario_context"],
+                    "recorded runtime scenario context"));
         }
     }
 

@@ -33,6 +33,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent trace diagnostics",
         "DataAgent progress diagnostics",
         "DataAgent scenario context diagnostics",
+        "DataAgent runtime scenario context activation",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -96,6 +97,26 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
             Assert.That(declaration, Does.Contain("*.cs"));
             Assert.That(declaration, Does.Contain("AllDirectories"));
+        });
+    }
+
+    [Test]
+    public void RuntimeScenarioContextActivationCheckRequiresDataAgentRuntimeAndQChatBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent runtime scenario context activation");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentRuntimeScenarioContextActivationPresent"));
+            Assert.That(declaration, Does.Contain("DataAgentRuntimeScenarioContextActivationTests"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioKnowledgePackProvider"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgentToolScopePolicy"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
         });
     }
 

@@ -9,29 +9,51 @@ public sealed class DataAgentService
     readonly DataAgentSqlSafetyValidator safetyValidator = new();
     readonly IDataAgentStore store;
     readonly IDataAgentQueryPlanner planner;
+    readonly IDataAgentScenarioContextProvider scenarioContextProvider;
 
     public DataAgentService(string databasePath)
-        : this(new SqliteDataAgentStore(databasePath), new DeterministicDataAgentQueryPlanner())
+        : this(
+            new SqliteDataAgentStore(databasePath),
+            new DeterministicDataAgentQueryPlanner(),
+            DataAgentScenarioContextProvider.CreateDefault())
     {
     }
 
     public DataAgentService(string databasePath, IDataAgentQueryPlanner planner)
-        : this(new SqliteDataAgentStore(databasePath), planner)
+        : this(new SqliteDataAgentStore(databasePath), planner, DataAgentScenarioContextProvider.CreateDefault())
+    {
+    }
+
+    public DataAgentService(
+        string databasePath,
+        IDataAgentQueryPlanner planner,
+        IDataAgentScenarioContextProvider scenarioContextProvider)
+        : this(new SqliteDataAgentStore(databasePath), planner, scenarioContextProvider)
     {
     }
 
     public DataAgentService(IDataAgentStore store)
-        : this(store, new DeterministicDataAgentQueryPlanner())
+        : this(store, new DeterministicDataAgentQueryPlanner(), DataAgentScenarioContextProvider.CreateDefault())
     {
     }
 
     public DataAgentService(IDataAgentStore store, IDataAgentQueryPlanner planner)
+        : this(store, planner, DataAgentScenarioContextProvider.CreateDefault())
+    {
+    }
+
+    public DataAgentService(
+        IDataAgentStore store,
+        IDataAgentQueryPlanner planner,
+        IDataAgentScenarioContextProvider scenarioContextProvider)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(planner);
+        ArgumentNullException.ThrowIfNull(scenarioContextProvider);
 
         this.store = store;
         this.planner = planner;
+        this.scenarioContextProvider = scenarioContextProvider;
     }
 
     public DataAgentAnswer Answer(string question)
@@ -61,7 +83,13 @@ public sealed class DataAgentService
             executedSql: false,
             queryAllowed: true,
             terminal: false);
-        DataAgentQueryPlanEnvelope envelope = ValidateEnvelope(planner.Plan(new DataAgentQueryRequest(question, "developer", "zh-CN", false)));
+        DataAgentScenarioContext scenarioContext = scenarioContextProvider.Build(catalog, question);
+        DataAgentQueryPlanEnvelope envelope = ValidateEnvelope(planner.Plan(new DataAgentQueryRequest(
+            question,
+            "developer",
+            "zh-CN",
+            false,
+            scenarioContext)));
         Publish(
             progressSink,
             sessionId,
