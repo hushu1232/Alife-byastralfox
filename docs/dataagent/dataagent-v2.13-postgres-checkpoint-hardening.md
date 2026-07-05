@@ -28,7 +28,7 @@ The persisted state is the recovery source for `checkpoint_session_id`, `checkpo
 
 ## Runtime Configuration
 
-Default runtime remains in-memory:
+Default checkpoint/session runtime remains in-memory:
 
 ```text
 ALIFE_DATAAGENT_ANALYSIS_SESSION_STORE_PROVIDER=
@@ -52,7 +52,7 @@ ALIFE_DATAAGENT_POSTGRES_CONNECTION=<connection string>
 1. `DataAgentModuleService.AwakeAsync(...)` creates the query/audit store through `DataAgentStoreFactory`.
 2. It creates the analysis checkpoint/session store through `DataAgentAnalysisSessionStoreFactory`.
 3. `DataAgentAnalysisService` and `DataAgentAnalysisOrchestrator` use the configured `IDataAgentAnalysisSessionStore`.
-4. Start/continue/summarize/end operations update the persisted session.
+4. Accepted start/continue/summarize/end operations update the configured session store; route-denied or missing-session responses remain orchestration rejections rather than a new SQL authority or graph checkpoint.
 5. `DataAgentOrchestrationContextProvider` emits checkpoint fields from the recovered session state.
 
 ## Non-Goals
