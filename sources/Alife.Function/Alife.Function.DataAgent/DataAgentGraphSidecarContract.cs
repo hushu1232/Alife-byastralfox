@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Alife.Function.DataAgent;
 
 public sealed record DataAgentGraphSidecarOptions(bool Enabled)
@@ -164,18 +166,21 @@ public sealed class DataAgentGraphSidecarPolicy
 
 public static class DataAgentGraphSidecarContract
 {
-    static readonly string[] RawSqlMarkers =
-    [
-        "select ",
-        "insert ",
-        "update ",
-        "delete ",
-        "drop ",
-        "alter ",
-        "truncate ",
-        "```sql",
-        ";"
-    ];
+    const int MaxIdentityLength = 128;
+    const int MaxQuestionLength = 2048;
+    const int MaxScenarioContextLength = 4096;
+    const int MaxTraceIdLength = 128;
+    const int MaxNodeKindCount = 16;
+    const int MaxCapabilityNameCount = 16;
+    const int MaxCapabilityNameLength = 128;
+    const int MaxReasonCodeLength = 128;
+    const int MaxMessageLength = 1024;
+    const int MaxTraceEntryCount = 16;
+    const int MaxTraceEntryLength = 256;
+
+    static readonly Regex RawSqlMarkerPattern = new(
+        @"```sql|\b(select|insert|update|delete|drop|alter|truncate)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     static readonly string[] ForbiddenCapabilityNames =
     [
@@ -200,32 +205,57 @@ public static class DataAgentGraphSidecarContract
         DataAgentGraphSidecarNodeKind.Terminal
     ];
 
-    public static bool IsRequestValid(DataAgentGraphSidecarRequest request)
+    public static IReadOnlyList<string> DefaultAllowedCapabilityNames { get; } =
+    [
+        "DataAgentScenarioContextBuilder",
+        "DataAgentQueryPlanner",
+        "DataAgentQueryPlanValidator",
+        "DataAgentSqlSafetyValidator",
+        "DataAgentEvidencePackBuilder",
+        "DataAgentTraceDiagnosticsFormatter",
+        "DataAgentProgressDiagnosticsFormatter",
+        "DataAgentDeterministicFallback"
+    ];
+
+    static readonly HashSet<string> DefaultAllowedCapabilityNameSet = new(
+        DefaultAllowedCapabilityNames,
+        StringComparer.Ordinal);
+
+    public static bool IsRequestValid(DataAgentGraphSidecarRequest? request)
     {
-        return HasText(request.WorkflowId) &&
-               HasText(request.SessionId) &&
-               HasText(request.CallerId) &&
-               HasText(request.TraceId) &&
-               request.AllowedNodeKinds.Count > 0 &&
-               request.AllowedNodeKinds.All(DefaultAllowedNodeKinds.Contains) &&
-               request.AllowedCapabilityNames.All(HasText);
+        if (request is null)
+            return false;
+
+        return HasBoundedText(request.WorkflowId, MaxIdentityLength) &&
+               HasBoundedText(request.SessionId, MaxIdentityLength) &&
+               HasBoundedText(request.CallerId, MaxIdentityLength) &&
+               HasBoundedText(request.Question, MaxQuestionLength) &&
+               HasBoundedText(request.ScenarioContext, MaxScenarioContextLength) &&
+               HasBoundedText(request.TraceId, MaxTraceIdLength) &&
+               IsAllowedNodeKindList(request.AllowedNodeKinds) &&
+               IsAllowedCapabilityNameList(request.AllowedCapabilityNames);
     }
 
     public static bool IsResponseSafe(
-        DataAgentGraphSidecarResponse response,
-        DataAgentGraphSidecarPolicy policy)
+        DataAgentGraphSidecarResponse? response,
+        DataAgentGraphSidecarPolicy? policy)
     {
-        if (HasText(response.WorkflowId) == false)
+        if (response is null || policy is null)
+            return false;
+
+        if (HasBoundedText(response.WorkflowId, MaxIdentityLength) == false ||
+            HasBoundedText(response.ReasonCode, MaxReasonCodeLength) == false ||
+            HasBoundedText(response.Message, MaxMessageLength) == false)
             return false;
 
         if (response.ProposedNodeKind.HasValue &&
             DefaultAllowedNodeKinds.Contains(response.ProposedNodeKind.Value) == false)
             return false;
 
-        if (response.RequiresCSharpSafetyService && HasText(response.RequestedCapabilityName) == false)
+        if (IsResponseCapabilitySafe(response.RequestedCapabilityName, response.RequiresCSharpSafetyService) == false)
             return false;
 
-        if (ContainsForbiddenCapability(response.RequestedCapabilityName))
+        if (IsTraceSafe(response.Trace) == false)
             return false;
 
         if (ContainsRawSql(response.ReasonCode) ||
@@ -236,12 +266,81 @@ public static class DataAgentGraphSidecarContract
             return false;
         }
 
+        if (response.ClaimedAuthorities is null)
+            return false;
+
         return response.ClaimedAuthorities.All(policy.Allows);
     }
 
-    static bool HasText(string? value)
+    public static bool IsResponseSafe(
+        DataAgentGraphSidecarResponse? response,
+        DataAgentGraphSidecarPolicy? policy,
+        DataAgentGraphSidecarRequest? request)
     {
-        return string.IsNullOrWhiteSpace(value) == false;
+        if (IsRequestValid(request) == false ||
+            IsResponseSafe(response, policy) == false)
+        {
+            return false;
+        }
+
+        return HasBoundedText(response!.RequestedCapabilityName, MaxCapabilityNameLength) &&
+               request!.AllowedCapabilityNames.Contains(response.RequestedCapabilityName, StringComparer.Ordinal);
+    }
+
+    static bool HasBoundedText(string? value, int maxLength)
+    {
+        return string.IsNullOrWhiteSpace(value) == false &&
+               value.Length <= maxLength;
+    }
+
+    static bool IsAllowedNodeKindList(IReadOnlyList<DataAgentGraphSidecarNodeKind>? allowedNodeKinds)
+    {
+        if (allowedNodeKinds is null ||
+            allowedNodeKinds.Count == 0 ||
+            allowedNodeKinds.Count > MaxNodeKindCount)
+        {
+            return false;
+        }
+
+        return allowedNodeKinds.All(DefaultAllowedNodeKinds.Contains);
+    }
+
+    static bool IsAllowedCapabilityNameList(IReadOnlyList<string>? allowedCapabilityNames)
+    {
+        if (allowedCapabilityNames is null ||
+            allowedCapabilityNames.Count == 0 ||
+            allowedCapabilityNames.Count > MaxCapabilityNameCount)
+        {
+            return false;
+        }
+
+        return allowedCapabilityNames.All(IsDefaultAllowedCapabilityName);
+    }
+
+    static bool IsDefaultAllowedCapabilityName(string? value)
+    {
+        return HasBoundedText(value, MaxCapabilityNameLength) &&
+               ContainsForbiddenCapability(value) == false &&
+               DefaultAllowedCapabilityNameSet.Contains(value!);
+    }
+
+    static bool IsResponseCapabilitySafe(string? value, bool requiresCSharpSafetyService)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return requiresCSharpSafetyService == false;
+
+        return IsDefaultAllowedCapabilityName(value);
+    }
+
+    static bool IsTraceSafe(IReadOnlyList<string>? trace)
+    {
+        if (trace is null ||
+            trace.Count > MaxTraceEntryCount)
+        {
+            return false;
+        }
+
+        return trace.All(entry => entry is not null && entry.Length <= MaxTraceEntryLength);
     }
 
     static bool ContainsForbiddenCapability(string? value)
@@ -250,7 +349,7 @@ public static class DataAgentGraphSidecarContract
             return false;
 
         return ForbiddenCapabilityNames.Any(marker =>
-            string.Equals(value.Trim(), marker, StringComparison.OrdinalIgnoreCase));
+            value.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     static bool ContainsRawSql(string? value)
@@ -258,7 +357,6 @@ public static class DataAgentGraphSidecarContract
         if (string.IsNullOrWhiteSpace(value))
             return false;
 
-        string normalized = value.Trim().ToLowerInvariant();
-        return RawSqlMarkers.Any(marker => normalized.Contains(marker, StringComparison.Ordinal));
+        return RawSqlMarkerPattern.IsMatch(value);
     }
 }
