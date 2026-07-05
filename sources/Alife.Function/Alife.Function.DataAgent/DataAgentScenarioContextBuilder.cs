@@ -66,11 +66,19 @@ public sealed class DataAgentScenarioContextBuilder
                 continue;
             }
 
-            string[] validFields = (term.Fields ?? [])
-                .Where(field => !string.IsNullOrWhiteSpace(field) &&
-                                catalog.HasField(term.Dataset, field))
-                .ToArray();
-            if (validFields.Length == 0)
+            List<string> validFields = [];
+            HashSet<string> seenTermFields = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string field in term.Fields ?? [])
+            {
+                if (!string.IsNullOrWhiteSpace(field) &&
+                    catalog.HasField(term.Dataset, field) &&
+                    seenTermFields.Add(field))
+                {
+                    validFields.Add(field);
+                }
+            }
+
+            if (validFields.Count == 0)
             {
                 continue;
             }

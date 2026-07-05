@@ -161,7 +161,7 @@ public sealed class DataAgentScenarioContextBuilderTests
             "dedupe_hints",
             "zh-CN",
             [
-                new DataAgentScenarioTerm("第一门禁", [], "engineering_gate", ["name", "STATUS", "required"]),
+                new DataAgentScenarioTerm("第一门禁", [], "engineering_gate", ["name", "STATUS", "status", "required", "Name"]),
                 new DataAgentScenarioTerm("第二门禁", [], "ENGINEERING_GATE", ["Name", "status", "evidence_path"]),
                 new DataAgentScenarioTerm("测试运行", [], "test_run", ["FAILED", "failed", "total"])
             ],
@@ -179,6 +179,9 @@ public sealed class DataAgentScenarioContextBuilderTests
             Assert.That(
                 context.CandidateFields,
                 Is.EqualTo(new[] { "name", "STATUS", "required", "evidence_path", "FAILED", "total" }));
+            Assert.That(context.Terms[0].Fields, Is.EqualTo(new[] { "name", "STATUS", "required" }));
+            Assert.That(context.Terms[1].Fields, Is.EqualTo(new[] { "Name", "status", "evidence_path" }));
+            Assert.That(context.Terms[2].Fields, Is.EqualTo(new[] { "FAILED", "total" }));
         });
     }
 
@@ -258,6 +261,59 @@ public sealed class DataAgentScenarioContextBuilderTests
             AssertCannotPollute(context.CandidateDatasets, "替换", "追加");
             AssertCannotPollute(context.CandidateFields, "替换", "追加");
             AssertCannotPollute(context.Terms.Single().Fields, "替换", "追加");
+        });
+    }
+
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("   ")]
+    public void ContextNormalizesNullCollectionsAndFallbackStrings(string? reasonCode)
+    {
+        DataAgentScenarioContext context = new(
+            scenario: " ",
+            culture: "",
+            terms: null,
+            metrics: null,
+            candidateDatasets: null,
+            candidateFields: null,
+            reasonCode: reasonCode);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.Scenario, Is.EqualTo("unknown"));
+            Assert.That(context.Culture, Is.EqualTo("und"));
+            Assert.That(context.ReasonCode, Is.EqualTo(DataAgentScenarioContext.ReasonNoMatch));
+            Assert.That(context.HasMatches, Is.False);
+            Assert.That(context.Terms, Is.Empty);
+            Assert.That(context.Metrics, Is.Empty);
+            Assert.That(context.CandidateDatasets, Is.Empty);
+            Assert.That(context.CandidateFields, Is.Empty);
+            AssertCannotPollute(
+                context.Terms,
+                new DataAgentScenarioTermMatch("替换", "engineering_gate", ["name"], "替换"),
+                new DataAgentScenarioTermMatch("追加", "engineering_gate", ["name"], "追加"));
+            AssertCannotPollute(
+                context.Metrics,
+                new DataAgentScenarioMetricMatch("替换", "status", "=", "passed"),
+                new DataAgentScenarioMetricMatch("追加", "required", "=", true));
+            AssertCannotPollute(context.CandidateDatasets, "替换", "追加");
+            AssertCannotPollute(context.CandidateFields, "替换", "追加");
+        });
+    }
+
+    [Test]
+    public void TermMatchNormalizesNullFieldsToReadOnlyEmptySnapshot()
+    {
+        DataAgentScenarioTermMatch match = new(
+            "工程门禁",
+            "engineering_gate",
+            fields: null,
+            "工程门禁");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(match.Fields, Is.Empty);
+            AssertCannotPollute(match.Fields, "替换", "追加");
         });
     }
 

@@ -8,21 +8,21 @@ public sealed class DataAgentScenarioContext
     public const string ReasonPackUnavailable = "scenario_context_pack_unavailable";
 
     public DataAgentScenarioContext(
-        string scenario,
-        string culture,
-        IEnumerable<DataAgentScenarioTermMatch> terms,
-        IEnumerable<DataAgentScenarioMetricMatch> metrics,
-        IEnumerable<string> candidateDatasets,
-        IEnumerable<string> candidateFields,
-        string reasonCode)
+        string? scenario,
+        string? culture,
+        IEnumerable<DataAgentScenarioTermMatch>? terms,
+        IEnumerable<DataAgentScenarioMetricMatch>? metrics,
+        IEnumerable<string>? candidateDatasets,
+        IEnumerable<string>? candidateFields,
+        string? reasonCode)
     {
-        Scenario = scenario;
-        Culture = culture;
+        Scenario = NormalizeOrDefault(scenario, "unknown");
+        Culture = NormalizeOrDefault(culture, "und");
         Terms = Snapshot(terms);
         Metrics = Snapshot(metrics);
         CandidateDatasets = Snapshot(candidateDatasets);
         CandidateFields = Snapshot(candidateFields);
-        ReasonCode = reasonCode;
+        ReasonCode = NormalizeOrDefault(reasonCode, ReasonNoMatch);
     }
 
     public string Scenario { get; }
@@ -41,10 +41,19 @@ public sealed class DataAgentScenarioContext
 
     public bool HasMatches => Terms.Count > 0 || Metrics.Count > 0;
 
-    static IReadOnlyList<T> Snapshot<T>(IEnumerable<T> values)
+    static IReadOnlyList<T> Snapshot<T>(IEnumerable<T>? values)
     {
-        ArgumentNullException.ThrowIfNull(values);
+        if (values is null)
+        {
+            return Array.AsReadOnly(Array.Empty<T>());
+        }
+
         return Array.AsReadOnly(values.ToArray());
+    }
+
+    static string NormalizeOrDefault(string? value, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 }
 
@@ -53,7 +62,7 @@ public sealed class DataAgentScenarioTermMatch
     public DataAgentScenarioTermMatch(
         string term,
         string dataset,
-        IEnumerable<string> fields,
+        IEnumerable<string>? fields,
         string matchedText)
     {
         Term = term;
@@ -70,9 +79,13 @@ public sealed class DataAgentScenarioTermMatch
 
     public string MatchedText { get; }
 
-    static IReadOnlyList<string> Snapshot(IEnumerable<string> values)
+    static IReadOnlyList<string> Snapshot(IEnumerable<string>? values)
     {
-        ArgumentNullException.ThrowIfNull(values);
+        if (values is null)
+        {
+            return Array.AsReadOnly(Array.Empty<string>());
+        }
+
         return Array.AsReadOnly(values.ToArray());
     }
 }
