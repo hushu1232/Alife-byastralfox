@@ -165,6 +165,154 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
     }
 
     [Test]
+    public void LivePostgresUpdateOnEndedSessionDoesNotInvokeCallback()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
+
+        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        store.Initialize();
+        DateTimeOffset createdAt = new(2026, 7, 5, 12, 0, 0, TimeSpan.Zero);
+        DateTimeOffset endedAt = createdAt.AddMinutes(1);
+        DataAgentAnalysisSession session = store.Create("owner", "skip stale update callback", createdAt);
+
+        try
+        {
+            Assert.That(store.End(session.SessionId, endedAt), Is.True);
+            bool callbackInvoked = false;
+
+            DataAgentAnalysisSession? updated = store.Update(
+                session.SessionId,
+                current =>
+                {
+                    callbackInvoked = true;
+                    return current with
+                    {
+                        Status = DataAgentAnalysisSessionStatus.ReadyToSummarize,
+                        UpdatedAt = endedAt.AddMinutes(1),
+                        LastSummary = "should not be saved"
+                    };
+                });
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(callbackInvoked, Is.False);
+                Assert.That(updated, Is.Not.Null);
+                Assert.That(updated!.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Ended));
+                Assert.That(updated.UpdatedAt, Is.EqualTo(endedAt));
+                Assert.That(updated.LastSummary, Is.Null);
+            });
+        }
+        finally
+        {
+            DeleteSessionRows(connectionString, session.SessionId);
+        }
+    }
+
+    [Test]
+    public void LivePostgresUpdateThrowsWhenCallbackChangesSessionId()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
+
+        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        store.Initialize();
+        DataAgentAnalysisSession session = store.Create(
+            "owner",
+            "reject changed checkpoint session id",
+            new DateTimeOffset(2026, 7, 5, 13, 0, 0, TimeSpan.Zero));
+
+        try
+        {
+            InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() =>
+                store.Update(session.SessionId, current => current with { SessionId = "changed-session-id" }))!;
+
+            DataAgentAnalysisSession? loaded = store.Get(session.SessionId);
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception.Message, Does.Contain("Session update cannot change the session id."));
+                Assert.That(loaded, Is.Not.Null);
+                Assert.That(loaded!.SessionId, Is.EqualTo(session.SessionId));
+                Assert.That(loaded.Status, Is.EqualTo(DataAgentAnalysisSessionStatus.Active));
+            });
+        }
+        finally
+        {
+            DeleteSessionRows(connectionString, session.SessionId);
+        }
+    }
+
+    [Test]
+    public void LivePostgresEndReturnsFalseForBlankAndMissingIds()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
+
+        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        store.Initialize();
+        DateTimeOffset now = new(2026, 7, 5, 14, 0, 0, TimeSpan.Zero);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(store.End(string.Empty, now), Is.False);
+            Assert.That(store.End("   ", now), Is.False);
+            Assert.That(store.End($"missing-{Guid.NewGuid():N}", now), Is.False);
+        });
+    }
+
+    [Test]
+    public void LivePostgresGetAndSaveReturnReadOnlyTurnCopies()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
+
+        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        store.Initialize();
+        DateTimeOffset createdAt = new(2026, 7, 5, 15, 0, 0, TimeSpan.Zero);
+        DateTimeOffset turnAt = createdAt.AddMinutes(1);
+        DataAgentAnalysisTurn turn = new(
+            "turn-readonly",
+            1,
+            "Which checkpoint rows were saved?",
+            DataAgentAnalysisTurnIntent.NewQuestion,
+            turnAt,
+            "document_index",
+            "SELECT path FROM document_index LIMIT 20",
+            1,
+            "one row",
+            true,
+            string.Empty);
+        DataAgentAnalysisSession session = store.Create("owner", "return immutable checkpoint turns", createdAt);
+
+        try
+        {
+            DataAgentAnalysisTurn[] mutableTurns = [turn];
+            DataAgentAnalysisSession saved = store.Save(session with { UpdatedAt = turnAt, Turns = mutableTurns });
+            mutableTurns[0] = turn with { TurnId = "mutated-after-save" };
+            DataAgentAnalysisSession? loaded = store.Get(session.SessionId);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(saved.Turns, Is.Not.SameAs(mutableTurns));
+                Assert.That(loaded, Is.Not.Null);
+                Assert.That(loaded!.Turns, Is.Not.SameAs(saved.Turns));
+                Assert.That(saved.Turns[0].TurnId, Is.EqualTo("turn-readonly"));
+                Assert.That(loaded.Turns[0].TurnId, Is.EqualTo("turn-readonly"));
+                AssertReadOnlyTurns(saved.Turns);
+                AssertReadOnlyTurns(loaded.Turns);
+            });
+        }
+        finally
+        {
+            DeleteSessionRows(connectionString, session.SessionId);
+        }
+    }
+
+    [Test]
     public void SourceUsesTransactionsAndRowLockForUpdates()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -185,6 +333,43 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
             Assert.That(source, Does.Contain("Update("));
             Assert.That(source, Does.Contain("End("));
         });
+    }
+
+    [Test]
+    public void SourceUsesRepeatableReadTransactionForAtomicGet()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "PostgresDataAgentAnalysisSessionStore.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("BeginTransaction(IsolationLevel.RepeatableRead)"));
+            Assert.That(source, Does.Contain("LoadSession(connection, transaction, sessionId, forUpdate: false)"));
+        });
+    }
+
+    static void AssertReadOnlyTurns(IReadOnlyList<DataAgentAnalysisTurn> turns)
+    {
+        Assert.That(turns, Is.AssignableTo<ICollection<DataAgentAnalysisTurn>>());
+        ICollection<DataAgentAnalysisTurn> collection = (ICollection<DataAgentAnalysisTurn>)turns;
+        Assert.That(collection.IsReadOnly, Is.True);
+        Assert.Throws<NotSupportedException>(() => collection.Add(new DataAgentAnalysisTurn(
+            "turn-add",
+            99,
+            "attempt mutation",
+            DataAgentAnalysisTurnIntent.Continue,
+            new DateTimeOffset(2026, 7, 5, 16, 0, 0, TimeSpan.Zero),
+            "document_index",
+            "SELECT 1",
+            1,
+            "mutation",
+            true,
+            string.Empty)));
     }
 
     static void DeleteSessionRows(string connectionString, string sessionId)

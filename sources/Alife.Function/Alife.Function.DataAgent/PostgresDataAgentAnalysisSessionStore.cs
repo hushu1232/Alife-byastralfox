@@ -1,10 +1,23 @@
 using System.Data;
+using System.Globalization;
 using Npgsql;
 
 namespace Alife.Function.DataAgent;
 
 public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSessionStore
 {
+    const string SelectSessionSql = """
+        SELECT session_id, caller_id, goal, status, created_at, updated_at, last_dataset, last_summary, pending_clarification_question
+        FROM dataagent_analysis_session
+        WHERE session_id = @session_id
+        """;
+    const string SelectSessionForUpdateSql = """
+        SELECT session_id, caller_id, goal, status, created_at, updated_at, last_dataset, last_summary, pending_clarification_question
+        FROM dataagent_analysis_session
+        WHERE session_id = @session_id
+        FOR UPDATE
+        """;
+
     readonly string connectionString;
 
     public PostgresDataAgentAnalysisSessionStore(string connectionString)
@@ -86,7 +99,10 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
             return null;
 
         using NpgsqlConnection connection = Open();
-        return LoadSession(connection, null, sessionId, forUpdate: false);
+        using NpgsqlTransaction transaction = connection.BeginTransaction(IsolationLevel.RepeatableRead);
+        DataAgentAnalysisSession? session = LoadSession(connection, transaction, sessionId, forUpdate: false);
+        transaction.Commit();
+        return session;
     }
 
     public DataAgentAnalysisSession Save(DataAgentAnalysisSession session)
@@ -196,12 +212,7 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
     {
         using NpgsqlCommand command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"""
-            SELECT session_id, caller_id, goal, status, created_at, updated_at, last_dataset, last_summary, pending_clarification_question
-            FROM dataagent_analysis_session
-            WHERE session_id = @session_id
-            {(forUpdate ? "FOR UPDATE" : string.Empty)}
-            """;
+        command.CommandText = forUpdate ? SelectSessionForUpdateSql : SelectSessionSql;
         command.Parameters.Add(new NpgsqlParameter("session_id", sessionId));
 
         using NpgsqlDataReader reader = command.ExecuteReader();
@@ -213,8 +224,8 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
             reader.GetString(1),
             reader.GetString(2),
             (DataAgentAnalysisSessionStatus)reader.GetInt32(3),
-            DateTimeOffset.Parse(reader.GetString(4)),
-            DateTimeOffset.Parse(reader.GetString(5)),
+            ParseTimestamp(reader.GetString(4)),
+            ParseTimestamp(reader.GetString(5)),
             reader.IsDBNull(6) ? null : reader.GetString(6),
             reader.IsDBNull(7) ? null : reader.GetString(7),
             reader.IsDBNull(8) ? null : reader.GetString(8),
@@ -249,7 +260,7 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
                 reader.GetInt32(1),
                 reader.GetString(2),
                 (DataAgentAnalysisTurnIntent)reader.GetInt32(3),
-                DateTimeOffset.Parse(reader.GetString(4)),
+                ParseTimestamp(reader.GetString(4)),
                 reader.GetString(5),
                 reader.GetString(6),
                 reader.GetInt32(7),
@@ -259,6 +270,11 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
         }
 
         return Array.AsReadOnly(turns.ToArray());
+    }
+
+    static DateTimeOffset ParseTimestamp(string value)
+    {
+        return DateTimeOffset.ParseExact(value, "O", CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 
     static void UpsertSession(
