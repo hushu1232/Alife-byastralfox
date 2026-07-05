@@ -903,7 +903,10 @@ public static class DataAgentReadiness
 
             string repoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
             string scenarioPackPath = Path.Combine(repoRoot, "docs", "dataagent", "scenario-packs", "engineering.zh-CN.json");
-            string scenarioPackText = File.ReadAllText(scenarioPackPath, Encoding.UTF8);
+            Encoding strictUtf8 = new UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false,
+                throwOnInvalidBytes: true);
+            string scenarioPackText = File.ReadAllText(scenarioPackPath, strictUtf8);
             DataAgentScenarioKnowledgePack pack = DataAgentScenarioKnowledgePackProvider.Load(scenarioPackPath);
             IReadOnlyList<DataAgentScenarioTerm> resolvedTerms =
                 DataAgentScenarioKnowledgePackProvider.ResolveTerms(pack, "看看工程门禁里最近失败的必需项");
@@ -917,7 +920,8 @@ public static class DataAgentReadiness
                 scenarioPackText.Contains("宸ョ▼", StringComparison.Ordinal) == false &&
                 scenarioPackText.Contains("鏈€", StringComparison.Ordinal) == false &&
                 scenarioPackText.Contains("澶辫触", StringComparison.Ordinal) == false &&
-                scenarioPackText.Contains("蹇呴渶", StringComparison.Ordinal) == false;
+                scenarioPackText.Contains("蹇呴渶", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("\uFFFD", StringComparison.Ordinal) == false;
             bool scenarioPackHasEngineeringGateStatus = resolvedTerms.Any(term =>
                 string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&
                 term.Fields.Contains("status", StringComparer.Ordinal));
@@ -959,11 +963,33 @@ public static class DataAgentReadiness
                 scenarioDiagnostics.Contains("reason=scenario_context_matched", StringComparison.Ordinal) &&
                 scenarioDiagnostics.Contains("metrics=失败:status!=passed;必需:required=true", StringComparison.Ordinal) &&
                 scenarioDiagnostics.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
+            DataAgentLlmPlannerPrompt? capturedUnsafeScenarioPrompt = null;
+            DataAgentQueryPlanEnvelope unsafeScenarioEnvelope = new LlmDataAgentQueryPlanner(
+                databasePath,
+                new CapturingFixedLlmClient(
+                    """
+                    {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"unsafe_operator","dataset":"engineering_gate","confidence":"medium","signals":["scenario"],"reason":"try unsupported operator","select_fields":["name","status"],"filters":[{"field":"status","operator":"starts_with","value":"fail"}],"sorts":[],"limit":20}
+                    """,
+                    prompt => capturedUnsafeScenarioPrompt = prompt),
+                new DeterministicDataAgentQueryPlanner()).Plan(new DataAgentQueryRequest(
+                    "看看工程门禁里最近失败的必需项",
+                    "owner",
+                    "zh-CN",
+                    false,
+                    scenarioContext));
+            bool scenarioBoundaryReady =
+                capturedUnsafeScenarioPrompt?.Schema.Contains("Scenario context:", StringComparison.Ordinal) == true &&
+                unsafeScenarioEnvelope.Plan is not null &&
+                unsafeScenarioEnvelope.Clarification is null &&
+                unsafeScenarioEnvelope.Explanation.Signals.Contains("llm_invalid_output_fallback", StringComparer.Ordinal) &&
+                unsafeScenarioEnvelope.Explanation.Reason.Contains("unsupported_operator", StringComparison.Ordinal) &&
+                unsafeScenarioEnvelope.Explanation.Reason.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
             bool scenarioSqlBoundaryReady =
                 typeof(DataAgentQueryPlanValidator).IsClass &&
                 typeof(DataAgentSqlCompiler).IsClass &&
                 typeof(DataAgentSqlSafetyValidator).IsClass &&
-                typeof(DataAgentQueryExecutor).IsClass;
+                typeof(DataAgentQueryExecutor).IsClass &&
+                scenarioBoundaryReady;
             bool scenarioContextIntegrated =
                 scenarioContextMatched &&
                 scenarioPromptHintReady &&
@@ -1047,6 +1073,15 @@ public static class DataAgentReadiness
     sealed class FixedLlmClient(string raw) : ILlmDataAgentPlannerClient
     {
         public string Complete(DataAgentLlmPlannerPrompt prompt) => raw;
+    }
+
+    sealed class CapturingFixedLlmClient(string raw, Action<DataAgentLlmPlannerPrompt> capturePrompt) : ILlmDataAgentPlannerClient
+    {
+        public string Complete(DataAgentLlmPlannerPrompt prompt)
+        {
+            capturePrompt(prompt);
+            return raw;
+        }
     }
 
     sealed class RecordingRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor

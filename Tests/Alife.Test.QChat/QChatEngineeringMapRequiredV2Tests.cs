@@ -75,6 +75,27 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void ScenarioContextDiagnosticsCheckRequiresQChatNoDirectImportGuard()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent scenario context diagnostics");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("tools/check-dataagent-readiness.ps1"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextIntegrated"));
+            Assert.That(declaration, Does.Contain("Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs"));
+            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioKnowledgePackProvider"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgentToolScopePolicy"));
+        });
+    }
+
+    [Test]
     public void QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);

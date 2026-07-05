@@ -6,6 +6,10 @@ namespace Alife.Test.DataAgent;
 [TestFixture]
 public sealed class DataAgentV211ReadinessTests
 {
+    static readonly Encoding StrictUtf8 = new UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
+
     [Test]
     public void ScenarioContextNarrowsPlannerAttentionWithoutSqlAuthority()
     {
@@ -23,6 +27,18 @@ public sealed class DataAgentV211ReadinessTests
             catalog,
             snapshot,
             context);
+        DataAgentLlmPlannerPrompt? capturedPrompt = null;
+        LlmDataAgentQueryPlanner planner = new(
+            databasePath,
+            new FixedUnsafeLlmClient(prompt => capturedPrompt = prompt),
+            new DeterministicDataAgentQueryPlanner());
+
+        DataAgentQueryPlanEnvelope fallbackEnvelope = planner.Plan(new DataAgentQueryRequest(
+            "看看工程门禁里最近失败的必需项",
+            "owner",
+            "zh-CN",
+            false,
+            context));
 
         Assert.Multiple(() =>
         {
@@ -38,6 +54,13 @@ public sealed class DataAgentV211ReadinessTests
             Assert.That(typeof(DataAgentSqlCompiler).IsClass, Is.True);
             Assert.That(typeof(DataAgentSqlSafetyValidator).IsClass, Is.True);
             Assert.That(typeof(DataAgentQueryExecutor).IsClass, Is.True);
+            Assert.That(capturedPrompt, Is.Not.Null);
+            Assert.That(capturedPrompt!.Schema, Does.Contain("Scenario context:"));
+            Assert.That(fallbackEnvelope.Plan, Is.Not.Null);
+            Assert.That(fallbackEnvelope.Clarification, Is.Null);
+            Assert.That(fallbackEnvelope.Explanation.Signals, Does.Contain("llm_invalid_output_fallback"));
+            Assert.That(fallbackEnvelope.Explanation.Reason, Does.Contain("unsupported_operator"));
+            Assert.That(fallbackEnvelope.Explanation.Reason.Contains("SELECT", StringComparison.OrdinalIgnoreCase), Is.False);
         });
     }
 
@@ -57,7 +80,7 @@ public sealed class DataAgentV211ReadinessTests
             Assert.That(text, Does.Contain("reason=scenario_context_matched"));
             Assert.That(text, Does.Contain("datasets=engineering_gate,test_run"));
             Assert.That(text, Does.Contain("metrics=失败:status!=passed;必需:required=true"));
-            Assert.That(text, Does.Not.Contain("SELECT"));
+            Assert.That(text.Contains("SELECT", StringComparison.OrdinalIgnoreCase), Is.False);
             Assert.That(text, Does.Not.Contain("[tool_route_context]"));
             Assert.That(text, Does.Not.Contain("[data_agent_evidence_pack]"));
             Assert.That(text, Does.Not.Contain("hidden_context"));
@@ -67,7 +90,7 @@ public sealed class DataAgentV211ReadinessTests
     [Test]
     public void ScenarioPackFileRemainsReadableUtf8()
     {
-        string text = File.ReadAllText(EngineeringPackPath(), Encoding.UTF8);
+        string text = File.ReadAllText(EngineeringPackPath(), StrictUtf8);
 
         Assert.Multiple(() =>
         {
@@ -81,6 +104,7 @@ public sealed class DataAgentV211ReadinessTests
             Assert.That(text, Does.Not.Contain("鏈€"));
             Assert.That(text, Does.Not.Contain("澶辫触"));
             Assert.That(text, Does.Not.Contain("蹇呴渶"));
+            Assert.That(text, Does.Not.Contain("\uFFFD"));
         });
     }
 
@@ -121,5 +145,17 @@ public sealed class DataAgentV211ReadinessTests
         }
 
         throw new DirectoryNotFoundException("Could not locate repository root.");
+    }
+
+    sealed class FixedUnsafeLlmClient(Action<DataAgentLlmPlannerPrompt> capturePrompt) : ILlmDataAgentPlannerClient
+    {
+        public string Complete(DataAgentLlmPlannerPrompt prompt)
+        {
+            capturePrompt(prompt);
+
+            return """
+                {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"unsafe_operator","dataset":"engineering_gate","confidence":"medium","signals":["scenario"],"reason":"try unsupported operator","select_fields":["name","status"],"filters":[{"field":"status","operator":"starts_with","value":"fail"}],"sorts":[],"limit":20}
+                """;
+        }
     }
 }

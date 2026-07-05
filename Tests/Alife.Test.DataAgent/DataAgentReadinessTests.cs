@@ -297,6 +297,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("LlmDataAgentPlannerPromptFormatter.cs"));
             Assert.That(declaration, Does.Contain("Scenario context:"));
             Assert.That(declaration, Does.Contain("Do not output SQL"));
+            Assert.That(declaration, Does.Contain("LlmDataAgentQueryPlanner"));
+            Assert.That(declaration, Does.Contain("llm_invalid_output_fallback"));
+            Assert.That(declaration, Does.Contain("unsupported_operator"));
+            Assert.That(declaration, Does.Contain("throwOnInvalidBytes: true"));
+            Assert.That(declaration, Does.Contain("\\uFFFD"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilderTests"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioDiagnosticsFormatterTests"));
             Assert.That(declaration, Does.Contain("DataAgentV211ReadinessTests"));

@@ -12,6 +12,8 @@ function Add-Check {
         [string]$Name,
         [string]$Path,
         [string[]]$Patterns,
+        [string]$AlsoPath = "",
+        [string[]]$AlsoPatterns = @(),
         [bool]$Required = $true
     )
 
@@ -31,6 +33,28 @@ function Add-Check {
                 $detail = "$Path missing marker '$pattern'"
                 break
             }
+        }
+    }
+
+    if ($ok -and -not [string]::IsNullOrWhiteSpace($AlsoPath)) {
+        $alsoFullPath = Join-Path $repoRoot $AlsoPath
+        if (-not (Test-Path -LiteralPath $alsoFullPath)) {
+            $ok = $false
+            $detail = "$AlsoPath missing"
+        }
+        elseif ($AlsoPatterns -and $AlsoPatterns.Count -gt 0) {
+            $alsoContent = Get-Content -LiteralPath $alsoFullPath -Raw
+            foreach ($pattern in $AlsoPatterns) {
+                if ($alsoContent.IndexOf($pattern, [System.StringComparison]::Ordinal) -lt 0) {
+                    $ok = $false
+                    $detail = "$AlsoPath missing marker '$pattern'"
+                    break
+                }
+            }
+        }
+
+        if ($ok) {
+            $detail = "$Path; $AlsoPath"
         }
     }
 
@@ -62,7 +86,7 @@ Add-Check -Group "Harness" -Name "QChat recent diagnostics command" -Path "sourc
 Add-Check -Group "Harness" -Name "QChat diagnostics cache redaction" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticTextSanitizer.cs" -Patterns @("hidden_context_redacted", "HiddenContextPattern", "SqlFragmentPattern", "[tool_route_context]", "[data_agent_evidence_pack]", "Allowed XML tools", "connection_string", "Authorization", "SqlStatementPattern")
 Add-Check -Group "Harness" -Name "DataAgent trace diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentTrace", "diag trace", "BuildDataAgentTraceDiagnosticsText", "DataAgent trace diagnostics")
 Add-Check -Group "Harness" -Name "DataAgent progress diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentProgress", "diag progress", "BuildDataAgentProgressDiagnosticsText", "DataAgent progress diagnostics")
-Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched")
+Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched") -AlsoPath "Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs" -AlsoPatterns @("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder", "DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy")
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
