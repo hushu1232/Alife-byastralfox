@@ -51,6 +51,35 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
+    public void AwakeUsesConfiguredAnalysisSessionStoreBoundary()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("IDataAgentAnalysisSessionStore"));
+            Assert.That(source, Does.Contain("DataAgentAnalysisSessionStoreFactory.Create"));
+            Assert.That(source, Does.Contain("DataAgentAnalysisSessionStoreFactory.FromEnvironment"));
+            Assert.That(source, Does.Not.Contain("new InMemoryDataAgentAnalysisSessionStore()"));
+        });
+    }
+
+    [Test]
+    public void ModuleAnalysisSessionStoreWiringUsesDataAgentFactoryWithoutPostgresConnection()
+    {
+        MethodInfo method = typeof(DataAgentModuleService).GetMethod(
+            "CreateAnalysisSessionStore",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+        Assert.That(method, Is.Not.Null);
+
+        IDataAgentAnalysisSessionStore store = (IDataAgentAnalysisSessionStore)method.Invoke(
+            null,
+            [new DataAgentAnalysisSessionStoreOptions(string.Empty, string.Empty)])!;
+
+        Assert.That(store, Is.TypeOf<InMemoryDataAgentAnalysisSessionStore>());
+    }
+
+    [Test]
     public void ModuleExposesRegisteredProviderAndToolNamesForDiagnostics()
     {
         string source = ReadModuleSource();

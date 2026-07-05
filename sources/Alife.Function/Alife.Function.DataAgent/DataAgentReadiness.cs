@@ -78,6 +78,32 @@ public static class DataAgentReadiness
                 ? Pass("PostgresLiveTestsEnvironmentGated", "PostgreSQL live tests are environment-gated")
                 : Pass("PostgresLiveTestsEnvironmentGated", "PostgreSQL live test connection is explicitly configured"));
 
+            bool postgresCheckpointSessionStoreReady =
+                typeof(IDataAgentAnalysisSessionStore).IsAssignableFrom(typeof(PostgresDataAgentAnalysisSessionStore));
+            bool postgresCheckpointFactoryReady =
+                DataAgentAnalysisSessionStoreFactory.Create(new DataAgentAnalysisSessionStoreOptions(
+                    string.Empty,
+                    string.Empty)) is InMemoryDataAgentAnalysisSessionStore &&
+                typeof(DataAgentAnalysisSessionStoreFactory)
+                    .GetMethod(nameof(DataAgentAnalysisSessionStoreFactory.FromEnvironment)) is not null;
+            bool postgresCheckpointModuleWiringReady =
+                DataAgentModuleService.CreateAnalysisSessionStore(new DataAgentAnalysisSessionStoreOptions(
+                    string.Empty,
+                    string.Empty)) is InMemoryDataAgentAnalysisSessionStore;
+            bool postgresCheckpointLiveTestGated =
+                string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION"));
+            bool postgresCheckpointReady =
+                postgresCheckpointSessionStoreReady &&
+                postgresCheckpointFactoryReady &&
+                postgresCheckpointModuleWiringReady;
+            checks.Add(postgresCheckpointReady
+                ? Pass(
+                    "PostgresCheckpointPersistencePresent",
+                    $"session_store=true;factory=true;module_wiring=true;live_test_gated={LowerBool(postgresCheckpointLiveTestGated)}")
+                : Fail(
+                    "PostgresCheckpointPersistencePresent",
+                    $"session_store={LowerBool(postgresCheckpointSessionStoreReady)};factory={LowerBool(postgresCheckpointFactoryReady)};module_wiring={LowerBool(postgresCheckpointModuleWiringReady)};live_test_gated={LowerBool(postgresCheckpointLiveTestGated)}"));
+
             DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
                 readinessStore,
                 new FixedPlanner(new DataAgentQueryPlan(

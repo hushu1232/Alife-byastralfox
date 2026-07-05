@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(67));
+            Assert.That(checks, Has.Count.EqualTo(68));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -28,6 +28,12 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteStoreCompatibilityPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PostgresStoreProviderPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PostgresLiveTestsEnvironmentGated"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("PostgresCheckpointPersistencePresent"));
+            DataAgentReadinessCheck postgresCheckpointCheck = checks.Single(check => check.Name == "PostgresCheckpointPersistencePresent");
+            Assert.That(postgresCheckpointCheck.Detail, Does.Contain("session_store=true"));
+            Assert.That(postgresCheckpointCheck.Detail, Does.Contain("factory=true"));
+            Assert.That(postgresCheckpointCheck.Detail, Does.Contain("module_wiring=true"));
+            Assert.That(postgresCheckpointCheck.Detail, Does.Contain("live_test_gated="));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
@@ -138,7 +144,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 81 required passed, 0 required missing"
+                "  Summary: 82 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -176,7 +182,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 81"));
+            Assert.That(script, Does.Contain("$expectedRequired = 82"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -352,6 +358,34 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void ReadinessScriptProtectsV213PostgresCheckpointPersistenceContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "PostgresCheckpointPersistencePresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("PostgresDataAgentAnalysisSessionStore.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentAnalysisSessionStoreFactory.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentModuleService.cs"));
+            Assert.That(declaration, Does.Contain("CreateAnalysisSessionStore"));
+            Assert.That(declaration, Does.Contain("dataagent_analysis_session"));
+            Assert.That(declaration, Does.Contain("dataagent_analysis_turn"));
+            Assert.That(declaration, Does.Contain("FOR UPDATE"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_ANALYSIS_SESSION_STORE_PROVIDER"));
+            Assert.That(declaration, Does.Contain("DataAgentPostgresAnalysisSessionStoreTests"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION"));
+            Assert.That(declaration, Does.Contain("session_store=true"));
+            Assert.That(declaration, Does.Contain("factory=true"));
+            Assert.That(declaration, Does.Contain("module_wiring=true"));
+            Assert.That(declaration, Does.Contain("live_test_gated="));
+        });
+    }
+
+    [Test]
     public void FunctionCallerStoresRecentDataAgentTraceDiagnostics()
     {
         Type functionCallerType = typeof(XmlFunctionCaller);
@@ -467,7 +501,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 56 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 57 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -481,7 +515,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 56"));
+            Assert.That(script, Does.Contain("$expectedRequired = 57"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
