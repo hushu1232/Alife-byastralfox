@@ -92,6 +92,8 @@ public sealed class DataAgentScenarioDiagnosticsFormatterTests
                     "passed; SELECT * FROM users"),
                 new DataAgentScenarioMetricMatch("union label", "required", "=", "UNION ALL"),
                 new DataAgentScenarioMetricMatch("table label", "required", "=", "TABLE users"),
+                new DataAgentScenarioMetricMatch("TABLE", "required", "=", "safe"),
+                new DataAgentScenarioMetricMatch("bare table value", "required", "=", "TABLE"),
                 new DataAgentScenarioMetricMatch("tool broker label", "required", "=", "tool_broker manual"),
                 new DataAgentScenarioMetricMatch("ToolBroker label", "required", "=", "ToolBroker manual"),
                 new DataAgentScenarioMetricMatch("allowed tools label", "required", "=", "Allowed XML tools: dataagent_query"),
@@ -112,6 +114,7 @@ public sealed class DataAgentScenarioDiagnosticsFormatterTests
             Assert.That(text, Does.Not.Contain("FROM users"));
             Assert.That(text, Does.Not.Contain("UNION ALL"));
             Assert.That(text, Does.Not.Contain("TABLE users"));
+            Assert.That(text, Does.Not.Contain("TABLE"));
             Assert.That(text, Does.Not.Contain("password"));
             Assert.That(text, Does.Not.Contain("hidden_context"));
             Assert.That(text, Does.Not.Contain("hidden prompt"));

@@ -11,7 +11,7 @@ public static class DataAgentScenarioDiagnosticsFormatter
     const int MaxFieldLength = 120;
 
     static readonly Regex ClearSqlFragmentPattern = new(
-        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with|pragma|attach|detach)\b|\bunion(?:\s+all)?\b|\btable\s+\S+|\bfrom\s+\S+|\bjoin\s+\S+|\bwhere\s+\S+|\bhaving\s+\S+|\blimit\s+\d+\b|\border\s+by\b|\bgroup\s+by\b",
+        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with|pragma|attach|detach)\b|\bunion(?:\s+all)?\b|\btable\b(?:\s+\S+)?|\bfrom\s+\S+|\bjoin\s+\S+|\bwhere\s+\S+|\bhaving\s+\S+|\blimit\s+\d+\b|\border\s+by\b|\bgroup\s+by\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex UnsafeMarkerPattern = new(
