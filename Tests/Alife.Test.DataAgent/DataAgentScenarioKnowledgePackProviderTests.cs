@@ -1,4 +1,5 @@
 using Alife.Function.DataAgent;
+using System.Text;
 using System.Text.Json;
 
 namespace Alife.Test.DataAgent;
@@ -26,8 +27,54 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
             Assert.That(pack.Terms.Select(term => term.Term), Does.Contain("工程门禁"));
             Assert.That(pack.Terms.Select(term => term.Term), Does.Contain("最近失败的测试"));
             Assert.That(pack.Terms.Select(term => term.Term), Does.Contain("缺失项"));
+            Assert.That(pack.Terms.Select(term => term.Term), Does.Contain("文档证据"));
             Assert.That(pack.Metrics.Select(metric => metric.Name), Does.Contain("失败"));
             Assert.That(pack.Metrics.Select(metric => metric.Name), Does.Contain("必需"));
+        });
+    }
+
+    [Test]
+    public void EngineeringPackRoundTripsReadableUtf8Chinese()
+    {
+        string json = File.ReadAllText(GetEngineeringPackPath(), Encoding.UTF8);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(json, Does.Contain("工程门禁"));
+            Assert.That(json, Does.Contain("最近失败的测试"));
+            Assert.That(json, Does.Contain("缺失项"));
+            Assert.That(json, Does.Contain("文档证据"));
+            Assert.That(json, Does.Contain("失败"));
+            Assert.That(json, Does.Contain("必需"));
+            Assert.That(json, Does.Not.Contain("宸ョ▼"));
+            Assert.That(json, Does.Not.Contain("鏈€"));
+            Assert.That(json, Does.Not.Contain("缂哄"));
+            Assert.That(json, Does.Not.Contain("澶辫触"));
+            Assert.That(json, Does.Not.Contain("蹇呯渶"));
+            Assert.That(json, Does.Not.Contain("蹇呴渶"));
+        });
+    }
+
+    [Test]
+    public void EngineeringPackFieldsExistInDefaultCatalog()
+    {
+        DataAgentScenarioKnowledgePack pack = LoadEngineeringPack();
+        DataAgentCatalog catalog = DataAgentCatalog.CreateDefault();
+
+        Assert.Multiple(() =>
+        {
+            foreach (DataAgentScenarioTerm term in pack.Terms)
+            {
+                Assert.That(catalog.HasDataset(term.Dataset), Is.True, $"Dataset '{term.Dataset}' should exist.");
+
+                foreach (string field in term.Fields)
+                {
+                    Assert.That(
+                        catalog.HasField(term.Dataset, field),
+                        Is.True,
+                        $"Field '{term.Dataset}.{field}' should exist.");
+                }
+            }
         });
     }
 
@@ -165,13 +212,17 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
 
     static DataAgentScenarioKnowledgePack LoadEngineeringPack()
     {
-        string packPath = Path.Combine(
+        return DataAgentScenarioKnowledgePackProvider.Load(GetEngineeringPackPath());
+    }
+
+    static string GetEngineeringPackPath()
+    {
+        return Path.Combine(
             FindRepoRoot(TestContext.CurrentContext.TestDirectory),
             "docs",
             "dataagent",
             "scenario-packs",
             "engineering.zh-CN.json");
-        return DataAgentScenarioKnowledgePackProvider.Load(packPath);
     }
 
     static string WriteScenarioPackWithMetric(string metricJson)

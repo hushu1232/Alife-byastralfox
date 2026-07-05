@@ -10,15 +10,15 @@
     },
     {
       "term": "最近失败的测试",
-      "aliases": ["失败测试", "测试失败", "最近测试失败"],
+      "aliases": ["失败测试", "测试失败", "最近失败", "最近测试失败"],
       "dataset": "test_run",
-      "fields": ["name", "status", "failed_count", "started_at"]
+      "fields": ["suite_name", "failed", "total", "ran_at", "command"]
     },
     {
       "term": "缺失项",
       "aliases": ["缺口", "未完成项", "缺失检查"],
       "dataset": "runtime_readiness_check",
-      "fields": ["name", "status", "required", "evidence_path"]
+      "fields": ["capability", "status", "required", "failure_reason", "evidence_path"]
     },
     {
       "term": "文档证据",
