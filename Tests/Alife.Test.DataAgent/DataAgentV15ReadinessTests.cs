@@ -75,7 +75,7 @@ public sealed class DataAgentV15ReadinessTests
             Assert.That(script, Does.Contain("Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs"));
             Assert.That(script, Does.Contain("SummarizeCallsOrchestratorAndPublishesTerminalContext"));
             Assert.That(script, Does.Contain("EndCallsOrchestratorAndPublishesTerminalContext"));
-            Assert.That(script, Does.Contain("foreach ($group in @(\"Core\", \"Schema\", \"Safety\", \"Query\", \"Context\", \"Planner\", \"Tool\", \"ToolBroker\", \"Store\", \"Analysis\"))"));
+            Assert.That(script, Does.Contain("foreach ($group in @(\"Core\", \"Schema\", \"Safety\", \"Query\", \"Context\", \"Planner\", \"Tool\", \"ToolBroker\", \"Store\", \"Governance\", \"Analysis\"))"));
         });
     }
 
