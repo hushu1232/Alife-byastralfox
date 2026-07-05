@@ -104,6 +104,45 @@ public static class DataAgentReadiness
                     "PostgresCheckpointPersistencePresent",
                     $"session_store={LowerBool(postgresCheckpointSessionStoreReady)};factory={LowerBool(postgresCheckpointFactoryReady)};module_wiring={LowerBool(postgresCheckpointModuleWiringReady)};live_test_gated={LowerBool(postgresCheckpointLiveTestGated)}"));
 
+            DataAgentGraphSidecarOptions graphSidecarDefaultOptions = DataAgentGraphSidecarOptions.FromValue(null);
+            DataAgentGraphSidecarPolicy graphSidecarPolicy = DataAgentGraphSidecarPolicy.CreateDefault();
+            DataAgentGraphSidecarResponse graphSidecarForbiddenResponse = new(
+                "readiness-workflow",
+                true,
+                "unsafe_sql_authority",
+                "unsafe authority request",
+                DataAgentGraphSidecarNodeKind.QueryPlanValidation,
+                "ExecuteSql",
+                true,
+                ["unsafe authority request"],
+                [DataAgentGraphSidecarAuthority.ExecuteSql]);
+            bool graphSidecarContractReady =
+                typeof(DataAgentGraphSidecarContract).IsClass &&
+                typeof(DataAgentGraphSidecarRequest).IsClass &&
+                typeof(DataAgentGraphSidecarResponse).IsClass &&
+                DataAgentGraphSidecarContract.DefaultAllowedNodeKinds.Contains(DataAgentGraphSidecarNodeKind.QueryPlanner);
+            bool graphSidecarPolicyReady =
+                graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent) &&
+                graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.RequestCSharpSafetyService) &&
+                graphSidecarPolicy.Forbids(DataAgentGraphSidecarAuthority.ExecuteSql) &&
+                graphSidecarPolicy.Forbids(DataAgentGraphSidecarAuthority.DecideToolRoute) &&
+                graphSidecarPolicy.NoToolRouteAuthority &&
+                graphSidecarPolicy.NoCheckpointAuthority &&
+                graphSidecarPolicy.NoEvidenceAuthority;
+            bool graphSidecarNoSqlAuthority =
+                graphSidecarPolicy.NoSqlAuthority &&
+                DataAgentGraphSidecarContract.IsResponseSafe(graphSidecarForbiddenResponse, graphSidecarPolicy) == false;
+            bool graphSidecarNoRuntime = DataAgentGraphSidecarContract.IsRuntimeAvailable == false;
+            bool graphSidecarReady =
+                graphSidecarDefaultOptions.Enabled == false &&
+                graphSidecarContractReady &&
+                graphSidecarPolicyReady &&
+                graphSidecarNoSqlAuthority &&
+                graphSidecarNoRuntime;
+            checks.Add(graphSidecarReady
+                ? Pass("GraphSidecarContractPresent", "default_enabled=false;contract=true;policy=true;no_sql_authority=true;no_runtime=true")
+                : Fail("GraphSidecarContractPresent", $"default_enabled={LowerBool(graphSidecarDefaultOptions.Enabled)};contract={LowerBool(graphSidecarContractReady)};policy={LowerBool(graphSidecarPolicyReady)};no_sql_authority={LowerBool(graphSidecarNoSqlAuthority)};no_runtime={LowerBool(graphSidecarNoRuntime)}"));
+
             DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
                 readinessStore,
                 new FixedPlanner(new DataAgentQueryPlan(

@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(68));
+            Assert.That(checks, Has.Count.EqualTo(69));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -34,6 +34,13 @@ public sealed class DataAgentReadinessTests
             Assert.That(postgresCheckpointCheck.Detail, Does.Contain("factory=true"));
             Assert.That(postgresCheckpointCheck.Detail, Does.Contain("module_wiring=true"));
             Assert.That(postgresCheckpointCheck.Detail, Does.Contain("live_test_gated="));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphSidecarContractPresent"));
+            DataAgentReadinessCheck graphSidecarCheck = checks.Single(check => check.Name == "GraphSidecarContractPresent");
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("default_enabled=false"));
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("contract=true"));
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("policy=true"));
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("no_sql_authority=true"));
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("no_runtime=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
