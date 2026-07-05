@@ -107,10 +107,14 @@ public sealed class DataAgentScenarioKnowledgePackProviderTests
 
         Assert.Multiple(() =>
         {
+            Assert.That(pack.Terms.Single(term => term.Term == "最近失败的测试").Aliases, Does.Contain("最近失败"));
             Assert.That(terms.Select(term => term.Dataset), Does.Contain("engineering_gate"));
+            Assert.That(terms.Select(term => term.Dataset), Does.Contain("test_run"));
             Assert.That(terms.SelectMany(term => term.Fields), Does.Contain("name"));
             Assert.That(terms.SelectMany(term => term.Fields), Does.Contain("status"));
             Assert.That(terms.SelectMany(term => term.Fields), Does.Contain("required"));
+            Assert.That(terms.SelectMany(term => term.Fields), Does.Contain("suite_name"));
+            Assert.That(terms.SelectMany(term => term.Fields), Does.Contain("failed"));
         });
     }
 
