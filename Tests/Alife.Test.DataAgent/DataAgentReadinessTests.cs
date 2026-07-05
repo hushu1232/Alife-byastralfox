@@ -151,7 +151,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 82 required passed, 0 required missing"
+                "  Summary: 83 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -172,6 +172,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentScenarioKnowledgePackPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentScenarioContextIntegrated"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentRuntimeScenarioContextActivationPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphSidecarContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -189,7 +190,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 82"));
+            Assert.That(script, Does.Contain("$expectedRequired = 83"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -393,6 +394,32 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void ReadinessScriptProtectsV214GraphSidecarContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "GraphSidecarContractPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarContract.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarOptions"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_GRAPH_SIDECAR_ENABLED"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarPolicy"));
+            Assert.That(declaration, Does.Contain("IsRuntimeAvailable"));
+            Assert.That(declaration, Does.Contain("NoSqlAuthority"));
+            Assert.That(declaration, Does.Contain("ExecuteSql"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarContractTests"));
+            Assert.That(declaration, Does.Contain("default_enabled=false"));
+            Assert.That(declaration, Does.Contain("policy=true"));
+            Assert.That(declaration, Does.Contain("no_sql_authority=true"));
+            Assert.That(declaration, Does.Contain("no_runtime=true"));
+        });
+    }
+
+    [Test]
     public void FunctionCallerStoresRecentDataAgentTraceDiagnostics()
     {
         Type functionCallerType = typeof(XmlFunctionCaller);
@@ -508,7 +535,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 57 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 58 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -522,7 +549,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 57"));
+            Assert.That(script, Does.Contain("$expectedRequired = 58"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });

@@ -35,6 +35,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent scenario context diagnostics",
         "DataAgent runtime scenario context activation",
         "DataAgent PostgreSQL checkpoint persistence",
+        "DataAgent graph sidecar contract",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -145,6 +146,31 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void GraphSidecarContractCheckRequiresDataAgentRuntimeAndQChatBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent graph sidecar contract");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("GraphSidecarContractPresent"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarContract"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_GRAPH_SIDECAR_ENABLED"));
+            Assert.That(declaration, Does.Contain("no_sql_authority=true"));
+            Assert.That(declaration, Does.Contain("no_runtime=true"));
+            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentBoundaryTypes"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarOptions"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarPolicy"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarRequest"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarResponse"));
+        });
+    }
+
+    [Test]
     public void QChatDoesNotDirectlyImportDataAgentBoundaryTypes()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -155,7 +181,12 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             "DataAgentScenarioContextBuilder",
             "DataAgentToolScopePolicy",
             "PostgresDataAgentAnalysisSessionStore",
-            "DataAgentAnalysisSessionStoreFactory"
+            "DataAgentAnalysisSessionStoreFactory",
+            "DataAgentGraphSidecarContract",
+            "DataAgentGraphSidecarOptions",
+            "DataAgentGraphSidecarPolicy",
+            "DataAgentGraphSidecarRequest",
+            "DataAgentGraphSidecarResponse"
         ];
 
         string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)
