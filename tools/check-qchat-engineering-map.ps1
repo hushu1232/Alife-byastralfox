@@ -130,6 +130,7 @@ Add-Check -Group "Harness" -Name "DataAgent runtime scenario context activation"
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
+Add-Check -Group "Harness" -Name "DataAgent PostgreSQL checkpoint persistence" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("PostgresCheckpointPersistencePresent", "PostgresDataAgentAnalysisSessionStore", "DataAgentAnalysisSessionStoreFactory", "DataAgentModuleService", "session_store=true", "factory=true") -OmitPath "sources/Alife.Function/Alife.Function.QChat" -OmitSearchPattern "*.cs" -OmitSearchOption ([System.IO.SearchOption]::AllDirectories) -OmitPatterns @("PostgresDataAgentAnalysisSessionStore", "DataAgentAnalysisSessionStoreFactory")
 # V2.10 governance readiness gates
 Add-Check -Group "Harness" -Name "Alife capability governance catalog" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/AlifeCapabilityGovernanceCatalog.cs" -Patterns @("AlifeCapabilityGovernanceCatalog", "QChat", "DataAgent", "DesktopControl", "AgentWorkflowCandidate", "DeterministicSafetyGate")
 Add-Check -Group "Harness" -Name "DataAgent node tool scope policy" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" -Patterns @("DataAgentToolScopePolicy", "QueryPlanner", "DiagnosticsRouter", "ExecuteReadOnlyQuery", "ReadProgressDiagnostics")
@@ -190,7 +191,7 @@ $requiredPassed = @($results | Where-Object { $_.Required -and $_.Ok }).Count
 $requiredMissing = @($results | Where-Object { $_.Required -and -not $_.Ok }).Count
 $optionalPresent = @($results | Where-Object { -not $_.Required -and $_.Ok }).Count
 $optionalMissing = @($results | Where-Object { -not $_.Required -and -not $_.Ok }).Count
-$expectedRequired = 56
+$expectedRequired = 57
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output ("Summary: {0} required passed, {1} required missing, {2} optional present, {3} optional missing" -f $requiredPassed, $requiredMissing, $optionalPresent, $optionalMissing)

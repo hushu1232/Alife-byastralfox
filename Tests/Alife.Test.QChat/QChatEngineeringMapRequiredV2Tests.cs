@@ -34,6 +34,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent progress diagnostics",
         "DataAgent scenario context diagnostics",
         "DataAgent runtime scenario context activation",
+        "DataAgent PostgreSQL checkpoint persistence",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -121,6 +122,25 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void PostgresCheckpointPersistenceCheckRequiresDataAgentRuntimeAndQChatBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent PostgreSQL checkpoint persistence");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("PostgresCheckpointPersistencePresent"));
+            Assert.That(declaration, Does.Contain("PostgresDataAgentAnalysisSessionStore"));
+            Assert.That(declaration, Does.Contain("DataAgentAnalysisSessionStoreFactory"));
+            Assert.That(declaration, Does.Contain("DataAgentModuleService"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+        });
+    }
+
+    [Test]
     public void QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -129,7 +149,9 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         [
             "DataAgentScenarioKnowledgePackProvider",
             "DataAgentScenarioContextBuilder",
-            "DataAgentToolScopePolicy"
+            "DataAgentToolScopePolicy",
+            "PostgresDataAgentAnalysisSessionStore",
+            "DataAgentAnalysisSessionStoreFactory"
         ];
 
         string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)
