@@ -6,6 +6,31 @@ $repoRoot = Split-Path -Parent $scriptRoot
 
 $results = New-Object System.Collections.Generic.List[object]
 
+function Test-DirectoryOmitsMarker {
+    param(
+        [string]$RelativePath,
+        [string]$SearchPattern,
+        [System.IO.SearchOption]$SearchOption,
+        [string[]]$Markers
+    )
+
+    $fullPath = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return $false
+    }
+
+    foreach ($path in [System.IO.Directory]::EnumerateFiles($fullPath, $SearchPattern, $SearchOption)) {
+        $content = [System.IO.File]::ReadAllText($path)
+        foreach ($marker in $Markers) {
+            if ($content.IndexOf($marker, [System.StringComparison]::Ordinal) -ge 0) {
+                return $false
+            }
+        }
+    }
+
+    return $true
+}
+
 function Add-Check {
     param(
         [string]$Group,
@@ -14,6 +39,10 @@ function Add-Check {
         [string[]]$Patterns,
         [string]$AlsoPath = "",
         [string[]]$AlsoPatterns = @(),
+        [string]$OmitPath = "",
+        [string]$OmitSearchPattern = "*.cs",
+        [System.IO.SearchOption]$OmitSearchOption = [System.IO.SearchOption]::TopDirectoryOnly,
+        [string[]]$OmitPatterns = @(),
         [bool]$Required = $true
     )
 
@@ -58,6 +87,16 @@ function Add-Check {
         }
     }
 
+    if ($ok -and -not [string]::IsNullOrWhiteSpace($OmitPath)) {
+        if (Test-DirectoryOmitsMarker $OmitPath $OmitSearchPattern $OmitSearchOption $OmitPatterns) {
+            $detail = "$detail; $OmitPath omits forbidden markers"
+        }
+        else {
+            $ok = $false
+            $detail = "$OmitPath contains forbidden marker"
+        }
+    }
+
     $results.Add([pscustomobject]@{
         Group = $Group
         Name = $Name
@@ -86,7 +125,7 @@ Add-Check -Group "Harness" -Name "QChat recent diagnostics command" -Path "sourc
 Add-Check -Group "Harness" -Name "QChat diagnostics cache redaction" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticTextSanitizer.cs" -Patterns @("hidden_context_redacted", "HiddenContextPattern", "SqlFragmentPattern", "[tool_route_context]", "[data_agent_evidence_pack]", "Allowed XML tools", "connection_string", "Authorization", "SqlStatementPattern")
 Add-Check -Group "Harness" -Name "DataAgent trace diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentTrace", "diag trace", "BuildDataAgentTraceDiagnosticsText", "DataAgent trace diagnostics")
 Add-Check -Group "Harness" -Name "DataAgent progress diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentProgress", "diag progress", "BuildDataAgentProgressDiagnosticsText", "DataAgent progress diagnostics")
-Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched") -AlsoPath "Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs" -AlsoPatterns @("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder", "DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy")
+Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched") -AlsoPath "Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs" -AlsoPatterns @("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder", "DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy") -OmitPath "sources/Alife.Function/Alife.Function.QChat" -OmitSearchPattern "*.cs" -OmitSearchOption ([System.IO.SearchOption]::AllDirectories) -OmitPatterns @("DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy")
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")

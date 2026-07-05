@@ -288,6 +288,7 @@ public sealed class DataAgentReadinessTests
         string script = File.ReadAllText(scriptPath);
 
         string declaration = FindNewCheckDeclaration(script, "DataAgentScenarioContextIntegrated");
+        string packDeclaration = FindNewCheckDeclaration(script, "DataAgentScenarioKnowledgePackPresent");
 
         Assert.Multiple(() =>
         {
@@ -302,6 +303,17 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("unsupported_operator"));
             Assert.That(declaration, Does.Contain("throwOnInvalidBytes: true"));
             Assert.That(declaration, Does.Contain("\\uFFFD"));
+            Assert.That(script, Does.Contain("function Test-ScenarioPackChineseText"));
+            Assert.That(script, Does.Contain("function New-StringFromCodePoints"));
+            Assert.That(packDeclaration, Does.Contain("Test-ScenarioPackChineseText"));
+            Assert.That(packDeclaration, Does.Contain("0x5de5,0x7a0b,0x95e8,0x7981"));
+            Assert.That(packDeclaration, Does.Contain("0x6700,0x8fd1,0x5931,0x8d25,0x7684,0x6d4b,0x8bd5"));
+            Assert.That(packDeclaration, Does.Contain("0x7f3a,0x5931,0x9879"));
+            Assert.That(packDeclaration, Does.Contain("0x6587,0x6863,0x8bc1,0x636e"));
+            Assert.That(packDeclaration, Does.Contain("0x5bb8,0x30e7,0x25bc"));
+            Assert.That(packDeclaration, Does.Contain("0x93c8,0x20ac"));
+            Assert.That(packDeclaration, Does.Contain("0x6fb6,0x8fab,0x89e6"));
+            Assert.That(packDeclaration, Does.Contain("0x8e47,0x546d,0x6e36"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilderTests"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioDiagnosticsFormatterTests"));
             Assert.That(declaration, Does.Contain("DataAgentV211ReadinessTests"));
@@ -510,7 +522,7 @@ public sealed class DataAgentReadinessTests
     static string FindNewCheckDeclaration(string script, string checkName)
     {
         string marker = $"-Name \"{checkName}\"";
-        int nameIndex = script.IndexOf(marker, StringComparison.Ordinal);
+        int nameIndex = script.LastIndexOf(marker, StringComparison.Ordinal);
         if (nameIndex < 0)
             return string.Empty;
 

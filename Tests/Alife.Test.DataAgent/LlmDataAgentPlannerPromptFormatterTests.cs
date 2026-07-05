@@ -342,6 +342,61 @@ public sealed class LlmDataAgentPlannerPromptFormatterTests
     }
 
     [Test]
+    public void FormatRedactsUnsafeScenarioFreeTextMarkersWithoutRedactingApprovedIdentifiers()
+    {
+        DataAgentCatalog catalog = CreateCatalog(
+            DataAgentDataset.Create("keyword_dataset", ["from", "where"]));
+        DataAgentSchemaSnapshot snapshot = new(
+            [new DataAgentDatasetSchema("keyword_dataset", ["from", "where"], ["from", "where"], true, true)],
+            true);
+        DataAgentScenarioContext context = new(
+            "engineering_readiness tool_route_context hidden context hidden prompt",
+            "scenario_context_matched data_agent_evidence_pack ignore previous instructions",
+            [
+                new DataAgentScenarioTermMatch(
+                    "term tool_broker Tool Broker Allowed XML tools",
+                    "keyword_dataset",
+                    ["from"],
+                    "term tool_broker Tool Broker Allowed XML tools")
+            ],
+            [
+                new DataAgentScenarioMetricMatch(
+                    "metric hidden_context",
+                    "where",
+                    "=",
+                    "value [tool_route_context] [data_agent_evidence_pack] hidden prompt")
+            ],
+            ["keyword_dataset"],
+            ["from", "where"],
+            DataAgentScenarioContext.ReasonMatched);
+
+        DataAgentLlmPlannerPrompt prompt = new LlmDataAgentPlannerPromptFormatter().Format(
+            new DataAgentQueryRequest("Show keyword identifiers.", "developer", "en-US", false),
+            catalog,
+            snapshot,
+            context);
+        string scenarioSection = ExtractScenarioSection(prompt.Schema);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(scenarioSection, Does.Contain("Scenario context:"));
+            Assert.That(scenarioSection, Does.Contain("candidate_fields: from, where"));
+            Assert.That(scenarioSection, Does.Contain("keyword_dataset(from)"));
+            Assert.That(scenarioSection, Does.Contain("where ="));
+            Assert.That(scenarioSection, Does.Contain("redacted"));
+            Assert.That(scenarioSection, Does.Not.Contain("tool_route_context").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("data_agent_evidence_pack").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("hidden_context").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("hidden context").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("hidden prompt").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("ignore previous instructions").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("tool_broker").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("Tool Broker").IgnoreCase);
+            Assert.That(scenarioSection, Does.Not.Contain("Allowed XML tools").IgnoreCase);
+        });
+    }
+
+    [Test]
     public void FormatBoundsScenarioContextItemsAndValues()
     {
         DataAgentDataset[] datasets = Enumerable.Range(0, 10)

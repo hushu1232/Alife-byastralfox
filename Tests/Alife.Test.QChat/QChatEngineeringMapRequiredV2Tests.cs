@@ -92,6 +92,10 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("DataAgentScenarioKnowledgePackProvider"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilder"));
             Assert.That(declaration, Does.Contain("DataAgentToolScopePolicy"));
+            Assert.That(script, Does.Contain("function Test-DirectoryOmitsMarker"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("*.cs"));
+            Assert.That(declaration, Does.Contain("AllDirectories"));
         });
     }
 

@@ -920,7 +920,7 @@ public static class DataAgentReadiness
                 scenarioPackText.Contains("宸ョ▼", StringComparison.Ordinal) == false &&
                 scenarioPackText.Contains("鏈€", StringComparison.Ordinal) == false &&
                 scenarioPackText.Contains("澶辫触", StringComparison.Ordinal) == false &&
-                scenarioPackText.Contains("蹇呴渶", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("蹇呭渶", StringComparison.Ordinal) == false &&
                 scenarioPackText.Contains("\uFFFD", StringComparison.Ordinal) == false;
             bool scenarioPackHasEngineeringGateStatus = resolvedTerms.Any(term =>
                 string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Alife.Function.DataAgent;
 
@@ -11,6 +12,7 @@ public sealed record DataAgentLlmPlannerPrompt(
 
 public sealed class LlmDataAgentPlannerPromptFormatter
 {
+    const string Redacted = "[redacted]";
     static readonly string[] AllowedOperators = ["=", "!=", "<>", ">", ">=", "<", "<=", "contains"];
     static readonly string[] DangerousScenarioKeywords =
     [
@@ -33,6 +35,9 @@ public sealed class LlmDataAgentPlannerPromptFormatter
     [
         "ignore previous instructions"
     ];
+    static readonly Regex UnsafeScenarioMarkerPattern = new(
+        @"tool_route_context|data_agent_evidence_pack|hidden_context|hidden\s+context|hidden\s+prompt|ignore\s+previous\s+instructions|tool[_\s-]?broker|allowed\s+xml\s+tools?",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     const int MaxScenarioItems = 8;
     const int MaxScenarioValueLength = 120;
 
@@ -365,6 +370,9 @@ public sealed class LlmDataAgentPlannerPromptFormatter
             .Replace('\n', ' ')
             .Replace(';', ' ');
 
+        if (ContainsUnsafeScenarioMarker(value) || ContainsUnsafeScenarioMarker(sanitized))
+            return Redacted;
+
         foreach (string phrase in DangerousScenarioPhrases)
             sanitized = ReplaceScenarioKeyword(sanitized, phrase);
 
@@ -390,8 +398,8 @@ public sealed class LlmDataAgentPlannerPromptFormatter
             int end = index + keyword.Length;
             if (IsScenarioKeywordBoundary(value, index - 1) && IsScenarioKeywordBoundary(value, end))
             {
-                value = value[..index] + "[redacted]" + value[end..];
-                start = index + "[redacted]".Length;
+                value = value[..index] + Redacted + value[end..];
+                start = index + Redacted.Length;
             }
             else
             {
@@ -407,6 +415,11 @@ public sealed class LlmDataAgentPlannerPromptFormatter
         return index < 0 ||
                index >= value.Length ||
                char.IsLetterOrDigit(value[index]) == false && value[index] != '_';
+    }
+
+    static bool ContainsUnsafeScenarioMarker(string value)
+    {
+        return UnsafeScenarioMarkerPattern.IsMatch(value);
     }
 
     sealed class ApprovedSchemaView(IEnumerable<ApprovedDatasetSchema> datasets)

@@ -6,6 +6,14 @@ namespace Alife.Test.DataAgent;
 [TestFixture]
 public sealed class DataAgentV211ReadinessTests
 {
+    const string EngineeringQuestion = "\u770b\u770b\u5de5\u7a0b\u95e8\u7981\u91cc\u6700\u8fd1\u5931\u8d25\u7684\u5fc5\u9700\u9879";
+    const string EngineeringGateTerm = "\u5de5\u7a0b\u95e8\u7981";
+    const string RecentFailedTestsTerm = "\u6700\u8fd1\u5931\u8d25\u7684\u6d4b\u8bd5";
+    const string MissingItemsTerm = "\u7f3a\u5931\u9879";
+    const string DocumentEvidenceTerm = "\u6587\u6863\u8bc1\u636e";
+    const string FailedMetric = "\u5931\u8d25";
+    const string RequiredMetric = "\u5fc5\u9700";
+
     static readonly Encoding StrictUtf8 = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
@@ -20,10 +28,10 @@ public sealed class DataAgentV211ReadinessTests
         DataAgentScenarioContext context = new DataAgentScenarioContextBuilder().Build(
             catalog,
             LoadEngineeringPack(),
-            "看看工程门禁里最近失败的必需项");
+            EngineeringQuestion);
 
         DataAgentLlmPlannerPrompt prompt = new LlmDataAgentPlannerPromptFormatter().Format(
-            new DataAgentQueryRequest("看看工程门禁里最近失败的必需项", "owner", "zh-CN", false),
+            new DataAgentQueryRequest(EngineeringQuestion, "owner", "zh-CN", false),
             catalog,
             snapshot,
             context);
@@ -34,7 +42,7 @@ public sealed class DataAgentV211ReadinessTests
             new DeterministicDataAgentQueryPlanner());
 
         DataAgentQueryPlanEnvelope fallbackEnvelope = planner.Plan(new DataAgentQueryRequest(
-            "看看工程门禁里最近失败的必需项",
+            EngineeringQuestion,
             "owner",
             "zh-CN",
             false,
@@ -46,7 +54,7 @@ public sealed class DataAgentV211ReadinessTests
             Assert.That(context.CandidateDatasets, Is.EqualTo(new[] { "engineering_gate", "test_run" }));
             Assert.That(context.CandidateFields, Does.Contain("required"));
             Assert.That(context.CandidateFields, Does.Contain("failed"));
-            Assert.That(context.Metrics.Select(metric => metric.Name), Is.EqualTo(new[] { "失败", "必需" }));
+            Assert.That(context.Metrics.Select(metric => metric.Name), Is.EqualTo(new[] { FailedMetric, RequiredMetric }));
             Assert.That(prompt.Schema, Does.Contain("Scenario context:"));
             Assert.That(prompt.Schema, Does.Contain("Scenario context is a hint only"));
             Assert.That(prompt.System, Does.Contain("Do not output SQL"));
@@ -70,7 +78,7 @@ public sealed class DataAgentV211ReadinessTests
         DataAgentScenarioContext context = new DataAgentScenarioContextBuilder().Build(
             DataAgentCatalog.CreateDefault(),
             LoadEngineeringPack(),
-            "看看工程门禁里最近失败的必需项");
+            EngineeringQuestion);
 
         string text = DataAgentScenarioDiagnosticsFormatter.Format(context);
 
@@ -79,7 +87,7 @@ public sealed class DataAgentV211ReadinessTests
             Assert.That(text, Does.Contain("DataAgent scenario diagnostics"));
             Assert.That(text, Does.Contain("reason=scenario_context_matched"));
             Assert.That(text, Does.Contain("datasets=engineering_gate,test_run"));
-            Assert.That(text, Does.Contain("metrics=失败:status!=passed;必需:required=true"));
+            Assert.That(text, Does.Contain($"metrics={FailedMetric}:status!=passed;{RequiredMetric}:required=true"));
             Assert.That(text.Contains("SELECT", StringComparison.OrdinalIgnoreCase), Is.False);
             Assert.That(text, Does.Not.Contain("[tool_route_context]"));
             Assert.That(text, Does.Not.Contain("[data_agent_evidence_pack]"));
@@ -94,16 +102,16 @@ public sealed class DataAgentV211ReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(text, Does.Contain("工程门禁"));
-            Assert.That(text, Does.Contain("最近失败的测试"));
-            Assert.That(text, Does.Contain("缺失项"));
-            Assert.That(text, Does.Contain("文档证据"));
-            Assert.That(text, Does.Contain("失败"));
-            Assert.That(text, Does.Contain("必需"));
-            Assert.That(text, Does.Not.Contain("宸ョ▼"));
-            Assert.That(text, Does.Not.Contain("鏈€"));
-            Assert.That(text, Does.Not.Contain("澶辫触"));
-            Assert.That(text, Does.Not.Contain("蹇呴渶"));
+            Assert.That(text, Does.Contain(EngineeringGateTerm));
+            Assert.That(text, Does.Contain(RecentFailedTestsTerm));
+            Assert.That(text, Does.Contain(MissingItemsTerm));
+            Assert.That(text, Does.Contain(DocumentEvidenceTerm));
+            Assert.That(text, Does.Contain(FailedMetric));
+            Assert.That(text, Does.Contain(RequiredMetric));
+            Assert.That(text, Does.Not.Contain("\u5bb8\u30e7\u25bc"));
+            Assert.That(text, Does.Not.Contain("\u93c8\u20ac"));
+            Assert.That(text, Does.Not.Contain("\u6fb6\u8fab\u89e6"));
+            Assert.That(text, Does.Not.Contain("\u8e47\u5445\u6e36"));
             Assert.That(text, Does.Not.Contain("\uFFFD"));
         });
     }
