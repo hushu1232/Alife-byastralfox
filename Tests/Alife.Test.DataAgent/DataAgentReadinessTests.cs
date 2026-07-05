@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(66));
+            Assert.That(checks, Has.Count.EqualTo(67));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -93,6 +93,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentProgressStreamingPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentScenarioKnowledgePackPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentScenarioContextIntegrated"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentRuntimeScenarioContextActivationPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             DataAgentReadinessCheck progressStreamingCheck = checks.Single(check => check.Name == "DataAgentProgressStreamingPresent");
@@ -107,6 +108,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(scenarioContextCheck.Detail, Does.Contain("prompt_hint=true"));
             Assert.That(scenarioContextCheck.Detail, Does.Contain("owner_diag=true"));
             Assert.That(scenarioContextCheck.Detail, Does.Contain("sql_boundary=true"));
+            DataAgentReadinessCheck runtimeScenarioCheck = checks.Single(check => check.Name == "DataAgentRuntimeScenarioContextActivationPresent");
+            Assert.That(runtimeScenarioCheck.Detail, Does.Contain("service_context=true"));
+            Assert.That(runtimeScenarioCheck.Detail, Does.Contain("llm_prompt=true"));
+            Assert.That(runtimeScenarioCheck.Detail, Does.Contain("qchat_boundary=true"));
+            Assert.That(runtimeScenarioCheck.Detail, Does.Contain("sql_boundary=true"));
             string[] readinessNames = checks.Select(check => check.Name).ToArray();
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentAnalysisStateEstimatorPresent") + 1));
             Assert.That(Array.IndexOf(readinessNames, "DataAgentEvidenceRecentDiagnosticsBridgePresent"), Is.EqualTo(Array.IndexOf(readinessNames, "DataAgentEvidenceDiagnosticsPresent") + 1));
@@ -132,7 +138,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 80 required passed, 0 required missing"
+                "  Summary: 81 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -152,6 +158,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentProgressStreamingPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentScenarioKnowledgePackPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentScenarioContextIntegrated"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentRuntimeScenarioContextActivationPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -169,7 +176,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 80"));
+            Assert.That(script, Does.Contain("$expectedRequired = 81"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -321,6 +328,30 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void ReadinessScriptProtectsV212RuntimeScenarioContextContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "DataAgentRuntimeScenarioContextActivationPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("IDataAgentScenarioContextProvider.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextProvider.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentService.cs"));
+            Assert.That(declaration, Does.Contain("scenarioContextProvider.Build"));
+            Assert.That(declaration, Does.Contain("request.ScenarioContext"));
+            Assert.That(declaration, Does.Contain("DataAgentRuntimeScenarioContextActivationTests"));
+            Assert.That(declaration, Does.Contain("service_context=true"));
+            Assert.That(declaration, Does.Contain("llm_prompt=true"));
+            Assert.That(declaration, Does.Contain("qchat_boundary=true"));
+            Assert.That(declaration, Does.Contain("sql_boundary=true"));
+        });
+    }
+
+    [Test]
     public void FunctionCallerStoresRecentDataAgentTraceDiagnostics()
     {
         Type functionCallerType = typeof(XmlFunctionCaller);
@@ -436,7 +467,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 55 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 56 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -450,7 +481,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 55"));
+            Assert.That(script, Does.Contain("$expectedRequired = 56"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
