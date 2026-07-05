@@ -504,8 +504,11 @@ public sealed class DataAgentGraphSidecarContractTests
             ]);
         string[] executableSqlTexts =
         [
+            "CREATE INDEX idx_t_id ON t(id)",
             "CREATE TABLE sidecar_probe (id integer)",
+            "CREATE TEMP TABLE t (id int)",
             "WITH recent AS (VALUES (1))",
+            "WITH RECURSIVE recent AS (VALUES (1))",
             "EXECUTE refresh_sidecar_probe",
             "CALL refresh_sidecar_probe()",
             "MERGE INTO target USING source ON target.id = source.id",
