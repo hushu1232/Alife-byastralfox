@@ -32,6 +32,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "QChat diagnostics cache redaction",
         "DataAgent trace diagnostics",
         "DataAgent progress diagnostics",
+        "DataAgent scenario context diagnostics",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -71,6 +72,31 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("HiddenContextPattern"));
             Assert.That(declaration, Does.Contain("SqlFragmentPattern"));
         });
+    }
+
+    [Test]
+    public void QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string qchatRoot = Path.Combine(repoRoot, "sources", "Alife.Function", "Alife.Function.QChat");
+        string[] forbiddenMarkers =
+        [
+            "DataAgentScenarioKnowledgePackProvider",
+            "DataAgentScenarioContextBuilder",
+            "DataAgentToolScopePolicy"
+        ];
+
+        string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)
+            .SelectMany(path =>
+            {
+                string text = File.ReadAllText(path);
+                return forbiddenMarkers
+                    .Where(marker => text.Contains(marker, StringComparison.Ordinal))
+                    .Select(marker => $"{Path.GetRelativePath(repoRoot, path)}:{marker}");
+            })
+            .ToArray();
+
+        Assert.That(offenders, Is.Empty);
     }
 
     static string FindAddCheckDeclaration(string script, string checkName)

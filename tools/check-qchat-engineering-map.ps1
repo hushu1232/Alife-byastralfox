@@ -62,6 +62,7 @@ Add-Check -Group "Harness" -Name "QChat recent diagnostics command" -Path "sourc
 Add-Check -Group "Harness" -Name "QChat diagnostics cache redaction" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticTextSanitizer.cs" -Patterns @("hidden_context_redacted", "HiddenContextPattern", "SqlFragmentPattern", "[tool_route_context]", "[data_agent_evidence_pack]", "Allowed XML tools", "connection_string", "Authorization", "SqlStatementPattern")
 Add-Check -Group "Harness" -Name "DataAgent trace diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentTrace", "diag trace", "BuildDataAgentTraceDiagnosticsText", "DataAgent trace diagnostics")
 Add-Check -Group "Harness" -Name "DataAgent progress diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentProgress", "diag progress", "BuildDataAgentProgressDiagnosticsText", "DataAgent progress diagnostics")
+Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched")
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
@@ -125,7 +126,7 @@ $requiredPassed = @($results | Where-Object { $_.Required -and $_.Ok }).Count
 $requiredMissing = @($results | Where-Object { $_.Required -and -not $_.Ok }).Count
 $optionalPresent = @($results | Where-Object { -not $_.Required -and $_.Ok }).Count
 $optionalMissing = @($results | Where-Object { -not $_.Required -and -not $_.Ok }).Count
-$expectedRequired = 54
+$expectedRequired = 55
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output ("Summary: {0} required passed, {1} required missing, {2} optional present, {3} optional missing" -f $requiredPassed, $requiredMissing, $optionalPresent, $optionalMissing)

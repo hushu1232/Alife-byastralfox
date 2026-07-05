@@ -1,6 +1,7 @@
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Framework.Models.StateEstimation;
+using System.Text;
 
 namespace Alife.Function.DataAgent;
 
@@ -902,17 +903,75 @@ public static class DataAgentReadiness
 
             string repoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
             string scenarioPackPath = Path.Combine(repoRoot, "docs", "dataagent", "scenario-packs", "engineering.zh-CN.json");
+            string scenarioPackText = File.ReadAllText(scenarioPackPath, Encoding.UTF8);
             DataAgentScenarioKnowledgePack pack = DataAgentScenarioKnowledgePackProvider.Load(scenarioPackPath);
             IReadOnlyList<DataAgentScenarioTerm> resolvedTerms =
                 DataAgentScenarioKnowledgePackProvider.ResolveTerms(pack, "看看工程门禁里最近失败的必需项");
+            bool scenarioPackUtf8Readable =
+                scenarioPackText.Contains("工程门禁", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("最近失败的测试", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("缺失项", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("文档证据", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("失败", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("必需", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("宸ョ▼", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("鏈€", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("澶辫触", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("蹇呴渶", StringComparison.Ordinal) == false;
+            bool scenarioPackHasEngineeringGateStatus = resolvedTerms.Any(term =>
+                string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&
+                term.Fields.Contains("status", StringComparer.Ordinal));
+            bool scenarioPackHasTestRunFailed = resolvedTerms.Any(term =>
+                string.Equals(term.Dataset, "test_run", StringComparison.Ordinal) &&
+                term.Fields.Contains("failed", StringComparer.Ordinal));
             bool scenarioPackReady =
                 string.Equals(pack.Scenario, "engineering_readiness", StringComparison.Ordinal) &&
-                resolvedTerms.Any(term =>
-                    string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&
-                    term.Fields.Contains("status", StringComparer.Ordinal));
+                scenarioPackUtf8Readable &&
+                scenarioPackHasEngineeringGateStatus &&
+                scenarioPackHasTestRunFailed;
             checks.Add(scenarioPackReady
-                ? Pass("DataAgentScenarioKnowledgePackPresent", "scenario=engineering_readiness;dataset=engineering_gate;field=status")
-                : Fail("DataAgentScenarioKnowledgePackPresent", $"path={scenarioPackPath};terms={string.Join(",", resolvedTerms.Select(term => term.Dataset))}"));
+                ? Pass("DataAgentScenarioKnowledgePackPresent", "scenario=engineering_readiness;dataset=engineering_gate;field=status;utf8=readable")
+                : Fail("DataAgentScenarioKnowledgePackPresent", $"path={scenarioPackPath};scenario={pack.Scenario};utf8={LowerBool(scenarioPackUtf8Readable)};engineering_gate_status={LowerBool(scenarioPackHasEngineeringGateStatus)};test_run_failed={LowerBool(scenarioPackHasTestRunFailed)};terms={string.Join(",", resolvedTerms.Select(term => term.Dataset))}"));
+
+            DataAgentCatalog scenarioCatalog = DataAgentCatalog.CreateDefault();
+            DataAgentScenarioContext scenarioContext = new DataAgentScenarioContextBuilder().Build(
+                scenarioCatalog,
+                pack,
+                "看看工程门禁里最近失败的必需项");
+            DataAgentLlmPlannerPrompt scenarioPrompt = new LlmDataAgentPlannerPromptFormatter().Format(
+                new DataAgentQueryRequest("看看工程门禁里最近失败的必需项", "owner", "zh-CN", false),
+                scenarioCatalog,
+                schemaSnapshot,
+                scenarioContext);
+            string scenarioDiagnostics = DataAgentScenarioDiagnosticsFormatter.Format(scenarioContext);
+            bool scenarioContextMatched =
+                string.Equals(scenarioContext.ReasonCode, DataAgentScenarioContext.ReasonMatched, StringComparison.Ordinal) &&
+                scenarioContext.CandidateDatasets.SequenceEqual(["engineering_gate", "test_run"], StringComparer.Ordinal) &&
+                scenarioContext.CandidateFields.Contains("required", StringComparer.Ordinal) &&
+                scenarioContext.CandidateFields.Contains("failed", StringComparer.Ordinal) &&
+                scenarioContext.Metrics.Select(metric => metric.Name).SequenceEqual(["失败", "必需"], StringComparer.Ordinal);
+            bool scenarioPromptHintReady =
+                scenarioPrompt.Schema.Contains("Scenario context:", StringComparison.Ordinal) &&
+                scenarioPrompt.Schema.Contains("Scenario context is a hint only", StringComparison.Ordinal) &&
+                scenarioPrompt.System.Contains("Do not output SQL", StringComparison.Ordinal);
+            bool scenarioOwnerDiagnosticsReady =
+                scenarioDiagnostics.Contains("DataAgent scenario diagnostics", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("reason=scenario_context_matched", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("metrics=失败:status!=passed;必需:required=true", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
+            bool scenarioSqlBoundaryReady =
+                typeof(DataAgentQueryPlanValidator).IsClass &&
+                typeof(DataAgentSqlCompiler).IsClass &&
+                typeof(DataAgentSqlSafetyValidator).IsClass &&
+                typeof(DataAgentQueryExecutor).IsClass;
+            bool scenarioContextIntegrated =
+                scenarioContextMatched &&
+                scenarioPromptHintReady &&
+                scenarioOwnerDiagnosticsReady &&
+                scenarioSqlBoundaryReady;
+            checks.Add(scenarioContextIntegrated
+                ? Pass("DataAgentScenarioContextIntegrated", "scenario_context=true;prompt_hint=true;owner_diag=true;sql_boundary=true")
+                : Fail("DataAgentScenarioContextIntegrated", $"scenario_context={LowerBool(scenarioContextMatched)};prompt_hint={LowerBool(scenarioPromptHintReady)};owner_diag={LowerBool(scenarioOwnerDiagnosticsReady)};sql_boundary={LowerBool(scenarioSqlBoundaryReady)};reason={scenarioContext.ReasonCode};datasets={string.Join(",", scenarioContext.CandidateDatasets)};fields={string.Join(",", scenarioContext.CandidateFields)};metrics={string.Join(",", scenarioContext.Metrics.Select(metric => metric.Name))}"));
 
             DataAgentNodeToolScope plannerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
             DataAgentNodeToolScope diagnosticsScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.DiagnosticsRouter);
