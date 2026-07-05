@@ -178,9 +178,10 @@ public static class DataAgentGraphSidecarContract
     const int MaxMessageLength = 1024;
     const int MaxTraceEntryCount = 16;
     const int MaxTraceEntryLength = 256;
+    const int MaxClaimedAuthorityCount = 4;
 
     static readonly Regex RawSqlMarkerPattern = new(
-        @"```sql|\b(select|insert|update|delete|drop|alter|truncate)\b",
+        @"```sql|\b(select|insert|update|delete|drop|alter|truncate)\b|\bcreate\s+table\b|\bwith\s+[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(|\bexecute\s+[A-Za-z_][A-Za-z0-9_.]*\b|\bcall\s+[A-Za-z_][A-Za-z0-9_.]*\s*\(|\bmerge\s+into\b|\bgrant\s+[A-Za-z]+\b|\brevoke\s+[A-Za-z]+\b|\bpragma\s+[A-Za-z_][A-Za-z0-9_]*\b|\bbegin(?:\s+(?:transaction|work))?\b|\bcommit\b|\brollback\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     static readonly string[] ForbiddenCapabilityNames =
@@ -255,9 +256,6 @@ public static class DataAgentGraphSidecarContract
             DefaultAllowedNodeKinds.Contains(response.ProposedNodeKind.Value) == false)
             return false;
 
-        if (IsResponseCapabilitySafe(response.RequestedCapabilityName, response.RequiresCSharpSafetyService) == false)
-            return false;
-
         if (IsTraceSafe(response.Trace) == false)
             return false;
 
@@ -269,10 +267,13 @@ public static class DataAgentGraphSidecarContract
             return false;
         }
 
-        if (response.ClaimedAuthorities is null)
+        if (IsClaimedAuthorityListSafe(response.ClaimedAuthorities, policy) == false)
             return false;
 
-        return response.ClaimedAuthorities.All(policy.Allows);
+        return IsResponseCapabilitySafe(
+            response.RequestedCapabilityName,
+            response.RequiresCSharpSafetyService,
+            response.ClaimedAuthorities);
     }
 
     public static bool IsResponseSafe(
@@ -286,7 +287,13 @@ public static class DataAgentGraphSidecarContract
             return false;
         }
 
-        return HasBoundedText(response!.RequestedCapabilityName, MaxCapabilityNameLength) &&
+        if (string.Equals(response!.WorkflowId, request!.WorkflowId, StringComparison.Ordinal) == false)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(response.RequestedCapabilityName))
+            return true;
+
+        return HasBoundedText(response.RequestedCapabilityName, MaxCapabilityNameLength) &&
                request!.AllowedCapabilityNames.Contains(response.RequestedCapabilityName, StringComparer.Ordinal);
     }
 
@@ -299,7 +306,7 @@ public static class DataAgentGraphSidecarContract
     static bool HasBoundedOptionalText(string? value, int maxLength)
     {
         return value is null ||
-               value.Length <= maxLength;
+               HasBoundedText(value, maxLength);
     }
 
     static bool IsAllowedNodeKindList(IReadOnlyList<DataAgentGraphSidecarNodeKind>? allowedNodeKinds)
@@ -333,12 +340,41 @@ public static class DataAgentGraphSidecarContract
                DefaultAllowedCapabilityNameSet.Contains(value!);
     }
 
-    static bool IsResponseCapabilitySafe(string? value, bool requiresCSharpSafetyService)
+    static bool IsResponseCapabilitySafe(
+        string? value,
+        bool requiresCSharpSafetyService,
+        IReadOnlyList<DataAgentGraphSidecarAuthority>? claimedAuthorities)
     {
         if (string.IsNullOrWhiteSpace(value))
             return requiresCSharpSafetyService == false;
 
-        return IsDefaultAllowedCapabilityName(value);
+        return requiresCSharpSafetyService &&
+               IsDefaultAllowedCapabilityName(value) &&
+               claimedAuthorities?.Contains(DataAgentGraphSidecarAuthority.RequestCSharpSafetyService) == true;
+    }
+
+    static bool IsClaimedAuthorityListSafe(
+        IReadOnlyList<DataAgentGraphSidecarAuthority>? claimedAuthorities,
+        DataAgentGraphSidecarPolicy policy)
+    {
+        if (claimedAuthorities is null ||
+            claimedAuthorities.Count == 0 ||
+            claimedAuthorities.Count > MaxClaimedAuthorityCount)
+        {
+            return false;
+        }
+
+        HashSet<DataAgentGraphSidecarAuthority> seen = [];
+        foreach (DataAgentGraphSidecarAuthority authority in claimedAuthorities)
+        {
+            if (policy.Allows(authority) == false ||
+                seen.Add(authority) == false)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     static bool IsTraceSafe(IReadOnlyList<string>? trace)

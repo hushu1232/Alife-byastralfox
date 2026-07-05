@@ -124,11 +124,14 @@ public static class DataAgentReadiness
             bool graphSidecarPolicyReady =
                 graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent) &&
                 graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.RequestCSharpSafetyService) &&
+                graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.ReturnBoundedTrace) &&
+                graphSidecarPolicy.Allows(DataAgentGraphSidecarAuthority.ReportDeterministicFallback) &&
                 graphSidecarPolicy.Forbids(DataAgentGraphSidecarAuthority.ExecuteSql) &&
                 graphSidecarPolicy.Forbids(DataAgentGraphSidecarAuthority.DecideToolRoute) &&
                 graphSidecarPolicy.NoToolRouteAuthority &&
                 graphSidecarPolicy.NoCheckpointAuthority &&
-                graphSidecarPolicy.NoEvidenceAuthority;
+                graphSidecarPolicy.NoEvidenceAuthority &&
+                graphSidecarPolicy.NoVisibleTextAuthority;
             bool graphSidecarNoSqlAuthority =
                 graphSidecarPolicy.NoSqlAuthority &&
                 DataAgentGraphSidecarContract.IsResponseSafe(graphSidecarForbiddenResponse, graphSidecarPolicy) == false;
@@ -140,8 +143,8 @@ public static class DataAgentReadiness
                 graphSidecarNoSqlAuthority &&
                 graphSidecarNoRuntime;
             checks.Add(graphSidecarReady
-                ? Pass("GraphSidecarContractPresent", "default_enabled=false;contract=true;policy=true;no_sql_authority=true;no_runtime=true")
-                : Fail("GraphSidecarContractPresent", $"default_enabled={LowerBool(graphSidecarDefaultOptions.Enabled)};contract={LowerBool(graphSidecarContractReady)};policy={LowerBool(graphSidecarPolicyReady)};no_sql_authority={LowerBool(graphSidecarNoSqlAuthority)};no_runtime={LowerBool(graphSidecarNoRuntime)}"));
+                ? Pass("GraphSidecarContractPresent", "default_enabled=false;contract=true;policy=true;no_sql_authority=true;no_visible_text_authority=true;no_runtime=true")
+                : Fail("GraphSidecarContractPresent", $"default_enabled={LowerBool(graphSidecarDefaultOptions.Enabled)};contract={LowerBool(graphSidecarContractReady)};policy={LowerBool(graphSidecarPolicyReady)};no_sql_authority={LowerBool(graphSidecarNoSqlAuthority)};no_visible_text_authority={LowerBool(graphSidecarPolicy.NoVisibleTextAuthority)};no_runtime={LowerBool(graphSidecarNoRuntime)}"));
 
             DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
                 readinessStore,

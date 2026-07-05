@@ -179,6 +179,14 @@ public sealed class DataAgentGraphSidecarContractTests
         {
             CheckpointStatus = new string('s', 65)
         };
+        DataAgentGraphSidecarRequest blankCheckpointSessionId = valid with
+        {
+            CheckpointSessionId = "   "
+        };
+        DataAgentGraphSidecarRequest blankCheckpointStatus = valid with
+        {
+            CheckpointStatus = "   "
+        };
 
         Assert.Multiple(() =>
         {
@@ -186,6 +194,8 @@ public sealed class DataAgentGraphSidecarContractTests
             Assert.That(DataAgentGraphSidecarContract.IsRequestValid(absentCheckpointFields), Is.True);
             Assert.That(DataAgentGraphSidecarContract.IsRequestValid(overlongCheckpointSessionId), Is.False);
             Assert.That(DataAgentGraphSidecarContract.IsRequestValid(overlongCheckpointStatus), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(blankCheckpointSessionId), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(blankCheckpointStatus), Is.False);
         });
     }
 
@@ -241,7 +251,11 @@ public sealed class DataAgentGraphSidecarContractTests
         DataAgentGraphSidecarResponse safe = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanValidator",
             trace: ["QueryPlanner:Proposed", "QueryPlanValidation:DelegatedToCSharp"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
         DataAgentGraphSidecarResponse sqlTrace = safe with
         {
             Trace = ["SELECT * FROM document_index"]
@@ -270,13 +284,59 @@ public sealed class DataAgentGraphSidecarContractTests
     }
 
     [Test]
+    public void ResponseValidationRejectsEmptyTooManyAndDuplicateAuthorityClaims()
+    {
+        DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
+        DataAgentGraphSidecarResponse safe = NewResponse(
+            requestedCapabilityName: "DataAgentQueryPlanner",
+            trace: ["QueryPlanner:Proposed"],
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
+        DataAgentGraphSidecarResponse emptyAuthorities = safe with { ClaimedAuthorities = [] };
+        DataAgentGraphSidecarResponse tooManyAuthorities = safe with
+        {
+            ClaimedAuthorities =
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService,
+                DataAgentGraphSidecarAuthority.ReturnBoundedTrace,
+                DataAgentGraphSidecarAuthority.ReportDeterministicFallback,
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent
+            ]
+        };
+        DataAgentGraphSidecarResponse duplicateAuthorities = safe with
+        {
+            ClaimedAuthorities =
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent
+            ]
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(safe, policy), Is.True);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(emptyAuthorities, policy), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(tooManyAuthorities, policy), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(duplicateAuthorities, policy), Is.False);
+        });
+    }
+
+    [Test]
     public void ResponseValidationFailsClosedForNullInputPolicyAndLists()
     {
         DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
         DataAgentGraphSidecarResponse safe = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanner",
             trace: ["QueryPlanner:Proposed"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
 
         AssertInvalidWithoutThrowing(() => DataAgentGraphSidecarContract.IsResponseSafe(null!, policy));
         AssertInvalidWithoutThrowing(() => DataAgentGraphSidecarContract.IsResponseSafe(safe, null!));
@@ -291,7 +351,11 @@ public sealed class DataAgentGraphSidecarContractTests
         DataAgentGraphSidecarResponse safe = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanner",
             trace: ["QueryPlanner:Proposed"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
         DataAgentGraphSidecarResponse unknownCapability = safe with { RequestedCapabilityName = "FutureUnreviewedCapability" };
         DataAgentGraphSidecarResponse executeSqlAsync = safe with { RequestedCapabilityName = "ExecuteSqlAsync" };
         DataAgentGraphSidecarResponse storeQueryAsync = safe with { RequestedCapabilityName = "IDataAgentStore.QueryAsync" };
@@ -322,17 +386,83 @@ public sealed class DataAgentGraphSidecarContractTests
         DataAgentGraphSidecarResponse allowedResponse = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanner",
             trace: ["QueryPlanner:Proposed"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
         DataAgentGraphSidecarResponse disallowedResponse = allowedResponse with
         {
             RequestedCapabilityName = "DataAgentQueryPlanValidator"
+        };
+        DataAgentGraphSidecarResponse wrongWorkflowResponse = allowedResponse with
+        {
+            WorkflowId = "wf-2"
         };
 
         Assert.Multiple(() =>
         {
             Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(allowedResponse, policy, request), Is.True);
             Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(disallowedResponse, policy, request), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(wrongWorkflowResponse, policy, request), Is.False);
             Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(allowedResponse, policy, invalidRequest), Is.False);
+        });
+    }
+
+    [Test]
+    public void ResponseValidationAllowsRequestBoundResponsesWithoutCapabilityRequests()
+    {
+        DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
+        DataAgentGraphSidecarRequest request = NewRequest(
+            workflowId: "wf-1",
+            sessionId: "session-1",
+            allowedCapabilityNames: ["DataAgentQueryPlanner"]);
+        DataAgentGraphSidecarResponse orchestrationIntent = NewResponse(
+            requestedCapabilityName: null,
+            requiresCSharpSafetyService: false,
+            trace: ["ScenarioContext:IntentOnly"],
+            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+        DataAgentGraphSidecarResponse deterministicFallback = NewResponse(
+            requestedCapabilityName: null,
+            requiresCSharpSafetyService: false,
+            trace: ["Terminal:FallbackOnly"],
+            claimedAuthorities: [DataAgentGraphSidecarAuthority.ReportDeterministicFallback]);
+        DataAgentGraphSidecarResponse boundedTrace = NewResponse(
+            requestedCapabilityName: null,
+            requiresCSharpSafetyService: false,
+            trace: ["Diagnostics:TraceOnly"],
+            claimedAuthorities: [DataAgentGraphSidecarAuthority.ReturnBoundedTrace]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(orchestrationIntent, policy, request), Is.True);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(deterministicFallback, policy, request), Is.True);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(boundedTrace, policy, request), Is.True);
+        });
+    }
+
+    [Test]
+    public void ResponseValidationRequiresCapabilityRequestsToUseCSharpSafetyAuthority()
+    {
+        DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
+        DataAgentGraphSidecarResponse missingSafetyRequirement = NewResponse(
+            requestedCapabilityName: "DataAgentQueryPlanner",
+            requiresCSharpSafetyService: false,
+            trace: ["QueryPlanner:Proposed"],
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
+        DataAgentGraphSidecarResponse missingSafetyAuthority = NewResponse(
+            requestedCapabilityName: "DataAgentQueryPlanner",
+            trace: ["QueryPlanner:Proposed"],
+            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(missingSafetyRequirement, policy), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsResponseSafe(missingSafetyAuthority, policy), Is.False);
         });
     }
 
@@ -343,7 +473,11 @@ public sealed class DataAgentGraphSidecarContractTests
         DataAgentGraphSidecarResponse safe = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanner",
             trace: ["QueryPlanner:Proposed"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
         DataAgentGraphSidecarResponse sqlWithNewline = safe with { Trace = ["SELECT\n* FROM document_index"] };
         DataAgentGraphSidecarResponse sqlWithTab = safe with { Trace = ["select\t* from document_index"] };
         DataAgentGraphSidecarResponse benignSemicolon = safe with { Trace = ["Planner proposed; C# validator decides"] };
@@ -357,13 +491,60 @@ public sealed class DataAgentGraphSidecarContractTests
     }
 
     [Test]
+    public void ResponseValidationDetectsObviousExecutableSqlKeywordsInTraceAndMessage()
+    {
+        DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
+        DataAgentGraphSidecarResponse safe = NewResponse(
+            requestedCapabilityName: "DataAgentQueryPlanner",
+            trace: ["QueryPlanner:Proposed"],
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
+        string[] executableSqlTexts =
+        [
+            "CREATE TABLE sidecar_probe (id integer)",
+            "WITH recent AS (VALUES (1))",
+            "EXECUTE refresh_sidecar_probe",
+            "CALL refresh_sidecar_probe()",
+            "MERGE INTO target USING source ON target.id = source.id",
+            "GRANT USAGE ON SCHEMA public TO analyst",
+            "REVOKE USAGE ON SCHEMA public FROM analyst",
+            "PRAGMA table_info(document_index)",
+            "BEGIN TRANSACTION",
+            "COMMIT",
+            "ROLLBACK"
+        ];
+
+        Assert.Multiple(() =>
+        {
+            foreach (string executableSqlText in executableSqlTexts)
+            {
+                Assert.That(
+                    DataAgentGraphSidecarContract.IsResponseSafe(safe with { Trace = [executableSqlText] }, policy),
+                    Is.False,
+                    $"Trace should reject SQL text: {executableSqlText}");
+                Assert.That(
+                    DataAgentGraphSidecarContract.IsResponseSafe(safe with { Message = executableSqlText }, policy),
+                    Is.False,
+                    $"Message should reject SQL text: {executableSqlText}");
+            }
+        });
+    }
+
+    [Test]
     public void ResponseValidationRequiresBoundedTraceAndText()
     {
         DataAgentGraphSidecarPolicy policy = DataAgentGraphSidecarPolicy.CreateDefault();
         DataAgentGraphSidecarResponse safe = NewResponse(
             requestedCapabilityName: "DataAgentQueryPlanner",
             trace: ["QueryPlanner:Proposed"],
-            claimedAuthorities: [DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent]);
+            claimedAuthorities:
+            [
+                DataAgentGraphSidecarAuthority.ProposeOrchestrationIntent,
+                DataAgentGraphSidecarAuthority.RequestCSharpSafetyService
+            ]);
         DataAgentGraphSidecarResponse tooManyTraceEntries = safe with
         {
             Trace = Enumerable.Repeat("QueryPlanner:Proposed", 17).ToArray()
@@ -411,9 +592,10 @@ public sealed class DataAgentGraphSidecarContractTests
     }
 
     static DataAgentGraphSidecarResponse NewResponse(
-        string requestedCapabilityName,
+        string? requestedCapabilityName,
         IReadOnlyList<string> trace,
-        IReadOnlyList<DataAgentGraphSidecarAuthority> claimedAuthorities)
+        IReadOnlyList<DataAgentGraphSidecarAuthority> claimedAuthorities,
+        bool requiresCSharpSafetyService = true)
     {
         return new DataAgentGraphSidecarResponse(
             "wf-1",
@@ -422,7 +604,7 @@ public sealed class DataAgentGraphSidecarContractTests
             "Delegating to C# DataAgent safety service.",
             DataAgentGraphSidecarNodeKind.QueryPlanValidation,
             requestedCapabilityName,
-            true,
+            requiresCSharpSafetyService,
             trace,
             claimedAuthorities);
     }

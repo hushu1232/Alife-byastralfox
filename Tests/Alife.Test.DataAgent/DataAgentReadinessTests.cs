@@ -40,6 +40,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphSidecarCheck.Detail, Does.Contain("contract=true"));
             Assert.That(graphSidecarCheck.Detail, Does.Contain("policy=true"));
             Assert.That(graphSidecarCheck.Detail, Does.Contain("no_sql_authority=true"));
+            Assert.That(graphSidecarCheck.Detail, Does.Contain("no_visible_text_authority=true"));
             Assert.That(graphSidecarCheck.Detail, Does.Contain("no_runtime=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
