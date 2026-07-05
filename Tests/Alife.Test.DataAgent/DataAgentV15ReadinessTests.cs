@@ -53,7 +53,9 @@ public sealed class DataAgentV15ReadinessTests
             Assert.That(script, Does.Contain("dataagent_analysis_end"));
 
             Assert.That(script, Does.Contain("sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs"));
-            Assert.That(script, Does.Contain("InMemoryDataAgentAnalysisSessionStore"));
+            Assert.That(script, Does.Contain("IDataAgentAnalysisSessionStore"));
+            Assert.That(script, Does.Contain("DataAgentAnalysisSessionStoreFactory.Create"));
+            Assert.That(script, Does.Contain("DataAgentAnalysisSessionStoreFactory.FromEnvironment"));
             Assert.That(script, Does.Contain("PublishAnalysisContext"));
             Assert.That(script, Does.Contain("UpdateDataAgentAnalysisRouteSessionFromContext"));
             Assert.That(script, Does.Contain("Only use DataAgent XML tools when they appear in current [tool_route_context]"));
