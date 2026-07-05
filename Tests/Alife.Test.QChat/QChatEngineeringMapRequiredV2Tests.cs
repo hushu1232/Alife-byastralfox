@@ -136,6 +136,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("PostgresDataAgentAnalysisSessionStore"));
             Assert.That(declaration, Does.Contain("DataAgentAnalysisSessionStoreFactory"));
             Assert.That(declaration, Does.Contain("DataAgentModuleService"));
+            Assert.That(declaration, Does.Contain("module_wiring=true"));
+            Assert.That(declaration, Does.Contain("live_test_gated="));
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
         });
     }
