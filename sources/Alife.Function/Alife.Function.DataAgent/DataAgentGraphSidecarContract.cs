@@ -170,6 +170,7 @@ public static class DataAgentGraphSidecarContract
     const int MaxQuestionLength = 2048;
     const int MaxScenarioContextLength = 4096;
     const int MaxTraceIdLength = 128;
+    const int MaxCheckpointStatusLength = 64;
     const int MaxNodeKindCount = 16;
     const int MaxCapabilityNameCount = 16;
     const int MaxCapabilityNameLength = 128;
@@ -232,6 +233,8 @@ public static class DataAgentGraphSidecarContract
                HasBoundedText(request.Question, MaxQuestionLength) &&
                HasBoundedText(request.ScenarioContext, MaxScenarioContextLength) &&
                HasBoundedText(request.TraceId, MaxTraceIdLength) &&
+               HasBoundedOptionalText(request.CheckpointSessionId, MaxIdentityLength) &&
+               HasBoundedOptionalText(request.CheckpointStatus, MaxCheckpointStatusLength) &&
                IsAllowedNodeKindList(request.AllowedNodeKinds) &&
                IsAllowedCapabilityNameList(request.AllowedCapabilityNames);
     }
@@ -290,6 +293,12 @@ public static class DataAgentGraphSidecarContract
     static bool HasBoundedText(string? value, int maxLength)
     {
         return string.IsNullOrWhiteSpace(value) == false &&
+               value.Length <= maxLength;
+    }
+
+    static bool HasBoundedOptionalText(string? value, int maxLength)
+    {
+        return value is null ||
                value.Length <= maxLength;
     }
 

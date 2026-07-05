@@ -160,6 +160,36 @@ public sealed class DataAgentGraphSidecarContractTests
     }
 
     [Test]
+    public void RequestValidationBoundsOptionalCheckpointFields()
+    {
+        DataAgentGraphSidecarRequest valid = NewRequest(
+            workflowId: "wf-1",
+            sessionId: "session-1",
+            allowedCapabilityNames: ["DataAgentQueryPlanner"]);
+        DataAgentGraphSidecarRequest absentCheckpointFields = valid with
+        {
+            CheckpointSessionId = null,
+            CheckpointStatus = null
+        };
+        DataAgentGraphSidecarRequest overlongCheckpointSessionId = valid with
+        {
+            CheckpointSessionId = new string('c', 129)
+        };
+        DataAgentGraphSidecarRequest overlongCheckpointStatus = valid with
+        {
+            CheckpointStatus = new string('s', 65)
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(valid), Is.True);
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(absentCheckpointFields), Is.True);
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(overlongCheckpointSessionId), Is.False);
+            Assert.That(DataAgentGraphSidecarContract.IsRequestValid(overlongCheckpointStatus), Is.False);
+        });
+    }
+
+    [Test]
     public void RequestValidationRequiresBoundedAllowlistedCapabilities()
     {
         DataAgentGraphSidecarRequest valid = NewRequest(
