@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.Diagnostics;
 using System.IO;
 
 namespace Alife.Test.QChat;
@@ -202,6 +203,86 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         Assert.That(offenders, Is.Empty);
     }
 
+    [Test]
+    public void QChatEngineeringMapDefaultModeExitsZeroAndPrintsSummary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+
+        ScriptResult result = RunPowerShellScript(scriptPath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
+            {
+                "Summary: 58 required passed, 0 required missing, 0 optional present, 0 optional missing"
+            }));
+        });
+    }
+
+    [Test]
+    public void QChatEngineeringMapScriptProtectsRequiredCheckCount()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("$expectedRequired = 58"));
+            Assert.That(script, Does.Contain("engineering map check count mismatch"));
+            Assert.That(script, Does.Contain("$requiredTotal"));
+        });
+    }
+
+    static ScriptResult RunPowerShellScript(string scriptPath)
+    {
+        string powerShell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = powerShell,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true
+        };
+
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(scriptPath);
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to start PowerShell.");
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+
+        if (process.WaitForExit(15000) == false)
+        {
+            process.Kill(entireProcessTree: true);
+            throw new TimeoutException("QChat engineering map script did not exit within 15 seconds.");
+        }
+
+        return new ScriptResult(process.ExitCode, stdout, stderr);
+    }
+
+    static string[] GetEngineeringMapSummaryLines(string output)
+    {
+        return output
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Where(line => line.StartsWith("Summary:", StringComparison.Ordinal))
+            .ToArray();
+    }
+
     static string FindAddCheckDeclaration(string script, string checkName)
     {
         string marker = $"-Name \"{checkName}\"";
@@ -235,4 +316,6 @@ public sealed class QChatEngineeringMapRequiredV2Tests
 
         throw new DirectoryNotFoundException("Could not locate repository root from test directory.");
     }
+
+    readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
 }
