@@ -9,6 +9,10 @@ V2.13 productizes optional PostgreSQL persistence for DataAgent analysis checkpo
 - `DataAgentAnalysisSession`
 - `DataAgentAnalysisTurn`
 - Session status
+- Caller id
+- Analysis goal
+- Created timestamp
+- Updated timestamp
 - Last dataset
 - Last summary
 - Pending clarification question
