@@ -13,6 +13,10 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
     public IReadOnlyList<string> RegisteredCapabilityProviderNames { get; private set; } = [];
     public IReadOnlyList<string> RegisteredCapabilityToolNames { get; private set; } = [];
 
+    internal static IDataAgentAnalysisSessionStore CreateAnalysisSessionStore(
+        DataAgentAnalysisSessionStoreOptions options) =>
+        DataAgentAnalysisSessionStoreFactory.Create(options);
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -23,7 +27,7 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         store.ImportFixtures();
 
         DataAgentService service = new(store);
-        IDataAgentAnalysisSessionStore analysisSessionStore = DataAgentAnalysisSessionStoreFactory.Create(
+        IDataAgentAnalysisSessionStore analysisSessionStore = CreateAnalysisSessionStore(
             DataAgentAnalysisSessionStoreFactory.FromEnvironment());
         DataAgentProgressRecorder progressRecorder = new();
         IDataAgentProgressSink progressSink = new DataAgentProgressDiagnosticsPublisher(

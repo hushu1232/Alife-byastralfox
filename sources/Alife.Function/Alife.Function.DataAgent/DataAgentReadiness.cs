@@ -87,8 +87,9 @@ public static class DataAgentReadiness
                 typeof(DataAgentAnalysisSessionStoreFactory)
                     .GetMethod(nameof(DataAgentAnalysisSessionStoreFactory.FromEnvironment)) is not null;
             bool postgresCheckpointModuleWiringReady =
-                typeof(DataAgentModuleService).Assembly.GetReferencedAssemblies().Any(assemblyName =>
-                    string.Equals(assemblyName.Name, "Alife.Function.QChat", StringComparison.Ordinal)) == false;
+                DataAgentModuleService.CreateAnalysisSessionStore(new DataAgentAnalysisSessionStoreOptions(
+                    string.Empty,
+                    string.Empty)) is InMemoryDataAgentAnalysisSessionStore;
             bool postgresCheckpointLiveTestGated =
                 string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION"));
             bool postgresCheckpointReady =

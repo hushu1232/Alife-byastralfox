@@ -90,7 +90,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("tools/check-dataagent-readiness.ps1"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioContextIntegrated"));
             Assert.That(declaration, Does.Contain("Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs"));
-            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentBoundaryTypes"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioKnowledgePackProvider"));
             Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilder"));
             Assert.That(declaration, Does.Contain("DataAgentToolScopePolicy"));
@@ -145,7 +145,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
-    public void QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder()
+    public void QChatDoesNotDirectlyImportDataAgentBoundaryTypes()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string qchatRoot = Path.Combine(repoRoot, "sources", "Alife.Function", "Alife.Function.QChat");

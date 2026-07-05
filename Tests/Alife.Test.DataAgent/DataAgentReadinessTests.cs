@@ -371,6 +371,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("PostgresDataAgentAnalysisSessionStore.cs"));
             Assert.That(declaration, Does.Contain("DataAgentAnalysisSessionStoreFactory.cs"));
             Assert.That(declaration, Does.Contain("DataAgentModuleService.cs"));
+            Assert.That(declaration, Does.Contain("CreateAnalysisSessionStore"));
             Assert.That(declaration, Does.Contain("dataagent_analysis_session"));
             Assert.That(declaration, Does.Contain("dataagent_analysis_turn"));
             Assert.That(declaration, Does.Contain("FOR UPDATE"));
