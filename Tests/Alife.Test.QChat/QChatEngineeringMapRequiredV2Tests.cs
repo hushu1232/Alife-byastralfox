@@ -164,6 +164,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("no_runtime=true"));
             Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentBoundaryTypes"));
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarNodeKind"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarAuthority"));
             Assert.That(declaration, Does.Contain("DataAgentGraphSidecarOptions"));
             Assert.That(declaration, Does.Contain("DataAgentGraphSidecarPolicy"));
             Assert.That(declaration, Does.Contain("DataAgentGraphSidecarRequest"));
@@ -184,6 +186,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             "PostgresDataAgentAnalysisSessionStore",
             "DataAgentAnalysisSessionStoreFactory",
             "DataAgentGraphSidecarContract",
+            "DataAgentGraphSidecarNodeKind",
+            "DataAgentGraphSidecarAuthority",
             "DataAgentGraphSidecarOptions",
             "DataAgentGraphSidecarPolicy",
             "DataAgentGraphSidecarRequest",
