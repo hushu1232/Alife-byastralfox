@@ -10,12 +10,12 @@ public static class DataAgentScenarioDiagnosticsFormatter
     const int MaxItems = 16;
     const int MaxFieldLength = 120;
 
-    static readonly Regex SqlLikePattern = new(
-        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with|from|join|where|having|limit|pragma|attach|detach)\b|\border\s+by\b|\bgroup\s+by\b",
+    static readonly Regex ClearSqlFragmentPattern = new(
+        @"\b(select|insert|update|delete|merge|drop|alter|create|truncate|with|pragma|attach|detach)\b|\bunion(?:\s+all)?\b|\btable\s+\S+|\bfrom\s+\S+|\bjoin\s+\S+|\bwhere\s+\S+|\bhaving\s+\S+|\blimit\s+\d+\b|\border\s+by\b|\bgroup\s+by\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    static readonly Regex UnsafeContextPattern = new(
-        @"tool_route_context|data_agent_evidence_pack|hidden_context|hidden\s+context|hidden\s+prompt|ignore\s+previous\s+instructions|tool\s+broker|allowed\s+xml\s+tool",
+    static readonly Regex UnsafeMarkerPattern = new(
+        @"tool_route_context|data_agent_evidence_pack|hidden_context|hidden\s+context|hidden\s+prompt|ignore\s+previous\s+instructions|tool[_\s-]?broker|allowed\s+xml\s+tools?",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string Format(DataAgentScenarioContext? context)
@@ -30,8 +30,8 @@ public static class DataAgentScenarioDiagnosticsFormatter
 
         return string.Join(Environment.NewLine,
             "DataAgent scenario diagnostics",
-            $"scenario={SafeText(context.Scenario)}",
-            $"reason={SafeText(context.ReasonCode)}",
+            $"scenario={SafeIdentifier(context.Scenario)}",
+            $"reason={SafeIdentifier(context.ReasonCode)}",
             $"datasets={FormatList(context.CandidateDatasets)}",
             $"fields={FormatList(context.CandidateFields)}",
             $"terms={FormatTerms(context.Terms)}",
@@ -42,7 +42,7 @@ public static class DataAgentScenarioDiagnosticsFormatter
     {
         string[] safeValues = values
             .Take(MaxItems)
-            .Select(SafeText)
+            .Select(SafeIdentifier)
             .Where(value => value.Length > 0)
             .ToArray();
 
@@ -53,8 +53,7 @@ public static class DataAgentScenarioDiagnosticsFormatter
     {
         string[] safeTerms = terms
             .Take(MaxItems)
-            .Select(term => $"{SafeText(term.Term)}:{SafeText(term.Dataset)}")
-            .Where(value => value != ":")
+            .Select(term => $"{SafeLabel(term.Term)}:{SafeIdentifier(term.Dataset)}")
             .ToArray();
 
         return safeTerms.Length == 0 ? "none" : string.Join(';', safeTerms);
@@ -64,8 +63,7 @@ public static class DataAgentScenarioDiagnosticsFormatter
     {
         string[] safeMetrics = metrics
             .Take(MaxItems)
-            .Select(metric => $"{SafeText(metric.Name)}:{SafeText(metric.Field)}{SafeOperator(metric.Operator)}{SafeValue(metric.Value)}")
-            .Where(value => value != ":")
+            .Select(metric => $"{SafeLabel(metric.Name)}:{SafeIdentifier(metric.Field)}{SafeOperator(metric.Operator)}{SafeValue(metric.Value)}")
             .ToArray();
 
         return safeMetrics.Length == 0 ? "none" : string.Join(';', safeMetrics);
@@ -83,39 +81,89 @@ public static class DataAgentScenarioDiagnosticsFormatter
             ? formattable.ToString(null, CultureInfo.InvariantCulture)
             : value.ToString() ?? string.Empty;
 
-        return SafeText(text);
+        return SafeFreeText(text);
     }
 
     static string SafeOperator(string value)
     {
-        return value switch
-        {
-            "=" or "!=" or "<>" or ">" or ">=" or "<" or "<=" => value,
-            _ => SafeText(value)
-        };
+        return SafeIdentifier(value);
     }
 
-    static string SafeText(string? value)
+    static string SafeIdentifier(string? value)
     {
         value ??= string.Empty;
-        if (IsUnsafe(value))
+        string sanitized = NormalizeDelimitedText(value, replaceEquals: false);
+
+        if (ContainsUnsafeMarker(value, sanitized) ||
+            ContainsClearSqlIdentifierFragment(value, sanitized))
+        {
             return Redacted;
+        }
 
-        string sanitized = DataAgentContextFieldSanitizer.Sanitize(value, MaxFieldLength);
-        sanitized = sanitized
-            .Replace(';', ' ')
-            .Replace(',', ' ')
-            .Replace(':', ' ')
-            .Replace('=', ':');
-        sanitized = CollapseWhitespace(sanitized);
-
-        return sanitized.Length == 0 ? "empty" : sanitized;
+        return EmptyIfBlank(sanitized);
     }
 
-    static bool IsUnsafe(string value)
+    static string SafeLabel(string? value)
     {
-        return SqlLikePattern.IsMatch(value) ||
-            UnsafeContextPattern.IsMatch(value);
+        return SafeFreeText(value);
+    }
+
+    static string SafeFreeText(string? value)
+    {
+        value ??= string.Empty;
+        string sanitized = NormalizeDelimitedText(value, replaceEquals: true);
+
+        if (ContainsUnsafeMarker(value, sanitized) ||
+            ContainsClearSqlFragment(value, sanitized))
+        {
+            return Redacted;
+        }
+
+        return EmptyIfBlank(sanitized);
+    }
+
+    static bool ContainsUnsafeMarker(string value, string sanitized)
+    {
+        return UnsafeMarkerPattern.IsMatch(value) ||
+            UnsafeMarkerPattern.IsMatch(sanitized);
+    }
+
+    static bool ContainsClearSqlIdentifierFragment(string value, string sanitized)
+    {
+        if (IsSingleIdentifierToken(sanitized))
+            return false;
+
+        return ContainsClearSqlFragment(value, sanitized);
+    }
+
+    static bool ContainsClearSqlFragment(string value, string sanitized)
+    {
+        return ClearSqlFragmentPattern.IsMatch(value) ||
+            ClearSqlFragmentPattern.IsMatch(sanitized);
+    }
+
+    static bool IsSingleIdentifierToken(string value)
+    {
+        return value.Length > 0 &&
+            value.All(current => char.IsAsciiLetterOrDigit(current) || current is '_' or '-' or '.');
+    }
+
+    static string NormalizeDelimitedText(string value, bool replaceEquals)
+    {
+        string sanitized = DataAgentContextFieldSanitizer.Sanitize(value, MaxFieldLength)
+            .Replace(';', ' ')
+            .Replace(',', ' ')
+            .Replace(':', ' ');
+
+        if (replaceEquals)
+            sanitized = sanitized.Replace('=', ':');
+
+        return CollapseWhitespace(sanitized);
+    }
+
+    static string EmptyIfBlank(string value)
+    {
+        return value.Length == 0 ? "empty" : value;
     }
 
     static string CollapseWhitespace(string value)

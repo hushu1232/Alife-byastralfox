@@ -42,6 +42,31 @@ public sealed class DataAgentScenarioDiagnosticsFormatterTests
     }
 
     [Test]
+    public void FormatPreservesSqlKeywordIdentifiers()
+    {
+        DataAgentScenarioContext context = new(
+            "engineering_readiness",
+            "zh-CN",
+            [new DataAgentScenarioTermMatch("keyword term", "keyword_dataset", ["from", "where"], "keyword term")],
+            [new DataAgentScenarioMetricMatch("\u5931\u8d25", "where", "=", "origin")],
+            ["keyword_dataset"],
+            ["from", "where"],
+            DataAgentScenarioContext.ReasonMatched);
+
+        string text = DataAgentScenarioDiagnosticsFormatter.Format(context);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("datasets=keyword_dataset"));
+            Assert.That(text, Does.Contain("fields=from,where"));
+            Assert.That(text, Does.Contain("terms=keyword term:keyword_dataset"));
+            Assert.That(text, Does.Contain("metrics=\u5931\u8d25:where=origin"));
+            Assert.That(text, Does.Not.Contain("fields=redacted"));
+            Assert.That(text, Does.Not.Contain("where=redacted"));
+        });
+    }
+
+    [Test]
     public void FormatOmitsRawSqlAndHiddenContext()
     {
         DataAgentScenarioContext context = new(
@@ -65,6 +90,11 @@ public sealed class DataAgentScenarioDiagnosticsFormatterTests
                     "status\nWHERE password",
                     "!=",
                     "passed; SELECT * FROM users"),
+                new DataAgentScenarioMetricMatch("union label", "required", "=", "UNION ALL"),
+                new DataAgentScenarioMetricMatch("table label", "required", "=", "TABLE users"),
+                new DataAgentScenarioMetricMatch("tool broker label", "required", "=", "tool_broker manual"),
+                new DataAgentScenarioMetricMatch("ToolBroker label", "required", "=", "ToolBroker manual"),
+                new DataAgentScenarioMetricMatch("allowed tools label", "required", "=", "Allowed XML tools: dataagent_query"),
                 new DataAgentScenarioMetricMatch("必需", "required", "=", true)
             ],
             ["engineering_gate", "test_run; DROP TABLE hidden_context"],
@@ -80,11 +110,16 @@ public sealed class DataAgentScenarioDiagnosticsFormatterTests
             Assert.That(text, Does.Not.Contain("SELECT"));
             Assert.That(text, Does.Not.Contain("DROP"));
             Assert.That(text, Does.Not.Contain("FROM users"));
+            Assert.That(text, Does.Not.Contain("UNION ALL"));
+            Assert.That(text, Does.Not.Contain("TABLE users"));
             Assert.That(text, Does.Not.Contain("password"));
             Assert.That(text, Does.Not.Contain("hidden_context"));
             Assert.That(text, Does.Not.Contain("hidden prompt"));
             Assert.That(text, Does.Not.Contain("ignore previous instructions"));
             Assert.That(text, Does.Not.Contain("tool_route_context"));
+            Assert.That(text, Does.Not.Contain("tool_broker"));
+            Assert.That(text, Does.Not.Contain("ToolBroker"));
+            Assert.That(text, Does.Not.Contain("Allowed XML tools"));
             Assert.That(text, Does.Not.Contain("data_agent_evidence_pack"));
             Assert.That(text, Does.Not.Contain("owner secret"));
             Assert.That(text, Does.Not.Contain("manual"));
