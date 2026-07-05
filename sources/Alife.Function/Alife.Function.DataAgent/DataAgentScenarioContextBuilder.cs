@@ -96,9 +96,10 @@ public sealed class DataAgentScenarioContextBuilder
         }
 
         List<DataAgentScenarioMetricMatch> metricMatches = [];
+        bool allowCatalogWideMetricFallback = termTextMatches.Count == 0;
         foreach (DataAgentScenarioMetric metric in metricTextMatches)
         {
-            if (IsMetricValid(catalog, candidateDatasets, metric) == false)
+            if (IsMetricValid(catalog, candidateDatasets, metric, allowCatalogWideMetricFallback) == false)
             {
                 continue;
             }
@@ -157,7 +158,8 @@ public sealed class DataAgentScenarioContextBuilder
     static bool IsMetricValid(
         DataAgentCatalog catalog,
         IReadOnlyList<string> candidateDatasets,
-        DataAgentScenarioMetric metric)
+        DataAgentScenarioMetric metric,
+        bool allowCatalogWideFallback)
     {
         if (string.IsNullOrWhiteSpace(metric.Field))
         {
@@ -167,6 +169,11 @@ public sealed class DataAgentScenarioContextBuilder
         if (candidateDatasets.Count > 0)
         {
             return candidateDatasets.Any(dataset => catalog.HasField(dataset, metric.Field));
+        }
+
+        if (allowCatalogWideFallback == false)
+        {
+            return false;
         }
 
         return catalog.Datasets.Any(dataset => catalog.HasField(dataset.Name, metric.Field));

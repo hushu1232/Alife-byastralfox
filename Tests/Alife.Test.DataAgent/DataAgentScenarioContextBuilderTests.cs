@@ -130,6 +130,59 @@ public sealed class DataAgentScenarioContextBuilderTests
     }
 
     [Test]
+    public void BuildReturnsCatalogMismatchWhenInvalidTermMatchesWithValidMetric()
+    {
+        DataAgentScenarioKnowledgePack pack = new(
+            "catalog_mismatch_metric",
+            "zh-CN",
+            [new DataAgentScenarioTerm("坏数据集", [], "missing_dataset", ["name"])],
+            [new DataAgentScenarioMetric("失败", "status", "!=", "passed")]);
+
+        DataAgentScenarioContext context = new DataAgentScenarioContextBuilder().Build(
+            DataAgentCatalog.CreateDefault(),
+            pack,
+            "坏数据集 失败");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.ReasonCode, Is.EqualTo(DataAgentScenarioContext.ReasonCatalogMismatch));
+            Assert.That(context.HasMatches, Is.False);
+            Assert.That(context.Terms, Is.Empty);
+            Assert.That(context.Metrics, Is.Empty);
+            Assert.That(context.CandidateDatasets, Is.Empty);
+            Assert.That(context.CandidateFields, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void BuildDedupesCandidateHintsOrdinalIgnoreCaseByFirstAppearance()
+    {
+        DataAgentScenarioKnowledgePack pack = new(
+            "dedupe_hints",
+            "zh-CN",
+            [
+                new DataAgentScenarioTerm("第一门禁", [], "engineering_gate", ["name", "STATUS", "required"]),
+                new DataAgentScenarioTerm("第二门禁", [], "ENGINEERING_GATE", ["Name", "status", "evidence_path"]),
+                new DataAgentScenarioTerm("测试运行", [], "test_run", ["FAILED", "failed", "total"])
+            ],
+            []);
+
+        DataAgentScenarioContext context = new DataAgentScenarioContextBuilder().Build(
+            DataAgentCatalog.CreateDefault(),
+            pack,
+            "第一门禁 第二门禁 测试运行");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.ReasonCode, Is.EqualTo(DataAgentScenarioContext.ReasonMatched));
+            Assert.That(context.CandidateDatasets, Is.EqualTo(new[] { "engineering_gate", "test_run" }));
+            Assert.That(
+                context.CandidateFields,
+                Is.EqualTo(new[] { "name", "STATUS", "required", "evidence_path", "FAILED", "total" }));
+        });
+    }
+
+    [Test]
     public void BuildKeepsMetricWhenOnlyMetricMatchesKnownCatalogField()
     {
         DataAgentScenarioKnowledgePack pack = new(
