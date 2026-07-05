@@ -319,8 +319,12 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
         command.Parameters.Add(new NpgsqlParameter("caller_id", session.CallerId));
         command.Parameters.Add(new NpgsqlParameter("goal", session.Goal));
         command.Parameters.Add(new NpgsqlParameter("status", (int)session.Status));
-        command.Parameters.Add(new NpgsqlParameter("created_at", session.CreatedAt.ToString("O")));
-        command.Parameters.Add(new NpgsqlParameter("updated_at", session.UpdatedAt.ToString("O")));
+        command.Parameters.Add(new NpgsqlParameter(
+            "created_at",
+            session.CreatedAt.ToString("O", CultureInfo.InvariantCulture)));
+        command.Parameters.Add(new NpgsqlParameter(
+            "updated_at",
+            session.UpdatedAt.ToString("O", CultureInfo.InvariantCulture)));
         command.Parameters.Add(new NpgsqlParameter("last_dataset", session.LastDataset ?? (object)DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter("last_summary", session.LastSummary ?? (object)DBNull.Value));
         command.Parameters.Add(new NpgsqlParameter(
@@ -387,7 +391,9 @@ public sealed class PostgresDataAgentAnalysisSessionStore : IDataAgentAnalysisSe
         command.Parameters.Add(new NpgsqlParameter("turn_id", turn.TurnId));
         command.Parameters.Add(new NpgsqlParameter("question", turn.Question));
         command.Parameters.Add(new NpgsqlParameter("intent", (int)turn.Intent));
-        command.Parameters.Add(new NpgsqlParameter("created_at", turn.CreatedAt.ToString("O")));
+        command.Parameters.Add(new NpgsqlParameter(
+            "created_at",
+            turn.CreatedAt.ToString("O", CultureInfo.InvariantCulture)));
         command.Parameters.Add(new NpgsqlParameter("dataset", turn.Dataset));
         command.Parameters.Add(new NpgsqlParameter("sql", turn.Sql));
         command.Parameters.Add(new NpgsqlParameter("row_count", turn.RowCount));

@@ -313,6 +313,182 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
     }
 
     [Test]
+    public void LivePostgresGetReturnsCoherentSnapshotDuringConcurrentTurnReplacement()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
+
+        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        store.Initialize();
+        DateTimeOffset createdAt = new(2026, 7, 5, 17, 0, 0, TimeSpan.Zero);
+        DateTimeOffset oldTurnAt = createdAt.AddMinutes(1);
+        DateTimeOffset newTurnAt = createdAt.AddMinutes(2);
+        DataAgentAnalysisSession session = store.Create(
+            "owner",
+            "read coherent checkpoint while writer replaces turns",
+            createdAt);
+
+        try
+        {
+            store.Save(session with
+            {
+                Status = DataAgentAnalysisSessionStatus.AwaitingClarification,
+                UpdatedAt = oldTurnAt,
+                LastDataset = "document_index",
+                LastSummary = "old checkpoint summary",
+                Turns =
+                [
+                    new DataAgentAnalysisTurn(
+                        "turn-old",
+                        1,
+                        "old question",
+                        DataAgentAnalysisTurnIntent.NewQuestion,
+                        oldTurnAt,
+                        "document_index",
+                        "SELECT path FROM document_index LIMIT 20",
+                        1,
+                        "old turn summary",
+                        true,
+                        string.Empty)
+                ]
+            });
+
+            using NpgsqlConnection writerConnection = new(connectionString);
+            writerConnection.Open();
+            using NpgsqlTransaction writerTransaction = writerConnection.BeginTransaction();
+            bool writerCommitted = false;
+
+            try
+            {
+                Execute(
+                    writerConnection,
+                    writerTransaction,
+                    "SELECT 1 FROM dataagent_analysis_session WHERE session_id = @session_id FOR UPDATE",
+                    new NpgsqlParameter("session_id", session.SessionId));
+                Execute(
+                    writerConnection,
+                    writerTransaction,
+                    """
+                    UPDATE dataagent_analysis_session
+                    SET status = @status,
+                        updated_at = @updated_at,
+                        last_dataset = @last_dataset,
+                        last_summary = @last_summary,
+                        pending_clarification_question = @pending_clarification_question
+                    WHERE session_id = @session_id
+                    """,
+                    new NpgsqlParameter("status", (int)DataAgentAnalysisSessionStatus.ReadyToSummarize),
+                    new NpgsqlParameter("updated_at", newTurnAt.ToString("O")),
+                    new NpgsqlParameter("last_dataset", "engineering_gate"),
+                    new NpgsqlParameter("last_summary", "new checkpoint summary"),
+                    new NpgsqlParameter("pending_clarification_question", DBNull.Value),
+                    new NpgsqlParameter("session_id", session.SessionId));
+                Execute(
+                    writerConnection,
+                    writerTransaction,
+                    "DELETE FROM dataagent_analysis_turn WHERE session_id = @session_id",
+                    new NpgsqlParameter("session_id", session.SessionId));
+                Execute(
+                    writerConnection,
+                    writerTransaction,
+                    """
+                    INSERT INTO dataagent_analysis_turn (
+                        session_id,
+                        turn_index,
+                        turn_id,
+                        question,
+                        intent,
+                        created_at,
+                        dataset,
+                        sql,
+                        row_count,
+                        summary,
+                        validated,
+                        rejected_reason)
+                    VALUES (
+                        @session_id,
+                        @turn_index,
+                        @turn_id,
+                        @question,
+                        @intent,
+                        @created_at,
+                        @dataset,
+                        @sql,
+                        @row_count,
+                        @summary,
+                        @validated,
+                        @rejected_reason)
+                    """,
+                    new NpgsqlParameter("session_id", session.SessionId),
+                    new NpgsqlParameter("turn_index", 1),
+                    new NpgsqlParameter("turn_id", "turn-new"),
+                    new NpgsqlParameter("question", "new question"),
+                    new NpgsqlParameter("intent", (int)DataAgentAnalysisTurnIntent.Continue),
+                    new NpgsqlParameter("created_at", newTurnAt.ToString("O")),
+                    new NpgsqlParameter("dataset", "engineering_gate"),
+                    new NpgsqlParameter("sql", "SELECT name FROM engineering_gate LIMIT 20"),
+                    new NpgsqlParameter("row_count", 1),
+                    new NpgsqlParameter("summary", "new turn summary"),
+                    new NpgsqlParameter("validated", true),
+                    new NpgsqlParameter("rejected_reason", string.Empty));
+
+                Task<DataAgentAnalysisSession?> getTask = Task.Run(() => store.Get(session.SessionId));
+                if (getTask.Wait(TimeSpan.FromMilliseconds(500)))
+                {
+                    AssertCoherentSnapshot(
+                        getTask.Result,
+                        DataAgentAnalysisSessionStatus.AwaitingClarification,
+                        oldTurnAt,
+                        "document_index",
+                        "old checkpoint summary",
+                        "turn-old",
+                        "old turn summary");
+                }
+                else
+                {
+                    writerTransaction.Commit();
+                    writerCommitted = true;
+                    Assert.That(getTask.Wait(TimeSpan.FromSeconds(5)), Is.True);
+                    AssertCoherentSnapshot(
+                        getTask.Result,
+                        DataAgentAnalysisSessionStatus.ReadyToSummarize,
+                        newTurnAt,
+                        "engineering_gate",
+                        "new checkpoint summary",
+                        "turn-new",
+                        "new turn summary");
+                }
+
+                if (writerCommitted == false)
+                {
+                    writerTransaction.Commit();
+                    writerCommitted = true;
+                }
+
+                DataAgentAnalysisSession? final = store.Get(session.SessionId);
+                AssertCoherentSnapshot(
+                    final,
+                    DataAgentAnalysisSessionStatus.ReadyToSummarize,
+                    newTurnAt,
+                    "engineering_gate",
+                    "new checkpoint summary",
+                    "turn-new",
+                    "new turn summary");
+            }
+            finally
+            {
+                if (writerCommitted == false)
+                    writerTransaction.Rollback();
+            }
+        }
+        finally
+        {
+            DeleteSessionRows(connectionString, session.SessionId);
+        }
+    }
+
+    [Test]
     public void SourceUsesTransactionsAndRowLockForUpdates()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -353,6 +529,24 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
         });
     }
 
+    [Test]
+    public void SourceUsesInvariantTimestampFormattingForPersistedValues()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "PostgresDataAgentAnalysisSessionStore.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain(".ToString(\"O\", CultureInfo.InvariantCulture)"));
+            Assert.That(source, Does.Not.Contain(".ToString(\"O\")"));
+        });
+    }
+
     static void AssertReadOnlyTurns(IReadOnlyList<DataAgentAnalysisTurn> turns)
     {
         Assert.That(turns, Is.AssignableTo<ICollection<DataAgentAnalysisTurn>>());
@@ -370,6 +564,29 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
             "mutation",
             true,
             string.Empty)));
+    }
+
+    static void AssertCoherentSnapshot(
+        DataAgentAnalysisSession? session,
+        DataAgentAnalysisSessionStatus status,
+        DateTimeOffset updatedAt,
+        string dataset,
+        string summary,
+        string turnId,
+        string turnSummary)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(session, Is.Not.Null);
+            Assert.That(session!.Status, Is.EqualTo(status));
+            Assert.That(session.UpdatedAt, Is.EqualTo(updatedAt));
+            Assert.That(session.LastDataset, Is.EqualTo(dataset));
+            Assert.That(session.LastSummary, Is.EqualTo(summary));
+            Assert.That(session.Turns, Has.Count.EqualTo(1));
+            Assert.That(session.Turns[0].TurnId, Is.EqualTo(turnId));
+            Assert.That(session.Turns[0].Dataset, Is.EqualTo(dataset));
+            Assert.That(session.Turns[0].Summary, Is.EqualTo(turnSummary));
+        });
     }
 
     static void DeleteSessionRows(string connectionString, string sessionId)
@@ -390,6 +607,22 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
     static void Execute(NpgsqlConnection connection, string commandText, params NpgsqlParameter[] parameters)
     {
         using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = commandText;
+
+        foreach (NpgsqlParameter parameter in parameters)
+            command.Parameters.Add(parameter);
+
+        command.ExecuteNonQuery();
+    }
+
+    static void Execute(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string commandText,
+        params NpgsqlParameter[] parameters)
+    {
+        using NpgsqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = commandText;
 
         foreach (NpgsqlParameter parameter in parameters)
