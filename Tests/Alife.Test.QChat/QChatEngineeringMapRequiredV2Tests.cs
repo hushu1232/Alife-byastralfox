@@ -31,8 +31,12 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "QChat recent diagnostics command",
         "QChat diagnostics cache redaction",
         "DataAgent trace diagnostics",
+        "DataAgent progress diagnostics",
+        "DataAgent scenario context diagnostics",
         "QChat Kalman semantic state estimator",
-        "QChat Kalman settle window integration"
+        "QChat Kalman settle window integration",
+        "Alife capability governance catalog",
+        "DataAgent node tool scope policy"
     ];
 
     [Test]
@@ -68,6 +72,56 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("HiddenContextPattern"));
             Assert.That(declaration, Does.Contain("SqlFragmentPattern"));
         });
+    }
+
+    [Test]
+    public void ScenarioContextDiagnosticsCheckRequiresQChatNoDirectImportGuard()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent scenario context diagnostics");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("tools/check-dataagent-readiness.ps1"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextIntegrated"));
+            Assert.That(declaration, Does.Contain("Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs"));
+            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioKnowledgePackProvider"));
+            Assert.That(declaration, Does.Contain("DataAgentScenarioContextBuilder"));
+            Assert.That(declaration, Does.Contain("DataAgentToolScopePolicy"));
+            Assert.That(script, Does.Contain("function Test-DirectoryOmitsMarker"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("*.cs"));
+            Assert.That(declaration, Does.Contain("AllDirectories"));
+        });
+    }
+
+    [Test]
+    public void QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string qchatRoot = Path.Combine(repoRoot, "sources", "Alife.Function", "Alife.Function.QChat");
+        string[] forbiddenMarkers =
+        [
+            "DataAgentScenarioKnowledgePackProvider",
+            "DataAgentScenarioContextBuilder",
+            "DataAgentToolScopePolicy"
+        ];
+
+        string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)
+            .SelectMany(path =>
+            {
+                string text = File.ReadAllText(path);
+                return forbiddenMarkers
+                    .Where(marker => text.Contains(marker, StringComparison.Ordinal))
+                    .Select(marker => $"{Path.GetRelativePath(repoRoot, path)}:{marker}");
+            })
+            .ToArray();
+
+        Assert.That(offenders, Is.Empty);
     }
 
     static string FindAddCheckDeclaration(string script, string checkName)

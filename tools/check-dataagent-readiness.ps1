@@ -86,6 +86,49 @@ function Test-FileOmitsMarker {
 
     return $true
 }
+
+function New-StringFromCodePoints {
+    param(
+        [int[]]$CodePoints
+    )
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($codePoint in $CodePoints) {
+        [void]$builder.Append([char]$codePoint)
+    }
+
+    return $builder.ToString()
+}
+
+function Test-ScenarioPackChineseText {
+    param(
+        [string]$RelativePath,
+        [string[]]$RequiredTerms,
+        [string[]]$ForbiddenFragments
+    )
+
+    $fullPath = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return $false
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false, $true)
+    $content = [System.IO.File]::ReadAllText($fullPath, $utf8)
+
+    foreach ($term in $RequiredTerms) {
+        if ($content.IndexOf($term, [System.StringComparison]::Ordinal) -lt 0) {
+            return $false
+        }
+    }
+
+    foreach ($fragment in $ForbiddenFragments) {
+        if ($content.IndexOf($fragment, [System.StringComparison]::Ordinal) -ge 0) {
+            return $false
+        }
+    }
+
+    return $content.IndexOf([string][char]0xFFFD, [System.StringComparison]::Ordinal) -lt 0
+}
 $checks = @(
     New-Check -Group "Core" -Name "DataAgentModulePresent" -Passed (Test-Path -LiteralPath (Join-Path $repoRoot "Sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj")) -Detail "Alife.Function.DataAgent project"
     New-Check -Group "Core" -Name "SqliteSchemaInitializes" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentSchemaInitializer.cs" @("engineering_gate", "query_audit")) -Detail "schema initializer markers"
@@ -127,6 +170,11 @@ $checks = @(
     New-Check -Group "Store" -Name "PostgresStoreProviderPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/PostgresDataAgentStore.cs" @("PostgresDataAgentStore", "NpgsqlConnection", "tool_broker_audit", "query_audit")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj" @("Npgsql"))) -Detail "PostgreSQL store provider markers"
     New-Check -Group "Store" -Name "PostgresLiveTestsEnvironmentGated" -Passed (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentPostgresStoreTests.cs" @("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION", "Assert.Ignore", "LivePostgresStoreInitializesImportsFixturesAndExecutesReadOnlyQuery")) -Detail "PostgreSQL live tests environment gate"
     New-Check -Group "Store" -Name "DataAgentServiceUsesStoreBoundary" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentService.cs" @("IDataAgentStore", "new SqliteDataAgentStore", "store.Query", "store.RecordAccepted", "store.RecordRejected")) -Detail "DataAgentService store boundary usage"
+    # V2.10 governance readiness gates
+    New-Check -Group "Governance" -Name "DataAgentScenarioKnowledgePackPresent" -Passed ((Test-FileMarker "docs/dataagent/scenario-packs/engineering.zh-CN.json" @("engineering_readiness", "engineering_gate", "status", "required")) -and (Test-ScenarioPackChineseText "docs/dataagent/scenario-packs/engineering.zh-CN.json" @((New-StringFromCodePoints @(0x5de5,0x7a0b,0x95e8,0x7981)), (New-StringFromCodePoints @(0x6700,0x8fd1,0x5931,0x8d25,0x7684,0x6d4b,0x8bd5)), (New-StringFromCodePoints @(0x7f3a,0x5931,0x9879)), (New-StringFromCodePoints @(0x6587,0x6863,0x8bc1,0x636e)), (New-StringFromCodePoints @(0x5931,0x8d25)), (New-StringFromCodePoints @(0x5fc5,0x9700))) @((New-StringFromCodePoints @(0x5bb8,0x30e7,0x25bc)), (New-StringFromCodePoints @(0x93c8,0x20ac)), (New-StringFromCodePoints @(0x6fb6,0x8fab,0x89e6)), (New-StringFromCodePoints @(0x8e47,0x546d,0x6e36)))) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentScenarioKnowledgePackProvider.cs" @("DataAgentScenarioKnowledgePackProvider", "Load", "ResolveTerms")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentScenarioKnowledgePackPresent", "ResolveTerms(pack", "engineering_gate", "field=status"))) -Detail "V2.10 scenario knowledge pack runtime readiness"
+    New-Check -Group "Governance" -Name "DataAgentScenarioContextIntegrated" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentScenarioContext.cs" @("DataAgentScenarioContext", "scenario_context_matched", "CandidateDatasets", "CandidateFields")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentScenarioContextBuilder.cs" @("DataAgentScenarioContextBuilder", "Build", "ReasonMatched", "catalog.HasField")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/LlmDataAgentPlannerPromptFormatter.cs" @("Scenario context:", "Scenario context is a hint only", "Do not output SQL")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/LlmDataAgentQueryPlanner.cs" @("request.ScenarioContext", "formatter.Format", "llm_invalid_output_fallback")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentScenarioDiagnosticsFormatter.cs" @("DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "reason=")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentScenarioContextIntegrated", "scenario_context=true;prompt_hint=true;owner_diag=true;sql_boundary=true", "DataAgentScenarioContextBuilder", "DataAgentScenarioDiagnosticsFormatter", "LlmDataAgentQueryPlanner", "llm_invalid_output_fallback", "unsupported_operator", "throwOnInvalidBytes: true", "\uFFFD")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentScenarioContextBuilderTests.cs" @("DataAgentScenarioContextBuilderTests")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentScenarioDiagnosticsFormatterTests.cs" @("DataAgentScenarioDiagnosticsFormatterTests", "DataAgent scenario diagnostics")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentV211ReadinessTests.cs" @("DataAgentV211ReadinessTests", "ScenarioContextNarrowsPlannerAttentionWithoutSqlAuthority", "ScenarioDiagnosticsAreDataAgentOwnedAndOwnerSafe", "throwOnInvalidBytes: true"))) -Detail "V2.11 scenario context prompt and owner diagnostics readiness"
+    New-Check -Group "Governance" -Name "DataAgentNodeToolScopePolicyPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" @("DataAgentToolScopePolicy", "QueryPlanner", "GenerateQueryPlan", "DiagnosticsRouter", "ReadProgressDiagnostics", "ExecuteReadOnlyQuery")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentNodeToolScopePolicyPresent", "planner_generate=true", "diagnostics_progress=true"))) -Detail "V2.10 node capability scope policy markers"
+    New-Check -Group "Governance" -Name "DataAgentSafetyCapabilitiesRemainDeterministic" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" @("QueryPlanValidator", "SqlCompiler", "SqlSafety", "ReadOnlyExecute", "AllowsModelCall")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentSafetyCapabilitiesRemainDeterministic", "validator_model=false", "compiler_model=false", "safety_model=false", "execute_model=false"))) -Detail "V2.10 deterministic safety capability markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionServicePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("DataAgentAnalysisService", "DataAgentService", "ExecuteQueryTurn", "analysis_session_ended")) -Detail "analysis session service markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStorePresent" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/InMemoryDataAgentAnalysisSessionStore.cs" @("InMemoryDataAgentAnalysisSessionStore", "ConcurrentDictionary", "IDataAgentAnalysisSessionStore")) -Detail "in-memory analysis session store markers"
     New-Check -Group "Analysis" -Name "AnalysisSessionStateMachineTransitions" -Passed (Test-FileMarker "Sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("AwaitingClarification", "ReadyToSummarize", "Summarized", "Ended")) -Detail "analysis session state transition markers"
@@ -159,6 +207,7 @@ $checks = @(
     New-Check -Group "Analysis" -Name "DataAgentEvidenceDiagnosticsPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentEvidenceDiagnosticsFormatter.cs" @("DataAgentEvidenceDiagnosticsFormatter", "DataAgent evidence diagnostics", "state_estimate_reason_code")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("evidenceDiagnosticsPublisher", "DataAgentEvidencePackBuilder", "DataAgentEvidenceDiagnosticsFormatter.Format")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("functionService.RecordRecentDataAgentEvidenceDiagnostics")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentEvidencePackTests.cs" @("EvidenceDiagnosticsFormatterEmitsCompactStateEstimate", "EvidenceDiagnosticsFormatterEmitsUnavailableStateWhenPackMissing", "EvidenceDiagnosticsFormatterSanitizesReasonCode")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs" @("StartCallsOrchestratorAndPublishesOrchestratedContext", "DataAgent evidence diagnostics", "executed_sql=true")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentEvidenceDiagnosticsPresent", "owner_diag=true", "analysis_confidence=true", "risk_level=true"))) -Detail "DataAgent owner evidence diagnostics markers"
     New-Check -Group "Analysis" -Name "DataAgentEvidenceRecentDiagnosticsBridgePresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("evidenceDiagnosticsPublisher", "DataAgentEvidenceDiagnosticsFormatter.Format")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("functionService.RecordRecentDataAgentEvidenceDiagnostics")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.QChat/QChatRecentDiagnosticsCache.cs" @("QChatRecentDiagnosticsCache", "DataAgentEvidence")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticTextSanitizer.cs" @("hidden_context_redacted", "[tool_route_context]", "[data_agent_evidence_pack]"))) -Detail "DataAgent evidence diagnostics bridge to recent QChat diagnostics cache"
     New-Check -Group "Analysis" -Name "DataAgentTraceTimelinePresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentTraceModels.cs" @("DataAgentTraceEvent", "DataAgentTraceTimeline", "DataAgentTraceEventKind")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentTraceRecorder.cs" @("DataAgentTraceRecorder", "GetLatest", "GetRecent", "PruneExpiredLocked")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentTraceDiagnosticsFormatter.cs" @("DataAgent trace diagnostics", "trace_unavailable")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("traceDiagnosticsPublisher", "DataAgentTraceTimelineBuilder", "DataAgentTraceDiagnosticsFormatter.Format")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentTraceTimelinePresent", "sql=redacted", "owner_diag=true", "hidden_context_redacted=true")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentTraceRecorderTests.cs" @("GetLatestReturnsNewestTimelineForSession", "ReadsFilterExpiredTimelinesWithoutRemovingThem")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentTraceDiagnosticsFormatterTests.cs" @("FormatEmitsStableTimelineDiagnostics", "FormatRedactsUnsafeFactValues"))) -Detail "DataAgent trace timeline diagnostics markers"
+    New-Check -Group "Analysis" -Name "DataAgentProgressStreamingPresent" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentProgressModels.cs" @("DataAgentProgressEvent", "DataAgentProgressEventKind", "RouteGate", "Planner", "Execute", "Checkpoint")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentProgressRecorder.cs" @("DataAgentProgressRecorder", "GetLatest", "GetRecent", "PruneExpiredLocked")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentProgressDiagnosticsFormatter.cs" @("DataAgent progress diagnostics", "progress_unavailable")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentProgressDiagnosticsPublisher.cs" @("DataAgentProgressDiagnosticsPublisher", "DataAgentProgressDiagnosticsFormatter.Format")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentService.cs" @("DataAgentProgressEventKind.Planner", "DataAgentProgressEventKind.Execute", "sql")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisService.cs" @("progressSink", "DataAgentProgressEventKind.Summarize", "DataAgentProgressEventKind.End")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisOrchestrator.cs" @("DataAgentProgressEventKind.RouteGate", "DataAgentProgressEventKind.Checkpoint", "PublishCheckpointProgress")) -and (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentReadiness.cs" @("DataAgentProgressStreamingPresent", "DataAgent progress diagnostics", "sql=redacted", "hidden_context_redacted=true")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentProgressStreamingTests.cs" @("DataAgentProgressStreamingTests", "AcceptedQueryPublishesRuntimeBoundariesAndDoesNotCallAnswerTwice")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentProgressDiagnosticsPublisherTests.cs" @("DataAgentProgressDiagnosticsPublisherTests", "XmlFunctionCallerStoresRecentProgressDiagnostics"))) -Detail "DataAgent progress stream diagnostics markers"
     New-Check -Group "Analysis" -Name "AnalysisToolHandlerPresent" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("DataAgentAnalysisToolHandler", "dataagent_analysis_start", "dataagent_analysis_continue", "dataagent_analysis_summarize", "dataagent_analysis_end")) -Detail "analysis XML tool handler markers"
     New-Check -Group "Analysis" -Name "AnalysisToolsRegisteredInModule" -Passed (Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" @("DataAgentAnalysisCapabilityProvider", "InMemoryDataAgentAnalysisSessionStore", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext")) -Detail "analysis tool module dynamic registration markers"
     New-Check -Group "Analysis" -Name "AnalysisTerminalToolsDoNotQuery" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("dataagent_analysis_summarize", "dataagent_analysis_end", "orchestrator.Summarize", "orchestrator.End")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs" @("SummarizeCallsOrchestratorAndPublishesTerminalContext", "EndCallsOrchestratorAndPublishesTerminalContext", "orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded", "orchestration_trace=End:Succeeded>Checkpoint:Succeeded"))) -Detail "terminal analysis tools avoid answer-boundary query calls"
@@ -166,7 +215,7 @@ $checks = @(
 
 Write-Output "DataAgent Readiness"
 
-foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Store", "Analysis")) {
+foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Store", "Governance", "Analysis")) {
     Write-Output "[$group]"
     foreach ($check in ($checks | Where-Object { $_.Group -eq $group })) {
         if ($check.Passed) {
@@ -180,7 +229,7 @@ foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", 
 
 $requiredPassed = @($checks | Where-Object { $_.Passed }).Count
 $requiredMissing = @($checks | Where-Object { -not $_.Passed }).Count
-$expectedRequired = 75
+$expectedRequired = 80
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output "[Summary]"

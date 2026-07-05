@@ -41,7 +41,7 @@ public sealed class LlmDataAgentQueryPlanner : IDataAgentQueryPlanner
         ArgumentNullException.ThrowIfNull(request);
 
         DataAgentSchemaSnapshot schemaSnapshot = new DataAgentSchemaIntrospector(catalog, databasePath).Inspect();
-        DataAgentLlmPlannerPrompt prompt = formatter.Format(request, catalog, schemaSnapshot);
+        DataAgentLlmPlannerPrompt prompt = formatter.Format(request, catalog, schemaSnapshot, request.ScenarioContext);
         string rawOutput = client.Complete(prompt);
         DataAgentLlmPlannerResult result = new LlmDataAgentPlannerResponseParser(catalog).Parse(rawOutput);
 

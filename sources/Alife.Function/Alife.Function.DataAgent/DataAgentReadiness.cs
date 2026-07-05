@@ -1,6 +1,7 @@
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Framework.Models.StateEstimation;
+using System.Text;
 
 namespace Alife.Function.DataAgent;
 
@@ -811,6 +812,216 @@ public static class DataAgentReadiness
             checks.Add(traceTimelineReady
                 ? Pass("DataAgentTraceTimelinePresent", traceTimelineReadyDetail)
                 : Fail("DataAgentTraceTimelinePresent", traceTimelineFailureDetail));
+
+            DateTimeOffset progressNow = new(2026, 7, 3, 10, 0, 0, TimeSpan.Zero);
+            DataAgentProgressRecorder progressRecorder = new();
+            List<string> progressDiagnostics = [];
+            IDataAgentProgressSink progressSink = new DataAgentProgressDiagnosticsPublisher(
+                progressRecorder,
+                progressDiagnostics.Add,
+                () => progressNow);
+            InMemoryDataAgentAnalysisSessionStore progressStore = new();
+            DataAgentAnalysisService progressAnalysisService = new(
+                new DataAgentService(databasePath),
+                progressStore,
+                progressSink: progressSink,
+                clock: () => progressNow);
+            DataAgentAnalysisOrchestrator progressOrchestrator = new(
+                progressAnalysisService,
+                progressStore,
+                progressSink: progressSink,
+                progressClock: () => progressNow);
+            DataAgentOrchestrationResult progressResult = progressOrchestrator.Start(new DataAgentOrchestrationRequest(
+                "owner",
+                "Which required gates are not passing?",
+                null,
+                RouteAllowsQuery: true,
+                RouteContext: new DataAgentToolRouteContext(
+                    true,
+                    "dataagent_analysis_start",
+                    true,
+                    true,
+                    "route-progress",
+                    "analysis_start",
+                    "route_allowed",
+                    string.Empty)));
+            progressSink.Publish(new DataAgentProgressEvent(
+                progressResult.SessionId,
+                DataAgentProgressEventKind.Execute,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Succeeded,
+                "read_only_query_executed",
+                progressResult.Checkpoint.TurnCount,
+                progressNow,
+                true,
+                true,
+                false,
+                new Dictionary<string, string>
+                {
+                    ["sql"] = "SELECT * FROM engineering_gate WHERE required = 1",
+                    ["hidden_context"] = "[hidden_context]secret[/hidden_context]",
+                    ["data_agent_evidence_pack"] = "[data_agent_evidence_pack]secret[/data_agent_evidence_pack]",
+                    ["tool_route_context"] = "Allowed XML tools for this turn: dataagent_query"
+                }));
+            IReadOnlyList<DataAgentProgressEvent> progressEvents = progressRecorder.GetRecent(progressResult.SessionId, progressNow);
+            string progressDiagnosticsText = progressDiagnostics.LastOrDefault() ??
+                DataAgentProgressDiagnosticsFormatter.Format(progressEvents, progressResult.SessionId, progressNow);
+            bool progressStructuralReady =
+                progressResult.Response.Accepted &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.RouteGate) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Planner) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Execute) &&
+                progressEvents.Any(progressEvent => progressEvent.Kind == DataAgentProgressEventKind.Checkpoint);
+            bool progressOwnerDiagnosticsReady =
+                progressDiagnosticsText.Contains("DataAgent progress diagnostics", StringComparison.Ordinal);
+            bool progressSqlRedacted =
+                progressDiagnosticsText.Contains("sql=redacted", StringComparison.Ordinal) &&
+                progressDiagnosticsText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("engineering_gate", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressHiddenContextRedacted =
+                progressDiagnosticsText.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("hidden context", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressEvidencePackRedacted =
+                progressDiagnosticsText.Contains("data_agent_evidence_pack", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressToolRouteRedacted =
+                progressDiagnosticsText.Contains("tool_route_context", StringComparison.OrdinalIgnoreCase) == false &&
+                progressDiagnosticsText.Contains("Allowed XML tools", StringComparison.OrdinalIgnoreCase) == false;
+            bool progressStreamingReady =
+                progressStructuralReady &&
+                progressOwnerDiagnosticsReady &&
+                progressSqlRedacted &&
+                progressHiddenContextRedacted &&
+                progressEvidencePackRedacted &&
+                progressToolRouteRedacted;
+            const string progressStreamingReadyDetail =
+                "progress_stream=true;owner_diag=true;sql_redacted=true;hidden_context_redacted=true;evidence_pack_redacted=true;tool_route_redacted=true";
+            string progressStreamingFailureDetail =
+                $"progress_stream={LowerBool(progressStructuralReady)};owner_diag={LowerBool(progressOwnerDiagnosticsReady)};sql_redacted={LowerBool(progressSqlRedacted)};hidden_context_redacted={LowerBool(progressHiddenContextRedacted)};evidence_pack_redacted={LowerBool(progressEvidencePackRedacted)};tool_route_redacted={LowerBool(progressToolRouteRedacted)}";
+            checks.Add(progressStreamingReady
+                ? Pass("DataAgentProgressStreamingPresent", progressStreamingReadyDetail)
+                : Fail("DataAgentProgressStreamingPresent", progressStreamingFailureDetail));
+
+            string repoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+            string scenarioPackPath = Path.Combine(repoRoot, "docs", "dataagent", "scenario-packs", "engineering.zh-CN.json");
+            Encoding strictUtf8 = new UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false,
+                throwOnInvalidBytes: true);
+            string scenarioPackText = File.ReadAllText(scenarioPackPath, strictUtf8);
+            DataAgentScenarioKnowledgePack pack = DataAgentScenarioKnowledgePackProvider.Load(scenarioPackPath);
+            IReadOnlyList<DataAgentScenarioTerm> resolvedTerms =
+                DataAgentScenarioKnowledgePackProvider.ResolveTerms(pack, "看看工程门禁里最近失败的必需项");
+            bool scenarioPackUtf8Readable =
+                scenarioPackText.Contains("工程门禁", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("最近失败的测试", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("缺失项", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("文档证据", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("失败", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("必需", StringComparison.Ordinal) &&
+                scenarioPackText.Contains("宸ョ▼", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("鏈€", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("澶辫触", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("蹇呭渶", StringComparison.Ordinal) == false &&
+                scenarioPackText.Contains("\uFFFD", StringComparison.Ordinal) == false;
+            bool scenarioPackHasEngineeringGateStatus = resolvedTerms.Any(term =>
+                string.Equals(term.Dataset, "engineering_gate", StringComparison.Ordinal) &&
+                term.Fields.Contains("status", StringComparer.Ordinal));
+            bool scenarioPackHasTestRunFailed = resolvedTerms.Any(term =>
+                string.Equals(term.Dataset, "test_run", StringComparison.Ordinal) &&
+                term.Fields.Contains("failed", StringComparer.Ordinal));
+            bool scenarioPackReady =
+                string.Equals(pack.Scenario, "engineering_readiness", StringComparison.Ordinal) &&
+                scenarioPackUtf8Readable &&
+                scenarioPackHasEngineeringGateStatus &&
+                scenarioPackHasTestRunFailed;
+            checks.Add(scenarioPackReady
+                ? Pass("DataAgentScenarioKnowledgePackPresent", "scenario=engineering_readiness;dataset=engineering_gate;field=status;utf8=readable")
+                : Fail("DataAgentScenarioKnowledgePackPresent", $"path={scenarioPackPath};scenario={pack.Scenario};utf8={LowerBool(scenarioPackUtf8Readable)};engineering_gate_status={LowerBool(scenarioPackHasEngineeringGateStatus)};test_run_failed={LowerBool(scenarioPackHasTestRunFailed)};terms={string.Join(",", resolvedTerms.Select(term => term.Dataset))}"));
+
+            DataAgentCatalog scenarioCatalog = DataAgentCatalog.CreateDefault();
+            DataAgentScenarioContext scenarioContext = new DataAgentScenarioContextBuilder().Build(
+                scenarioCatalog,
+                pack,
+                "看看工程门禁里最近失败的必需项");
+            DataAgentLlmPlannerPrompt scenarioPrompt = new LlmDataAgentPlannerPromptFormatter().Format(
+                new DataAgentQueryRequest("看看工程门禁里最近失败的必需项", "owner", "zh-CN", false),
+                scenarioCatalog,
+                schemaSnapshot,
+                scenarioContext);
+            string scenarioDiagnostics = DataAgentScenarioDiagnosticsFormatter.Format(scenarioContext);
+            bool scenarioContextMatched =
+                string.Equals(scenarioContext.ReasonCode, DataAgentScenarioContext.ReasonMatched, StringComparison.Ordinal) &&
+                scenarioContext.CandidateDatasets.SequenceEqual(["engineering_gate", "test_run"], StringComparer.Ordinal) &&
+                scenarioContext.CandidateFields.Contains("required", StringComparer.Ordinal) &&
+                scenarioContext.CandidateFields.Contains("failed", StringComparer.Ordinal) &&
+                scenarioContext.Metrics.Select(metric => metric.Name).SequenceEqual(["失败", "必需"], StringComparer.Ordinal);
+            bool scenarioPromptHintReady =
+                scenarioPrompt.Schema.Contains("Scenario context:", StringComparison.Ordinal) &&
+                scenarioPrompt.Schema.Contains("Scenario context is a hint only", StringComparison.Ordinal) &&
+                scenarioPrompt.System.Contains("Do not output SQL", StringComparison.Ordinal);
+            bool scenarioOwnerDiagnosticsReady =
+                scenarioDiagnostics.Contains("DataAgent scenario diagnostics", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("reason=scenario_context_matched", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("metrics=失败:status!=passed;必需:required=true", StringComparison.Ordinal) &&
+                scenarioDiagnostics.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
+            DataAgentLlmPlannerPrompt? capturedUnsafeScenarioPrompt = null;
+            DataAgentQueryPlanEnvelope unsafeScenarioEnvelope = new LlmDataAgentQueryPlanner(
+                databasePath,
+                new CapturingFixedLlmClient(
+                    """
+                    {"type":"plan","planner_name":"LlmDataAgentQueryPlanner","intent":"unsafe_operator","dataset":"engineering_gate","confidence":"medium","signals":["scenario"],"reason":"try unsupported operator","select_fields":["name","status"],"filters":[{"field":"status","operator":"starts_with","value":"fail"}],"sorts":[],"limit":20}
+                    """,
+                    prompt => capturedUnsafeScenarioPrompt = prompt),
+                new DeterministicDataAgentQueryPlanner()).Plan(new DataAgentQueryRequest(
+                    "看看工程门禁里最近失败的必需项",
+                    "owner",
+                    "zh-CN",
+                    false,
+                    scenarioContext));
+            bool scenarioBoundaryReady =
+                capturedUnsafeScenarioPrompt?.Schema.Contains("Scenario context:", StringComparison.Ordinal) == true &&
+                unsafeScenarioEnvelope.Plan is not null &&
+                unsafeScenarioEnvelope.Clarification is null &&
+                unsafeScenarioEnvelope.Explanation.Signals.Contains("llm_invalid_output_fallback", StringComparer.Ordinal) &&
+                unsafeScenarioEnvelope.Explanation.Reason.Contains("unsupported_operator", StringComparison.Ordinal) &&
+                unsafeScenarioEnvelope.Explanation.Reason.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
+            bool scenarioSqlBoundaryReady =
+                typeof(DataAgentQueryPlanValidator).IsClass &&
+                typeof(DataAgentSqlCompiler).IsClass &&
+                typeof(DataAgentSqlSafetyValidator).IsClass &&
+                typeof(DataAgentQueryExecutor).IsClass &&
+                scenarioBoundaryReady;
+            bool scenarioContextIntegrated =
+                scenarioContextMatched &&
+                scenarioPromptHintReady &&
+                scenarioOwnerDiagnosticsReady &&
+                scenarioSqlBoundaryReady;
+            checks.Add(scenarioContextIntegrated
+                ? Pass("DataAgentScenarioContextIntegrated", "scenario_context=true;prompt_hint=true;owner_diag=true;sql_boundary=true")
+                : Fail("DataAgentScenarioContextIntegrated", $"scenario_context={LowerBool(scenarioContextMatched)};prompt_hint={LowerBool(scenarioPromptHintReady)};owner_diag={LowerBool(scenarioOwnerDiagnosticsReady)};sql_boundary={LowerBool(scenarioSqlBoundaryReady)};reason={scenarioContext.ReasonCode};datasets={string.Join(",", scenarioContext.CandidateDatasets)};fields={string.Join(",", scenarioContext.CandidateFields)};metrics={string.Join(",", scenarioContext.Metrics.Select(metric => metric.Name))}"));
+
+            DataAgentNodeToolScope plannerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanner);
+            DataAgentNodeToolScope diagnosticsScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.DiagnosticsRouter);
+            bool nodeToolScopePolicyReady =
+                plannerScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.GenerateQueryPlan, StringComparer.Ordinal) &&
+                plannerScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false &&
+                diagnosticsScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ReadProgressDiagnostics, StringComparer.Ordinal) &&
+                diagnosticsScope.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false;
+            checks.Add(nodeToolScopePolicyReady
+                ? Pass("DataAgentNodeToolScopePolicyPresent", "planner_generate=true;planner_execute=false;diagnostics_progress=true;diagnostics_execute=false")
+                : Fail("DataAgentNodeToolScopePolicyPresent", $"planner={string.Join(",", plannerScope.AllowedCapabilities)};diagnostics={string.Join(",", diagnosticsScope.AllowedCapabilities)}"));
+
+            DataAgentNodeToolScope validatorScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.QueryPlanValidator);
+            DataAgentNodeToolScope compilerScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.SqlCompiler);
+            DataAgentNodeToolScope safetyScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.SqlSafety);
+            DataAgentNodeToolScope executeScope = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.ReadOnlyExecute);
+            bool deterministicSafetyReady =
+                validatorScope.AllowsModelCall == false &&
+                compilerScope.AllowsModelCall == false &&
+                safetyScope.AllowsModelCall == false &&
+                executeScope.AllowsModelCall == false;
+            checks.Add(deterministicSafetyReady
+                ? Pass("DataAgentSafetyCapabilitiesRemainDeterministic", "validator_model=false;compiler_model=false;safety_model=false;execute_model=false")
+                : Fail("DataAgentSafetyCapabilitiesRemainDeterministic", $"validator={LowerBool(validatorScope.AllowsModelCall)};compiler={LowerBool(compilerScope.AllowsModelCall)};safety={LowerBool(safetyScope.AllowsModelCall)};execute={LowerBool(executeScope.AllowsModelCall)}"));
         }
         catch (Exception ex)
         {
@@ -825,6 +1036,23 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
 
     static string LowerBool(bool value) => value ? "true" : "false";
+
+    static string FindRepositoryRoot(string startDirectory)
+    {
+        DirectoryInfo? directory = new(startDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "docs")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return Directory.GetCurrentDirectory();
+    }
 
     sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
     {
@@ -845,6 +1073,15 @@ public static class DataAgentReadiness
     sealed class FixedLlmClient(string raw) : ILlmDataAgentPlannerClient
     {
         public string Complete(DataAgentLlmPlannerPrompt prompt) => raw;
+    }
+
+    sealed class CapturingFixedLlmClient(string raw, Action<DataAgentLlmPlannerPrompt> capturePrompt) : ILlmDataAgentPlannerClient
+    {
+        public string Complete(DataAgentLlmPlannerPrompt prompt)
+        {
+            capturePrompt(prompt);
+            return raw;
+        }
     }
 
     sealed class RecordingRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor

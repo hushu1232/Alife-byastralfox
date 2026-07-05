@@ -9,34 +9,49 @@ public sealed class DataAgentAnalysisService
     const int MaxPendingClarificationQuestionLength = 240;
     const string NonQueryTerminalTurnRejectedReason = "non_query_terminal_turn";
 
-    readonly Func<string, DataAgentAnswer> answer;
+    readonly Func<string, string, int, DataAgentAnswer> answer;
     readonly IDataAgentAnalysisSessionStore store;
     readonly DataAgentFollowUpInterpreter followUpInterpreter;
     readonly Func<DateTimeOffset> clock;
+    readonly IDataAgentProgressSink? progressSink;
 
     public DataAgentAnalysisService(
         DataAgentService dataAgentService,
-        IDataAgentAnalysisSessionStore store)
-        : this((dataAgentService ?? throw new ArgumentNullException(nameof(dataAgentService))).Answer,
-            store,
-            new DataAgentFollowUpInterpreter(),
-            () => DateTimeOffset.UtcNow)
+        IDataAgentAnalysisSessionStore store,
+        IDataAgentProgressSink? progressSink = null,
+        Func<DateTimeOffset>? clock = null)
     {
+        ArgumentNullException.ThrowIfNull(dataAgentService);
+        ArgumentNullException.ThrowIfNull(store);
+
+        Func<DateTimeOffset> resolvedClock = clock ?? (() => DateTimeOffset.UtcNow);
+        this.answer = (question, sessionId, turnCount) => dataAgentService.Answer(
+            question,
+            progressSink,
+            sessionId,
+            turnCount,
+            resolvedClock);
+        this.store = store;
+        this.followUpInterpreter = new DataAgentFollowUpInterpreter();
+        this.clock = resolvedClock;
+        this.progressSink = progressSink;
     }
 
     public DataAgentAnalysisService(
         Func<string, DataAgentAnswer> answer,
         IDataAgentAnalysisSessionStore store,
         DataAgentFollowUpInterpreter? followUpInterpreter = null,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        IDataAgentProgressSink? progressSink = null)
     {
         ArgumentNullException.ThrowIfNull(answer);
         ArgumentNullException.ThrowIfNull(store);
 
-        this.answer = answer;
+        this.answer = (question, _, _) => answer(question);
         this.store = store;
         this.followUpInterpreter = followUpInterpreter ?? new DataAgentFollowUpInterpreter();
         this.clock = clock ?? (() => DateTimeOffset.UtcNow);
+        this.progressSink = progressSink;
     }
 
     public DataAgentAnalysisResponse Start(string goalOrQuestion)
@@ -61,10 +76,10 @@ public sealed class DataAgentAnalysisService
         DateTimeOffset now = clock();
         DataAgentAnalysisSession? session = store.Get(sessionId);
         if (session is null)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_not_found");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_not_found", 0);
 
         if (session.Status == DataAgentAnalysisSessionStatus.Ended)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_ended");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Continue, "analysis_session_ended", session.Turns.Count);
 
         DataAgentAnalysisTurnIntent intent = followUpInterpreter.Interpret(question, session);
         if (intent == DataAgentAnalysisTurnIntent.Summarize)
@@ -89,10 +104,10 @@ public sealed class DataAgentAnalysisService
         DateTimeOffset now = clock();
         DataAgentAnalysisSession? session = store.Get(sessionId);
         if (session is null)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_not_found");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_not_found", 0);
 
         if (session.Status == DataAgentAnalysisSessionStatus.Ended)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended", session.Turns.Count);
 
         DataAgentAnalysisSession? updated = store.Update(
             sessionId,
@@ -118,13 +133,23 @@ public sealed class DataAgentAnalysisService
             });
 
         if (updated is null)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_not_found");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_not_found", 0);
 
         if (updated.Status == DataAgentAnalysisSessionStatus.Ended)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.Summarize, "analysis_session_ended", updated.Turns.Count);
 
         string summaryText = updated.LastSummary ?? string.Empty;
         string context = DataAgentAnalysisContextProvider.Build(updated);
+        PublishProgress(
+            updated.SessionId,
+            DataAgentProgressEventKind.Summarize,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "terminal_summary",
+            updated.Turns.Count,
+            executedSql: false,
+            queryAllowed: false,
+            terminal: true);
         return new DataAgentAnalysisResponse(
             updated.SessionId,
             updated.Status,
@@ -170,9 +195,19 @@ public sealed class DataAgentAnalysisService
             });
 
         if (updated is null)
-            return Reject(sessionId, DataAgentAnalysisTurnIntent.End, "analysis_session_not_found");
+            return Reject(sessionId, DataAgentAnalysisTurnIntent.End, "analysis_session_not_found", 0);
 
         string summaryText = updated.LastSummary ?? string.Empty;
+        PublishProgress(
+            updated.SessionId,
+            DataAgentProgressEventKind.End,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "terminal_end",
+            updated.Turns.Count,
+            executedSql: false,
+            queryAllowed: false,
+            terminal: true);
         return new DataAgentAnalysisResponse(
             updated.SessionId,
             updated.Status,
@@ -191,7 +226,8 @@ public sealed class DataAgentAnalysisService
         DataAgentAnalysisTurnIntent intent,
         DateTimeOffset now)
     {
-        DataAgentAnswer dataAgentAnswer = answer(questionForDataAgent);
+        int turnCount = session.Turns.Count + 1;
+        DataAgentAnswer dataAgentAnswer = answer(questionForDataAgent, session.SessionId, turnCount);
         DataAgentAnalysisTurn? appendedTurn = null;
         DataAgentAnalysisSession? updated = store.Update(
             session.SessionId,
@@ -231,10 +267,10 @@ public sealed class DataAgentAnalysisService
             });
 
         if (updated is null)
-            return Reject(session.SessionId, intent, "analysis_session_not_found");
+            return Reject(session.SessionId, intent, "analysis_session_not_found", turnCount);
 
         if (appendedTurn is null || updated.Status == DataAgentAnalysisSessionStatus.Ended)
-            return Reject(session.SessionId, intent, "analysis_session_ended");
+            return Reject(session.SessionId, intent, "analysis_session_ended", turnCount);
 
         string context = string.Join(
             Environment.NewLine,
@@ -371,14 +407,26 @@ public sealed class DataAgentAnalysisService
         return DataAgentContextFieldSanitizer.Sanitize(value, maxLength);
     }
 
-    static DataAgentAnalysisResponse Reject(
+    DataAgentAnalysisResponse Reject(
         string sessionId,
         DataAgentAnalysisTurnIntent intent,
-        string reason)
+        string reason,
+        int turnCount)
     {
         DataAgentAnalysisSessionStatus status = reason == "analysis_session_not_found"
             ? DataAgentAnalysisSessionStatus.Rejected
             : DataAgentAnalysisSessionStatus.Ended;
+
+        PublishProgress(
+            sessionId,
+            DataAgentProgressEventKind.Reject,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Rejected,
+            reason,
+            turnCount,
+            executedSql: false,
+            queryAllowed: false,
+            terminal: true);
 
         return new DataAgentAnalysisResponse(
             sessionId,
@@ -389,5 +437,30 @@ public sealed class DataAgentAnalysisService
             string.Empty,
             false,
             reason);
+    }
+
+    void PublishProgress(
+        string sessionId,
+        DataAgentProgressEventKind kind,
+        DataAgentProgressEventPhase phase,
+        DataAgentProgressEventStatus status,
+        string reasonCode,
+        int turnCount,
+        bool executedSql,
+        bool queryAllowed,
+        bool terminal)
+    {
+        progressSink?.Publish(new DataAgentProgressEvent(
+            sessionId,
+            kind,
+            phase,
+            status,
+            reasonCode,
+            turnCount,
+            clock(),
+            executedSql,
+            queryAllowed,
+            terminal,
+            new Dictionary<string, string>()));
     }
 }

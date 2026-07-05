@@ -9,6 +9,7 @@ public enum QChatRecentDiagnosticKind
     SemanticState,
     DataAgentEvidence,
     DataAgentTrace,
+    DataAgentProgress,
     ToolRoute
 }
 
@@ -131,7 +132,7 @@ public sealed class QChatRecentDiagnosticsCache
 
     static int GetMaxTextChars(QChatRecentDiagnosticKind kind)
     {
-        return kind == QChatRecentDiagnosticKind.DataAgentTrace
+        return kind is QChatRecentDiagnosticKind.DataAgentTrace or QChatRecentDiagnosticKind.DataAgentProgress
             ? DataAgentTraceMaxTextChars
             : MaxTextChars;
     }

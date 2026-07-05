@@ -6,12 +6,43 @@ $repoRoot = Split-Path -Parent $scriptRoot
 
 $results = New-Object System.Collections.Generic.List[object]
 
+function Test-DirectoryOmitsMarker {
+    param(
+        [string]$RelativePath,
+        [string]$SearchPattern,
+        [System.IO.SearchOption]$SearchOption,
+        [string[]]$Markers
+    )
+
+    $fullPath = Join-Path $repoRoot $RelativePath
+    if (-not (Test-Path -LiteralPath $fullPath)) {
+        return $false
+    }
+
+    foreach ($path in [System.IO.Directory]::EnumerateFiles($fullPath, $SearchPattern, $SearchOption)) {
+        $content = [System.IO.File]::ReadAllText($path)
+        foreach ($marker in $Markers) {
+            if ($content.IndexOf($marker, [System.StringComparison]::Ordinal) -ge 0) {
+                return $false
+            }
+        }
+    }
+
+    return $true
+}
+
 function Add-Check {
     param(
         [string]$Group,
         [string]$Name,
         [string]$Path,
         [string[]]$Patterns,
+        [string]$AlsoPath = "",
+        [string[]]$AlsoPatterns = @(),
+        [string]$OmitPath = "",
+        [string]$OmitSearchPattern = "*.cs",
+        [System.IO.SearchOption]$OmitSearchOption = [System.IO.SearchOption]::TopDirectoryOnly,
+        [string[]]$OmitPatterns = @(),
         [bool]$Required = $true
     )
 
@@ -31,6 +62,38 @@ function Add-Check {
                 $detail = "$Path missing marker '$pattern'"
                 break
             }
+        }
+    }
+
+    if ($ok -and -not [string]::IsNullOrWhiteSpace($AlsoPath)) {
+        $alsoFullPath = Join-Path $repoRoot $AlsoPath
+        if (-not (Test-Path -LiteralPath $alsoFullPath)) {
+            $ok = $false
+            $detail = "$AlsoPath missing"
+        }
+        elseif ($AlsoPatterns -and $AlsoPatterns.Count -gt 0) {
+            $alsoContent = Get-Content -LiteralPath $alsoFullPath -Raw
+            foreach ($pattern in $AlsoPatterns) {
+                if ($alsoContent.IndexOf($pattern, [System.StringComparison]::Ordinal) -lt 0) {
+                    $ok = $false
+                    $detail = "$AlsoPath missing marker '$pattern'"
+                    break
+                }
+            }
+        }
+
+        if ($ok) {
+            $detail = "$Path; $AlsoPath"
+        }
+    }
+
+    if ($ok -and -not [string]::IsNullOrWhiteSpace($OmitPath)) {
+        if (Test-DirectoryOmitsMarker $OmitPath $OmitSearchPattern $OmitSearchOption $OmitPatterns) {
+            $detail = "$detail; $OmitPath omits forbidden markers"
+        }
+        else {
+            $ok = $false
+            $detail = "$OmitPath contains forbidden marker"
         }
     }
 
@@ -61,9 +124,14 @@ Add-Check -Group "Harness" -Name "QChat recent diagnostics cache" -Path "sources
 Add-Check -Group "Harness" -Name "QChat recent diagnostics command" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("diag recent", "BuildRecentDiagnosticsText", "QChatRecentDiagnosticsFormatter.FormatSummary")
 Add-Check -Group "Harness" -Name "QChat diagnostics cache redaction" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticTextSanitizer.cs" -Patterns @("hidden_context_redacted", "HiddenContextPattern", "SqlFragmentPattern", "[tool_route_context]", "[data_agent_evidence_pack]", "Allowed XML tools", "connection_string", "Authorization", "SqlStatementPattern")
 Add-Check -Group "Harness" -Name "DataAgent trace diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentTrace", "diag trace", "BuildDataAgentTraceDiagnosticsText", "DataAgent trace diagnostics")
+Add-Check -Group "Harness" -Name "DataAgent progress diagnostics" -Path "sources/Alife.Function/Alife.Function.QChat/QChatDiagnosticsService.cs" -Patterns @("RecentDataAgentProgress", "diag progress", "BuildDataAgentProgressDiagnosticsText", "DataAgent progress diagnostics")
+Add-Check -Group "Harness" -Name "DataAgent scenario context diagnostics" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentScenarioContextIntegrated", "DataAgentScenarioDiagnosticsFormatter", "DataAgent scenario diagnostics", "scenario_context_matched") -AlsoPath "Tests/Alife.Test.QChat/QChatEngineeringMapRequiredV2Tests.cs" -AlsoPatterns @("QChatDoesNotDirectlyImportDataAgentScenarioContextBuilder", "DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy") -OmitPath "sources/Alife.Function/Alife.Function.QChat" -OmitSearchPattern "*.cs" -OmitSearchOption ([System.IO.SearchOption]::AllDirectories) -OmitPatterns @("DataAgentScenarioKnowledgePackProvider", "DataAgentScenarioContextBuilder", "DataAgentToolScopePolicy")
 Add-Check -Group "Harness" -Name "DataAgent dynamic tool route contract" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("Tool Broker contract", "PublishAnalysisContext", "UpdateDataAgentAnalysisRouteSessionFromContext", "Only use DataAgent XML tools when they appear in current [tool_route_context]")
 Add-Check -Group "Harness" -Name "DataAgent capability provider boundary" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentModuleService.cs" -Patterns @("DataAgentCapabilityRegistry", "DataAgentQueryCapabilityProvider", "DataAgentAnalysisCapabilityProvider", "RegisteredCapabilityProviderNames", "RegisteredCapabilityToolNames")
 Add-Check -Group "Harness" -Name "DataAgent store provider boundary" -Path "tools/check-dataagent-readiness.ps1" -Patterns @("DataAgentStoreBoundaryPresent", "SqliteStoreCompatibilityPresent", "PostgresStoreProviderPresent", "PostgresLiveTestsEnvironmentGated", "DataAgentServiceUsesStoreBoundary")
+# V2.10 governance readiness gates
+Add-Check -Group "Harness" -Name "Alife capability governance catalog" -Path "sources/Alife.Function/Alife.Function.FunctionCaller/AlifeCapabilityGovernanceCatalog.cs" -Patterns @("AlifeCapabilityGovernanceCatalog", "QChat", "DataAgent", "DesktopControl", "AgentWorkflowCandidate", "DeterministicSafetyGate")
+Add-Check -Group "Harness" -Name "DataAgent node tool scope policy" -Path "sources/Alife.Function/Alife.Function.DataAgent/DataAgentToolScopePolicy.cs" -Patterns @("DataAgentToolScopePolicy", "QueryPlanner", "DiagnosticsRouter", "ExecuteReadOnlyQuery", "ReadProgressDiagnostics")
 
 Add-Check -Group "Loop" -Name "OneBot receive loop" -Path "sources/Alife.Function/Alife.Function.QChat/OneBotClient.cs" -Patterns @("ReceiveLoop", "while (ws.State == WebSocketState.Open")
 Add-Check -Group "Loop" -Name "QChat event queue loop" -Path "sources/Alife.Function/Alife.Function.QChat/QChatService.cs" -Patterns @("ProcessOneBotEventQueueAsync", "oneBotEventProcessingTask")
@@ -121,7 +189,7 @@ $requiredPassed = @($results | Where-Object { $_.Required -and $_.Ok }).Count
 $requiredMissing = @($results | Where-Object { $_.Required -and -not $_.Ok }).Count
 $optionalPresent = @($results | Where-Object { -not $_.Required -and $_.Ok }).Count
 $optionalMissing = @($results | Where-Object { -not $_.Required -and -not $_.Ok }).Count
-$expectedRequired = 51
+$expectedRequired = 55
 $requiredTotal = $requiredPassed + $requiredMissing
 
 Write-Output ("Summary: {0} required passed, {1} required missing, {2} optional present, {3} optional missing" -f $requiredPassed, $requiredMissing, $optionalPresent, $optionalMissing)

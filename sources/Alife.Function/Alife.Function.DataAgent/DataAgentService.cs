@@ -36,28 +36,175 @@ public sealed class DataAgentService
 
     public DataAgentAnswer Answer(string question)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(question);
+        return Answer(question, null, string.Empty, 0, () => DateTimeOffset.UtcNow);
+    }
 
+    public DataAgentAnswer Answer(
+        string question,
+        IDataAgentProgressSink? progressSink,
+        string sessionId,
+        int turnCount,
+        Func<DateTimeOffset> clock)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(question);
+        ArgumentNullException.ThrowIfNull(clock);
+
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Planner,
+            DataAgentProgressEventPhase.Started,
+            DataAgentProgressEventStatus.Running,
+            "planner_started",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
         DataAgentQueryPlanEnvelope envelope = ValidateEnvelope(planner.Plan(new DataAgentQueryRequest(question, "developer", "zh-CN", false)));
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Planner,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "planner_response_received",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
         DataAgentPlannerExplanation explanation = envelope.Explanation;
         if (envelope.Clarification is not null)
+        {
+            Publish(
+                progressSink,
+                sessionId,
+                DataAgentProgressEventKind.Validate,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Skipped,
+                "needs_clarification",
+                turnCount,
+                clock(),
+                executedSql: false,
+                queryAllowed: true,
+                terminal: false);
+            Publish(
+                progressSink,
+                sessionId,
+                DataAgentProgressEventKind.Clarification,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Succeeded,
+                "needs_clarification",
+                turnCount,
+                clock(),
+                executedSql: false,
+                queryAllowed: true,
+                terminal: false);
             return Clarify(question, envelope.Clarification, explanation);
+        }
 
         DataAgentQueryPlan plan = envelope.Plan!;
         string queryPlanJson = JsonSerializer.Serialize(plan);
         DataAgentValidationResult planValidation = new DataAgentQueryPlanValidator(catalog).Validate(plan);
 
         if (planValidation.IsValid == false)
-            return Reject(question, plan, explanation, queryPlanJson, string.Join(";", planValidation.Errors), string.Empty);
+        {
+            string reason = string.Join(";", planValidation.Errors);
+            Publish(
+                progressSink,
+                sessionId,
+                DataAgentProgressEventKind.Validate,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Rejected,
+                reason,
+                turnCount,
+                clock(),
+                executedSql: false,
+                queryAllowed: true,
+                terminal: false);
+            PublishReject(progressSink, sessionId, reason, turnCount, clock, queryAllowed: true);
+            return Reject(question, plan, explanation, queryPlanJson, reason, string.Empty);
+        }
+
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Validate,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "validated",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
 
         DataAgentCompiledSql compiled = new DataAgentSqlCompiler(catalog).Compile(plan);
         DataAgentSqlSafetyResult safety = safetyValidator.Validate(compiled.Sql);
         if (safety.IsSafe == false)
+        {
+            Publish(
+                progressSink,
+                sessionId,
+                DataAgentProgressEventKind.SqlSafety,
+                DataAgentProgressEventPhase.Completed,
+                DataAgentProgressEventStatus.Rejected,
+                safety.Reason,
+                turnCount,
+                clock(),
+                executedSql: false,
+                queryAllowed: true,
+                terminal: false);
+            PublishReject(progressSink, sessionId, safety.Reason, turnCount, clock, queryAllowed: true);
             return Reject(question, plan, explanation, queryPlanJson, safety.Reason, compiled.Sql);
+        }
+
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.SqlSafety,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "read_only_sql_safe",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Execute,
+            DataAgentProgressEventPhase.Started,
+            DataAgentProgressEventStatus.Running,
+            "execute_started",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false);
 
         Stopwatch stopwatch = Stopwatch.StartNew();
         DataAgentQueryResult result = store.Query(compiled);
         stopwatch.Stop();
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Execute,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "read_only_query_executed",
+            turnCount,
+            clock(),
+            executedSql: true,
+            queryAllowed: true,
+            terminal: false,
+            new Dictionary<string, string>
+            {
+                ["rows"] = result.Rows.Count.ToString(),
+                ["sql"] = "redacted"
+            });
 
         string summary = DataAgentResultSummarizer.Summarize(plan, result);
         string resultExplanation = DataAgentResultExplainer.ExplainAccepted(
@@ -83,6 +230,23 @@ public sealed class DataAgentService
             compiled.Sql,
             result.Rows.Count,
             stopwatch.Elapsed));
+
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Explain,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Succeeded,
+            "result_explained",
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed: true,
+            terminal: false,
+            new Dictionary<string, string>
+            {
+                ["rows"] = result.Rows.Count.ToString()
+            });
 
         return new DataAgentAnswer(plan.Dataset, compiled.Sql, result.Rows.Count, summary, context, true, string.Empty, explanation);
     }
@@ -173,6 +337,56 @@ public sealed class DataAgentService
             ArgumentException.ThrowIfNullOrWhiteSpace(option);
 
         return envelope with { Clarification = clarification };
+    }
+
+    static void PublishReject(
+        IDataAgentProgressSink? progressSink,
+        string sessionId,
+        string reason,
+        int turnCount,
+        Func<DateTimeOffset> clock,
+        bool queryAllowed)
+    {
+        Publish(
+            progressSink,
+            sessionId,
+            DataAgentProgressEventKind.Reject,
+            DataAgentProgressEventPhase.Completed,
+            DataAgentProgressEventStatus.Rejected,
+            reason,
+            turnCount,
+            clock(),
+            executedSql: false,
+            queryAllowed,
+            terminal: false);
+    }
+
+    static void Publish(
+        IDataAgentProgressSink? progressSink,
+        string sessionId,
+        DataAgentProgressEventKind kind,
+        DataAgentProgressEventPhase phase,
+        DataAgentProgressEventStatus status,
+        string reasonCode,
+        int turnCount,
+        DateTimeOffset createdAt,
+        bool executedSql,
+        bool queryAllowed,
+        bool terminal,
+        IReadOnlyDictionary<string, string>? facts = null)
+    {
+        progressSink?.Publish(new DataAgentProgressEvent(
+            sessionId,
+            kind,
+            phase,
+            status,
+            reasonCode,
+            turnCount,
+            createdAt,
+            executedSql,
+            queryAllowed,
+            terminal,
+            facts ?? new Dictionary<string, string>()));
     }
 }
 

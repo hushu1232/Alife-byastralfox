@@ -470,6 +470,107 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("/dataagent diag progress")]
+    [TestCase("/dataagent diagnostics progress")]
+    [TestCase("/qchat diag dataagent progress")]
+    [TestCase("/qchat diagnostics dataagent progress")]
+    public void TryHandleDataAgentProgressDiagnosticsShowsRecentProgressForOwner(string command)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentProgress: "DataAgent progress diagnostics\nsession=session-1\nRouteGate:Completed:Succeeded reason=route_allowed");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent progress diagnostics"));
+            Assert.That(result.Text, Does.Contain("RouteGate:Completed:Succeeded"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentProgressDiagnosticsReturnsUnavailableWhenNoProgressExists()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag progress",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        string[] expectedLines =
+        [
+            "DataAgent progress diagnostics",
+            "state=unavailable",
+            "reason=progress_unavailable"
+        ];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentProgressDiagnosticsPrefersSessionCacheOverLegacyProgress()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-02T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentProgress,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_progress",
+            string.Join(Environment.NewLine,
+                "DataAgent progress diagnostics",
+                "progress_marker=from_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentProgress: "legacy progress text",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag progress",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("progress_marker=from_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy progress text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentProgressDiagnosticsRedactsUnsafeLegacyFallbackText()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentProgress: "DataAgent progress diagnostics\nSELECT * FROM users\nBearer token-abcdef123456");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag progress",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent progress diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain("SELECT"));
+            Assert.That(result.Text, Does.Not.Contain("token-abcdef123456"));
+        });
+    }
+
     [Test]
     public void TryHandleDataAgentTraceDiagnosticsPrefersSessionCacheOverLegacyTrace()
     {

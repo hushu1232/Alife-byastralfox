@@ -13,6 +13,7 @@ public sealed record QChatDiagnosticsRuntimeState(
     string? RecentSemanticEstimate = null,
     string? RecentDataAgentEvidence = null,
     string? RecentDataAgentTrace = null,
+    string? RecentDataAgentProgress = null,
     QChatRecentDiagnosticsCache? RecentDiagnosticsCache = null,
     string? SessionKey = null,
     DateTimeOffset? DiagnosticsNow = null);
@@ -63,6 +64,7 @@ public static class QChatDiagnosticsService
             {
                 "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
                 "diag trace" or "diagnostics trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
+                "diag progress" or "diagnostics progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
                 _ => new QChatDiagnosticsResult(false, string.Empty)
             };
 
@@ -88,6 +90,7 @@ public static class QChatDiagnosticsService
             "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState, route)),
             "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
             "diag dataagent trace" or "diagnostics dataagent trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
+            "diag dataagent progress" or "diagnostics dataagent progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -239,6 +242,24 @@ public static class QChatDiagnosticsService
                 "DataAgent trace diagnostics",
                 "state=unavailable",
                 "reason=trace_unavailable")
+            : sanitized;
+    }
+
+    static string BuildDataAgentProgressDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
+    {
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.DataAgentProgress);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
+        string sanitized = SanitizeDiagnosticText(
+            runtimeState.RecentDataAgentProgress,
+            "DataAgent progress diagnostics",
+            maxChars: 1800);
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? string.Join(Environment.NewLine,
+                "DataAgent progress diagnostics",
+                "state=unavailable",
+                "reason=progress_unavailable")
             : sanitized;
     }
 
@@ -463,6 +484,7 @@ public static class QChatDiagnosticsService
             "/qchat diag semantic - QChat semantic state diagnostics",
             "/dataagent diag evidence - DataAgent evidence diagnostics",
             "/dataagent diag trace - DataAgent trace diagnostics",
+            "/dataagent diag progress - DataAgent progress diagnostics",
             "",
             "说明：",
             "诊断信息只给主人账号开放，用来排查 QQ 链路。");

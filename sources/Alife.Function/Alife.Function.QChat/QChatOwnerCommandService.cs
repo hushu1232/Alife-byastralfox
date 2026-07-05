@@ -62,7 +62,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase)
                || command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase)
                || command.Equals("diag trace", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase);
+               || command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diag progress", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diagnostics progress", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHelpAliasCommand(string text)
@@ -125,6 +127,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
             recentSemanticEstimate,
             recentDataAgentEvidence,
             recentDataAgentTrace: null,
+            recentDataAgentProgress: null,
             recentDiagnosticsCache,
             diagnosticsNow);
     }
@@ -139,6 +142,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         Func<string>? recentSemanticEstimate = null,
         Func<string>? recentDataAgentEvidence = null,
         Func<string>? recentDataAgentTrace = null,
+        Func<string>? recentDataAgentProgress = null,
         QChatRecentDiagnosticsCache? recentDiagnosticsCache = null,
         Func<DateTimeOffset>? diagnosticsNow = null)
     {
@@ -190,6 +194,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 RecentSemanticEstimate: recentSemanticEstimate?.Invoke(),
                 RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke(),
                 RecentDataAgentTrace: recentDataAgentTrace?.Invoke(),
+                RecentDataAgentProgress: recentDataAgentProgress?.Invoke(),
                 RecentDiagnosticsCache: recentDiagnosticsCache,
                 SessionKey: route.SessionKey,
                 DiagnosticsNow: diagnosticsNow?.Invoke()));
