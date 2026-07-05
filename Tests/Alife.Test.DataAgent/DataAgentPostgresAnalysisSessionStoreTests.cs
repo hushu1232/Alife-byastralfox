@@ -1,3 +1,4 @@
+using System.Globalization;
 using Alife.Function.DataAgent;
 using Npgsql;
 
@@ -319,7 +320,9 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
         if (string.IsNullOrWhiteSpace(connectionString))
             Assert.Ignore("ALIFE_DATAAGENT_POSTGRES_TEST_CONNECTION is not set.");
 
-        PostgresDataAgentAnalysisSessionStore store = new(connectionString);
+        string applicationName = $"DataAgentAtomicGetTest-{Guid.NewGuid():N}";
+        string getConnectionString = BuildConnectionStringWithApplicationName(connectionString, applicationName);
+        PostgresDataAgentAnalysisSessionStore store = new(getConnectionString);
         store.Initialize();
         DateTimeOffset createdAt = new(2026, 7, 5, 17, 0, 0, TimeSpan.Zero);
         DateTimeOffset oldTurnAt = createdAt.AddMinutes(1);
@@ -336,11 +339,11 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
                 Status = DataAgentAnalysisSessionStatus.AwaitingClarification,
                 UpdatedAt = oldTurnAt,
                 LastDataset = "document_index",
-                LastSummary = "old checkpoint summary",
+                LastSummary = "old summary",
                 Turns =
                 [
                     new DataAgentAnalysisTurn(
-                        "turn-old",
+                        "old-turn",
                         1,
                         "old question",
                         DataAgentAnalysisTurnIntent.NewQuestion,
@@ -357,15 +360,14 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
             using NpgsqlConnection writerConnection = new(connectionString);
             writerConnection.Open();
             using NpgsqlTransaction writerTransaction = writerConnection.BeginTransaction();
-            bool writerCommitted = false;
+            bool writerCompleted = false;
 
             try
             {
                 Execute(
                     writerConnection,
                     writerTransaction,
-                    "SELECT 1 FROM dataagent_analysis_session WHERE session_id = @session_id FOR UPDATE",
-                    new NpgsqlParameter("session_id", session.SessionId));
+                    "LOCK TABLE dataagent_analysis_turn IN ACCESS EXCLUSIVE MODE");
                 Execute(
                     writerConnection,
                     writerTransaction,
@@ -379,9 +381,9 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
                     WHERE session_id = @session_id
                     """,
                     new NpgsqlParameter("status", (int)DataAgentAnalysisSessionStatus.ReadyToSummarize),
-                    new NpgsqlParameter("updated_at", newTurnAt.ToString("O")),
+                    new NpgsqlParameter("updated_at", newTurnAt.ToString("O", CultureInfo.InvariantCulture)),
                     new NpgsqlParameter("last_dataset", "engineering_gate"),
-                    new NpgsqlParameter("last_summary", "new checkpoint summary"),
+                    new NpgsqlParameter("last_summary", "new summary"),
                     new NpgsqlParameter("pending_clarification_question", DBNull.Value),
                     new NpgsqlParameter("session_id", session.SessionId));
                 Execute(
@@ -422,10 +424,10 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
                     """,
                     new NpgsqlParameter("session_id", session.SessionId),
                     new NpgsqlParameter("turn_index", 1),
-                    new NpgsqlParameter("turn_id", "turn-new"),
+                    new NpgsqlParameter("turn_id", "new-turn"),
                     new NpgsqlParameter("question", "new question"),
                     new NpgsqlParameter("intent", (int)DataAgentAnalysisTurnIntent.Continue),
-                    new NpgsqlParameter("created_at", newTurnAt.ToString("O")),
+                    new NpgsqlParameter("created_at", newTurnAt.ToString("O", CultureInfo.InvariantCulture)),
                     new NpgsqlParameter("dataset", "engineering_gate"),
                     new NpgsqlParameter("sql", "SELECT name FROM engineering_gate LIMIT 20"),
                     new NpgsqlParameter("row_count", 1),
@@ -434,37 +436,28 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
                     new NpgsqlParameter("rejected_reason", string.Empty));
 
                 Task<DataAgentAnalysisSession?> getTask = Task.Run(() => store.Get(session.SessionId));
-                if (getTask.Wait(TimeSpan.FromMilliseconds(500)))
+
+                if (WaitForWaitingTurnTableLock(connectionString, applicationName, TimeSpan.FromSeconds(5)) == false)
                 {
-                    AssertCoherentSnapshot(
-                        getTask.Result,
-                        DataAgentAnalysisSessionStatus.AwaitingClarification,
-                        oldTurnAt,
-                        "document_index",
-                        "old checkpoint summary",
-                        "turn-old",
-                        "old turn summary");
-                }
-                else
-                {
-                    writerTransaction.Commit();
-                    writerCommitted = true;
-                    Assert.That(getTask.Wait(TimeSpan.FromSeconds(5)), Is.True);
-                    AssertCoherentSnapshot(
-                        getTask.Result,
-                        DataAgentAnalysisSessionStatus.ReadyToSummarize,
-                        newTurnAt,
-                        "engineering_gate",
-                        "new checkpoint summary",
-                        "turn-new",
-                        "new turn summary");
+                    writerTransaction.Rollback();
+                    writerCompleted = true;
+                    Assert.Fail(
+                        "Timed out waiting for store.Get to block on AccessShareLock for dataagent_analysis_turn; " +
+                        "the test did not force the session-read/turn-read interleaving.");
                 }
 
-                if (writerCommitted == false)
-                {
-                    writerTransaction.Commit();
-                    writerCommitted = true;
-                }
+                writerTransaction.Commit();
+                writerCompleted = true;
+
+                DataAgentAnalysisSession? duringWrite = AwaitTaskWithTimeout(getTask, TimeSpan.FromSeconds(5));
+                AssertCoherentSnapshot(
+                    duringWrite,
+                    DataAgentAnalysisSessionStatus.AwaitingClarification,
+                    oldTurnAt,
+                    "document_index",
+                    "old summary",
+                    "old-turn",
+                    "old turn summary");
 
                 DataAgentAnalysisSession? final = store.Get(session.SessionId);
                 AssertCoherentSnapshot(
@@ -472,13 +465,13 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
                     DataAgentAnalysisSessionStatus.ReadyToSummarize,
                     newTurnAt,
                     "engineering_gate",
-                    "new checkpoint summary",
-                    "turn-new",
+                    "new summary",
+                    "new-turn",
                     "new turn summary");
             }
             finally
             {
-                if (writerCommitted == false)
+                if (writerCompleted == false)
                     writerTransaction.Rollback();
             }
         }
@@ -587,6 +580,60 @@ public sealed class DataAgentPostgresAnalysisSessionStoreTests
             Assert.That(session.Turns[0].Dataset, Is.EqualTo(dataset));
             Assert.That(session.Turns[0].Summary, Is.EqualTo(turnSummary));
         });
+    }
+
+    static string BuildConnectionStringWithApplicationName(string connectionString, string applicationName)
+    {
+        NpgsqlConnectionStringBuilder builder = new(connectionString)
+        {
+            ApplicationName = applicationName
+        };
+
+        return builder.ConnectionString;
+    }
+
+    static bool WaitForWaitingTurnTableLock(
+        string connectionString,
+        string applicationName,
+        TimeSpan timeout)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (HasWaitingTurnTableLock(connectionString, applicationName))
+                return true;
+
+            Thread.Sleep(50);
+        }
+
+        return false;
+    }
+
+    static bool HasWaitingTurnTableLock(string connectionString, string applicationName)
+    {
+        using NpgsqlConnection connection = new(connectionString);
+        connection.Open();
+        using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_locks l
+                JOIN pg_class c ON c.oid = l.relation
+                JOIN pg_stat_activity a ON a.pid = l.pid
+                WHERE c.relname = 'dataagent_analysis_turn'
+                  AND l.mode = 'AccessShareLock'
+                  AND l.granted = false
+                  AND a.application_name = @application_name
+            )
+            """;
+        command.Parameters.Add(new NpgsqlParameter("application_name", applicationName));
+        return (bool)command.ExecuteScalar()!;
+    }
+
+    static T? AwaitTaskWithTimeout<T>(Task<T?> task, TimeSpan timeout)
+    {
+        Assert.That(task.Wait(timeout), Is.True, "Timed out waiting for store.Get after committing writer transaction.");
+        return task.Result;
     }
 
     static void DeleteSessionRows(string connectionString, string sessionId)
