@@ -571,6 +571,110 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("/dataagent diag graph")]
+    [TestCase("/dataagent diagnostics graph")]
+    [TestCase("/qchat diag dataagent graph")]
+    [TestCase("/qchat diagnostics dataagent graph")]
+    public void TryHandleDataAgentGraphDiagnosticsShowsRecentGraphForOwner(string command)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentGraph: string.Join(Environment.NewLine,
+                "DataQueryGraph dry-run",
+                "enabled=false",
+                "reason=dataquerygraph_disabled"));
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(result.Text, Does.Contain("reason=dataquerygraph_disabled"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentGraphDiagnosticsReturnsUnavailableWhenNoGraphExists()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag graph",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        string[] expectedLines =
+        [
+            "DataAgent graph diagnostics",
+            "state=unavailable",
+            "reason=graph_diagnostics_unavailable"
+        ];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(expectedLines));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentGraphDiagnosticsPrefersSessionCacheOverLegacyGraph()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-06T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(
+            QChatRecentDiagnosticKind.DataAgentGraph,
+            "qq:xiayu:2905391496:private:3045846738",
+            "dataagent_graph",
+            string.Join(Environment.NewLine,
+                "DataQueryGraph dry-run",
+                "graph_marker=from_cache"),
+            now);
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentGraph: "legacy graph text",
+            RecentDiagnosticsCache: cache,
+            SessionKey: "qq:xiayu:2905391496:private:3045846738",
+            DiagnosticsNow: now);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag graph",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Text, Does.Contain("graph_marker=from_cache"));
+            Assert.That(result.Text, Does.Not.Contain("legacy graph text"));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentGraphDiagnosticsRedactsUnsafeLegacyFallbackText()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentGraph: "DataQueryGraph dry-run\nSELECT * FROM users\nBearer token-abcdef123456");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag graph",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("DataAgent graph diagnostics"));
+            Assert.That(result.Text, Does.Contain("state=redacted"));
+            Assert.That(result.Text, Does.Contain("reason=hidden_context_redacted"));
+            Assert.That(result.Text, Does.Not.Contain("SELECT"));
+            Assert.That(result.Text, Does.Not.Contain("token-abcdef123456"));
+        });
+    }
+
     [Test]
     public void TryHandleDataAgentTraceDiagnosticsPrefersSessionCacheOverLegacyTrace()
     {

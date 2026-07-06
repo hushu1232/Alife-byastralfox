@@ -25,6 +25,7 @@ public static class QChatRecentDiagnosticsFormatter
             FormatKindLine("dataagent_evidence_recent", entries, QChatRecentDiagnosticKind.DataAgentEvidence, now),
             FormatKindLine("dataagent_trace_recent", entries, QChatRecentDiagnosticKind.DataAgentTrace, now),
             FormatKindLine("dataagent_progress_recent", entries, QChatRecentDiagnosticKind.DataAgentProgress, now),
+            FormatKindLine("dataagent_graph_recent", entries, QChatRecentDiagnosticKind.DataAgentGraph, now),
             FormatKindLine("tool_route_recent", entries, QChatRecentDiagnosticKind.ToolRoute, now),
             "session=" + NormalizeToken(sessionKey));
     }
@@ -45,6 +46,7 @@ public static class QChatRecentDiagnosticsFormatter
             QChatRecentDiagnosticKind.DataAgentEvidence => "DataAgent evidence diagnostics",
             QChatRecentDiagnosticKind.DataAgentTrace => "DataAgent trace diagnostics",
             QChatRecentDiagnosticKind.DataAgentProgress => "DataAgent progress diagnostics",
+            QChatRecentDiagnosticKind.DataAgentGraph => "DataAgent graph diagnostics",
             QChatRecentDiagnosticKind.ToolRoute => "Tool Broker diagnostics",
             _ => "QChat diagnostics"
         };

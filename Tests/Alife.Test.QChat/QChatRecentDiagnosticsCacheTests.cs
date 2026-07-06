@@ -324,6 +324,7 @@ public sealed class QChatRecentDiagnosticsCacheTests
             "dataagent_evidence_recent=available age_seconds=12 source=dataagent_analysis redacted=false",
             "dataagent_trace_recent=missing",
             "dataagent_progress_recent=missing",
+            "dataagent_graph_recent=missing",
             "tool_route_recent=available age_seconds=2 source=tool_broker redacted=false",
             "session=session-a"
         ];
@@ -375,6 +376,54 @@ public sealed class QChatRecentDiagnosticsCacheTests
         {
             Assert.That(text, Does.Contain("dataagent_trace_recent=available age_seconds=4 source=dataagent_trace redacted=false"));
             Assert.That(text, Does.Contain("session=session-a"));
+        });
+    }
+
+    [Test]
+    public void GraphDiagnosticsUseLongTextLimit()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-06T00:00:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        string longText = "DataQueryGraph dry-run\n" + new string('g', 1600);
+
+        cache.Record(QChatRecentDiagnosticKind.DataAgentGraph, "session-a", "dataagent_graph", longText, now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentGraph, now)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Text, Does.StartWith("DataQueryGraph dry-run"));
+            Assert.That(latest.Text.Length, Is.GreaterThan(900));
+            Assert.That(latest.Text.Length, Is.LessThanOrEqualTo(1800));
+        });
+    }
+
+    [Test]
+    public void SummaryIncludesDataAgentGraphRecentLine()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-06T00:01:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+        cache.Record(QChatRecentDiagnosticKind.DataAgentGraph, "session-a", "dataagent_graph", "DataQueryGraph dry-run", now.AddSeconds(-7));
+
+        string text = QChatRecentDiagnosticsFormatter.FormatSummary(cache.GetRecent("session-a", now), "session-a", now);
+
+        Assert.That(text, Does.Contain("dataagent_graph_recent=available age_seconds=7 source=dataagent_graph redacted=false"));
+    }
+
+    [Test]
+    public void GraphDiagnosticsUnsafeTextIsRedacted()
+    {
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-06T00:00:00Z");
+        QChatRecentDiagnosticsCache cache = new();
+
+        cache.Record(QChatRecentDiagnosticKind.DataAgentGraph, "session-a", "dataagent_graph", "DataQueryGraph dry-run\nSELECT * FROM users", now);
+
+        QChatRecentDiagnosticEntry latest = cache.GetLatest("session-a", QChatRecentDiagnosticKind.DataAgentGraph, now)!;
+        Assert.Multiple(() =>
+        {
+            Assert.That(latest.Redacted, Is.True);
+            Assert.That(latest.Text, Does.Contain("DataAgent graph diagnostics"));
+            Assert.That(latest.Text, Does.Contain("state=redacted"));
+            Assert.That(latest.Text, Does.Not.Contain("SELECT"));
         });
     }
 

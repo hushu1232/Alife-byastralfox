@@ -14,6 +14,7 @@ public sealed record QChatDiagnosticsRuntimeState(
     string? RecentDataAgentEvidence = null,
     string? RecentDataAgentTrace = null,
     string? RecentDataAgentProgress = null,
+    string? RecentDataAgentGraph = null,
     QChatRecentDiagnosticsCache? RecentDiagnosticsCache = null,
     string? SessionKey = null,
     DateTimeOffset? DiagnosticsNow = null);
@@ -65,6 +66,7 @@ public static class QChatDiagnosticsService
                 "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
                 "diag trace" or "diagnostics trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
                 "diag progress" or "diagnostics progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
+                "diag graph" or "diagnostics graph" => Handled(BuildDataAgentGraphDiagnosticsText(runtimeState, route)),
                 _ => new QChatDiagnosticsResult(false, string.Empty)
             };
 
@@ -91,6 +93,7 @@ public static class QChatDiagnosticsService
             "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
             "diag dataagent trace" or "diagnostics dataagent trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
             "diag dataagent progress" or "diagnostics dataagent progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
+            "diag dataagent graph" or "diagnostics dataagent graph" => Handled(BuildDataAgentGraphDiagnosticsText(runtimeState, route)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -260,6 +263,24 @@ public static class QChatDiagnosticsService
                 "DataAgent progress diagnostics",
                 "state=unavailable",
                 "reason=progress_unavailable")
+            : sanitized;
+    }
+
+    static string BuildDataAgentGraphDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState, QChatAgentRoute route)
+    {
+        string? cached = GetRecentCachedText(runtimeState, route, QChatRecentDiagnosticKind.DataAgentGraph);
+        if (string.IsNullOrWhiteSpace(cached) == false)
+            return cached;
+
+        string sanitized = SanitizeDiagnosticText(
+            runtimeState.RecentDataAgentGraph,
+            "DataAgent graph diagnostics",
+            maxChars: 1800);
+        return string.IsNullOrWhiteSpace(sanitized)
+            ? string.Join(Environment.NewLine,
+                "DataAgent graph diagnostics",
+                "state=unavailable",
+                "reason=graph_diagnostics_unavailable")
             : sanitized;
     }
 
@@ -485,6 +506,7 @@ public static class QChatDiagnosticsService
             "/dataagent diag evidence - DataAgent evidence diagnostics",
             "/dataagent diag trace - DataAgent trace diagnostics",
             "/dataagent diag progress - DataAgent progress diagnostics",
+            "/dataagent diag graph - DataAgent DataQueryGraph dry-run diagnostics",
             "",
             "说明：",
             "诊断信息只给主人账号开放，用来排查 QQ 链路。");

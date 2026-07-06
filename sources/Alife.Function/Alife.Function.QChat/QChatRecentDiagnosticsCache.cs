@@ -10,6 +10,7 @@ public enum QChatRecentDiagnosticKind
     DataAgentEvidence,
     DataAgentTrace,
     DataAgentProgress,
+    DataAgentGraph,
     ToolRoute
 }
 
@@ -132,9 +133,11 @@ public sealed class QChatRecentDiagnosticsCache
 
     static int GetMaxTextChars(QChatRecentDiagnosticKind kind)
     {
-        return kind is QChatRecentDiagnosticKind.DataAgentTrace or QChatRecentDiagnosticKind.DataAgentProgress
-            ? DataAgentTraceMaxTextChars
-            : MaxTextChars;
+        return kind is QChatRecentDiagnosticKind.DataAgentTrace
+            or QChatRecentDiagnosticKind.DataAgentProgress
+            or QChatRecentDiagnosticKind.DataAgentGraph
+                ? DataAgentTraceMaxTextChars
+                : MaxTextChars;
     }
 
     void PruneExpiredLocked(DateTimeOffset now)
