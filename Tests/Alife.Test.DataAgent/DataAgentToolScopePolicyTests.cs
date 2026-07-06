@@ -56,6 +56,23 @@ public sealed class DataAgentToolScopePolicyTests
     }
 
     [Test]
+    public void TerminalAndRejectScopesAreDeterministicAndToolless()
+    {
+        DataAgentNodeToolScope terminal = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.Terminal);
+        DataAgentNodeToolScope reject = DataAgentToolScopePolicy.ForNode(DataAgentWorkflowNodeNames.Reject);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(terminal.AllowsModelCall, Is.False);
+            Assert.That(terminal.AllowedCapabilities, Is.Empty);
+            Assert.That(terminal.Reason, Is.EqualTo("terminal_node_has_no_query_capabilities"));
+            Assert.That(reject.AllowsModelCall, Is.False);
+            Assert.That(reject.AllowedCapabilities, Is.Empty);
+            Assert.That(reject.Reason, Is.EqualTo("reject_node_has_no_query_capabilities"));
+        });
+    }
+
+    [Test]
     public void UnknownNodeFailsClosed()
     {
         DataAgentNodeToolScope scope = DataAgentToolScopePolicy.ForNode("unknown_node");

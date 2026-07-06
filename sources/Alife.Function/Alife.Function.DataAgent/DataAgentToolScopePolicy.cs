@@ -13,6 +13,8 @@ public static class DataAgentWorkflowNodeNames
     public const string EvidenceAudit = "evidence_audit";
     public const string CheckpointProgress = "checkpoint_progress";
     public const string DiagnosticsRouter = "diagnostics_router";
+    public const string Terminal = "terminal";
+    public const string Reject = "reject";
 }
 
 public static class DataAgentNodeCapabilities
@@ -139,6 +141,14 @@ public static class DataAgentToolScopePolicy
                 false,
                 "checkpoint_progress_publishes_progress",
                 DataAgentNodeCapabilities.PublishProgress),
+            Scope(
+                DataAgentWorkflowNodeNames.Terminal,
+                false,
+                "terminal_node_has_no_query_capabilities"),
+            Scope(
+                DataAgentWorkflowNodeNames.Reject,
+                false,
+                "reject_node_has_no_query_capabilities"),
             Scope(
                 DataAgentWorkflowNodeNames.DiagnosticsRouter,
                 true,
