@@ -19,10 +19,14 @@ public sealed class DataAgentV215ReadinessTests
             Assert.That(check.Passed, Is.True, check.Detail);
             Assert.That(check.Detail, Does.Contain("default_enabled=false"));
             Assert.That(check.Detail, Does.Contain("dry_run=true"));
+            Assert.That(check.Detail, Does.Contain("plan_shape=true"));
+            Assert.That(check.Detail, Does.Contain("transition_shape=true"));
+            Assert.That(check.Detail, Does.Contain("execute_scope=true"));
             Assert.That(check.Detail, Does.Contain("no_langgraph_runtime=true"));
             Assert.That(check.Detail, Does.Contain("node_scope=true"));
             Assert.That(check.Detail, Does.Contain("no_sql_authority=true"));
             Assert.That(check.Detail, Does.Contain("fallback=true"));
+            Assert.That(check.Detail, Does.Not.Contain("SELECT"));
         });
     }
 

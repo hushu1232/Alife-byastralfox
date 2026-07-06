@@ -191,6 +191,38 @@ public static class DataAgentReadiness
                 dataQueryGraphDiagnosticsNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false &&
                 dataQueryGraphUnknownNode.AllowsModelCall == false &&
                 dataQueryGraphUnknownNode.AllowedCapabilities.Count == 0;
+            string[] dataQueryGraphExpectedNodes =
+            [
+                DataAgentWorkflowNodeNames.RouteGate,
+                DataAgentWorkflowNodeNames.ScenarioKnowledge,
+                DataAgentWorkflowNodeNames.QueryPlanner,
+                DataAgentWorkflowNodeNames.QueryPlanValidator,
+                DataAgentWorkflowNodeNames.SqlCompiler,
+                DataAgentWorkflowNodeNames.SqlSafety,
+                DataAgentWorkflowNodeNames.ReadOnlyExecute,
+                DataAgentWorkflowNodeNames.ResultExplainer,
+                DataAgentWorkflowNodeNames.EvidenceAudit,
+                DataAgentWorkflowNodeNames.CheckpointProgress
+            ];
+            bool dataQueryGraphPlanShapeReady =
+                dataQueryGraphAcceptedResult.Plan.Nodes
+                    .Select(node => node.Name)
+                    .SequenceEqual(dataQueryGraphExpectedNodes, StringComparer.Ordinal);
+            bool dataQueryGraphTransitionShapeReady =
+                dataQueryGraphAcceptedResult.Plan.Transitions.Count == Math.Max(0, dataQueryGraphAcceptedResult.Plan.Nodes.Count - 1) &&
+                dataQueryGraphAcceptedResult.Plan.Transitions.Select(transition => transition.FromNode)
+                    .SequenceEqual(dataQueryGraphAcceptedResult.Plan.Nodes.Take(Math.Max(0, dataQueryGraphAcceptedResult.Plan.Nodes.Count - 1)).Select(node => node.Name), StringComparer.Ordinal) &&
+                dataQueryGraphAcceptedResult.Plan.Transitions.Select(transition => transition.ToNode)
+                    .SequenceEqual(dataQueryGraphAcceptedResult.Plan.Nodes.Skip(1).Select(node => node.Name), StringComparer.Ordinal);
+            DataAgentDataQueryGraphNode[] dataQueryGraphExecuteNodes = dataQueryGraphAcceptedResult.Plan.Nodes.Where(node =>
+                node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal)).ToArray();
+            DataAgentDataQueryGraphNode? dataQueryGraphPlanNode = dataQueryGraphAcceptedResult.Plan.Nodes.FirstOrDefault(node =>
+                string.Equals(node.Name, DataAgentWorkflowNodeNames.QueryPlanner, StringComparison.Ordinal));
+            bool dataQueryGraphExecuteScopeReady =
+                dataQueryGraphExecuteNodes.Length == 1 &&
+                string.Equals(dataQueryGraphExecuteNodes[0].Name, DataAgentWorkflowNodeNames.ReadOnlyExecute, StringComparison.Ordinal) &&
+                dataQueryGraphPlanNode is not null &&
+                dataQueryGraphPlanNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false;
             bool dataQueryGraphNoSqlAuthority =
                 dataQueryGraphUnsafeTrace.Contains("dataquerygraph_sql_text_rejected", StringComparison.Ordinal) &&
                 dataQueryGraphUnsafeTrace.Contains("SELECT path FROM document_index", StringComparison.OrdinalIgnoreCase) == false &&
@@ -204,10 +236,13 @@ public static class DataAgentReadiness
                 dataQueryGraphDryRunReady &&
                 dataQueryGraphNoRuntime &&
                 dataQueryGraphNodeScopeReady &&
+                dataQueryGraphPlanShapeReady &&
+                dataQueryGraphTransitionShapeReady &&
+                dataQueryGraphExecuteScopeReady &&
                 dataQueryGraphNoSqlAuthority &&
                 dataQueryGraphFallbackReady;
             string dataQueryGraphDetail =
-                $"default_enabled={LowerBool(dataQueryGraphDefaultOptions.Enabled)};dry_run={LowerBool(dataQueryGraphDryRunReady)};no_langgraph_runtime={LowerBool(dataQueryGraphNoRuntime)};node_scope={LowerBool(dataQueryGraphNodeScopeReady)};no_sql_authority={LowerBool(dataQueryGraphNoSqlAuthority)};fallback={LowerBool(dataQueryGraphFallbackReady)}";
+                $"default_enabled={LowerBool(dataQueryGraphDefaultOptions.Enabled)};dry_run={LowerBool(dataQueryGraphDryRunReady)};plan_shape={LowerBool(dataQueryGraphPlanShapeReady)};transition_shape={LowerBool(dataQueryGraphTransitionShapeReady)};execute_scope={LowerBool(dataQueryGraphExecuteScopeReady)};no_langgraph_runtime={LowerBool(dataQueryGraphNoRuntime)};node_scope={LowerBool(dataQueryGraphNodeScopeReady)};no_sql_authority={LowerBool(dataQueryGraphNoSqlAuthority)};fallback={LowerBool(dataQueryGraphFallbackReady)}";
             checks.Add(dataQueryGraphReady
                 ? Pass("DataQueryGraphPilotPresent", dataQueryGraphDetail)
                 : Fail("DataQueryGraphPilotPresent", dataQueryGraphDetail));

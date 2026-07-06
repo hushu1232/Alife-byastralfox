@@ -46,10 +46,14 @@ public sealed class DataAgentReadinessTests
             DataAgentReadinessCheck dataQueryGraphCheck = checks.Single(check => check.Name == "DataQueryGraphPilotPresent");
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("default_enabled=false"));
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("dry_run=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("plan_shape=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("transition_shape=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("execute_scope=true"));
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("no_langgraph_runtime=true"));
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("node_scope=true"));
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("no_sql_authority=true"));
             Assert.That(dataQueryGraphCheck.Detail, Does.Contain("fallback=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Not.Contain("SELECT"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
