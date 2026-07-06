@@ -64,7 +64,9 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                || command.Equals("diag trace", StringComparison.OrdinalIgnoreCase)
                || command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase)
                || command.Equals("diag progress", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics progress", StringComparison.OrdinalIgnoreCase);
+               || command.Equals("diagnostics progress", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diag graph", StringComparison.OrdinalIgnoreCase)
+               || command.Equals("diagnostics graph", StringComparison.OrdinalIgnoreCase);
     }
 
     public static bool IsHelpAliasCommand(string text)
@@ -129,7 +131,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
             recentDataAgentTrace: null,
             recentDataAgentProgress: null,
             recentDiagnosticsCache,
-            diagnosticsNow);
+            diagnosticsNow,
+            recentDataAgentGraph: null);
     }
 
     public static async Task<bool> TryHandleDiagnosticsCommandAsync(
@@ -144,7 +147,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         Func<string>? recentDataAgentTrace = null,
         Func<string>? recentDataAgentProgress = null,
         QChatRecentDiagnosticsCache? recentDiagnosticsCache = null,
-        Func<DateTimeOffset>? diagnosticsNow = null)
+        Func<DateTimeOffset>? diagnosticsNow = null,
+        Func<string>? recentDataAgentGraph = null)
     {
         ArgumentNullException.ThrowIfNull(messageEvent);
 
@@ -195,6 +199,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 RecentDataAgentEvidence: recentDataAgentEvidence?.Invoke(),
                 RecentDataAgentTrace: recentDataAgentTrace?.Invoke(),
                 RecentDataAgentProgress: recentDataAgentProgress?.Invoke(),
+                RecentDataAgentGraph: recentDataAgentGraph?.Invoke(),
                 RecentDiagnosticsCache: recentDiagnosticsCache,
                 SessionKey: route.SessionKey,
                 DiagnosticsNow: diagnosticsNow?.Invoke()));

@@ -3900,6 +3900,92 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerCanReadRecentDataAgentGraphDiagnosticsRecordedOnService()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        });
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+        service.RecordRecentDataAgentGraphDiagnostics(string.Join(Environment.NewLine,
+            "DataQueryGraph dry-run",
+            "enabled=false",
+            "reason=dataquerygraph_disabled"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag graph"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(reply, Does.Contain("reason=dataquerygraph_disabled"));
+            Assert.That(reply, Does.Not.Contain("state=unavailable"));
+        });
+    }
+
+    [Test]
+    public async Task RecentDiagnosticsSummaryIncludesDataAgentGraphWhenFunctionCallerHasFallback()
+    {
+        FakeOneBotRuntime runtime = new()
+        {
+            BotId = 2905391496
+        };
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller.RecordRecentDataAgentGraphDiagnostics(string.Join(Environment.NewLine,
+            "DataQueryGraph dry-run",
+            "enabled=false"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 2905391496,
+            OwnerId = 3045846738,
+            EnableBalancedTextStreaming = false
+        }, functionCaller: functionCaller);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/qchat diag recent"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(reply, Does.Contain("QChat recent diagnostics"));
+            Assert.That(reply, Does.Contain("dataagent_graph_recent=available"));
+            Assert.That(reply, Does.Contain("source=dataagent_graph"));
+            Assert.That(reply, Does.Contain("session=qq:xiayu:2905391496:private:3045846738"));
+            Assert.That(reply, Does.Not.Contain("reason=recent_diagnostics_empty"));
+        });
+    }
+
+    [Test]
     public async Task OwnerPrivateDataAgentTraceCommandRefreshesFunctionCallerFallbackAfterRecentSummarySync()
     {
         FakeOneBotRuntime runtime = new()

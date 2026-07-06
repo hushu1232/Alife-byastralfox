@@ -49,7 +49,7 @@ public static class QChatCommandAccessPolicy
     public static bool IsOwnerDiagnosticCommand(string? text)
     {
         return IsCommandWithPrefix(text, QChatPrefix) ||
-               IsDataAgentEvidenceDiagnosticCommand(text);
+               IsDataAgentDiagnosticCommand(text);
     }
 
     static bool IsCommandWithPrefix(string? text, string prefix)
@@ -62,7 +62,7 @@ public static class QChatCommandAccessPolicy
                char.IsWhiteSpace(trimmed[prefix.Length]);
     }
 
-    static bool IsDataAgentEvidenceDiagnosticCommand(string? text)
+    static bool IsDataAgentDiagnosticCommand(string? text)
     {
         string trimmed = text?.TrimStart() ?? string.Empty;
         if (trimmed.StartsWith(DataAgentPrefix, StringComparison.OrdinalIgnoreCase) == false)
@@ -77,7 +77,13 @@ public static class QChatCommandAccessPolicy
         string command = trimmed[DataAgentPrefix.Length..].Trim();
         command = StripCopiedMenuDescription(command);
         return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase) ||
-               command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase);
+               command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diag trace", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diag progress", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diagnostics progress", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diag graph", StringComparison.OrdinalIgnoreCase) ||
+               command.Equals("diagnostics graph", StringComparison.OrdinalIgnoreCase);
     }
 
     static string StripCopiedMenuDescription(string command)

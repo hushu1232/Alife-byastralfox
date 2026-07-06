@@ -384,7 +384,7 @@ public sealed class QChatRecentDiagnosticsCacheTests
     {
         DateTimeOffset now = DateTimeOffset.Parse("2026-07-06T00:00:00Z");
         QChatRecentDiagnosticsCache cache = new();
-        string longText = "DataQueryGraph dry-run\n" + new string('g', 1600);
+        string longText = "DataQueryGraph dry-run\n" + new string('g', 2_000);
 
         cache.Record(QChatRecentDiagnosticKind.DataAgentGraph, "session-a", "dataagent_graph", longText, now);
 
@@ -392,8 +392,8 @@ public sealed class QChatRecentDiagnosticsCacheTests
         Assert.Multiple(() =>
         {
             Assert.That(latest.Text, Does.StartWith("DataQueryGraph dry-run"));
-            Assert.That(latest.Text.Length, Is.GreaterThan(900));
-            Assert.That(latest.Text.Length, Is.LessThanOrEqualTo(1800));
+            Assert.That(latest.Text, Has.Length.EqualTo(1800));
+            Assert.That(latest.Text, Does.EndWith("..."));
         });
     }
 

@@ -24,6 +24,9 @@ public sealed class QChatCommandAccessPolicyTests
     [TestCase("/dataagent diag evidence")]
     [TestCase("/dataagent diagnostics evidence")]
     [TestCase("/dataagent diag evidence - DataAgent evidence diagnostics")]
+    [TestCase("/dataagent diag graph")]
+    [TestCase("/dataagent diagnostics graph")]
+    [TestCase("/dataagent diag graph - DataAgent DataQueryGraph dry-run diagnostics")]
     [TestCase("  /DATAAGENT diag evidence  ")]
     public void OwnerDataAgentDiagnosticCommandIsAllowed(string text)
     {
@@ -72,6 +75,20 @@ public sealed class QChatCommandAccessPolicyTests
     {
         QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
             new QChatCommandAccessContext("/dataagent diagnostics evidence", role));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QChatCommandAccessAction.DropSilently));
+            Assert.That(decision.Reason, Is.EqualTo("non_owner_qchat_command"));
+        });
+    }
+
+    [TestCase(QChatSenderRole.PrivateGuest)]
+    [TestCase(QChatSenderRole.GroupMember)]
+    public void NonOwnerDataAgentDiagGraphCommandIsDroppedSilently(QChatSenderRole role)
+    {
+        QChatCommandAccessDecision decision = QChatCommandAccessPolicy.Evaluate(
+            new QChatCommandAccessContext("/dataagent diag graph", role));
 
         Assert.Multiple(() =>
         {

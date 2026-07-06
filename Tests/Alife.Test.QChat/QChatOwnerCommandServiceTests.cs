@@ -248,6 +248,42 @@ public class QChatOwnerCommandServiceTests
         });
     }
 
+    [Test]
+    public async Task TryHandleDiagnosticsCommandAsyncPassesRecentGraphToOwnerDiagnostics()
+    {
+        List<(OneBotMessageType Type, long TargetId, string Message)> sent = [];
+        OneBotMessageEvent messageEvent = new()
+        {
+            SelfId = 2905391496,
+            UserId = 3045846738,
+            RawMessage = "/dataagent diag graph"
+        };
+
+        bool handled = await QChatOwnerCommandService.TryHandleDiagnosticsCommandAsync(
+            messageEvent,
+            QChatSenderRole.Owner,
+            new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738
+            },
+            (type, targetId, message) =>
+            {
+                sent.Add((type, targetId, message));
+                return Task.CompletedTask;
+            },
+            (_, _, _, _) => { },
+            recentDataAgentGraph: () => "DataQueryGraph dry-run\nenabled=false");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Is.True);
+            Assert.That(sent, Has.Count.EqualTo(1));
+            Assert.That(sent[0].Message, Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(sent[0].Message, Does.Contain("enabled=false"));
+        });
+    }
+
 
     [Test]
     public async Task TryHandleDiagnosticsCommandAsyncSilentlyDropsNonOwnerRecentDiagnosticsWithoutInvokingCallbacks()
@@ -586,6 +622,8 @@ public class QChatOwnerCommandServiceTests
     [TestCase("/dataagent diagnostics trace", true)]
     [TestCase("/dataagent diag progress", true)]
     [TestCase("/dataagent diagnostics progress", true)]
+    [TestCase("/dataagent diag graph", true)]
+    [TestCase("/dataagent diagnostics graph", true)]
     [TestCase("/qchatx route", false)]
     [TestCase("/dataagent", false)]
     [TestCase("/dataagent nope", false)]

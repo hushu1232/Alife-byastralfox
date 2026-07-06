@@ -2452,6 +2452,7 @@ public partial class QChatService(
     readonly object dataAgentEvidenceDiagnosticsGate = new();
     readonly object dataAgentTraceDiagnosticsGate = new();
     readonly object dataAgentProgressDiagnosticsGate = new();
+    readonly object dataAgentGraphDiagnosticsGate = new();
     readonly Queue<QChatRecentSentMessage> recentSentMessages = new();
     readonly QChatRecentDiagnosticsCache recentDiagnosticsCache = new();
     readonly object pokeCooldownGate = new();
@@ -2468,6 +2469,7 @@ public partial class QChatService(
     string recentDataAgentEvidenceDiagnostics = string.Empty;
     string recentDataAgentTraceDiagnostics = string.Empty;
     string recentDataAgentProgressDiagnostics = string.Empty;
+    string recentDataAgentGraphDiagnostics = string.Empty;
 
     sealed record QChatProfileRuntimeServices(
         QChatUserProfileService UserProfiles,
@@ -6718,7 +6720,8 @@ public partial class QChatService(
             GetRecentDataAgentEvidenceDiagnostics,
             GetRecentDataAgentTraceDiagnostics,
             GetRecentDataAgentProgressDiagnostics,
-            recentDiagnosticsCache);
+            recentDiagnosticsCache,
+            recentDataAgentGraph: GetRecentDataAgentGraphDiagnostics);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -9011,6 +9014,26 @@ public partial class QChatService(
             DateTimeOffset.UtcNow);
     }
 
+    public void RecordRecentDataAgentGraphDiagnostics(string? diagnostics)
+    {
+        string normalized = NormalizeCachedDiagnosticText(diagnostics);
+        lock (dataAgentGraphDiagnosticsGate)
+        {
+            recentDataAgentGraphDiagnostics = normalized;
+        }
+
+        functionService.RecordRecentDataAgentGraphDiagnostics(normalized);
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        recentDiagnosticsCache.Record(
+            QChatRecentDiagnosticKind.DataAgentGraph,
+            replySession != null
+                ? BuildRecentDiagnosticsSessionKey(replySession)
+                : BuildOwnerPrivateRecentDiagnosticsSessionKey(),
+            "dataagent_graph",
+            normalized,
+            DateTimeOffset.UtcNow);
+    }
+
     string GetRecentSemanticDiagnostics()
     {
         lock (semanticDiagnosticsGate)
@@ -9081,6 +9104,35 @@ public partial class QChatService(
                 QChatRecentDiagnosticKind.DataAgentProgress,
                 BuildOwnerPrivateRecentDiagnosticsSessionKey(),
                 "dataagent_progress",
+                fallback,
+                DateTimeOffset.UtcNow);
+        }
+
+        return fallback;
+    }
+
+    string GetRecentDataAgentGraphDiagnostics()
+    {
+        string fallback = NormalizeCachedDiagnosticText(functionService.RecentDataAgentGraphDiagnostics);
+        bool shouldRecordFallback = false;
+        lock (dataAgentGraphDiagnosticsGate)
+        {
+            if (string.IsNullOrWhiteSpace(fallback))
+                return recentDataAgentGraphDiagnostics;
+
+            if (string.Equals(recentDataAgentGraphDiagnostics, fallback, StringComparison.Ordinal))
+                return recentDataAgentGraphDiagnostics;
+
+            recentDataAgentGraphDiagnostics = fallback;
+            shouldRecordFallback = true;
+        }
+
+        if (shouldRecordFallback)
+        {
+            recentDiagnosticsCache.Record(
+                QChatRecentDiagnosticKind.DataAgentGraph,
+                BuildOwnerPrivateRecentDiagnosticsSessionKey(),
+                "dataagent_graph",
                 fallback,
                 DateTimeOffset.UtcNow);
         }
