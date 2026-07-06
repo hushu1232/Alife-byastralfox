@@ -570,7 +570,40 @@ public sealed class DataAgentAnalysisToolHandlerTests
         try
         {
             List<string> graphDiagnostics = [];
-            RecordingOrchestrator orchestrator = CreateOrchestrator();
+            RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+            {
+                ["continue"] = OrchestratedResult(
+                    "session-1",
+                    DataAgentAnalysisSessionStatus.Active,
+                    DataAgentAnalysisTurnIntent.Continue,
+                    [
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                    ],
+                    2,
+                    string.Empty),
+                ["summarize"] = OrchestratedResult(
+                    "session-1",
+                    DataAgentAnalysisSessionStatus.Summarized,
+                    DataAgentAnalysisTurnIntent.Summarize,
+                    [
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Summarize, DataAgentOrchestrationStepStatus.Succeeded, "terminal_summary", false),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                    ],
+                    2,
+                    string.Empty),
+                ["end"] = OrchestratedResult(
+                    "session-1",
+                    DataAgentAnalysisSessionStatus.Ended,
+                    DataAgentAnalysisTurnIntent.End,
+                    [
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                    ],
+                    2,
+                    string.Empty)
+            });
             DataAgentAnalysisToolHandler handler = new(
                 orchestrator,
                 dataQueryGraphDiagnosticsPublisher: graphDiagnostics.Add);
@@ -594,6 +627,34 @@ public sealed class DataAgentAnalysisToolHandlerTests
         {
             Environment.SetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable, previous);
         }
+    }
+
+    [Test]
+    public void DataQueryGraphDiagnosticsPublisherExceptionsPropagate()
+    {
+        InvalidOperationException publisherException = new("publisher failed");
+        RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+        {
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                    new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                ],
+                1,
+                string.Empty)
+        });
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            dataQueryGraphDiagnosticsPublisher: _ => throw publisherException);
+
+        InvalidOperationException? thrown = Assert.Throws<InvalidOperationException>(
+            () => handler.Start("xiayu", "Which documents describe DataAgent?"));
+
+        Assert.That(thrown, Is.SameAs(publisherException));
     }
 
     [Test]

@@ -110,14 +110,17 @@ public sealed class DataAgentAnalysisToolHandler(
         if (dataQueryGraphDiagnosticsPublisher is null)
             return;
 
+        string diagnostics;
         try
         {
             DataAgentDataQueryGraphDryRunResult graphResult = DataAgentDataQueryGraphPilot.DryRun(result);
-            dataQueryGraphDiagnosticsPublisher(DataAgentDataQueryGraphTraceFormatter.Format(graphResult));
+            diagnostics = DataAgentDataQueryGraphTraceFormatter.Format(graphResult);
         }
         catch (Exception)
         {
-            dataQueryGraphDiagnosticsPublisher(DataAgentDataQueryGraphTraceFormatter.Format(null));
+            diagnostics = DataAgentDataQueryGraphTraceFormatter.Format(null);
         }
+
+        dataQueryGraphDiagnosticsPublisher(diagnostics);
     }
 }
