@@ -53,7 +53,8 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             routeContextAccessor,
             functionService.RecordRecentDataAgentEvidenceDiagnostics,
             functionService.RecordRecentDataAgentTraceDiagnostics,
-            traceRecorder));
+            traceRecorder,
+            functionService.RecordRecentDataAgentGraphDiagnostics));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)

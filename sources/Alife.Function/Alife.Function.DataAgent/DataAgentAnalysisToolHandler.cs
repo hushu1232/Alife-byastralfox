@@ -11,7 +11,8 @@ public sealed class DataAgentAnalysisToolHandler(
     Action<string>? evidenceDiagnosticsPublisher = null,
     Action<string>? traceDiagnosticsPublisher = null,
     IDataAgentTraceRecorder? traceRecorder = null,
-    Func<DateTimeOffset>? traceClock = null)
+    Func<DateTimeOffset>? traceClock = null,
+    Action<string>? dataQueryGraphDiagnosticsPublisher = null)
 {
     readonly IDataAgentToolRouteContextAccessor routeContextAccessor =
         routeContextAccessor ?? MissingDataAgentToolRouteContextAccessor.Instance;
@@ -86,6 +87,7 @@ public sealed class DataAgentAnalysisToolHandler(
     void PublishResult(DataAgentOrchestrationResult result, string context)
     {
         resultPublisher?.Invoke(context);
+        PublishDataQueryGraphDiagnostics(result);
 
         if (evidenceDiagnosticsPublisher is null && traceDiagnosticsPublisher is null)
             return;
@@ -101,5 +103,21 @@ public sealed class DataAgentAnalysisToolHandler(
         traceRecorder.Record(timeline);
         DataAgentTraceTimeline? latestTimeline = traceRecorder.GetLatest(result.SessionId, now);
         traceDiagnosticsPublisher(DataAgentTraceDiagnosticsFormatter.Format(latestTimeline));
+    }
+
+    void PublishDataQueryGraphDiagnostics(DataAgentOrchestrationResult result)
+    {
+        if (dataQueryGraphDiagnosticsPublisher is null)
+            return;
+
+        try
+        {
+            DataAgentDataQueryGraphDryRunResult graphResult = DataAgentDataQueryGraphPilot.DryRun(result);
+            dataQueryGraphDiagnosticsPublisher(DataAgentDataQueryGraphTraceFormatter.Format(graphResult));
+        }
+        catch (Exception)
+        {
+            dataQueryGraphDiagnosticsPublisher(DataAgentDataQueryGraphTraceFormatter.Format(null));
+        }
     }
 }

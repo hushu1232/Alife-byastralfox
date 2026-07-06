@@ -516,6 +516,87 @@ public sealed class DataAgentAnalysisToolHandlerTests
     }
 
     [Test]
+    [NonParallelizable]
+    public void StartPublishesDataQueryGraphDiagnosticsWithoutEvidenceOrTracePublisher()
+    {
+        string? previous = Environment.GetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable);
+        Environment.SetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable, null);
+        try
+        {
+            List<string> graphDiagnostics = [];
+            RecordingOrchestrator orchestrator = new(new Dictionary<string, DataAgentOrchestrationResult>
+            {
+                ["start"] = OrchestratedResult(
+                    "session-1",
+                    DataAgentAnalysisSessionStatus.Active,
+                    DataAgentAnalysisTurnIntent.NewQuestion,
+                    [
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                        new DataAgentOrchestrationStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+                    ],
+                    1,
+                    "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]")
+            });
+            DataAgentAnalysisToolHandler handler = new(
+                orchestrator,
+                dataQueryGraphDiagnosticsPublisher: graphDiagnostics.Add);
+
+            handler.Start("xiayu", "Which documents describe DataAgent?");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(graphDiagnostics, Has.Count.EqualTo(1));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("DataQueryGraph dry-run"));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("enabled=false"));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("accepted=false"));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("reason=dataquerygraph_disabled"));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("fallback=pilot_disabled"));
+                Assert.That(graphDiagnostics.Single(), Does.Contain("runtime=no_langgraph_runtime"));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable, previous);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void ContinueSummarizeAndEndPublishDataQueryGraphDiagnostics()
+    {
+        string? previous = Environment.GetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable);
+        Environment.SetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable, "true");
+        try
+        {
+            List<string> graphDiagnostics = [];
+            RecordingOrchestrator orchestrator = CreateOrchestrator();
+            DataAgentAnalysisToolHandler handler = new(
+                orchestrator,
+                dataQueryGraphDiagnosticsPublisher: graphDiagnostics.Add);
+
+            handler.Continue("session-1", "continue");
+            handler.Summarize("session-1");
+            handler.End("session-1");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(graphDiagnostics, Has.Count.EqualTo(3));
+                Assert.That(graphDiagnostics, Has.All.Contains("DataQueryGraph dry-run"));
+                Assert.That(graphDiagnostics, Has.All.Contains("enabled=true"));
+                Assert.That(graphDiagnostics[0], Does.Contain("reason=dataquerygraph_dry_run_completed")
+                    .Or.Contain("reason=dataquerygraph_fallback_to_deterministic_orchestrator"));
+                Assert.That(graphDiagnostics[1], Does.Contain("terminal"));
+                Assert.That(graphDiagnostics[2], Does.Contain("terminal"));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(DataAgentDataQueryGraphOptions.EnabledEnvironmentVariable, previous);
+        }
+    }
+
+    [Test]
     public void AnalysisMethodsAreRegisteredAsXmlFunctions()
     {
         XmlHandler xmlHandler = new(new DataAgentAnalysisToolHandler(CreateOrchestrator()));

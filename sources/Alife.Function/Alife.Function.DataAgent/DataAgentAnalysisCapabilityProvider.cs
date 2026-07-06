@@ -9,7 +9,8 @@ public sealed class DataAgentAnalysisCapabilityProvider(
     IDataAgentToolRouteContextAccessor? routeContextAccessor = null,
     Action<string>? evidenceDiagnosticsPublisher = null,
     Action<string>? traceDiagnosticsPublisher = null,
-    IDataAgentTraceRecorder? traceRecorder = null) : IDataAgentCapabilityProvider
+    IDataAgentTraceRecorder? traceRecorder = null,
+    Action<string>? dataQueryGraphDiagnosticsPublisher = null) : IDataAgentCapabilityProvider
 {
     public string Name => nameof(DataAgentAnalysisCapabilityProvider);
 
@@ -24,6 +25,7 @@ public sealed class DataAgentAnalysisCapabilityProvider(
             routeContextAccessor,
             evidenceDiagnosticsPublisher,
             traceDiagnosticsPublisher,
-            traceRecorder)));
+            traceRecorder,
+            dataQueryGraphDiagnosticsPublisher: dataQueryGraphDiagnosticsPublisher)));
     }
 }
