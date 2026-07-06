@@ -272,6 +272,38 @@ public static class DataAgentReadiness
                 ? Pass("DataQueryGraphPilotPresent", dataQueryGraphDetail)
                 : Fail("DataQueryGraphPilotPresent", dataQueryGraphDetail));
 
+            string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
+                DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
+            bool dataQueryGraphHandlerPublisherReady =
+                typeof(DataAgentAnalysisToolHandler)
+                    .GetConstructors()
+                    .SelectMany(constructor => constructor.GetParameters())
+                    .Any(parameter => string.Equals(parameter.Name, "dataQueryGraphDiagnosticsPublisher", StringComparison.Ordinal));
+            bool dataQueryGraphCapabilityProviderReady =
+                typeof(DataAgentAnalysisCapabilityProvider)
+                    .GetConstructors()
+                    .SelectMany(constructor => constructor.GetParameters())
+                    .Any(parameter => string.Equals(parameter.Name, "dataQueryGraphDiagnosticsPublisher", StringComparison.Ordinal));
+            bool dataQueryGraphFunctionCallerReady =
+                typeof(XmlFunctionCaller).GetProperty("RecentDataAgentGraphDiagnostics") is not null &&
+                typeof(XmlFunctionCaller).GetMethod("RecordRecentDataAgentGraphDiagnostics") is not null;
+            bool dataQueryGraphDisabledDiagnosticsReady =
+                dataQueryGraphDisabledDiagnostics.Contains("DataQueryGraph dry-run", StringComparison.Ordinal) &&
+                dataQueryGraphDisabledDiagnostics.Contains("enabled=false", StringComparison.Ordinal) &&
+                dataQueryGraphDisabledDiagnostics.Contains("reason=dataquerygraph_disabled", StringComparison.Ordinal) &&
+                dataQueryGraphDisabledDiagnostics.Contains("runtime=no_langgraph_runtime", StringComparison.Ordinal);
+            bool dataQueryGraphOwnerDiagnosticsReady =
+                dataQueryGraphHandlerPublisherReady &&
+                dataQueryGraphCapabilityProviderReady &&
+                dataQueryGraphFunctionCallerReady &&
+                dataQueryGraphDisabledDiagnosticsReady &&
+                string.Equals(DataAgentDataQueryGraphPilot.NoLangGraphRuntimeMarker, "no_langgraph_runtime", StringComparison.Ordinal);
+            string dataQueryGraphOwnerDiagnosticsDetail =
+                $"handler_publisher={LowerBool(dataQueryGraphHandlerPublisherReady)};capability_provider={LowerBool(dataQueryGraphCapabilityProviderReady)};function_caller={LowerBool(dataQueryGraphFunctionCallerReady)};disabled_diagnostics={LowerBool(dataQueryGraphDisabledDiagnosticsReady)};no_langgraph_runtime={LowerBool(DataAgentDataQueryGraphPilot.NoLangGraphRuntimeMarker == "no_langgraph_runtime")}";
+            checks.Add(dataQueryGraphOwnerDiagnosticsReady
+                ? Pass("DataQueryGraphOwnerDiagnosticsPresent", dataQueryGraphOwnerDiagnosticsDetail)
+                : Fail("DataQueryGraphOwnerDiagnosticsPresent", dataQueryGraphOwnerDiagnosticsDetail));
+
             DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
                 readinessStore,
                 new FixedPlanner(new DataAgentQueryPlan(

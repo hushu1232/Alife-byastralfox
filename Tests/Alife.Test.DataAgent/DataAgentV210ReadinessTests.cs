@@ -33,12 +33,12 @@ public sealed class DataAgentV210ReadinessTests
         Assert.Multiple(() =>
         {
             Assert.That(dataAgentScript, Does.Contain("V2.10"));
-            Assert.That(dataAgentScript, Does.Contain("$expectedRequired = 84"));
+            Assert.That(dataAgentScript, Does.Contain("$expectedRequired = 85"));
             Assert.That(dataAgentScript, Does.Contain("DataAgentScenarioKnowledgePackPresent"));
             Assert.That(dataAgentScript, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(dataAgentScript, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(qchatScript, Does.Contain("V2.10"));
-            Assert.That(qchatScript, Does.Contain("$expectedRequired = 59"));
+            Assert.That(qchatScript, Does.Contain("$expectedRequired = 60"));
             Assert.That(qchatScript, Does.Contain("Alife capability governance catalog"));
             Assert.That(qchatScript, Does.Contain("DataAgent node tool scope policy"));
         });

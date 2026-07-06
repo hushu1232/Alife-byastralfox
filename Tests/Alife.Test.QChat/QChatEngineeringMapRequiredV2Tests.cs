@@ -38,6 +38,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent PostgreSQL checkpoint persistence",
         "DataAgent graph sidecar contract",
         "DataAgent DataQueryGraph pilot",
+        "DataAgent DataQueryGraph owner diagnostics",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -207,6 +208,30 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void DataQueryGraphOwnerDiagnosticsCheckRequiresStringBridgeAndQChatBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent DataQueryGraph owner diagnostics");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
+            Assert.That(declaration, Does.Contain("RecentDataAgentGraph"));
+            Assert.That(declaration, Does.Contain("DataAgentGraph"));
+            Assert.That(declaration, Does.Contain("diag graph"));
+            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentBoundaryTypes"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphOptions"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphPilot"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphDryRunResult"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphTraceFormatter"));
+        });
+    }
+
+    [Test]
     public void QChatDoesNotDirectlyImportDataAgentBoundaryTypes()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -260,7 +285,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 59 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 60 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -274,7 +299,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 59"));
+            Assert.That(script, Does.Contain("$expectedRequired = 60"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
