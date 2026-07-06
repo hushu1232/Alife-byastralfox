@@ -46,6 +46,18 @@ public sealed class DataAgentProgressDiagnosticsPublisherTests
     }
 
     [Test]
+    public void XmlFunctionCallerStoresRecentGraphDiagnostics()
+    {
+        XmlFunctionCaller caller = new(new NullLogger<XmlFunctionCaller>());
+
+        caller.RecordRecentDataAgentGraphDiagnostics("DataQueryGraph dry-run\r\nenabled=false  ");
+
+        Assert.That(
+            caller.RecentDataAgentGraphDiagnostics,
+            Is.EqualTo("DataQueryGraph dry-run\nenabled=false"));
+    }
+
+    [Test]
     public void DataAgentModuleWiresProgressPublisherIntoRuntime()
     {
         string source = ReadSource(

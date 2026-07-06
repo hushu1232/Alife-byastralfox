@@ -69,6 +69,17 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         }
     }
 
+    public string RecentDataAgentGraphDiagnostics
+    {
+        get
+        {
+            lock (dataAgentGraphDiagnosticsGate)
+            {
+                return recentDataAgentGraphDiagnostics;
+            }
+        }
+    }
+
     public void RecordRecentDataAgentEvidenceDiagnostics(string? diagnostics)
     {
         string normalized = string.IsNullOrWhiteSpace(diagnostics)
@@ -102,6 +113,18 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         lock (dataAgentProgressDiagnosticsGate)
         {
             recentDataAgentProgressDiagnostics = normalized;
+        }
+    }
+
+    public void RecordRecentDataAgentGraphDiagnostics(string? diagnostics)
+    {
+        string normalized = string.IsNullOrWhiteSpace(diagnostics)
+            ? string.Empty
+            : diagnostics.ReplaceLineEndings("\n").Trim();
+
+        lock (dataAgentGraphDiagnosticsGate)
+        {
+            recentDataAgentGraphDiagnostics = normalized;
         }
     }
 
@@ -223,11 +246,13 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     readonly object dataAgentEvidenceDiagnosticsGate = new();
     readonly object dataAgentTraceDiagnosticsGate = new();
     readonly object dataAgentProgressDiagnosticsGate = new();
+    readonly object dataAgentGraphDiagnosticsGate = new();
     string activeDataAgentSessionId = string.Empty;
     string activeDataAgentSessionStatus = string.Empty;
     string recentDataAgentEvidenceDiagnostics = string.Empty;
     string recentDataAgentTraceDiagnostics = string.Empty;
     string recentDataAgentProgressDiagnostics = string.Empty;
+    string recentDataAgentGraphDiagnostics = string.Empty;
     ToolRouteDecision? recentToolRouteDecision;
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;
