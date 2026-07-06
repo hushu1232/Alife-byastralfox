@@ -222,12 +222,18 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("RecentDataAgentGraph"));
             Assert.That(declaration, Does.Contain("DataAgentGraph"));
             Assert.That(declaration, Does.Contain("diag graph"));
-            Assert.That(declaration, Does.Contain("QChatDoesNotDirectlyImportDataAgentBoundaryTypes"));
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
-            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphOptions"));
-            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphPilot"));
-            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphDryRunResult"));
-            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraphTraceFormatter"));
+            Assert.That(declaration, Does.Contain("*.cs"));
+            Assert.That(declaration, Does.Contain("AllDirectories"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraph"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphOptions"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphPilot"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphPlan"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphNode"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphTransition"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphDryRunResult"));
+            Assert.That(declaration, Does.Not.Contain("DataAgentDataQueryGraphTraceFormatter"));
+            Assert.That(declaration, Does.Not.Contain("dataagent_graph_recent"));
         });
     }
 
@@ -250,13 +256,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             "DataAgentGraphSidecarPolicy",
             "DataAgentGraphSidecarRequest",
             "DataAgentGraphSidecarResponse",
-            "DataAgentDataQueryGraphOptions",
-            "DataAgentDataQueryGraphPilot",
-            "DataAgentDataQueryGraphPlan",
-            "DataAgentDataQueryGraphNode",
-            "DataAgentDataQueryGraphTransition",
-            "DataAgentDataQueryGraphDryRunResult",
-            "DataAgentDataQueryGraphTraceFormatter"
+            "DataAgentDataQueryGraph"
         ];
 
         string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)

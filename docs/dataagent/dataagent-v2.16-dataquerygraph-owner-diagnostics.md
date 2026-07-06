@@ -13,7 +13,15 @@ The owner can inspect the latest graph diagnostics with:
 /qchat diagnostics dataagent graph
 ```
 
-When the pilot flag is disabled, the command reports the disabled dry-run state:
+Before any graph diagnostics have been published, QChat returns:
+
+```text
+DataAgent graph diagnostics
+state=unavailable
+reason=graph_diagnostics_unavailable
+```
+
+After a DataAgent analysis action has published graph diagnostics, or whenever the latest graph diagnostics string is available, the command shows that latest diagnostic string. When the pilot flag is disabled, that published diagnostic reports the disabled dry-run state:
 
 ```text
 DataQueryGraph dry-run
@@ -22,6 +30,7 @@ accepted=false
 reason=dataquerygraph_disabled
 fallback=pilot_disabled
 runtime=no_langgraph_runtime
+compared_trace=
 nodes=
 ```
 
