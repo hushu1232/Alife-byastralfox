@@ -119,7 +119,7 @@ public sealed class DataAgentDataQueryGraphPilotTests
         {
             Assert.That(result.Enabled, Is.True);
             Assert.That(result.Accepted, Is.True);
-            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_dry_run_accepted"));
+            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_dry_run_completed"));
             Assert.That(result.Plan.Nodes.Select(node => node.Name), Is.EqualTo(expectedNodes));
             Assert.That(result.Plan.Transitions.Select(transition => (transition.FromNode, transition.ToNode)), Is.EqualTo(new[]
             {
@@ -151,8 +151,9 @@ public sealed class DataAgentDataQueryGraphPilotTests
 
         Assert.Multiple(() =>
         {
+            Assert.That(result.Enabled, Is.True);
             Assert.That(result.Accepted, Is.False);
-            Assert.That(result.ReasonCode, Is.EqualTo("tool_route_required"));
+            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_route_rejected"));
             Assert.That(result.Plan.Nodes.Select(node => node.Name), Is.EqualTo(new[]
             {
                 DataAgentWorkflowNodeNames.RouteGate,
@@ -172,12 +173,48 @@ public sealed class DataAgentDataQueryGraphPilotTests
 
         Assert.Multiple(() =>
         {
+            Assert.That(result.Enabled, Is.True);
             Assert.That(result.Accepted, Is.True);
+            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_dry_run_completed"));
             Assert.That(result.Plan.Nodes.Select(node => node.Name), Is.EqualTo(new[]
             {
                 DataAgentWorkflowNodeNames.Terminal,
                 DataAgentWorkflowNodeNames.CheckpointProgress
             }));
+            Assert.That(result.Plan.Nodes.Any(node => node.Name == DataAgentWorkflowNodeNames.ReadOnlyExecute), Is.False);
+            Assert.That(result.Plan.Nodes.Any(node => node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery)), Is.False);
+        });
+    }
+
+    [Test]
+    public void ClarificationResponseAcceptedByOrchestratorIsNotGraphAccepted()
+    {
+        DataAgentDataQueryGraphDryRunResult result = DataAgentDataQueryGraphPilot.DryRun(
+            ClarificationResult(),
+            EnabledOptions);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Enabled, Is.True);
+            Assert.That(result.Accepted, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("needs_clarification"));
+            Assert.That(result.Plan.Nodes.Any(node => node.Name == DataAgentWorkflowNodeNames.ReadOnlyExecute), Is.False);
+            Assert.That(result.Plan.Nodes.Any(node => node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery)), Is.False);
+        });
+    }
+
+    [Test]
+    public void InvalidAnswerAcceptedByOrchestratorIsNotGraphAccepted()
+    {
+        DataAgentDataQueryGraphDryRunResult result = DataAgentDataQueryGraphPilot.DryRun(
+            InvalidAcceptedResponseResult(),
+            EnabledOptions);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Enabled, Is.True);
+            Assert.That(result.Accepted, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("unsupported_operator:starts_with"));
             Assert.That(result.Plan.Nodes.Any(node => node.Name == DataAgentWorkflowNodeNames.ReadOnlyExecute), Is.False);
             Assert.That(result.Plan.Nodes.Any(node => node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery)), Is.False);
         });
@@ -257,6 +294,48 @@ public sealed class DataAgentDataQueryGraphPilotTests
         });
     }
 
+    [Test]
+    public void FormatterRejectsSqlLikeRuntimeNodeScopeReasonAndTransitionEndpointText()
+    {
+        const string runtimeMarker = "runtime SELECT token FROM secret_table";
+        const string nodeName = "node SELECT name FROM secret_node";
+        const string scopeReason = "scope DELETE FROM secret_scope";
+        const string transitionEndpoint = "transition DROP TABLE secret_transition";
+
+        DataAgentDataQueryGraphDryRunResult result = new(
+            Enabled: true,
+            Accepted: true,
+            ReasonCode: "dataquerygraph_dry_run_completed",
+            FallbackReason: string.Empty,
+            RuntimeMarker: runtimeMarker,
+            ComparedOrchestrationTrace: "RouteGate:Succeeded",
+            Plan: new DataAgentDataQueryGraphPlan(
+                [
+                    new DataAgentDataQueryGraphNode(
+                        nodeName,
+                        AllowsModelCall: false,
+                        AllowedCapabilities: [],
+                        scopeReason,
+                        "safe_trace")
+                ],
+                [
+                    new DataAgentDataQueryGraphTransition(
+                        transitionEndpoint,
+                        DataAgentWorkflowNodeNames.CheckpointProgress)
+                ]));
+
+        string formatted = DataAgentDataQueryGraphTraceFormatter.Format(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("dataquerygraph_sql_text_rejected"));
+            Assert.That(formatted, Does.Not.Contain(runtimeMarker));
+            Assert.That(formatted, Does.Not.Contain(nodeName));
+            Assert.That(formatted, Does.Not.Contain(scopeReason));
+            Assert.That(formatted, Does.Not.Contain(transitionEndpoint));
+        });
+    }
+
     static DataAgentDataQueryGraphOptions EnabledOptions => new(true);
 
     static DataAgentOrchestrationResult AcceptedResult()
@@ -302,18 +381,50 @@ public sealed class DataAgentDataQueryGraphPilotTests
             DataAgentAnalysisTurnIntent.End);
     }
 
+    static DataAgentOrchestrationResult ClarificationResult()
+    {
+        return Result(
+            DataAgentAnalysisSessionStatus.Active,
+            true,
+            string.Empty,
+            [
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                Step(DataAgentOrchestrationNodeKind.Clarification, DataAgentOrchestrationStepStatus.Succeeded, "needs_clarification", false),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            answer: RejectedAnswer("needs_clarification"));
+    }
+
+    static DataAgentOrchestrationResult InvalidAcceptedResponseResult()
+    {
+        return Result(
+            DataAgentAnalysisSessionStatus.Active,
+            true,
+            string.Empty,
+            [
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                Step(DataAgentOrchestrationNodeKind.SchemaContext, DataAgentOrchestrationStepStatus.Succeeded, "dataagent_catalog_available", false),
+                Step(DataAgentOrchestrationNodeKind.Plan, DataAgentOrchestrationStepStatus.Succeeded, "planner_response_received", false),
+                Step(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Rejected, "unsupported_operator:starts_with", false),
+                Step(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "unsupported_operator:starts_with", false),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            answer: RejectedAnswer("unsupported_operator:starts_with"));
+    }
+
     static DataAgentOrchestrationResult Result(
         DataAgentAnalysisSessionStatus status,
         bool accepted,
         string rejectedReason,
         IReadOnlyList<DataAgentOrchestrationStep> steps,
-        DataAgentAnalysisTurnIntent intent = DataAgentAnalysisTurnIntent.NewQuestion)
+        DataAgentAnalysisTurnIntent intent = DataAgentAnalysisTurnIntent.NewQuestion,
+        DataAgentAnswer? answer = null)
     {
         DataAgentAnalysisResponse response = new(
             "session-1",
             status,
             intent,
-            accepted && ProducesQueryForTest(intent) ? AcceptedAnswer() : null,
+            answer ?? (accepted && ProducesQueryForTest(intent) ? AcceptedAnswer() : null),
             accepted ? "ok" : string.Empty,
             string.Empty,
             accepted,
@@ -370,5 +481,24 @@ public sealed class DataAgentDataQueryGraphPilotTests
                 "high",
                 ["test"],
                 "test accepted answer"));
+    }
+
+    static DataAgentAnswer RejectedAnswer(string rejectedReason)
+    {
+        return new DataAgentAnswer(
+            "document_index",
+            string.Empty,
+            0,
+            string.Empty,
+            "[data_agent_context]\nsql_status=rejected\n[/data_agent_context]",
+            false,
+            rejectedReason,
+            new DataAgentPlannerExplanation(
+                "TestPlanner",
+                "rejected_query",
+                "document_index",
+                "low",
+                ["test"],
+                "test rejected answer"));
     }
 }

@@ -93,13 +93,14 @@ public static class DataAgentDataQueryGraphPilot
         }
 
         DataAgentDataQueryGraphPlan plan = BuildPlan(result);
-        string reasonCode = result.Response.Accepted
-            ? "dataquerygraph_dry_run_accepted"
+        bool accepted = IsGraphAccepted(result);
+        string reasonCode = accepted
+            ? "dataquerygraph_dry_run_completed"
             : ResolveRejectedReason(result);
 
         return new DataAgentDataQueryGraphDryRunResult(
             true,
-            result.Response.Accepted,
+            accepted,
             reasonCode,
             string.Empty,
             NoLangGraphRuntimeMarker,
@@ -210,6 +211,24 @@ public static class DataAgentDataQueryGraphPilot
             step.Status == DataAgentOrchestrationStepStatus.Rejected);
     }
 
+    static bool IsGraphAccepted(DataAgentOrchestrationResult result)
+    {
+        if (result.Response.Accepted == false)
+            return false;
+
+        if (IsRouteDenied(result) || HasClarification(result) || HasReject(result))
+            return false;
+
+        DataAgentAnswer? answer = result.Response.Answer;
+        if (answer is not null &&
+            (answer.Validated == false || string.IsNullOrWhiteSpace(answer.RejectedReason) == false))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     static bool IsTerminal(DataAgentOrchestrationResult result)
     {
         return result.Steps.Any(step =>
@@ -219,6 +238,16 @@ public static class DataAgentDataQueryGraphPilot
     static bool HasExecuteStep(DataAgentOrchestrationResult result)
     {
         return result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute);
+    }
+
+    static bool HasClarification(DataAgentOrchestrationResult result)
+    {
+        return result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Clarification);
+    }
+
+    static bool HasReject(DataAgentOrchestrationResult result)
+    {
+        return result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Reject);
     }
 
     static bool ShouldAuditEvidence(DataAgentOrchestrationResult result)
@@ -241,6 +270,18 @@ public static class DataAgentDataQueryGraphPilot
 
     static string ResolveRejectedReason(DataAgentOrchestrationResult result)
     {
+        if (IsRouteDenied(result))
+            return "dataquerygraph_route_rejected";
+
+        if (string.Equals(result.Response.Answer?.RejectedReason, "needs_clarification", StringComparison.Ordinal))
+            return "needs_clarification";
+
+        if (HasClarification(result))
+            return "needs_clarification";
+
+        if (string.IsNullOrWhiteSpace(result.Response.Answer?.RejectedReason) == false)
+            return result.Response.Answer.RejectedReason;
+
         if (string.IsNullOrWhiteSpace(result.Response.RejectedReason) == false)
             return result.Response.RejectedReason;
 
@@ -280,7 +321,7 @@ public static class DataAgentDataQueryGraphTraceFormatter
         builder.AppendLine($"runtime={Safe(result.RuntimeMarker)}");
         builder.AppendLine($"compared_trace={Safe(result.ComparedOrchestrationTrace)}");
         builder.Append("nodes=");
-        builder.Append(string.Join(",", result.Plan.Nodes.Select(node => node.Name)));
+        builder.Append(string.Join(",", result.Plan.Nodes.Select(node => Safe(node.Name))));
 
         return Bound(builder.ToString().TrimEnd(), maxChars);
     }
@@ -289,8 +330,16 @@ public static class DataAgentDataQueryGraphTraceFormatter
     {
         return ContainsRawSql(result.ReasonCode) ||
             ContainsRawSql(result.FallbackReason) ||
+            ContainsRawSql(result.RuntimeMarker) ||
             ContainsRawSql(result.ComparedOrchestrationTrace) ||
-            result.Plan.Nodes.Any(node => ContainsRawSql(node.Trace));
+            result.Plan.Nodes.Any(node =>
+                ContainsRawSql(node.Name) ||
+                ContainsRawSql(node.ScopeReason) ||
+                ContainsRawSql(node.Trace) ||
+                node.AllowedCapabilities.Any(ContainsRawSql)) ||
+            result.Plan.Transitions.Any(transition =>
+                ContainsRawSql(transition.FromNode) ||
+                ContainsRawSql(transition.ToNode));
     }
 
     static bool ContainsRawSql(string? value)
