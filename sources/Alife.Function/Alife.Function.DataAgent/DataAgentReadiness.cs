@@ -146,6 +146,72 @@ public static class DataAgentReadiness
                 ? Pass("GraphSidecarContractPresent", "default_enabled=false;contract=true;policy=true;no_sql_authority=true;no_visible_text_authority=true;no_runtime=true")
                 : Fail("GraphSidecarContractPresent", $"default_enabled={LowerBool(graphSidecarDefaultOptions.Enabled)};contract={LowerBool(graphSidecarContractReady)};policy={LowerBool(graphSidecarPolicyReady)};no_sql_authority={LowerBool(graphSidecarNoSqlAuthority)};no_visible_text_authority={LowerBool(graphSidecarPolicy.NoVisibleTextAuthority)};no_runtime={LowerBool(graphSidecarNoRuntime)}"));
 
+            DataAgentDataQueryGraphOptions dataQueryGraphDefaultOptions = DataAgentDataQueryGraphOptions.FromValue(null);
+            DataAgentDataQueryGraphOptions dataQueryGraphEnabledOptions = new(true);
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphDisabledResult =
+                DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), dataQueryGraphDefaultOptions);
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphAcceptedResult =
+                DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), dataQueryGraphEnabledOptions);
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphFallbackResult =
+                DataAgentDataQueryGraphPilot.DryRun(null, dataQueryGraphEnabledOptions);
+            DataAgentDataQueryGraphNode dataQueryGraphPlannerNode =
+                DataAgentDataQueryGraphPilot.BuildNode(DataAgentWorkflowNodeNames.QueryPlanner, "planner");
+            DataAgentDataQueryGraphNode dataQueryGraphDiagnosticsNode =
+                DataAgentDataQueryGraphPilot.BuildNode(DataAgentWorkflowNodeNames.DiagnosticsRouter, "diagnostics");
+            DataAgentDataQueryGraphNode dataQueryGraphUnknownNode =
+                DataAgentDataQueryGraphPilot.BuildNode("unknown_node", "unknown");
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphUnsafeTraceResult = new(
+                true,
+                false,
+                "dataquerygraph_fallback_to_deterministic_orchestrator",
+                "unsafe_trace",
+                DataAgentDataQueryGraphPilot.NoLangGraphRuntimeMarker,
+                "SELECT path FROM document_index",
+                new DataAgentDataQueryGraphPlan(
+                    [DataAgentDataQueryGraphPilot.BuildNode(DataAgentWorkflowNodeNames.QueryPlanner, "DROP TABLE document_index")],
+                    []));
+            string dataQueryGraphUnsafeTrace = DataAgentDataQueryGraphTraceFormatter.Format(dataQueryGraphUnsafeTraceResult);
+            bool dataQueryGraphDefaultDisabled =
+                dataQueryGraphDefaultOptions.Enabled == false &&
+                dataQueryGraphDisabledResult.Enabled == false &&
+                string.Equals(dataQueryGraphDisabledResult.ReasonCode, "dataquerygraph_disabled", StringComparison.Ordinal);
+            bool dataQueryGraphDryRunReady =
+                dataQueryGraphAcceptedResult.Enabled &&
+                dataQueryGraphAcceptedResult.Accepted &&
+                string.Equals(dataQueryGraphAcceptedResult.ReasonCode, "dataquerygraph_dry_run_completed", StringComparison.Ordinal);
+            bool dataQueryGraphNoRuntime =
+                string.Equals(DataAgentDataQueryGraphPilot.NoLangGraphRuntimeMarker, "no_langgraph_runtime", StringComparison.Ordinal) &&
+                string.Equals(dataQueryGraphAcceptedResult.RuntimeMarker, DataAgentDataQueryGraphPilot.NoLangGraphRuntimeMarker, StringComparison.Ordinal);
+            bool dataQueryGraphNodeScopeReady =
+                dataQueryGraphPlannerNode.AllowsModelCall &&
+                dataQueryGraphPlannerNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.GenerateQueryPlan, StringComparer.Ordinal) &&
+                dataQueryGraphPlannerNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false &&
+                dataQueryGraphDiagnosticsNode.AllowsModelCall &&
+                dataQueryGraphDiagnosticsNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ReadProgressDiagnostics, StringComparer.Ordinal) &&
+                dataQueryGraphDiagnosticsNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false &&
+                dataQueryGraphUnknownNode.AllowsModelCall == false &&
+                dataQueryGraphUnknownNode.AllowedCapabilities.Count == 0;
+            bool dataQueryGraphNoSqlAuthority =
+                dataQueryGraphUnsafeTrace.Contains("dataquerygraph_sql_text_rejected", StringComparison.Ordinal) &&
+                dataQueryGraphUnsafeTrace.Contains("SELECT path FROM document_index", StringComparison.OrdinalIgnoreCase) == false &&
+                dataQueryGraphUnsafeTrace.Contains("DROP TABLE document_index", StringComparison.OrdinalIgnoreCase) == false;
+            bool dataQueryGraphFallbackReady =
+                dataQueryGraphFallbackResult.Enabled &&
+                dataQueryGraphFallbackResult.Accepted == false &&
+                string.Equals(dataQueryGraphFallbackResult.ReasonCode, "dataquerygraph_fallback_to_deterministic_orchestrator", StringComparison.Ordinal);
+            bool dataQueryGraphReady =
+                dataQueryGraphDefaultDisabled &&
+                dataQueryGraphDryRunReady &&
+                dataQueryGraphNoRuntime &&
+                dataQueryGraphNodeScopeReady &&
+                dataQueryGraphNoSqlAuthority &&
+                dataQueryGraphFallbackReady;
+            string dataQueryGraphDetail =
+                $"default_enabled={LowerBool(dataQueryGraphDefaultOptions.Enabled)};dry_run={LowerBool(dataQueryGraphDryRunReady)};no_langgraph_runtime={LowerBool(dataQueryGraphNoRuntime)};node_scope={LowerBool(dataQueryGraphNodeScopeReady)};no_sql_authority={LowerBool(dataQueryGraphNoSqlAuthority)};fallback={LowerBool(dataQueryGraphFallbackReady)}";
+            checks.Add(dataQueryGraphReady
+                ? Pass("DataQueryGraphPilotPresent", dataQueryGraphDetail)
+                : Fail("DataQueryGraphPilotPresent", dataQueryGraphDetail));
+
             DataAgentAnswer storeBoundaryAnswer = new DataAgentService(
                 readinessStore,
                 new FixedPlanner(new DataAgentQueryPlan(
@@ -1160,6 +1226,68 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
 
     static string LowerBool(bool value) => value ? "true" : "false";
+
+    static DataAgentOrchestrationResult CreateReadinessDataQueryGraphAcceptedResult()
+    {
+        const string sessionId = "readiness-dataquerygraph";
+
+        DataAgentAnalysisResponse response = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Active,
+            DataAgentAnalysisTurnIntent.NewQuestion,
+            new DataAgentAnswer(
+                "document_index",
+                "SELECT path FROM document_index LIMIT 20",
+                1,
+                "Found DataAgent documentation.",
+                "[data_agent_context]\nsql_status=validated\n[/data_agent_context]",
+                true,
+                string.Empty,
+                new DataAgentPlannerExplanation(
+                    "ReadinessPlanner",
+                    "find_dataagent_documents",
+                    "document_index",
+                    "high",
+                    ["readiness"],
+                    "readiness accepted answer")),
+            "ok",
+            string.Empty,
+            true,
+            string.Empty);
+
+        DataAgentOrchestrationCheckpoint checkpoint = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Active,
+            "document_index",
+            1,
+            CanContinue: true,
+            CanSummarize: true,
+            Terminal: false);
+
+        return new DataAgentOrchestrationResult(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Active,
+            [
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Succeeded, "route_allowed", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.SchemaContext, DataAgentOrchestrationStepStatus.Succeeded, "dataagent_catalog_available", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Plan, DataAgentOrchestrationStepStatus.Succeeded, "planner_response_received", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "validated", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Explain, DataAgentOrchestrationStepStatus.Succeeded, "result_explained", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            checkpoint,
+            response);
+    }
+
+    static DataAgentOrchestrationStep CreateReadinessDataQueryGraphStep(
+        DataAgentOrchestrationNodeKind node,
+        DataAgentOrchestrationStepStatus status,
+        string reason,
+        bool executedSql)
+    {
+        return new DataAgentOrchestrationStep(node, status, reason, executedSql);
+    }
 
     static string FindRepositoryRoot(string startDirectory)
     {

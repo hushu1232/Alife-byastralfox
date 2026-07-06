@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(69));
+            Assert.That(checks, Has.Count.EqualTo(70));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -42,6 +42,14 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphSidecarCheck.Detail, Does.Contain("no_sql_authority=true"));
             Assert.That(graphSidecarCheck.Detail, Does.Contain("no_visible_text_authority=true"));
             Assert.That(graphSidecarCheck.Detail, Does.Contain("no_runtime=true"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphPilotPresent"));
+            DataAgentReadinessCheck dataQueryGraphCheck = checks.Single(check => check.Name == "DataQueryGraphPilotPresent");
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("default_enabled=false"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("dry_run=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("no_langgraph_runtime=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("node_scope=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("no_sql_authority=true"));
+            Assert.That(dataQueryGraphCheck.Detail, Does.Contain("fallback=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentServiceUsesStoreBoundary"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("ContextContributionStable"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("PlannerInterfacePresent"));
