@@ -152,6 +152,10 @@ public static class DataAgentReadiness
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), dataQueryGraphDefaultOptions);
             DataAgentDataQueryGraphDryRunResult dataQueryGraphAcceptedResult =
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), dataQueryGraphEnabledOptions);
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphDeniedResult =
+                DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphDeniedWithStrayExecutionResult(), dataQueryGraphEnabledOptions);
+            DataAgentDataQueryGraphDryRunResult dataQueryGraphTerminalResult =
+                DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphTerminalWithStrayExecutionResult(), dataQueryGraphEnabledOptions);
             DataAgentDataQueryGraphDryRunResult dataQueryGraphFallbackResult =
                 DataAgentDataQueryGraphPilot.DryRun(null, dataQueryGraphEnabledOptions);
             DataAgentDataQueryGraphNode dataQueryGraphPlannerNode =
@@ -223,6 +227,25 @@ public static class DataAgentReadiness
                 string.Equals(dataQueryGraphExecuteNodes[0].Name, DataAgentWorkflowNodeNames.ReadOnlyExecute, StringComparison.Ordinal) &&
                 dataQueryGraphPlanNode is not null &&
                 dataQueryGraphPlanNode.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false;
+            bool dataQueryGraphDeniedNoExecute =
+                dataQueryGraphDeniedResult.Accepted == false &&
+                dataQueryGraphDeniedResult.Plan.Nodes.Select(node => node.Name).SequenceEqual(
+                    [
+                        DataAgentWorkflowNodeNames.RouteGate,
+                        DataAgentWorkflowNodeNames.Reject,
+                        DataAgentWorkflowNodeNames.CheckpointProgress
+                    ],
+                    StringComparer.Ordinal) &&
+                dataQueryGraphDeniedResult.Plan.Nodes.Any(NodeCanExecuteReadOnlyQuery) == false;
+            bool dataQueryGraphTerminalNoExecute =
+                dataQueryGraphTerminalResult.Accepted &&
+                dataQueryGraphTerminalResult.Plan.Nodes.Select(node => node.Name).SequenceEqual(
+                    [
+                        DataAgentWorkflowNodeNames.Terminal,
+                        DataAgentWorkflowNodeNames.CheckpointProgress
+                    ],
+                    StringComparer.Ordinal) &&
+                dataQueryGraphTerminalResult.Plan.Nodes.Any(NodeCanExecuteReadOnlyQuery) == false;
             bool dataQueryGraphNoSqlAuthority =
                 dataQueryGraphUnsafeTrace.Contains("dataquerygraph_sql_text_rejected", StringComparison.Ordinal) &&
                 dataQueryGraphUnsafeTrace.Contains("SELECT path FROM document_index", StringComparison.OrdinalIgnoreCase) == false &&
@@ -239,10 +262,12 @@ public static class DataAgentReadiness
                 dataQueryGraphPlanShapeReady &&
                 dataQueryGraphTransitionShapeReady &&
                 dataQueryGraphExecuteScopeReady &&
+                dataQueryGraphDeniedNoExecute &&
+                dataQueryGraphTerminalNoExecute &&
                 dataQueryGraphNoSqlAuthority &&
                 dataQueryGraphFallbackReady;
             string dataQueryGraphDetail =
-                $"default_enabled={LowerBool(dataQueryGraphDefaultOptions.Enabled)};dry_run={LowerBool(dataQueryGraphDryRunReady)};plan_shape={LowerBool(dataQueryGraphPlanShapeReady)};transition_shape={LowerBool(dataQueryGraphTransitionShapeReady)};execute_scope={LowerBool(dataQueryGraphExecuteScopeReady)};no_langgraph_runtime={LowerBool(dataQueryGraphNoRuntime)};node_scope={LowerBool(dataQueryGraphNodeScopeReady)};no_sql_authority={LowerBool(dataQueryGraphNoSqlAuthority)};fallback={LowerBool(dataQueryGraphFallbackReady)}";
+                $"default_enabled={LowerBool(dataQueryGraphDefaultOptions.Enabled)};dry_run={LowerBool(dataQueryGraphDryRunReady)};plan_shape={LowerBool(dataQueryGraphPlanShapeReady)};transition_shape={LowerBool(dataQueryGraphTransitionShapeReady)};execute_scope={LowerBool(dataQueryGraphExecuteScopeReady)};denied_no_execute={LowerBool(dataQueryGraphDeniedNoExecute)};terminal_no_execute={LowerBool(dataQueryGraphTerminalNoExecute)};no_langgraph_runtime={LowerBool(dataQueryGraphNoRuntime)};node_scope={LowerBool(dataQueryGraphNodeScopeReady)};no_sql_authority={LowerBool(dataQueryGraphNoSqlAuthority)};fallback={LowerBool(dataQueryGraphFallbackReady)}";
             checks.Add(dataQueryGraphReady
                 ? Pass("DataQueryGraphPilotPresent", dataQueryGraphDetail)
                 : Fail("DataQueryGraphPilotPresent", dataQueryGraphDetail));
@@ -1313,6 +1338,85 @@ public static class DataAgentReadiness
             ],
             checkpoint,
             response);
+    }
+
+    static DataAgentOrchestrationResult CreateReadinessDataQueryGraphDeniedWithStrayExecutionResult()
+    {
+        const string sessionId = "readiness-dataquerygraph-denied";
+
+        DataAgentAnalysisResponse response = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Rejected,
+            DataAgentAnalysisTurnIntent.NewQuestion,
+            null,
+            string.Empty,
+            string.Empty,
+            false,
+            "tool_route_required");
+
+        DataAgentOrchestrationCheckpoint checkpoint = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Rejected,
+            "document_index",
+            1,
+            CanContinue: false,
+            CanSummarize: true,
+            Terminal: true);
+
+        return new DataAgentOrchestrationResult(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Rejected,
+            [
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "validated", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            checkpoint,
+            response);
+    }
+
+    static DataAgentOrchestrationResult CreateReadinessDataQueryGraphTerminalWithStrayExecutionResult()
+    {
+        const string sessionId = "readiness-dataquerygraph-terminal";
+
+        DataAgentAnalysisResponse response = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Ended,
+            DataAgentAnalysisTurnIntent.End,
+            null,
+            "ok",
+            string.Empty,
+            true,
+            string.Empty);
+
+        DataAgentOrchestrationCheckpoint checkpoint = new(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Ended,
+            "document_index",
+            1,
+            CanContinue: false,
+            CanSummarize: true,
+            Terminal: true);
+
+        return new DataAgentOrchestrationResult(
+            sessionId,
+            DataAgentAnalysisSessionStatus.Ended,
+            [
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "validated", false),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                CreateReadinessDataQueryGraphStep(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            checkpoint,
+            response);
+    }
+
+    static bool NodeCanExecuteReadOnlyQuery(DataAgentDataQueryGraphNode node)
+    {
+        return string.Equals(node.Name, DataAgentWorkflowNodeNames.ReadOnlyExecute, StringComparison.Ordinal) ||
+               node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal);
     }
 
     static DataAgentOrchestrationStep CreateReadinessDataQueryGraphStep(

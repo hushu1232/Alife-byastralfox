@@ -165,10 +165,55 @@ public sealed class DataAgentDataQueryGraphPilotTests
     }
 
     [Test]
+    public void RouteDeniedGraphIgnoresStrayValidateAndExecuteSteps()
+    {
+        DataAgentDataQueryGraphDryRunResult result = DataAgentDataQueryGraphPilot.DryRun(
+            RouteDeniedWithStrayExecutionResult(),
+            EnabledOptions);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Enabled, Is.True);
+            Assert.That(result.Accepted, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_route_rejected"));
+            Assert.That(result.Plan.Nodes.Select(node => node.Name), Is.EqualTo(new[]
+            {
+                DataAgentWorkflowNodeNames.RouteGate,
+                DataAgentWorkflowNodeNames.Reject,
+                DataAgentWorkflowNodeNames.CheckpointProgress
+            }));
+            Assert.That(result.Plan.Nodes.Any(node => node.Name == DataAgentWorkflowNodeNames.ReadOnlyExecute), Is.False);
+            Assert.That(result.Plan.Nodes.Any(node => node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery)), Is.False);
+        });
+    }
+
+    [Test]
     public void TerminalGraphCheckpointsWithoutQueryExecution()
     {
         DataAgentDataQueryGraphDryRunResult result = DataAgentDataQueryGraphPilot.DryRun(
             TerminalResult(),
+            EnabledOptions);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Enabled, Is.True);
+            Assert.That(result.Accepted, Is.True);
+            Assert.That(result.ReasonCode, Is.EqualTo("dataquerygraph_dry_run_completed"));
+            Assert.That(result.Plan.Nodes.Select(node => node.Name), Is.EqualTo(new[]
+            {
+                DataAgentWorkflowNodeNames.Terminal,
+                DataAgentWorkflowNodeNames.CheckpointProgress
+            }));
+            Assert.That(result.Plan.Nodes.Any(node => node.Name == DataAgentWorkflowNodeNames.ReadOnlyExecute), Is.False);
+            Assert.That(result.Plan.Nodes.Any(node => node.AllowedCapabilities.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery)), Is.False);
+        });
+    }
+
+    [Test]
+    public void TerminalGraphIgnoresStrayValidateAndExecuteSteps()
+    {
+        DataAgentDataQueryGraphDryRunResult result = DataAgentDataQueryGraphPilot.DryRun(
+            TerminalWithStrayExecutionResult(),
             EnabledOptions);
 
         Assert.Multiple(() =>
@@ -368,6 +413,21 @@ public sealed class DataAgentDataQueryGraphPilotTests
             ]);
     }
 
+    static DataAgentOrchestrationResult RouteDeniedWithStrayExecutionResult()
+    {
+        return Result(
+            DataAgentAnalysisSessionStatus.Rejected,
+            false,
+            "tool_route_required",
+            [
+                Step(DataAgentOrchestrationNodeKind.RouteGate, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                Step(DataAgentOrchestrationNodeKind.Reject, DataAgentOrchestrationStepStatus.Rejected, "tool_route_required", false),
+                Step(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "validated", false),
+                Step(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ]);
+    }
+
     static DataAgentOrchestrationResult TerminalResult()
     {
         return Result(
@@ -376,6 +436,21 @@ public sealed class DataAgentDataQueryGraphPilotTests
             string.Empty,
             [
                 Step(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
+            ],
+            DataAgentAnalysisTurnIntent.End);
+    }
+
+    static DataAgentOrchestrationResult TerminalWithStrayExecutionResult()
+    {
+        return Result(
+            DataAgentAnalysisSessionStatus.Ended,
+            true,
+            string.Empty,
+            [
+                Step(DataAgentOrchestrationNodeKind.End, DataAgentOrchestrationStepStatus.Succeeded, "terminal_end", false),
+                Step(DataAgentOrchestrationNodeKind.Validate, DataAgentOrchestrationStepStatus.Succeeded, "validated", false),
+                Step(DataAgentOrchestrationNodeKind.Execute, DataAgentOrchestrationStepStatus.Succeeded, "read_only_query_executed", true),
                 Step(DataAgentOrchestrationNodeKind.Checkpoint, DataAgentOrchestrationStepStatus.Succeeded, "checkpoint_created", false)
             ],
             DataAgentAnalysisTurnIntent.End);

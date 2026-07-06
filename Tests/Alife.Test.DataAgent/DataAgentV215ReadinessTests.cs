@@ -22,6 +22,8 @@ public sealed class DataAgentV215ReadinessTests
             Assert.That(check.Detail, Does.Contain("plan_shape=true"));
             Assert.That(check.Detail, Does.Contain("transition_shape=true"));
             Assert.That(check.Detail, Does.Contain("execute_scope=true"));
+            Assert.That(check.Detail, Does.Contain("denied_no_execute=true"));
+            Assert.That(check.Detail, Does.Contain("terminal_no_execute=true"));
             Assert.That(check.Detail, Does.Contain("no_langgraph_runtime=true"));
             Assert.That(check.Detail, Does.Contain("node_scope=true"));
             Assert.That(check.Detail, Does.Contain("no_sql_authority=true"));

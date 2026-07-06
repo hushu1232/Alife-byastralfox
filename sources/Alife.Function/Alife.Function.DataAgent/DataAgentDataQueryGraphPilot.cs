@@ -127,6 +127,25 @@ public static class DataAgentDataQueryGraphPilot
 
         foreach (DataAgentOrchestrationStep step in result.Steps)
         {
+            if (routeDenied && step.Node is not (
+                    DataAgentOrchestrationNodeKind.RouteGate or
+                    DataAgentOrchestrationNodeKind.Reject or
+                    DataAgentOrchestrationNodeKind.Checkpoint))
+            {
+                continue;
+            }
+
+            if (routeDenied == false &&
+                terminal &&
+                step.Node is not (
+                    DataAgentOrchestrationNodeKind.Clarification or
+                    DataAgentOrchestrationNodeKind.Summarize or
+                    DataAgentOrchestrationNodeKind.End or
+                    DataAgentOrchestrationNodeKind.Checkpoint))
+            {
+                continue;
+            }
+
             if (terminal && step.Node is DataAgentOrchestrationNodeKind.Checkpoint)
             {
                 AddNode(nodes, DataAgentWorkflowNodeNames.CheckpointProgress, step);
