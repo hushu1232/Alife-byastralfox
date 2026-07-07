@@ -404,6 +404,107 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeDevSidecarAdapterPresent", "default_enabled=false;dev_http_adapter_present=true;runtime_started=false;endpoint_required=true;loopback_only=true;fallback=true;validator=true;no_sql_authority=true")
                 : Fail("GraphHandshakeDevSidecarAdapterPresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};dev_http_adapter_present={LowerBool(graphHandshakeDevHttpAdapterPresent)};runtime_started={LowerBool(graphHandshakeNoRuntimeStarted == false)};endpoint_required={LowerBool(graphHandshakeEndpointRequired)};loopback_only={LowerBool(graphHandshakeLoopbackOnly)};fallback={LowerBool(graphHandshakeDevFallback)};validator={LowerBool(graphHandshakeSafeValidation.Accepted)};no_sql_authority={LowerBool(graphHandshakeNoSqlAuthority)}"));
 
+            DateTimeOffset graphSidecarProgressNow = new(2026, 7, 7, 12, 0, 0, TimeSpan.Zero);
+            DataAgentProgressRecorder graphSidecarProgressRecorder = new();
+            DataAgentGraphSidecarProgressBridge graphSidecarProgressBridge = new(
+                graphSidecarProgressRecorder,
+                () => graphSidecarProgressNow);
+            DataAgentOrchestrationResult graphSidecarProgressResult = CreateReadinessDataQueryGraphAcceptedResult();
+            graphSidecarProgressResult = graphSidecarProgressResult with
+            {
+                SessionId = graphHandshakeRequest.SessionId,
+                Checkpoint = graphSidecarProgressResult.Checkpoint with { SessionId = graphHandshakeRequest.SessionId },
+                Response = graphSidecarProgressResult.Response with { SessionId = graphHandshakeRequest.SessionId }
+            };
+            DataAgentGraphSidecarProgressBridgeResult graphSidecarProgressAccepted = graphSidecarProgressBridge.Publish(
+                graphHandshakeRequest,
+                graphSidecarProgressResult,
+                [
+                    new DataAgentGraphSidecarProgressEvent(
+                        graphHandshakeRequest.RequestId,
+                        graphHandshakeRequest.SessionId,
+                        DataAgentWorkflowNodeNames.QueryPlanner,
+                        DataAgentGraphSidecarProgressStatus.Completed,
+                        "planner_suggested",
+                        "planner ready",
+                        graphSidecarProgressNow.AddSeconds(-5),
+                        new Dictionary<string, string>
+                        {
+                            ["stage"] = "planner"
+                        })
+                ]);
+            DataAgentGraphSidecarProgressBridgeResult graphSidecarProgressUnsafe = graphSidecarProgressBridge.Publish(
+                graphHandshakeRequest,
+                graphSidecarProgressResult,
+                [
+                    new DataAgentGraphSidecarProgressEvent(
+                        graphHandshakeRequest.RequestId,
+                        graphHandshakeRequest.SessionId,
+                        DataAgentWorkflowNodeNames.QueryPlanner,
+                        DataAgentGraphSidecarProgressStatus.Completed,
+                        "planner_suggested",
+                        "SELECT * FROM engineering_gate",
+                        graphSidecarProgressNow,
+                        new Dictionary<string, string>())
+                ]);
+            IReadOnlyList<DataAgentProgressEvent> graphSidecarProgressEvents = graphSidecarProgressRecorder.GetRecent(
+                graphHandshakeRequest.SessionId,
+                graphSidecarProgressNow);
+            string graphSidecarProgressDiagnostics = DataAgentProgressDiagnosticsFormatter.Format(
+                graphSidecarProgressEvents,
+                graphHandshakeRequest.SessionId,
+                graphSidecarProgressNow);
+            string graphSidecarProgressRedactionProbe = DataAgentProgressDiagnosticsFormatter.Format(
+                [
+                    new DataAgentProgressEvent(
+                        graphHandshakeRequest.SessionId,
+                        DataAgentProgressEventKind.Planner,
+                        DataAgentProgressEventPhase.Completed,
+                        DataAgentProgressEventStatus.Succeeded,
+                        "planner_suggested",
+                        TurnCount: 1,
+                        graphSidecarProgressNow,
+                        ExecutedSql: false,
+                        QueryAllowed: true,
+                        Terminal: false,
+                        new Dictionary<string, string>
+                        {
+                            ["sql"] = "SELECT * FROM engineering_gate",
+                            ["hidden_context"] = "[hidden_context]secret[/hidden_context]"
+                        })
+                ],
+                graphHandshakeRequest.SessionId,
+                graphSidecarProgressNow);
+            bool graphSidecarProgressBridgeReady =
+                graphSidecarProgressAccepted.AcceptedCount == 1 &&
+                graphSidecarProgressAccepted.RejectedCount == 0 &&
+                graphSidecarProgressEvents.Count == 1 &&
+                graphSidecarProgressEvents.Single().ExecutedSql == false &&
+                graphSidecarProgressEvents.Single().Facts.ContainsKey("source") &&
+                string.Equals(graphSidecarProgressEvents.Single().Facts["source"], "graph_sidecar", StringComparison.Ordinal);
+            bool graphSidecarProgressUnsafeRejected =
+                graphSidecarProgressUnsafe.AcceptedCount == 0 &&
+                graphSidecarProgressUnsafe.RejectedCount == 1 &&
+                graphSidecarProgressRecorder.GetRecent(graphHandshakeRequest.SessionId, graphSidecarProgressNow).Count == 1 &&
+                graphSidecarProgressDiagnostics.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false;
+            bool graphSidecarProgressUnsafeRedacted =
+                graphSidecarProgressRedactionProbe.Contains("sql=redacted", StringComparison.Ordinal) &&
+                graphSidecarProgressRedactionProbe.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                graphSidecarProgressRedactionProbe.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false;
+            bool graphSidecarProgressQChatBoundary =
+                string.Equals(typeof(DataAgentGraphSidecarProgressBridge).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                typeof(DataAgentGraphSidecarProgressBridge).Assembly.GetName().Name?.Contains("QChat", StringComparison.OrdinalIgnoreCase) == false;
+            bool graphSidecarProgressReady =
+                graphHandshakeDefaultOptions.Enabled == false &&
+                graphSidecarProgressBridgeReady &&
+                graphSidecarProgressUnsafeRejected &&
+                graphSidecarProgressUnsafeRedacted &&
+                graphSidecarProgressQChatBoundary;
+
+            checks.Add(graphSidecarProgressReady
+                ? Pass("GraphHandshakeDevSidecarProgressBridgePresent", "default_enabled=false;progress_bridge=true;csharp_recorder_authority=true;unsafe_progress_rejected=true;unsafe_progress_redacted=true;qchat_boundary=true;no_sql_authority=true;runtime_required=false")
+                : Fail("GraphHandshakeDevSidecarProgressBridgePresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};progress_bridge={LowerBool(graphSidecarProgressBridgeReady)};csharp_recorder_authority={LowerBool(graphSidecarProgressEvents.Count == 1)};unsafe_progress_rejected={LowerBool(graphSidecarProgressUnsafeRejected)};unsafe_progress_redacted={LowerBool(graphSidecarProgressUnsafeRedacted)};qchat_boundary={LowerBool(graphSidecarProgressQChatBoundary)};no_sql_authority={LowerBool(graphSidecarProgressEvents.All(item => item.ExecutedSql == false))};runtime_required=false"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
