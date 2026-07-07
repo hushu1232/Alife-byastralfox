@@ -290,6 +290,29 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void AcceptedCoordinatorOutcomeSurvivesProgressPublishFailure()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(new ThrowingProgressSink(), Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("handshake_accepted"));
+            Assert.That(outcome.Response, Is.Not.Null);
+            Assert.That(sidecar.Requests, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
     public void RejectedCoordinatorOutcomeDoesNotPublishSidecarProgress()
     {
         RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
@@ -486,6 +509,14 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
         {
             if (progressEvent is not null)
                 Events.Add(progressEvent);
+        }
+    }
+
+    sealed class ThrowingProgressSink : IDataAgentProgressSink
+    {
+        public void Publish(DataAgentProgressEvent? progressEvent)
+        {
+            throw new InvalidOperationException("progress sink unavailable");
         }
     }
 }

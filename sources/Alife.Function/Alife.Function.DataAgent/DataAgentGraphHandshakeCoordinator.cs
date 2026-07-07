@@ -62,7 +62,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     validation);
             }
 
-            progressBridge?.PublishHandshakeProgress(request!, result, response.NodeProgress);
+            PublishProgressIfAvailable(request!, result, response.NodeProgress);
 
             return Outcome(
                 DataAgentGraphHandshakeStatus.Accepted,
@@ -154,6 +154,21 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             request,
             response,
             validation ?? new DataAgentGraphHandshakeValidationResult(false, reasonCode));
+    }
+
+    void PublishProgressIfAvailable(
+        DataAgentGraphHandshakeRequest request,
+        DataAgentOrchestrationResult result,
+        IReadOnlyList<DataAgentGraphHandshakeProgress> nodeProgress)
+    {
+        try
+        {
+            progressBridge?.PublishHandshakeProgress(request, result, nodeProgress);
+        }
+        catch (Exception)
+        {
+            // Progress publishing is diagnostic and must not demote an accepted handshake.
+        }
     }
 
     static string Bound(string value, int maxLength)
