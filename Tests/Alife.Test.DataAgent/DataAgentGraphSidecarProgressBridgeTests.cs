@@ -154,8 +154,12 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
     [TestCase("db_host")]
     [TestCase("SERVER_NAME")]
     [TestCase("username")]
+    [TestCase("user-id")]
+    [TestCase("user.id")]
     [TestCase("user_id")]
     [TestCase("uid")]
+    [TestCase("data-source")]
+    [TestCase("data.source")]
     [TestCase("data_source")]
     [TestCase("datasource")]
     [TestCase("dsn")]
@@ -195,6 +199,9 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
     [TestCase("username=service_user")]
     [TestCase("user id=service_user")]
     [TestCase("uid=service_user")]
+    [TestCase("database=customer")]
+    [TestCase("db=customer")]
+    [TestCase("dsn=customer")]
     public void PublishRejectsConnectionLikeFactValueWithoutPublishing(string unsafeFactValue)
     {
         RecordingProgressSink sink = new();

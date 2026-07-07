@@ -16,7 +16,7 @@ public sealed class DataAgentGraphSidecarProgressBridge
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex ConnectionLikeFactValuePattern = new(
-        @"\b(connection[_\s-]?string|server|data[_\s-]?source|host|username|user[_\s-]?id|uid|pwd|password)\s*=",
+        @"\b(connection[_\s-]?string|server|data[_\s-]?source|host|username|user[_\s-]?id|uid|pwd|password|database|db|dsn)\s*=",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly string[] UnsafeFactKeyFragments =
@@ -232,7 +232,7 @@ public sealed class DataAgentGraphSidecarProgressBridge
         value = null;
 
         if (IsMachineToken(fact.Key, MaxFactKeyLength) == false ||
-            UnsafeFactKeyFragments.Any(fragment => fact.Key.Contains(fragment, StringComparison.OrdinalIgnoreCase)) ||
+            IsUnsafeFactKey(fact.Key) ||
             IsSafeOptionalText(fact.Value, MaxFactValueLength) == false ||
             string.IsNullOrWhiteSpace(fact.Value))
         {
@@ -247,6 +247,22 @@ public sealed class DataAgentGraphSidecarProgressBridge
     static bool IsReservedFactKey(string key)
     {
         return ReservedFactKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
+    }
+
+    static bool IsUnsafeFactKey(string key)
+    {
+        string normalizedKey = NormalizeFactKeyForSafety(key);
+        return UnsafeFactKeyFragments.Any(fragment =>
+            key.Contains(fragment, StringComparison.OrdinalIgnoreCase) ||
+            normalizedKey.Contains(NormalizeFactKeyForSafety(fragment), StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string NormalizeFactKeyForSafety(string key)
+    {
+        return key
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Replace(".", string.Empty, StringComparison.Ordinal);
     }
 
     static bool IsIdentityMatch(string expected, string actual, int maxLength)
