@@ -149,6 +149,80 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
         });
     }
 
+    [TestCase("host")]
+    [TestCase("Host")]
+    [TestCase("db_host")]
+    [TestCase("SERVER_NAME")]
+    [TestCase("username")]
+    [TestCase("user_id")]
+    [TestCase("uid")]
+    [TestCase("data_source")]
+    [TestCase("datasource")]
+    [TestCase("dsn")]
+    [TestCase("database")]
+    [TestCase("db")]
+    public void PublishRejectsSensitiveFactKeyWithoutPublishing(string sensitiveFactKey)
+    {
+        RecordingProgressSink sink = new();
+        DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+
+        DataAgentGraphSidecarProgressBridgeResult summary = bridge.Publish(
+            request,
+            NewResult(),
+            [
+                SafeEvent(request) with
+                {
+                    Message = string.Empty,
+                    Facts = new Dictionary<string, string>
+                    {
+                        [sensitiveFactKey] = "sidecar controlled"
+                    }
+                }
+            ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.AcceptedCount, Is.EqualTo(0));
+            Assert.That(summary.RejectedCount, Is.EqualTo(1));
+            Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
+    [TestCase("host=prod-db.internal")]
+    [TestCase("server=prod-db.internal")]
+    [TestCase("data source=prod-db.internal")]
+    [TestCase("username=service_user")]
+    [TestCase("user id=service_user")]
+    [TestCase("uid=service_user")]
+    public void PublishRejectsConnectionLikeFactValueWithoutPublishing(string unsafeFactValue)
+    {
+        RecordingProgressSink sink = new();
+        DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+
+        DataAgentGraphSidecarProgressBridgeResult summary = bridge.Publish(
+            request,
+            NewResult(),
+            [
+                SafeEvent(request) with
+                {
+                    Message = string.Empty,
+                    Facts = new Dictionary<string, string>
+                    {
+                        ["stage"] = unsafeFactValue
+                    }
+                }
+            ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.AcceptedCount, Is.EqualTo(0));
+            Assert.That(summary.RejectedCount, Is.EqualTo(1));
+            Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
     [Test]
     public void PublishHandshakeProgressGuardsNullRequestAndResultBeforeAdaptingProgress()
     {

@@ -15,6 +15,10 @@ public sealed class DataAgentGraphSidecarProgressBridge
         "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    static readonly Regex ConnectionLikeFactValuePattern = new(
+        @"\b(connection[_\s-]?string|server|data[_\s-]?source|host|username|user[_\s-]?id|uid|pwd|password)\s*=",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     static readonly string[] UnsafeFactKeyFragments =
     [
         "hidden",
@@ -29,6 +33,17 @@ public sealed class DataAgentGraphSidecarProgressBridge
         "credential",
         "api",
         "key",
+        "host",
+        "server",
+        "username",
+        "userid",
+        "user_id",
+        "uid",
+        "data_source",
+        "datasource",
+        "dsn",
+        "database",
+        "db",
         "sql",
         "query",
         "dataset",
@@ -252,7 +267,8 @@ public sealed class DataAgentGraphSidecarProgressBridge
             return true;
 
         return value.Length <= maxLength &&
-               DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(value) == false;
+               DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(value) == false &&
+               ConnectionLikeFactValuePattern.IsMatch(value) == false;
     }
 
     static bool IsMachineToken(string? value, int maxLength)
