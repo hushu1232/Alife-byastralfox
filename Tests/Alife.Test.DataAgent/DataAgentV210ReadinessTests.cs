@@ -38,7 +38,7 @@ public sealed class DataAgentV210ReadinessTests
             Assert.That(dataAgentScript, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(dataAgentScript, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(qchatScript, Does.Contain("V2.10"));
-            Assert.That(qchatScript, Does.Contain("$expectedRequired = 61"));
+            Assert.That(qchatScript, Does.Contain("$expectedRequired = 63"));
             Assert.That(qchatScript, Does.Contain("Alife capability governance catalog"));
             Assert.That(qchatScript, Does.Contain("DataAgent node tool scope policy"));
         });
