@@ -72,7 +72,7 @@ QChat and other deterministic plugin services remain deterministic services in V
 
 V3.1 can add an optional local Python/FastAPI sidecar behind this validated C# contract.
 
-V3.2 can map sidecar progress into existing DataAgent progress diagnostics.
+V3.2 can map sidecar streaming progress into existing DataAgent progress diagnostics.
 
 V3.3 can map human-in-the-loop interrupts into QChat owner events.
 
