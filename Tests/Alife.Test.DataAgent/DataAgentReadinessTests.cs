@@ -554,7 +554,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 60 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 61 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -568,7 +568,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 60"));
+            Assert.That(script, Does.Contain("$expectedRequired = 61"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
