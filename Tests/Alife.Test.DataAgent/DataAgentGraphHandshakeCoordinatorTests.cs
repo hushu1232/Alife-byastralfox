@@ -240,6 +240,27 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void EnabledCoordinatorMapsInvalidSidecarResponseExceptionToInvalidFallback()
+    {
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new DataAgentGraphSidecarInvalidResponseException("invalid_response_schema")));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Invalid));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("invalid_response_schema"));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Response, Is.Null);
+        });
+    }
+
+    [Test]
     public void ConstructorRejectsNullOptions()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);

@@ -68,6 +68,10 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 response,
                 validation);
         }
+        catch (DataAgentGraphSidecarInvalidResponseException)
+        {
+            return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_response_schema", fallbackRequired: true, request);
+        }
         catch (TimeoutException)
         {
             return Outcome(DataAgentGraphHandshakeStatus.Timeout, "sidecar_timeout", fallbackRequired: true, request);
