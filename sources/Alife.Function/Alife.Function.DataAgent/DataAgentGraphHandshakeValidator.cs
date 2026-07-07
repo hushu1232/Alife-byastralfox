@@ -8,6 +8,10 @@ public static class DataAgentGraphHandshakeValidator
         @"```sql|\b(select|insert|update|delete|drop|alter|truncate)\b|\bcreate\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(|\bexecute\s+[A-Za-z_][A-Za-z0-9_.]*\b|\bcall\b\s*(?:[A-Za-z_][A-Za-z0-9_.]*\s*)?\(|\bmerge\s+into\b|\bgrant\s+[A-Za-z]+\b|\brevoke\s+[A-Za-z]+\b|\bpragma\s+[A-Za-z_][A-Za-z0-9_]*\b|\bbegin(?:\s+(?:transaction|work))?\b|\bcommit\b|\brollback\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    static readonly Regex MachineTokenPattern = new(
+        @"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        RegexOptions.CultureInvariant);
+
     static readonly string[] ForbiddenToolMarkers =
     [
         "qchat",
@@ -20,6 +24,13 @@ public static class DataAgentGraphHandshakeValidator
         "rag.manage",
         "checkpoint.write"
     ];
+
+    static readonly HashSet<string> ExecutionAuthorityToolNames = new(
+        [
+            DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery,
+            DataAgentNodeCapabilities.ExecuteReadOnlyQuery
+        ],
+        StringComparer.Ordinal);
 
     public static DataAgentGraphHandshakeValidationResult Validate(
         DataAgentGraphHandshakeRequest? request,
@@ -43,7 +54,7 @@ public static class DataAgentGraphHandshakeValidator
         if (response.RequestsVisibleText)
             return Reject("visible_text_requested");
 
-        if (HasBoundedText(response.ReasonCode, DataAgentGraphHandshakeLimits.MaxReasonCodeLength) == false)
+        if (IsReasonCodeSafe(response.ReasonCode) == false)
             return Reject("invalid_response_schema");
 
         if (response.TraceSummary is null ||
@@ -70,7 +81,9 @@ public static class DataAgentGraphHandshakeValidator
         if (IsProgressValid(request, response.NodeProgress, manifestNodeNames) == false)
             return Reject("progress_invalid");
 
+        HashSet<string> selectedNodeNames = response.SelectedNodes.ToHashSet(StringComparer.Ordinal);
         HashSet<string> allowedToolNames = request.NodeManifests
+            .Where(manifest => selectedNodeNames.Contains(manifest.NodeName))
             .SelectMany(manifest => manifest.AllowedToolNames)
             .ToHashSet(StringComparer.Ordinal);
         if (response.RequestedToolNames is null ||
@@ -107,6 +120,7 @@ public static class DataAgentGraphHandshakeValidator
         return manifest is not null &&
                manifest.AllowedToolNames is not null &&
                manifest.DeniedCapabilityMarkers is not null &&
+               manifest.BusinessTerms is not null &&
                HasBoundedText(manifest.NodeName, 128) &&
                HasBoundedText(manifest.Purpose, 512) &&
                HasBoundedText(manifest.InputShape, 256) &&
@@ -114,6 +128,9 @@ public static class DataAgentGraphHandshakeValidator
                HasBoundedText(manifest.SafetyNotes, 512) &&
                manifest.AllowedToolNames.Count <= DataAgentGraphHandshakeLimits.MaxToolNamesPerNode &&
                manifest.DeniedCapabilityMarkers.Count <= DataAgentGraphHandshakeLimits.MaxDeniedMarkersPerNode &&
+               manifest.BusinessTerms.Count <= DataAgentGraphHandshakeLimits.MaxDeniedMarkersPerNode &&
+               manifest.BusinessTerms.All(term => IsMachineToken(term, 128)) &&
+               manifest.AllowedToolNames.All(tool => IsExecutionAuthorityToolName(tool) == false) &&
                manifest.AllowedToolNames.All(tool => IsForbiddenToolName(tool) == false);
     }
 
@@ -132,14 +149,22 @@ public static class DataAgentGraphHandshakeValidator
         return progress.All(item =>
             item is not null &&
             manifestNodeNames.Contains(item.NodeName) &&
-            HasBoundedText(item.ReasonCode, DataAgentGraphHandshakeLimits.MaxReasonCodeLength));
+            Enum.IsDefined(typeof(DataAgentGraphHandshakeProgressStatus), item.Status) &&
+            IsReasonCodeSafe(item.ReasonCode));
     }
 
     static bool IsAllowedTool(string? toolName, HashSet<string> allowedToolNames)
     {
         return HasBoundedText(toolName, 128) &&
+               IsExecutionAuthorityToolName(toolName) == false &&
                IsForbiddenToolName(toolName) == false &&
                allowedToolNames.Contains(toolName!);
+    }
+
+    static bool IsExecutionAuthorityToolName(string? toolName)
+    {
+        return string.IsNullOrWhiteSpace(toolName) == false &&
+               ExecutionAuthorityToolNames.Contains(toolName);
     }
 
     static bool IsForbiddenToolName(string? toolName)
@@ -155,6 +180,17 @@ public static class DataAgentGraphHandshakeValidator
     {
         return string.IsNullOrWhiteSpace(value) == false &&
                value.Length <= maxLength;
+    }
+
+    static bool IsReasonCodeSafe(string? value)
+    {
+        return IsMachineToken(value, DataAgentGraphHandshakeLimits.MaxReasonCodeLength);
+    }
+
+    static bool IsMachineToken(string? value, int maxLength)
+    {
+        return HasBoundedText(value, maxLength) &&
+               MachineTokenPattern.IsMatch(value!);
     }
 
     static bool ContainsRawSql(string? value)

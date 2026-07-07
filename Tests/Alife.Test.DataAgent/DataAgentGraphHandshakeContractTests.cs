@@ -117,6 +117,107 @@ public sealed class DataAgentGraphHandshakeContractTests
         });
     }
 
+    [Test]
+    public void ValidatorScopesRequestedToolsToSelectedNodes()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse safe = NewResponse(request) with
+        {
+            SelectedNodes = [DataAgentWorkflowNodeNames.QueryPlanner],
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(DataAgentWorkflowNodeNames.QueryPlanner, DataAgentGraphHandshakeProgressStatus.Completed, "planner_suggested")
+            ],
+            RequestedToolNames = [DataAgentGraphHandshakeToolNames.ProposeQueryPlan]
+        };
+        DataAgentGraphHandshakeResponse crossNodeTool = safe with
+        {
+            RequestedToolNames = [DataAgentGraphHandshakeToolNames.ReadTraceDiagnostics]
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, safe).Accepted, Is.True);
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, crossNodeTool).ReasonCode, Is.EqualTo("unknown_tool"));
+        });
+    }
+
+    [Test]
+    public void ValidatorRejectsExecutionToolEvenWhenManifestAccidentallyAllowsIt()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeRequest graphExecutionAllowed = request with
+        {
+            NodeManifests = AddAllowedTool(
+                request.NodeManifests,
+                DataAgentWorkflowNodeNames.QueryPlanner,
+                DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery)
+        };
+        DataAgentGraphHandshakeRequest capabilityExecutionAllowed = request with
+        {
+            NodeManifests = AddAllowedTool(
+                request.NodeManifests,
+                DataAgentWorkflowNodeNames.QueryPlanner,
+                DataAgentNodeCapabilities.ExecuteReadOnlyQuery)
+        };
+        DataAgentGraphHandshakeRequest blankBusinessTerm = request with
+        {
+            NodeManifests = ReplaceManifest(
+                request.NodeManifests,
+                DataAgentWorkflowNodeNames.QueryPlanner,
+                manifest => manifest with { BusinessTerms = ["dataset", " "] })
+        };
+        DataAgentGraphHandshakeResponse requestedExecution = NewResponse(graphExecutionAllowed) with
+        {
+            SelectedNodes = [DataAgentWorkflowNodeNames.QueryPlanner],
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(DataAgentWorkflowNodeNames.QueryPlanner, DataAgentGraphHandshakeProgressStatus.Completed, "planner_suggested")
+            ],
+            RequestedToolNames = [DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery]
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(graphExecutionAllowed, requestedExecution).ReasonCode, Is.EqualTo("invalid_request_schema"));
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(capabilityExecutionAllowed, NewResponse(capabilityExecutionAllowed)).ReasonCode, Is.EqualTo("invalid_request_schema"));
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(blankBusinessTerm, NewResponse(blankBusinessTerm)).ReasonCode, Is.EqualTo("invalid_request_schema"));
+        });
+    }
+
+    [Test]
+    public void ValidatorRejectsUndefinedProgressStatusAndUnsafeReasonCodes()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse safe = NewResponse(request);
+        DataAgentGraphHandshakeResponse undefinedProgressStatus = safe with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(DataAgentWorkflowNodeNames.QueryPlanner, (DataAgentGraphHandshakeProgressStatus)999, "planner_suggested")
+            ]
+        };
+        DataAgentGraphHandshakeResponse unsafeResponseReason = safe with { ReasonCode = "free text reason" };
+        DataAgentGraphHandshakeResponse unsafeProgressReason = safe with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(DataAgentWorkflowNodeNames.QueryPlanner, DataAgentGraphHandshakeProgressStatus.Completed, "free text reason")
+            ]
+        };
+        DataAgentGraphHandshakeResponse dashedReason = safe with { ReasonCode = "route-allowed" };
+        DataAgentGraphHandshakeResponse dottedReason = safe with { ReasonCode = "data.agent.reason" };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, undefinedProgressStatus).ReasonCode, Is.EqualTo("progress_invalid"));
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, unsafeResponseReason).ReasonCode, Is.EqualTo("invalid_response_schema"));
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, unsafeProgressReason).ReasonCode, Is.EqualTo("progress_invalid"));
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, dashedReason).Accepted, Is.True);
+            Assert.That(DataAgentGraphHandshakeValidator.Validate(request, dottedReason).Accepted, Is.True);
+        });
+    }
+
     static DataAgentGraphHandshakeRequest NewRequest()
     {
         return new DataAgentGraphHandshakeRequest(
@@ -156,5 +257,29 @@ public sealed class DataAgentGraphHandshakeContractTests
             RequestedToolNames: [DataAgentGraphHandshakeToolNames.ProposeQueryPlan],
             RequestsCheckpointMutation: false,
             RequestsVisibleText: false);
+    }
+
+    static IReadOnlyList<DataAgentGraphNodeManifest> AddAllowedTool(
+        IReadOnlyList<DataAgentGraphNodeManifest> manifests,
+        string nodeName,
+        string toolName)
+    {
+        return ReplaceManifest(
+            manifests,
+            nodeName,
+            manifest => manifest with
+            {
+                AllowedToolNames = manifest.AllowedToolNames.Append(toolName).ToArray()
+            });
+    }
+
+    static IReadOnlyList<DataAgentGraphNodeManifest> ReplaceManifest(
+        IReadOnlyList<DataAgentGraphNodeManifest> manifests,
+        string nodeName,
+        Func<DataAgentGraphNodeManifest, DataAgentGraphNodeManifest> replace)
+    {
+        return manifests
+            .Select(manifest => manifest.NodeName == nodeName ? replace(manifest) : manifest)
+            .ToArray();
     }
 }
