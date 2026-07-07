@@ -3942,6 +3942,47 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task NonOwnerPrivateDataAgentGraphDiagnosticDropsBeforeModelDispatch()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowPrivateGuestChat = true,
+                EnableBalancedTextStreaming = false
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                UserId = 2002,
+                SelfId = 999,
+                RawMessage = "/dataagent diag graph"
+            });
+
+            string diagnostics = await WaitForQChatCommandDroppedDiagnosticAsync(storageRoot);
+            string pending = GetPendingPokeText(service);
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+                Assert.That(runtime.GroupMessages, Is.Empty);
+                Assert.That(pending, Does.Not.Contain("/dataagent"));
+                Assert.That(diagnostics, Does.Contain("\"eventName\":\"qchat-command-dropped\""));
+                Assert.That(diagnostics, Does.Not.Contain("\"eventName\":\"event-filtered\""));
+            });
+        });
+    }
+
+    [Test]
     public async Task RecentDiagnosticsSummaryIncludesDataAgentGraphWhenFunctionCallerHasFallback()
     {
         FakeOneBotRuntime runtime = new()
