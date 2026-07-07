@@ -10,7 +10,8 @@ public sealed class DataAgentAnalysisCapabilityProvider(
     Action<string>? evidenceDiagnosticsPublisher = null,
     Action<string>? traceDiagnosticsPublisher = null,
     IDataAgentTraceRecorder? traceRecorder = null,
-    Action<string>? dataQueryGraphDiagnosticsPublisher = null) : IDataAgentCapabilityProvider
+    Action<string>? dataQueryGraphDiagnosticsPublisher = null,
+    DataAgentGraphHandshakeCoordinator? graphHandshakeCoordinator = null) : IDataAgentCapabilityProvider
 {
     public string Name => nameof(DataAgentAnalysisCapabilityProvider);
 
@@ -26,6 +27,7 @@ public sealed class DataAgentAnalysisCapabilityProvider(
             evidenceDiagnosticsPublisher,
             traceDiagnosticsPublisher,
             traceRecorder,
-            dataQueryGraphDiagnosticsPublisher: dataQueryGraphDiagnosticsPublisher)));
+            dataQueryGraphDiagnosticsPublisher: dataQueryGraphDiagnosticsPublisher,
+            graphHandshakeCoordinator: graphHandshakeCoordinator)));
     }
 }

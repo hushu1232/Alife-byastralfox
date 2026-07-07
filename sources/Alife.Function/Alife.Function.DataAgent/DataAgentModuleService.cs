@@ -44,6 +44,9 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         IDataAgentToolRouteContextAccessor routeContextAccessor =
             new XmlPolicyDataAgentToolRouteContextAccessor(functionService.ExecutionPolicy);
         IDataAgentTraceRecorder traceRecorder = new DataAgentTraceRecorder();
+        DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
+            DataAgentGraphHandshakeOptions.FromEnvironment(),
+            DisabledDataAgentGraphSidecarClient.Instance);
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
@@ -54,7 +57,8 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             functionService.RecordRecentDataAgentEvidenceDiagnostics,
             functionService.RecordRecentDataAgentTraceDiagnostics,
             traceRecorder,
-            functionService.RecordRecentDataAgentGraphDiagnostics));
+            functionService.RecordRecentDataAgentGraphDiagnostics,
+            graphHandshakeCoordinator));
 
         DataAgentCapabilityRegistrar registrar = new(functionService);
         foreach (IDataAgentCapabilityProvider provider in capabilityRegistry.Providers)

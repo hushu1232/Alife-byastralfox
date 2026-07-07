@@ -12,13 +12,16 @@ public sealed class DataAgentAnalysisToolHandler(
     Action<string>? traceDiagnosticsPublisher = null,
     IDataAgentTraceRecorder? traceRecorder = null,
     Func<DateTimeOffset>? traceClock = null,
-    Action<string>? dataQueryGraphDiagnosticsPublisher = null)
+    Action<string>? dataQueryGraphDiagnosticsPublisher = null,
+    DataAgentGraphHandshakeCoordinator? graphHandshakeCoordinator = null)
 {
     readonly IDataAgentToolRouteContextAccessor routeContextAccessor =
         routeContextAccessor ?? MissingDataAgentToolRouteContextAccessor.Instance;
     readonly IDataAgentTraceRecorder? traceRecorder =
         traceDiagnosticsPublisher is null ? null : traceRecorder ?? new DataAgentTraceRecorder();
     readonly Func<DateTimeOffset> traceClock = traceClock ?? (() => DateTimeOffset.UtcNow);
+    readonly DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator =
+        graphHandshakeCoordinator ?? new DataAgentGraphHandshakeCoordinator(DataAgentGraphHandshakeOptions.Disabled);
 
     [XmlFunction(FunctionMode.OneShot, name: "dataagent_analysis_start")]
     [Description("Start a DataAgent analysis session for a caller and goal or question.")]
@@ -35,7 +38,7 @@ public sealed class DataAgentAnalysisToolHandler(
             routeContext.AllowsQuery,
             routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        PublishResult(result, context);
+        PublishResult(result, context, callerId, goalOrQuestion);
         return context;
     }
 
@@ -54,7 +57,7 @@ public sealed class DataAgentAnalysisToolHandler(
             routeContext.AllowsQuery,
             routeContext));
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        PublishResult(result, context);
+        PublishResult(result, context, "local", question);
         return context;
     }
 
@@ -67,7 +70,7 @@ public sealed class DataAgentAnalysisToolHandler(
         DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_summarize", sessionId);
         DataAgentOrchestrationResult result = orchestrator.Summarize(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        PublishResult(result, context);
+        PublishResult(result, context, "local", "summarize");
         return context;
     }
 
@@ -80,14 +83,14 @@ public sealed class DataAgentAnalysisToolHandler(
         DataAgentToolRouteContext routeContext = this.routeContextAccessor.Get("dataagent_analysis_end", sessionId);
         DataAgentOrchestrationResult result = orchestrator.End(sessionId, routeContext);
         string context = DataAgentOrchestrationContextProvider.Build(result);
-        PublishResult(result, context);
+        PublishResult(result, context, "local", "end");
         return context;
     }
 
-    void PublishResult(DataAgentOrchestrationResult result, string context)
+    void PublishResult(DataAgentOrchestrationResult result, string context, string callerId, string goalOrQuestion)
     {
         resultPublisher?.Invoke(context);
-        PublishDataQueryGraphDiagnostics(result);
+        PublishDataQueryGraphDiagnostics(result, callerId, goalOrQuestion);
 
         if (evidenceDiagnosticsPublisher is null && traceDiagnosticsPublisher is null)
             return;
@@ -105,21 +108,25 @@ public sealed class DataAgentAnalysisToolHandler(
         traceDiagnosticsPublisher(DataAgentTraceDiagnosticsFormatter.Format(latestTimeline));
     }
 
-    void PublishDataQueryGraphDiagnostics(DataAgentOrchestrationResult result)
+    void PublishDataQueryGraphDiagnostics(DataAgentOrchestrationResult result, string callerId, string goalOrQuestion)
     {
         if (dataQueryGraphDiagnosticsPublisher is null)
             return;
 
-        string diagnostics;
+        string dataQueryGraphDiagnostics;
         try
         {
             DataAgentDataQueryGraphDryRunResult graphResult = DataAgentDataQueryGraphPilot.DryRun(result);
-            diagnostics = DataAgentDataQueryGraphTraceFormatter.Format(graphResult);
+            dataQueryGraphDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(graphResult);
         }
         catch (Exception)
         {
-            diagnostics = DataAgentDataQueryGraphTraceFormatter.Format(null);
+            dataQueryGraphDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(null);
         }
+
+        DataAgentGraphHandshakeOutcome handshakeOutcome = graphHandshakeCoordinator.TryHandshake(callerId, goalOrQuestion, result);
+        string handshakeDiagnostics = DataAgentGraphHandshakeDiagnosticsFormatter.Format(handshakeOutcome);
+        string diagnostics = $"{dataQueryGraphDiagnostics}{Environment.NewLine}{handshakeDiagnostics}";
 
         dataQueryGraphDiagnosticsPublisher(diagnostics);
     }

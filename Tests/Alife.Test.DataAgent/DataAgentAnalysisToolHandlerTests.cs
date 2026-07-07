@@ -562,6 +562,42 @@ public sealed class DataAgentAnalysisToolHandlerTests
     }
 
     [Test]
+    public void StartPublishesGraphHandshakeDiagnosticsWithoutChangingContext()
+    {
+        List<string> graphDiagnostics = [];
+        RecordingOrchestrator orchestrator = CreateOrchestrator();
+        RecordingRouteContextAccessor routeAccessor = new(new DataAgentToolRouteContext(
+            true,
+            "dataagent_analysis_start",
+            true,
+            true,
+            "route-1",
+            "analysis_start",
+            "route_allowed",
+            string.Empty));
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            routeContextAccessor: routeAccessor,
+            dataQueryGraphDiagnosticsPublisher: graphDiagnostics.Add,
+            graphHandshakeCoordinator: new DataAgentGraphHandshakeCoordinator(
+                DataAgentGraphHandshakeOptions.Disabled,
+                DisabledDataAgentGraphSidecarClient.Instance));
+
+        string context = handler.Start("xiayu", "Which documents describe DataAgent?");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
+            Assert.That(graphDiagnostics, Has.Count.EqualTo(1));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("DataAgent graph handshake"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("reason=sidecar_disabled"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("no_sql_authority=true"));
+            Assert.That(graphDiagnostics.Single(), Does.Not.Contain("SELECT"));
+        });
+    }
+
+    [Test]
     [NonParallelizable]
     public void ContinueSummarizeAndEndPublishDataQueryGraphDiagnostics()
     {
@@ -700,7 +736,13 @@ public sealed class DataAgentAnalysisToolHandlerTests
     {
         return new RecordingOrchestrator(new Dictionary<string, DataAgentOrchestrationResult>
         {
-            ["start"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Active, DataAgentAnalysisTurnIntent.NewQuestion, [], 1, string.Empty),
+            ["start"] = OrchestratedResult(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                [],
+                1,
+                "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]"),
             ["continue"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Active, DataAgentAnalysisTurnIntent.Continue, [], 2, string.Empty),
             ["summarize"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Summarized, DataAgentAnalysisTurnIntent.Summarize, [], 2, string.Empty),
             ["end"] = OrchestratedResult("session-1", DataAgentAnalysisSessionStatus.Ended, DataAgentAnalysisTurnIntent.End, [], 2, string.Empty)
