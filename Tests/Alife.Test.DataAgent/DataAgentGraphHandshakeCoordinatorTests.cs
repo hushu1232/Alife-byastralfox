@@ -26,6 +26,57 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void DisabledCoordinatorDoesNotRequireValidResultAndDoesNotCallSidecar()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        DataAgentGraphHandshakeCoordinator coordinator = new(DataAgentGraphHandshakeOptions.Disabled, sidecar);
+        DataAgentOrchestrationResult malformedResult = MalformedResult();
+        DataAgentGraphHandshakeOutcome? outcome = null;
+
+        Assert.DoesNotThrow(() => outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            malformedResult));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome, Is.Not.Null);
+            Assert.That(outcome!.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Disabled));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("sidecar_disabled"));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Request, Is.Null);
+            Assert.That(sidecar.Requests, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void EnabledCoordinatorReturnsInvalidFallbackForMalformedResultWithoutCallingSidecar()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        DataAgentGraphHandshakeCoordinator coordinator = new(new DataAgentGraphHandshakeOptions(true), sidecar);
+        DataAgentOrchestrationResult malformedResult = MalformedResult();
+        DataAgentGraphHandshakeOutcome? outcome = null;
+
+        Assert.DoesNotThrow(() => outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            malformedResult));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome, Is.Not.Null);
+            Assert.That(outcome!.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Invalid));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("invalid_request_schema"));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Request, Is.Null);
+            Assert.That(outcome.Response, Is.Null);
+            Assert.That(outcome.Validation.Accepted, Is.False);
+            Assert.That(outcome.Validation.ReasonCode, Is.EqualTo("invalid_request_schema"));
+            Assert.That(sidecar.Requests, Is.Empty);
+        });
+    }
+
+    [Test]
     public void EnabledCoordinatorAcceptsSafeSidecarResponseWithoutChangingDeterministicResult()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);
@@ -73,6 +124,66 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void RejectedCoordinatorOutcomeDoesNotExposeUnsafeSidecarResponse()
+    {
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            NoSqlAuthority = false,
+            TraceSummary = "SELECT * FROM document_index"
+        });
+        DataAgentGraphHandshakeCoordinator coordinator = new(new DataAgentGraphHandshakeOptions(true), sidecar);
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Rejected));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("sql_authority_requested"));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Response, Is.Null);
+        });
+    }
+
+    [Test]
+    public void BuildRequestSanitizesUnsafeRouteReasonCode()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        DataAgentGraphHandshakeCoordinator coordinator = new(new DataAgentGraphHandshakeOptions(true), sidecar);
+        DataAgentOrchestrationResult result = AcceptedResult() with
+        {
+            RouteContext = new DataAgentToolRouteContext(
+                true,
+                "dataagent_analysis_start",
+                true,
+                true,
+                "route-test",
+                "analysis_start",
+                "route allowed;SELECT [x]\ntext",
+                string.Empty)
+        };
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(sidecar.Requests, Has.Count.EqualTo(1));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Contain("route_reason_code=reason_redacted"));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Not.Contain("SELECT"));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Not.Contain("["));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Not.Contain("]"));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Not.Contain("\n"));
+            Assert.That(sidecar.Requests.Single().RouteScope, Does.Not.Contain(";SELECT"));
+        });
+    }
+
+    [Test]
     public void EnabledCoordinatorHandlesUnavailableAndTimeoutSidecarWithoutThrowing()
     {
         DataAgentGraphHandshakeCoordinator unavailableCoordinator = new(
@@ -100,6 +211,14 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             Assert.That(timeout.ReasonCode, Is.EqualTo("sidecar_timeout"));
             Assert.That(timeout.FallbackRequired, Is.True);
         });
+    }
+
+    [Test]
+    public void ConstructorRejectsNullOptions()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+
+        Assert.Throws<ArgumentNullException>(() => new DataAgentGraphHandshakeCoordinator(null!, sidecar));
     }
 
     static DataAgentGraphHandshakeResponse NewAcceptedResponse(DataAgentGraphHandshakeRequest request)
@@ -182,6 +301,25 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             checkpoint,
             response,
             routeContext);
+    }
+
+    static DataAgentOrchestrationResult MalformedResult()
+    {
+        return new DataAgentOrchestrationResult(
+            "session-1",
+            DataAgentAnalysisSessionStatus.Active,
+            null!,
+            null!,
+            new DataAgentAnalysisResponse(
+                "session-1",
+                DataAgentAnalysisSessionStatus.Active,
+                DataAgentAnalysisTurnIntent.NewQuestion,
+                null,
+                string.Empty,
+                string.Empty,
+                Accepted: true,
+                RejectedReason: string.Empty),
+            null);
     }
 
     sealed class RecordingSidecarClient(Func<DataAgentGraphHandshakeRequest, DataAgentGraphHandshakeResponse> responseFactory)

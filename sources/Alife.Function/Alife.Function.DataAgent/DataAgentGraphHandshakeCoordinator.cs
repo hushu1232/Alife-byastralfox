@@ -23,7 +23,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     DataAgentGraphHandshakeOptions options,
     IDataAgentGraphSidecarClient? sidecarClient = null)
 {
-    readonly DataAgentGraphHandshakeOptions options = options;
+    readonly DataAgentGraphHandshakeOptions options = options ?? throw new ArgumentNullException(nameof(options));
     readonly IDataAgentGraphSidecarClient sidecarClient = sidecarClient ?? DisabledDataAgentGraphSidecarClient.Instance;
 
     public DataAgentGraphHandshakeOutcome TryHandshake(
@@ -33,20 +33,21 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     {
         ArgumentNullException.ThrowIfNull(result);
 
+        if (options.Enabled == false)
+            return Outcome(DataAgentGraphHandshakeStatus.Disabled, "sidecar_disabled", fallbackRequired: true, request: null);
+
         string normalizedCaller = string.IsNullOrWhiteSpace(callerId)
             ? "local"
             : callerId.Trim();
         string normalizedQuestion = string.IsNullOrWhiteSpace(goalOrQuestion)
             ? "dataagent_analysis"
             : goalOrQuestion.Trim();
-        DataAgentGraphHandshakeRequest request = BuildRequest(normalizedCaller, normalizedQuestion, result);
-
-        if (options.Enabled == false)
-            return Outcome(DataAgentGraphHandshakeStatus.Disabled, "sidecar_disabled", fallbackRequired: true, request);
+        if (TryBuildRequest(normalizedCaller, normalizedQuestion, result, out DataAgentGraphHandshakeRequest? request) == false)
+            return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_request_schema", fallbackRequired: true, request: null);
 
         try
         {
-            DataAgentGraphHandshakeResponse response = sidecarClient.TryHandshake(request);
+            DataAgentGraphHandshakeResponse response = sidecarClient.TryHandshake(request!);
             DataAgentGraphHandshakeValidationResult validation = DataAgentGraphHandshakeValidator.Validate(request, response);
             if (validation.Accepted == false)
             {
@@ -55,7 +56,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     validation.ReasonCode,
                     fallbackRequired: true,
                     request,
-                    response,
+                    response: null,
                     validation);
             }
 
@@ -77,6 +78,24 @@ public sealed class DataAgentGraphHandshakeCoordinator(
         }
     }
 
+    static bool TryBuildRequest(
+        string callerId,
+        string goalOrQuestion,
+        DataAgentOrchestrationResult result,
+        out DataAgentGraphHandshakeRequest? request)
+    {
+        request = null;
+        if (result.Checkpoint is null ||
+            result.Steps is null ||
+            result.Steps.Any(step => step is null))
+        {
+            return false;
+        }
+
+        request = BuildRequest(callerId, goalOrQuestion, result);
+        return true;
+    }
+
     static DataAgentGraphHandshakeRequest BuildRequest(
         string callerId,
         string goalOrQuestion,
@@ -91,7 +110,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             : Bound(rawSessionId.Trim(), DataAgentGraphHandshakeLimits.MaxSessionIdLength);
         string routeScope = result.RouteContext is null
             ? "route_present=false"
-            : $"route_present=true;route_allows_query={LowerBool(result.RouteContext.AllowsQuery)};route_reason_code={result.RouteContext.ReasonCode}";
+            : $"route_present=true;route_allows_query={LowerBool(result.RouteContext.AllowsQuery)};route_reason_code={NormalizeMachineToken(result.RouteContext.ReasonCode)}";
         string constraints =
             $"status={result.SessionStatus};executed_sql={LowerBool(result.Steps.Any(step => step.ExecutedSql))};terminal={LowerBool(result.Checkpoint.Terminal)}";
 
@@ -137,5 +156,33 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     static string LowerBool(bool value)
     {
         return value ? "true" : "false";
+    }
+
+    static string NormalizeMachineToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "reason_redacted";
+
+        string trimmed = value.Trim();
+        if (trimmed.Length > DataAgentGraphHandshakeLimits.MaxReasonCodeLength)
+            return "reason_redacted";
+
+        foreach (char ch in trimmed)
+        {
+            if (IsAsciiMachineTokenChar(ch) == false)
+                return "reason_redacted";
+        }
+
+        return trimmed;
+    }
+
+    static bool IsAsciiMachineTokenChar(char ch)
+    {
+        return ch is >= 'A' and <= 'Z'
+            or >= 'a' and <= 'z'
+            or >= '0' and <= '9'
+            or '_'
+            or '-'
+            or '.';
     }
 }
