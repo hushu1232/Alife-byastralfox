@@ -1,8 +1,8 @@
 # DataAgent V3.0 Graph Handshake Boundary
 
-V3.0 starts the LangGraph integration path by adding a C# graph handshake boundary.
+V3.0 continues the existing LangGraph preparation path by adding a C# graph handshake boundary.
 
-It does not add a production Python sidecar, FastAPI service, HTTP transport, process manager, LangGraph runtime dependency, SQL execution path, or QChat graph ownership.
+It does not add a Python sidecar, FastAPI service, HTTP transport, process manager, LangGraph runtime dependency, SQL execution path, or QChat graph ownership.
 
 ## What It Adds
 
@@ -10,12 +10,14 @@ It does not add a production Python sidecar, FastAPI service, HTTP transport, pr
 - Scoped DataAgent graph node manifests.
 - A sidecar client interface for future runtime integration.
 - A validator that treats sidecar responses as untrusted input.
-- A coordinator that falls back to deterministic C# orchestration when the sidecar is disabled, unavailable, timed out, invalid, or overreaching.
-- Owner diagnostics showing handshake status, readiness, `NoSqlAuthority`, and fallback reason.
+- A coordinator that reports fallback-required handshake outcomes when the sidecar is disabled, unavailable, timed out, invalid, or overreaching, while deterministic C# orchestration remains the execution path.
+- Owner diagnostics exposing bounded, sanitized handshake state, readiness, `NoSqlAuthority`, and fallback reason.
 
 ## Disabled Default
 
-The graph handshake boundary is off unless explicitly enabled by a future runtime integration path.
+The graph handshake boundary is off by default.
+
+The option is controlled by `ALIFE_DATAAGENT_GRAPH_HANDSHAKE_ENABLED`; in V3.0, enabling it does not start a runtime and still requires a separately designed sidecar client/runtime integration.
 
 When disabled, DataAgent continues through deterministic C# orchestration. No Python process, FastAPI endpoint, HTTP transport, graph runtime, or sidecar tool surface is started by V3.0.
 
@@ -28,8 +30,8 @@ C# remains the authority for:
 - SQL Safety Validator decisions.
 - Read-only query execution.
 - Tool Broker route state.
-- checkpoint persistence.
-- evidence, trace, progress, and query audit.
+- Checkpoint persistence.
+- Evidence, trace, progress, and query audit.
 - QChat and QQ ingress.
 
 The sidecar can suggest orchestration shape. It cannot authorize datasets, fields, operators, limits, tools, checkpoint mutation, visible QChat text, QQ messages, executable SQL, or SQL execution.
@@ -40,13 +42,13 @@ Sidecar responses have no SQL authority. `NoSqlAuthority` is both the contract s
 
 The handshake uses scoped node manifests. Each node receives only the small capability vocabulary needed for its role.
 
-This is the structural answer to random tool choice caused by overlapping tool names and descriptions. The model should not see every Alife plugin tool when it is only planning DataAgent query steps.
+This is the structural answer to accidental tool selection caused by overlapping tool names and descriptions. The model should not see every Alife plugin tool when it is only planning DataAgent query steps.
 
 ## Owner Diagnostics And Readiness
 
-Owner diagnostics should stay high level in V3.0: handshake status, readiness, disabled or fallback reason, timeout or validation failure category, and whether the sidecar response preserved `NoSqlAuthority`.
+Owner diagnostics should stay high level and sanitized in V3.0: handshake status, bounded readiness state, disabled or fallback reason, timeout or validation failure category, and whether the sidecar response preserved `NoSqlAuthority`.
 
-Readiness does not mean runtime availability. In V3.0, readiness means the C# contract can report the boundary state clearly while keeping deterministic fallback and all authority decisions inside C#.
+Readiness does not mean runtime availability. In V3.0, readiness proves `runtime_required=false`, fallback behavior, scoped manifests, and no-SQL-authority status through `NoSqlAuthority`, while all authority decisions remain inside deterministic C#.
 
 ## Plugin Policy
 
@@ -74,6 +76,6 @@ V3.1 can add an optional local Python/FastAPI sidecar behind this validated C# c
 
 V3.2 can map sidecar streaming progress into existing DataAgent progress diagnostics.
 
-V3.3 can map human-in-the-loop interrupts into QChat owner events.
+V3.3 can design C#-owned, owner-only interrupt diagnostics or commands that QChat displays through existing deterministic owner-event surfaces.
 
 V3.4 can design checkpointer reconciliation while preserving C# checkpoint authority.
