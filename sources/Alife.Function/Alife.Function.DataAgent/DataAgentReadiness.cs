@@ -303,26 +303,46 @@ public static class DataAgentReadiness
                 [DataAgentGraphHandshakeToolNames.ProposeQueryPlan],
                 RequestsCheckpointMutation: false,
                 RequestsVisibleText: false);
-            DataAgentGraphHandshakeResponse graphHandshakeUnsafeResponse = graphHandshakeSafeResponse with
+            DataAgentGraphHandshakeResponse graphHandshakeSqlAuthorityResponse = graphHandshakeSafeResponse with
             {
-                NoSqlAuthority = false,
+                NoSqlAuthority = false
+            };
+            DataAgentGraphHandshakeResponse graphHandshakeUnsafeTraceResponse = graphHandshakeSafeResponse with
+            {
                 TraceSummary = "SELECT * FROM document_index"
             };
             DataAgentGraphHandshakeValidationResult graphHandshakeSafeValidation =
                 DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeSafeResponse);
-            DataAgentGraphHandshakeValidationResult graphHandshakeUnsafeValidation =
-                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeUnsafeResponse);
+            DataAgentGraphHandshakeValidationResult graphHandshakeSqlAuthorityValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeSqlAuthorityResponse);
+            DataAgentGraphHandshakeValidationResult graphHandshakeUnsafeTraceValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeUnsafeTraceResponse);
             DataAgentGraphHandshakeOutcome graphHandshakeDisabledOutcome =
                 new DataAgentGraphHandshakeCoordinator(DataAgentGraphHandshakeOptions.Disabled, DisabledDataAgentGraphSidecarClient.Instance)
                     .TryHandshake("owner", "Which required gates failed?", CreateReadinessDataQueryGraphAcceptedResult());
+            DataAgentGraphNodeManifest? graphHandshakeReadOnlyExecuteManifest = graphHandshakeManifests.SingleOrDefault(manifest =>
+                string.Equals(manifest.NodeName, DataAgentWorkflowNodeNames.ReadOnlyExecute, StringComparison.Ordinal));
+            DataAgentGraphNodeManifest? graphHandshakeQueryPlannerManifest = graphHandshakeManifests.SingleOrDefault(manifest =>
+                string.Equals(manifest.NodeName, DataAgentWorkflowNodeNames.QueryPlanner, StringComparison.Ordinal));
+            DataAgentGraphNodeManifest? graphHandshakeDiagnosticsManifest = graphHandshakeManifests.SingleOrDefault(manifest =>
+                string.Equals(manifest.NodeName, DataAgentWorkflowNodeNames.DiagnosticsRouter, StringComparison.Ordinal));
             bool graphHandshakeNoSqlAuthority =
                 graphHandshakeRequest.NoSqlAuthority &&
                 graphHandshakeSafeResponse.NoSqlAuthority &&
-                graphHandshakeUnsafeValidation.Accepted == false &&
-                string.Equals(graphHandshakeUnsafeValidation.ReasonCode, "sql_authority_requested", StringComparison.Ordinal);
+                graphHandshakeSqlAuthorityValidation.Accepted == false &&
+                string.Equals(graphHandshakeSqlAuthorityValidation.ReasonCode, "sql_authority_requested", StringComparison.Ordinal) &&
+                graphHandshakeUnsafeTraceValidation.Accepted == false &&
+                string.Equals(graphHandshakeUnsafeTraceValidation.ReasonCode, "unsafe_trace", StringComparison.Ordinal);
             bool graphHandshakeScopedManifest =
-                graphHandshakeManifests.All(manifest =>
-                    manifest.AllowedToolNames.Contains(DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false);
+                graphHandshakeManifests.Count > 0 &&
+                graphHandshakeReadOnlyExecuteManifest is not null &&
+                graphHandshakeReadOnlyExecuteManifest.AllowedToolNames.Count == 0 &&
+                graphHandshakeReadOnlyExecuteManifest.DeniedCapabilityMarkers.Contains(DataAgentNodeCapabilities.ExecuteReadOnlyQuery, StringComparer.Ordinal) &&
+                graphHandshakeManifests.SelectMany(manifest => manifest.AllowedToolNames).All(toolName =>
+                    string.Equals(toolName, DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery, StringComparison.Ordinal) == false &&
+                    ContainsBroadGraphHandshakeAuthorityToken(toolName) == false) &&
+                graphHandshakeQueryPlannerManifest?.AllowedToolNames.Contains(DataAgentGraphHandshakeToolNames.ProposeQueryPlan, StringComparer.Ordinal) == true &&
+                graphHandshakeDiagnosticsManifest?.AllowedToolNames.Contains(DataAgentGraphHandshakeToolNames.ReadProgressDiagnostics, StringComparer.Ordinal) == true;
             bool graphHandshakeFallback =
                 graphHandshakeDisabledOutcome.FallbackRequired &&
                 string.Equals(graphHandshakeDisabledOutcome.ReasonCode, "sidecar_disabled", StringComparison.Ordinal);
@@ -1386,6 +1406,16 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
 
     static string LowerBool(bool value) => value ? "true" : "false";
+
+    static bool ContainsBroadGraphHandshakeAuthorityToken(string? toolName)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+            return true;
+
+        string[] broadAuthorityTokens = ["execute", "sql.compile", "mutation", "checkpoint"];
+        return broadAuthorityTokens.Any(token =>
+            toolName.Contains(token, StringComparison.OrdinalIgnoreCase));
+    }
 
     static DataAgentOrchestrationResult CreateReadinessDataQueryGraphAcceptedResult()
     {

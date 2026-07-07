@@ -261,6 +261,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
             Assert.That(declaration, Does.Contain("DataAgentDataQueryGraph"));
             Assert.That(declaration, Does.Contain("DataAgentGraphHandshake"));
+            Assert.That(declaration, Does.Contain("-OmitPatterns @(\"DataAgentDataQueryGraph\", \"DataAgentGraphHandshake\")"));
         });
     }
 
