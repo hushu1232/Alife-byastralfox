@@ -88,6 +88,37 @@ public sealed class DataAgentGraphHandshakeDiagnosticsFormatterTests
         });
     }
 
+    [Test]
+    public void FormatRejectedOutcomeRedactsLiteralSqlToken()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse unsafeResponse = NewResponse(request) with
+        {
+            Accepted = false,
+            ReasonCode = "unsafe_trace",
+            TraceSummary = "raw SQL requested",
+            ContextContribution = "owner requested SQL graph details",
+            FallbackRequired = true
+        };
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Rejected,
+            "unsafe_trace",
+            FallbackRequired: true,
+            request,
+            unsafeResponse,
+            new DataAgentGraphHandshakeValidationResult(false, "unsafe_trace"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("status=rejected"));
+            Assert.That(formatted, Does.Contain("trace=redacted"));
+            Assert.That(formatted, Does.Contain("context=redacted"));
+            Assert.That(formatted, Does.Not.Contain("SQL"));
+        });
+    }
+
     static DataAgentGraphHandshakeRequest NewRequest()
     {
         return new DataAgentGraphHandshakeRequest(

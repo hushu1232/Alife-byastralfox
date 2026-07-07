@@ -11,7 +11,7 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
     const string TruncationSuffix = "...";
 
     static readonly Regex RawSqlPattern = new(
-        @"```sql|\b(select|insert|update|delete|drop|alter|truncate|create)\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(",
+        @"```sql|\b(sql|select|insert|update|delete|drop|alter|truncate|create)\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string Format(DataAgentGraphHandshakeOutcome? outcome, int maxChars = DefaultMaxChars)
