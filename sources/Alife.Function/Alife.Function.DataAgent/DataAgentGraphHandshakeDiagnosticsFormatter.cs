@@ -11,7 +11,7 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
     const string TruncationSuffix = "...";
 
     static readonly Regex RawSqlPattern = new(
-        @"```sql|\b(sql|select|insert|update|delete|drop|alter|truncate|create)\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(",
+        @"```sql|\b(sql|select|insert|update|delete|drop|alter|truncate|create)\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(|\bexecute\s+[A-Za-z_][A-Za-z0-9_.]*\b|\bcall\b\s*(?:[A-Za-z_][A-Za-z0-9_.]*\s*)?\(|\bmerge\s+into\b|\bgrant\s+[A-Za-z]+\b|\brevoke\s+[A-Za-z]+\b|\bpragma\s+[A-Za-z_][A-Za-z0-9_]*\b|\bbegin(?:\s+(?:transaction|work))?\b|\bcommit\b|\brollback\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string Format(DataAgentGraphHandshakeOutcome? outcome, int maxChars = DefaultMaxChars)
@@ -40,8 +40,12 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         {
             builder.AppendLine($"selected_nodes={FormatTokens(outcome.Response.SelectedNodes)}");
             builder.AppendLine($"progress={FormatProgress(outcome.Response.NodeProgress)}");
-            builder.AppendLine($"trace={SafeDiagnosticText(outcome.Response.TraceSummary)}");
-            builder.AppendLine($"context={SafeDiagnosticText(outcome.Response.ContextContribution)}");
+            builder.AppendLine($"trace={SafeDiagnosticText(
+                outcome.Response.TraceSummary,
+                DataAgentGraphHandshakeLimits.MaxTraceSummaryChars)}");
+            builder.AppendLine($"context={SafeDiagnosticText(
+                outcome.Response.ContextContribution,
+                DataAgentGraphHandshakeLimits.MaxContextContributionChars)}");
         }
 
         return Bound(builder.ToString().TrimEnd(), maxChars);
@@ -52,7 +56,9 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         if (values is null || values.Count == 0)
             return "empty";
 
-        return string.Join(",", values.Select(SafeToken));
+        return string.Join(",", values
+            .Take(DataAgentGraphHandshakeLimits.MaxNodeManifests)
+            .Select(SafeToken));
     }
 
     static string FormatProgress(IReadOnlyList<DataAgentGraphHandshakeProgress>? progress)
@@ -60,7 +66,9 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         if (progress is null || progress.Count == 0)
             return "empty";
 
-        return string.Join(",", progress.Select(item =>
+        return string.Join(",", progress
+            .Take(DataAgentGraphHandshakeLimits.MaxProgressEvents)
+            .Select(item =>
         {
             if (item is null)
                 return Redacted;
@@ -87,15 +95,16 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         return trimmed;
     }
 
-    static string SafeDiagnosticText(string? value)
+    static string SafeDiagnosticText(string? value, int maxInputChars)
     {
         if (string.IsNullOrWhiteSpace(value))
             return "empty";
 
-        if (ContainsRawSql(value))
+        string boundedInput = BoundInput(value, maxInputChars);
+        if (ContainsRawSql(boundedInput))
             return Redacted;
 
-        string collapsed = CollapseWhitespace(value);
+        string collapsed = CollapseWhitespace(boundedInput);
         StringBuilder builder = new(Math.Min(collapsed.Length, MaxFieldLength));
         foreach (char current in collapsed)
         {
@@ -113,6 +122,14 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
 
         string sanitized = builder.ToString().Trim();
         return sanitized.Length == 0 ? "empty" : sanitized;
+    }
+
+    static string BoundInput(string value, int maxChars)
+    {
+        if (maxChars <= 0)
+            return string.Empty;
+
+        return value.Length <= maxChars ? value : value[..maxChars];
     }
 
     static bool ContainsRawSql(string? value)

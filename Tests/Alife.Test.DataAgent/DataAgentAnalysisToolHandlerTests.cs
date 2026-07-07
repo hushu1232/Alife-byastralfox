@@ -585,9 +585,33 @@ public sealed class DataAgentAnalysisToolHandlerTests
 
         string context = handler.Start("xiayu", "Which documents describe DataAgent?");
 
+        string expectedContext =
+            "[data_agent_analysis_session_context]\nsession_id=session-1\n[/data_agent_analysis_session_context]" +
+            Environment.NewLine +
+            string.Join(Environment.NewLine,
+            [
+                "orchestration_trace=",
+                "checkpoint_session_id=session-1",
+                "checkpoint_status=Active",
+                "checkpoint_turn_count=1",
+                "checkpoint_can_continue=true",
+                "checkpoint_can_summarize=true",
+                "checkpoint_terminal=false",
+                "route_present=true",
+                "route_tool=dataagent_analysis_start",
+                "route_allows_tool=true",
+                "route_allows_query=true",
+                "route_id=route-1",
+                "route_intent=analysis_start",
+                "route_reason_code=route_allowed",
+                "route_session_id="
+            ]);
+
         Assert.Multiple(() =>
         {
-            Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
+            Assert.That(context, Is.EqualTo(expectedContext));
+            Assert.That(context, Does.Not.Contain("DataAgent graph handshake"));
+            Assert.That(context, Does.Not.Contain("DataQueryGraph dry-run"));
             Assert.That(graphDiagnostics, Has.Count.EqualTo(1));
             Assert.That(graphDiagnostics.Single(), Does.Contain("DataQueryGraph dry-run"));
             Assert.That(graphDiagnostics.Single(), Does.Contain("DataAgent graph handshake"));

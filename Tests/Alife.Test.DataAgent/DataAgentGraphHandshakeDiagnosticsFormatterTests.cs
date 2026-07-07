@@ -119,6 +119,122 @@ public sealed class DataAgentGraphHandshakeDiagnosticsFormatterTests
         });
     }
 
+    [TestCase("EXECUTE refresh_index", "EXECUTE")]
+    [TestCase("CALL refresh_index()", "CALL")]
+    [TestCase("MERGE INTO audit_log", "MERGE")]
+    [TestCase("GRANT SELECT", "GRANT")]
+    [TestCase("REVOKE SELECT", "REVOKE")]
+    [TestCase("PRAGMA table_info", "PRAGMA")]
+    [TestCase("BEGIN TRANSACTION", "BEGIN")]
+    [TestCase("BEGIN WORK", "BEGIN")]
+    [TestCase("COMMIT", "COMMIT")]
+    [TestCase("ROLLBACK", "ROLLBACK")]
+    public void FormatRejectedOutcomeRedactsSqlCommandVariants(string commandText, string commandToken)
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse unsafeResponse = NewResponse(request) with
+        {
+            Accepted = false,
+            ReasonCode = "unsafe_trace",
+            TraceSummary = $"sidecar requested {commandText}",
+            ContextContribution = $"context contains {commandText}",
+            FallbackRequired = true
+        };
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Rejected,
+            "unsafe_trace",
+            FallbackRequired: true,
+            request,
+            unsafeResponse,
+            new DataAgentGraphHandshakeValidationResult(false, "unsafe_trace"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("trace=redacted"));
+            Assert.That(formatted, Does.Contain("context=redacted"));
+            Assert.That(formatted, Does.Not.Contain(commandText));
+            Assert.That(formatted, Does.Not.Contain(commandToken));
+        });
+    }
+
+    [Test]
+    public void FormatBoundsUntrustedListsAndTextBeforeRendering()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        string oversizedTail = "TAIL_SHOULD_NOT_SURVIVE";
+        DataAgentGraphHandshakeResponse response = NewResponse(request) with
+        {
+            SelectedNodes = Enumerable
+                .Range(0, DataAgentGraphHandshakeLimits.MaxNodeManifests + 3)
+                .Select(index => $"node_{index}")
+                .ToArray(),
+            NodeProgress = Enumerable
+                .Range(0, DataAgentGraphHandshakeLimits.MaxProgressEvents + 3)
+                .Select(index => new DataAgentGraphHandshakeProgress(
+                    $"progress_node_{index}",
+                    DataAgentGraphHandshakeProgressStatus.Completed,
+                    $"progress_{index}"))
+                .ToArray(),
+            TraceSummary = new string('a', DataAgentGraphHandshakeLimits.MaxTraceSummaryChars * 2) + oversizedTail,
+            ContextContribution = new string('b', DataAgentGraphHandshakeLimits.MaxContextContributionChars * 2) + oversizedTail
+        };
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Accepted,
+            "handshake_accepted",
+            FallbackRequired: false,
+            request,
+            response,
+            new DataAgentGraphHandshakeValidationResult(true, "handshake_accepted"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome, maxChars: 6000);
+        string finalBounded = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome, maxChars: 180);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain($"node_{DataAgentGraphHandshakeLimits.MaxNodeManifests - 1}"));
+            Assert.That(formatted, Does.Not.Contain($"node_{DataAgentGraphHandshakeLimits.MaxNodeManifests}"));
+            Assert.That(formatted, Does.Contain($"progress_node_{DataAgentGraphHandshakeLimits.MaxProgressEvents - 1}"));
+            Assert.That(formatted, Does.Not.Contain($"progress_node_{DataAgentGraphHandshakeLimits.MaxProgressEvents}"));
+            Assert.That(formatted, Does.Not.Contain(oversizedTail));
+            Assert.That(formatted.Length, Is.LessThanOrEqualTo(6000));
+            Assert.That(finalBounded.Length, Is.LessThanOrEqualTo(180));
+        });
+    }
+
+    [Test]
+    public void FormatHandlesNullUntrustedResponseFields()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse response = NewResponse(request) with
+        {
+            SelectedNodes = null!,
+            NodeProgress = null!,
+            TraceSummary = null!,
+            ContextContribution = null!,
+            RequestedToolNames = null!
+        };
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Accepted,
+            "handshake_accepted",
+            FallbackRequired: false,
+            request,
+            response,
+            new DataAgentGraphHandshakeValidationResult(true, "handshake_accepted"));
+
+        string? formatted = null;
+
+        Assert.DoesNotThrow(() => formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome));
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("selected_nodes=empty"));
+            Assert.That(formatted, Does.Contain("progress=empty"));
+            Assert.That(formatted, Does.Contain("trace=empty"));
+            Assert.That(formatted, Does.Contain("context=empty"));
+        });
+    }
+
     static DataAgentGraphHandshakeRequest NewRequest()
     {
         return new DataAgentGraphHandshakeRequest(
