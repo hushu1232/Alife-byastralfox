@@ -370,6 +370,40 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeBoundaryPresent", graphHandshakeReadyDetail)
                 : Fail("GraphHandshakeBoundaryPresent", graphHandshakeFailureDetail));
 
+            DataAgentGraphHandshakeHttpOptions graphHandshakeDefaultHttpOptions =
+                DataAgentGraphHandshakeHttpOptions.FromValues(null, null);
+            DataAgentGraphHandshakeHttpOptions graphHandshakeLoopbackHttpOptions =
+                DataAgentGraphHandshakeHttpOptions.FromValues("http://127.0.0.1:8765/handshake", "800");
+            DataAgentGraphHandshakeHttpOptions graphHandshakeRemoteHttpOptions =
+                DataAgentGraphHandshakeHttpOptions.FromValues("http://example.com/handshake", "800");
+            bool graphHandshakeDevHttpAdapterPresent =
+                typeof(DataAgentGraphHandshakeHttpClient).GetInterfaces().Contains(typeof(IDataAgentGraphSidecarClient));
+            bool graphHandshakeEndpointRequired =
+                graphHandshakeDefaultHttpOptions.Configured == false &&
+                graphHandshakeLoopbackHttpOptions.Configured &&
+                graphHandshakeRemoteHttpOptions.Configured == false;
+            bool graphHandshakeNoRuntimeStarted =
+                graphHandshakeDefaultHttpOptions.RuntimeStarted == false &&
+                graphHandshakeLoopbackHttpOptions.RuntimeStarted == false;
+            bool graphHandshakeLoopbackOnly =
+                graphHandshakeLoopbackHttpOptions.Endpoint?.IsLoopback == true &&
+                graphHandshakeRemoteHttpOptions.Endpoint is null;
+            bool graphHandshakeDevFallback =
+                graphHandshakeDisabledOutcome.FallbackRequired &&
+                string.Equals(graphHandshakeDisabledOutcome.ReasonCode, "sidecar_disabled", StringComparison.Ordinal);
+            bool graphHandshakeDevReady =
+                graphHandshakeDefaultOptions.Enabled == false &&
+                graphHandshakeDevHttpAdapterPresent &&
+                graphHandshakeNoRuntimeStarted &&
+                graphHandshakeEndpointRequired &&
+                graphHandshakeLoopbackOnly &&
+                graphHandshakeDevFallback &&
+                graphHandshakeSafeValidation.Accepted &&
+                graphHandshakeNoSqlAuthority;
+            checks.Add(graphHandshakeDevReady
+                ? Pass("GraphHandshakeDevSidecarAdapterPresent", "default_enabled=false;dev_http_adapter_present=true;runtime_started=false;endpoint_required=true;loopback_only=true;fallback=true;validator=true;no_sql_authority=true")
+                : Fail("GraphHandshakeDevSidecarAdapterPresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};dev_http_adapter_present={LowerBool(graphHandshakeDevHttpAdapterPresent)};runtime_started={LowerBool(graphHandshakeNoRuntimeStarted == false)};endpoint_required={LowerBool(graphHandshakeEndpointRequired)};loopback_only={LowerBool(graphHandshakeLoopbackOnly)};fallback={LowerBool(graphHandshakeDevFallback)};validator={LowerBool(graphHandshakeSafeValidation.Accepted)};no_sql_authority={LowerBool(graphHandshakeNoSqlAuthority)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =

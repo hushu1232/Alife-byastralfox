@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(72));
+            Assert.That(checks, Has.Count.EqualTo(73));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -64,6 +64,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeCheck.Detail, Does.Contain("scoped_node_manifest=true"));
             Assert.That(graphHandshakeCheck.Detail, Does.Contain("fallback=true"));
             Assert.That(graphHandshakeCheck.Detail, Does.Contain("runtime_required=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeDevSidecarAdapterPresent"));
+            DataAgentReadinessCheck graphHandshakeDevSidecarCheck = checks.Single(check => check.Name == "GraphHandshakeDevSidecarAdapterPresent");
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("default_enabled=false"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("dev_http_adapter_present=true"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("runtime_started=false"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("endpoint_required=true"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("loopback_only=true"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("fallback=true"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("validator=true"));
+            Assert.That(graphHandshakeDevSidecarCheck.Detail, Does.Contain("no_sql_authority=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -178,7 +188,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 86 required passed, 0 required missing"
+                "  Summary: 87 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -201,6 +211,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("DataAgentRuntimeScenarioContextActivationPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphSidecarContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeBoundaryPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarAdapterPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -218,7 +229,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 86"));
+            Assert.That(script, Does.Contain("$expectedRequired = 87"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -418,6 +429,24 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("factory=true"));
             Assert.That(declaration, Does.Contain("module_wiring=true"));
             Assert.That(declaration, Does.Contain("live_test_gated="));
+        });
+    }
+
+    [Test]
+    public void StaticReadinessScriptContainsV31DevSidecarAdapterMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+        string declaration = FindNewCheckDeclaration(script, "GraphHandshakeDevSidecarAdapterPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeHttpOptions"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeHttpClient"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_GRAPH_HANDSHAKE_ENDPOINT"));
+            Assert.That(declaration, Does.Contain("ALIFE_DATAAGENT_GRAPH_HANDSHAKE_TIMEOUT_MS"));
+            Assert.That(declaration, Does.Contain("loopback"));
+            Assert.That(declaration, Does.Contain("runtime_started=false"));
         });
     }
 

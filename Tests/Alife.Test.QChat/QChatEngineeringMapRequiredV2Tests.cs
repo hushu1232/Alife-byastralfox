@@ -261,7 +261,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
             Assert.That(declaration, Does.Contain("DataAgentDataQueryGraph"));
             Assert.That(declaration, Does.Contain("DataAgentGraphHandshake"));
-            Assert.That(declaration, Does.Contain("-OmitPatterns @(\"DataAgentDataQueryGraph\", \"DataAgentGraphHandshake\")"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecar"));
+            Assert.That(declaration, Does.Contain("-OmitPatterns @(\"DataAgentDataQueryGraph\", \"DataAgentGraphHandshake\", \"DataAgentGraphSidecar\")"));
         });
     }
 
@@ -298,6 +299,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             "DataAgentToolScopePolicy",
             "PostgresDataAgentAnalysisSessionStore",
             "DataAgentAnalysisSessionStoreFactory",
+            "DataAgentGraphSidecar",
             "DataAgentGraphSidecarContract",
             "DataAgentGraphSidecarNodeKind",
             "DataAgentGraphSidecarAuthority",
