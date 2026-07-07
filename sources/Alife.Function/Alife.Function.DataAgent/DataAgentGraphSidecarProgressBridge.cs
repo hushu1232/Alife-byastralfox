@@ -35,6 +35,14 @@ public sealed class DataAgentGraphSidecarProgressBridge
         "table"
     ];
 
+    static readonly string[] ReservedFactKeys =
+    [
+        "source",
+        "node",
+        "request_id",
+        "message"
+    ];
+
     readonly IDataAgentProgressSink? progressSink;
     readonly Func<DateTimeOffset> clock;
 
@@ -132,6 +140,8 @@ public sealed class DataAgentGraphSidecarProgressBridge
             IsIdentityMatch(request.SessionId, result.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
             result.Checkpoint is null ||
             IsIdentityMatch(request.SessionId, result.Checkpoint.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
+            result.Response is null ||
+            IsIdentityMatch(request.SessionId, result.Response.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
             HasBoundedText(progressEvent.NodeName, MaxNodeNameLength) == false ||
             manifestNodeNames.Contains(progressEvent.NodeName) == false ||
             Enum.IsDefined(typeof(DataAgentGraphSidecarProgressStatus), progressEvent.Status) == false ||
@@ -182,6 +192,7 @@ public sealed class DataAgentGraphSidecarProgressBridge
         foreach (KeyValuePair<string, string> fact in progressEvent.Facts)
         {
             if (TryNormalizeFact(fact, out string? key, out string? value) == false ||
+                IsReservedFactKey(key!) ||
                 safeFacts.ContainsKey(key!))
             {
                 return false;
@@ -213,6 +224,11 @@ public sealed class DataAgentGraphSidecarProgressBridge
         key = fact.Key.Trim();
         value = DataAgentContextFieldSanitizer.Sanitize(fact.Value.Trim(), MaxFactValueLength);
         return true;
+    }
+
+    static bool IsReservedFactKey(string key)
+    {
+        return ReservedFactKeys.Contains(key, StringComparer.Ordinal);
     }
 
     static bool IsIdentityMatch(string expected, string actual, int maxLength)

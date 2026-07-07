@@ -85,6 +85,64 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
     }
 
     [Test]
+    public void PublishRejectsCrossSessionResponseWithoutPublishing()
+    {
+        RecordingProgressSink sink = new();
+        DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentOrchestrationResult staleResult = NewResult() with
+        {
+            Response = NewResult().Response with
+            {
+                SessionId = "session-2"
+            }
+        };
+
+        DataAgentGraphSidecarProgressBridgeResult summary = bridge.Publish(
+            request,
+            staleResult,
+            [
+                SafeEvent(request)
+            ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.AcceptedCount, Is.EqualTo(0));
+            Assert.That(summary.RejectedCount, Is.EqualTo(1));
+            Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void PublishRejectsReservedFactKeyWithoutPublishing()
+    {
+        RecordingProgressSink sink = new();
+        DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+
+        DataAgentGraphSidecarProgressBridgeResult summary = bridge.Publish(
+            request,
+            NewResult(),
+            [
+                SafeEvent(request) with
+                {
+                    Message = string.Empty,
+                    Facts = new Dictionary<string, string>
+                    {
+                        ["message"] = "sidecar controlled"
+                    }
+                }
+            ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.AcceptedCount, Is.EqualTo(0));
+            Assert.That(summary.RejectedCount, Is.EqualTo(1));
+            Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
     public void PublishRejectsUnknownNodeWithoutPublishing()
     {
         RecordingProgressSink sink = new();
