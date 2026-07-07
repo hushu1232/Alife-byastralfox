@@ -55,6 +55,36 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
     }
 
     [Test]
+    public void PublishRejectsCrossSessionResultWithoutPublishing()
+    {
+        RecordingProgressSink sink = new();
+        DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentOrchestrationResult staleResult = NewResult() with
+        {
+            SessionId = "session-2",
+            Checkpoint = NewResult().Checkpoint with
+            {
+                SessionId = "session-2"
+            }
+        };
+
+        DataAgentGraphSidecarProgressBridgeResult summary = bridge.Publish(
+            request,
+            staleResult,
+            [
+                SafeEvent(request)
+            ]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(summary.AcceptedCount, Is.EqualTo(0));
+            Assert.That(summary.RejectedCount, Is.EqualTo(1));
+            Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
     public void PublishRejectsUnknownNodeWithoutPublishing()
     {
         RecordingProgressSink sink = new();

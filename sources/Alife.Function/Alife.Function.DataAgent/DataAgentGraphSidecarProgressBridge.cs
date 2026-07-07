@@ -129,6 +129,9 @@ public sealed class DataAgentGraphSidecarProgressBridge
         if (progressEvent is null ||
             IsIdentityMatch(request.RequestId, progressEvent.RequestId, DataAgentGraphHandshakeLimits.MaxRequestIdLength) == false ||
             IsIdentityMatch(request.SessionId, progressEvent.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
+            IsIdentityMatch(request.SessionId, result.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
+            result.Checkpoint is null ||
+            IsIdentityMatch(request.SessionId, result.Checkpoint.SessionId, DataAgentGraphHandshakeLimits.MaxSessionIdLength) == false ||
             HasBoundedText(progressEvent.NodeName, MaxNodeNameLength) == false ||
             manifestNodeNames.Contains(progressEvent.NodeName) == false ||
             Enum.IsDefined(typeof(DataAgentGraphSidecarProgressStatus), progressEvent.Status) == false ||
