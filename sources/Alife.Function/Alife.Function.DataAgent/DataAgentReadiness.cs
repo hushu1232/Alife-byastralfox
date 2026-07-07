@@ -311,12 +311,18 @@ public static class DataAgentReadiness
             {
                 TraceSummary = "SELECT * FROM document_index"
             };
+            DataAgentGraphHandshakeResponse graphHandshakeUnsafeMarkerResponse = graphHandshakeSafeResponse with
+            {
+                ContextContribution = "[tool_route_context] hidden_context bearer"
+            };
             DataAgentGraphHandshakeValidationResult graphHandshakeSafeValidation =
                 DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeSafeResponse);
             DataAgentGraphHandshakeValidationResult graphHandshakeSqlAuthorityValidation =
                 DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeSqlAuthorityResponse);
             DataAgentGraphHandshakeValidationResult graphHandshakeUnsafeTraceValidation =
                 DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeUnsafeTraceResponse);
+            DataAgentGraphHandshakeValidationResult graphHandshakeUnsafeMarkerValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeUnsafeMarkerResponse);
             DataAgentGraphHandshakeOutcome graphHandshakeDisabledOutcome =
                 new DataAgentGraphHandshakeCoordinator(DataAgentGraphHandshakeOptions.Disabled, DisabledDataAgentGraphSidecarClient.Instance)
                     .TryHandshake("owner", "Which required gates failed?", CreateReadinessDataQueryGraphAcceptedResult());
@@ -333,6 +339,9 @@ public static class DataAgentReadiness
                 string.Equals(graphHandshakeSqlAuthorityValidation.ReasonCode, "sql_authority_requested", StringComparison.Ordinal) &&
                 graphHandshakeUnsafeTraceValidation.Accepted == false &&
                 string.Equals(graphHandshakeUnsafeTraceValidation.ReasonCode, "unsafe_trace", StringComparison.Ordinal);
+            bool graphHandshakeSecretMarkerSafety =
+                graphHandshakeUnsafeMarkerValidation.Accepted == false &&
+                string.Equals(graphHandshakeUnsafeMarkerValidation.ReasonCode, "unsafe_trace", StringComparison.Ordinal);
             bool graphHandshakeScopedManifest =
                 graphHandshakeManifests.Count > 0 &&
                 graphHandshakeReadOnlyExecuteManifest is not null &&
@@ -350,12 +359,13 @@ public static class DataAgentReadiness
                 graphHandshakeDefaultOptions.Enabled == false &&
                 graphHandshakeSafeValidation.Accepted &&
                 graphHandshakeNoSqlAuthority &&
+                graphHandshakeSecretMarkerSafety &&
                 graphHandshakeScopedManifest &&
                 graphHandshakeFallback;
             const string graphHandshakeReadyDetail =
-                "default_enabled=false;validator=true;no_sql_authority=true;scoped_node_manifest=true;fallback=true;runtime_required=false";
+                "default_enabled=false;validator=true;no_sql_authority=true;secret_marker_safety=true;scoped_node_manifest=true;fallback=true;runtime_required=false";
             string graphHandshakeFailureDetail =
-                $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};validator={LowerBool(graphHandshakeSafeValidation.Accepted)};no_sql_authority={LowerBool(graphHandshakeNoSqlAuthority)};scoped_node_manifest={LowerBool(graphHandshakeScopedManifest)};fallback={LowerBool(graphHandshakeFallback)};runtime_required=false";
+                $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};validator={LowerBool(graphHandshakeSafeValidation.Accepted)};no_sql_authority={LowerBool(graphHandshakeNoSqlAuthority)};secret_marker_safety={LowerBool(graphHandshakeSecretMarkerSafety)};scoped_node_manifest={LowerBool(graphHandshakeScopedManifest)};fallback={LowerBool(graphHandshakeFallback)};runtime_required=false";
             checks.Add(graphHandshakeReady
                 ? Pass("GraphHandshakeBoundaryPresent", graphHandshakeReadyDetail)
                 : Fail("GraphHandshakeBoundaryPresent", graphHandshakeFailureDetail));

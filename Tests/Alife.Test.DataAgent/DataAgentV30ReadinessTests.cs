@@ -17,12 +17,16 @@ public sealed class DataAgentV30ReadinessTests
             Assert.That(check.Detail, Does.Contain("default_enabled=false"));
             Assert.That(check.Detail, Does.Contain("validator=true"));
             Assert.That(check.Detail, Does.Contain("no_sql_authority=true"));
+            Assert.That(check.Detail, Does.Contain("secret_marker_safety=true"));
             Assert.That(check.Detail, Does.Contain("scoped_node_manifest=true"));
             Assert.That(check.Detail, Does.Contain("fallback=true"));
             Assert.That(check.Detail, Does.Contain("runtime_required=false"));
             Assert.That(check.Detail, Does.Not.Contain("SELECT"));
             Assert.That(check.Detail, Does.Not.Contain("DROP"));
             Assert.That(check.Detail, Does.Not.Contain("document_index"));
+            Assert.That(check.Detail, Does.Not.Contain("hidden_context"));
+            Assert.That(check.Detail, Does.Not.Contain("[tool_route_context]"));
+            Assert.That(check.Detail, Does.Not.Contain("api_key"));
         });
     }
 
@@ -38,9 +42,11 @@ public sealed class DataAgentV30ReadinessTests
             Assert.That(declaration, Is.Not.Empty, "Missing readiness declaration for GraphHandshakeBoundaryPresent.");
             Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeCoordinator"));
             Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeValidator"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeUnsafeDiagnosticDetector"));
             Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeManifestFactory"));
             Assert.That(declaration, Does.Contain("default_enabled=false"));
             Assert.That(declaration, Does.Contain("no_sql_authority=true"));
+            Assert.That(declaration, Does.Contain("secret_marker_safety=true"));
             Assert.That(declaration, Does.Contain("scoped_node_manifest=true"));
             Assert.That(declaration, Does.Contain("fallback=true"));
             Assert.That(script, Does.Contain("$expectedRequired = 86"));
@@ -64,8 +70,10 @@ public sealed class DataAgentV30ReadinessTests
         {
             Assert.That(declaration, Does.Contain("graphHandshakeSqlAuthorityValidation"));
             Assert.That(declaration, Does.Contain("graphHandshakeUnsafeTraceValidation"));
+            Assert.That(declaration, Does.Contain("graphHandshakeUnsafeMarkerValidation"));
             Assert.That(declaration, Does.Contain("\"sql_authority_requested\""));
             Assert.That(declaration, Does.Contain("\"unsafe_trace\""));
+            Assert.That(declaration, Does.Contain("secret_marker_safety=true"));
             Assert.That(normalizedDeclaration, Does.Not.Contain("NoSqlAuthority = false,\n                TraceSummary"));
         });
     }

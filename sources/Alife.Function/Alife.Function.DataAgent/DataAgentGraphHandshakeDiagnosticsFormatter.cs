@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.RegularExpressions;
 
 namespace Alife.Function.DataAgent;
 
@@ -9,10 +8,6 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
     const int MaxFieldLength = 240;
     const string Redacted = "redacted";
     const string TruncationSuffix = "...";
-
-    static readonly Regex RawSqlPattern = new(
-        @"```sql|\b(sql|select|insert|update|delete|drop|alter|truncate|create)\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(|\bexecute\s+[A-Za-z_][A-Za-z0-9_.]*\b|\bcall\b\s*(?:[A-Za-z_][A-Za-z0-9_.]*\s*)?\(|\bmerge\s+into\b|\bgrant\s+[A-Za-z]+\b|\brevoke\s+[A-Za-z]+\b|\bpragma\s+[A-Za-z_][A-Za-z0-9_]*\b|\bbegin(?:\s+(?:transaction|work))?\b|\bcommit\b|\brollback\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string Format(DataAgentGraphHandshakeOutcome? outcome, int maxChars = DefaultMaxChars)
     {
@@ -83,7 +78,8 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
             return Redacted;
 
         string trimmed = value.Trim();
-        if (trimmed.Length > MaxFieldLength || ContainsRawSql(trimmed))
+        if (trimmed.Length > MaxFieldLength ||
+            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(trimmed))
             return Redacted;
 
         foreach (char current in trimmed)
@@ -101,7 +97,7 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
             return "empty";
 
         string boundedInput = BoundInput(value, maxInputChars);
-        if (ContainsRawSql(boundedInput))
+        if (DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(boundedInput))
             return Redacted;
 
         string collapsed = CollapseWhitespace(boundedInput);
@@ -130,12 +126,6 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
             return string.Empty;
 
         return value.Length <= maxChars ? value : value[..maxChars];
-    }
-
-    static bool ContainsRawSql(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) == false &&
-               RawSqlPattern.IsMatch(value);
     }
 
     static string CollapseWhitespace(string value)

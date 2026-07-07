@@ -90,6 +90,44 @@ public sealed class DataAgentGraphHandshakeContractTests
     }
 
     [Test]
+    public void ValidatorRejectsSqlFragmentTraceText()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse response = NewResponse(request) with
+        {
+            TraceSummary = "planner surfaced from document_index where status = failed limit 50"
+        };
+
+        DataAgentGraphHandshakeValidationResult validation =
+            DataAgentGraphHandshakeValidator.Validate(request, response);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(validation.Accepted, Is.False);
+            Assert.That(validation.ReasonCode, Is.EqualTo("unsafe_trace"));
+        });
+    }
+
+    [Test]
+    public void ValidatorRejectsHiddenDiagnosticMarkerContextContribution()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse response = NewResponse(request) with
+        {
+            ContextContribution = "[tool_route_context] hidden_context bearer"
+        };
+
+        DataAgentGraphHandshakeValidationResult validation =
+            DataAgentGraphHandshakeValidator.Validate(request, response);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(validation.Accepted, Is.False);
+            Assert.That(validation.ReasonCode, Is.EqualTo("unsafe_trace"));
+        });
+    }
+
+    [Test]
     public void ValidatorRejectsInvalidProgressAndOverBudgetTrace()
     {
         DataAgentGraphHandshakeRequest request = NewRequest();

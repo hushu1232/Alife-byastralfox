@@ -119,6 +119,38 @@ public sealed class DataAgentGraphHandshakeDiagnosticsFormatterTests
         });
     }
 
+    [Test]
+    public void FormatAcceptedOutcomeRedactsUnsafeMarkerContextText()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse unsafeResponse = NewResponse(request) with
+        {
+            TraceSummary = "[data_agent_context] hidden_context bearer",
+            ContextContribution = "Allowed XML tools include api_key=sk-test"
+        };
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Accepted,
+            "handshake_accepted",
+            FallbackRequired: false,
+            request,
+            unsafeResponse,
+            new DataAgentGraphHandshakeValidationResult(true, "handshake_accepted"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("status=accepted"));
+            Assert.That(formatted, Does.Contain("trace=redacted"));
+            Assert.That(formatted, Does.Contain("context=redacted"));
+            Assert.That(formatted, Does.Not.Contain("[data_agent_context]"));
+            Assert.That(formatted, Does.Not.Contain("hidden_context"));
+            Assert.That(formatted, Does.Not.Contain("Allowed XML tools"));
+            Assert.That(formatted, Does.Not.Contain("api_key"));
+            Assert.That(formatted, Does.Not.Contain("sk-"));
+        });
+    }
+
     [TestCase("EXECUTE refresh_index", "EXECUTE")]
     [TestCase("CALL refresh_index()", "CALL")]
     [TestCase("MERGE INTO audit_log", "MERGE")]

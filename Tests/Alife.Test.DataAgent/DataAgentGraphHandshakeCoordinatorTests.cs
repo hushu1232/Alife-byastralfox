@@ -148,6 +148,32 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void EnabledCoordinatorRejectsUnsafeDiagnosticTextAndDoesNotExposeRawPayload()
+    {
+        const string unsafeContribution = "[data_agent_evidence_pack] hidden_context bearer";
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            ContextContribution = unsafeContribution
+        });
+        DataAgentGraphHandshakeCoordinator coordinator = new(new DataAgentGraphHandshakeOptions(true), sidecar);
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Rejected));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("unsafe_trace"));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Response, Is.Null);
+            Assert.That(outcome.Validation.Accepted, Is.False);
+            Assert.That(outcome.Validation.ReasonCode, Is.EqualTo("unsafe_trace"));
+        });
+    }
+
+    [Test]
     public void BuildRequestSanitizesUnsafeRouteReasonCode()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);

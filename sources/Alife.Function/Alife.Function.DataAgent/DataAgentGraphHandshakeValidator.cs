@@ -4,10 +4,6 @@ namespace Alife.Function.DataAgent;
 
 public static class DataAgentGraphHandshakeValidator
 {
-    static readonly Regex RawSqlPattern = new(
-        @"```sql|\b(select|insert|update|delete|drop|alter|truncate)\b|\bcreate\b|\bwith\s+(?:recursive\s+)?[A-Za-z_][A-Za-z0-9_]*\s+as\s*\(|\bexecute\s+[A-Za-z_][A-Za-z0-9_.]*\b|\bcall\b\s*(?:[A-Za-z_][A-Za-z0-9_.]*\s*)?\(|\bmerge\s+into\b|\bgrant\s+[A-Za-z]+\b|\brevoke\s+[A-Za-z]+\b|\bpragma\s+[A-Za-z_][A-Za-z0-9_]*\b|\bbegin(?:\s+(?:transaction|work))?\b|\bcommit\b|\brollback\b",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
     static readonly Regex MachineTokenPattern = new(
         @"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
         RegexOptions.CultureInvariant);
@@ -62,8 +58,8 @@ public static class DataAgentGraphHandshakeValidator
             response.TraceSummary.Length > request.TraceBudgetChars ||
             response.TraceSummary.Length > DataAgentGraphHandshakeLimits.MaxTraceSummaryChars ||
             response.ContextContribution.Length > DataAgentGraphHandshakeLimits.MaxContextContributionChars ||
-            ContainsRawSql(response.TraceSummary) ||
-            ContainsRawSql(response.ContextContribution))
+            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(response.TraceSummary) ||
+            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(response.ContextContribution))
         {
             return Reject("unsafe_trace");
         }
@@ -191,12 +187,6 @@ public static class DataAgentGraphHandshakeValidator
     {
         return HasBoundedText(value, maxLength) &&
                MachineTokenPattern.IsMatch(value!);
-    }
-
-    static bool ContainsRawSql(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) == false &&
-               RawSqlPattern.IsMatch(value);
     }
 
     static DataAgentGraphHandshakeValidationResult Reject(string reasonCode)
