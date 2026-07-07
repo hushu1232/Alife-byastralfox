@@ -34,8 +34,8 @@ The command contract is intentionally string-only. It returns QChat-local diagno
 
 - QChat remains a string-only consumer of DataAgent diagnostics.
 - DataAgent remains the owner of QueryPlan, SQL validation, SQL compilation, SQL safety, read-only execution, checkpoint persistence, evidence, trace, progress, and DataQueryGraph dry-run projection.
-- Non-owner diagnostics commands are dropped before model dispatch and do not receive a visible denial reply.
-- Unknown `/dataagent` commands fail closed and are not treated as owner diagnostics commands.
+- Non-owner supported diagnostics commands are dropped before model dispatch and do not receive a visible denial reply.
+- Unknown `/dataagent` diagnostics strings are not parsed as owner diagnostics commands; the diagnostics handler returns unhandled for them.
 - QChat must not import `DataAgentDataQueryGraph*` types.
 
 ## V3 Handoff
