@@ -406,6 +406,45 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("/dataagent diag graph - DataAgent DataQueryGraph dry-run diagnostics")]
+    [TestCase("/qchat diagnostics dataagent trace - DataAgent trace diagnostics")]
+    public void TryHandleDataAgentDiagnosticsStripsCopiedMenuDescription(string command)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentTrace: "DataAgent trace diagnostics\ntrace_marker=copied_menu",
+            RecentDataAgentGraph: "DataQueryGraph dry-run\ngraph_marker=copied_menu");
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text, Does.Contain("copied_menu"));
+        });
+    }
+
+    [TestCase("/dataagent diag unknown")]
+    [TestCase("/dataagent diagnostics graph extra")]
+    [TestCase("/dataagent")]
+    public void TryHandleUnknownDataAgentDiagnosticsCommandReturnsUnhandled(string command)
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
     [Test]
     public void TryHandleDataAgentEvidenceDiagnosticsReturnsUnavailableWhenNoEvidenceExists()
     {

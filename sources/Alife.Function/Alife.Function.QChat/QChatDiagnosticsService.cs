@@ -61,14 +61,14 @@ public static class QChatDiagnosticsService
         command = StripCopiedMenuDescription(command);
 
         if (dataAgentCommand)
-            return command.ToLowerInvariant() switch
-            {
-                "diag evidence" or "diagnostics evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
-                "diag trace" or "diagnostics trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
-                "diag progress" or "diagnostics progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
-                "diag graph" or "diagnostics graph" => Handled(BuildDataAgentGraphDiagnosticsText(runtimeState, route)),
-                _ => new QChatDiagnosticsResult(false, string.Empty)
-            };
+        {
+            return QChatDataAgentDiagnosticsCommandContract.TryParseDataAgentCommandSuffix(command, out QChatDataAgentDiagnosticsTopic topic)
+                ? Handled(BuildDataAgentDiagnosticsText(topic, runtimeState, route))
+                : new QChatDiagnosticsResult(false, string.Empty);
+        }
+
+        if (QChatDataAgentDiagnosticsCommandContract.TryParseQChatDataAgentDiagnosticsCommandSuffix(command, out QChatDataAgentDiagnosticsTopic qchatDataAgentTopic))
+            return Handled(BuildDataAgentDiagnosticsText(qchatDataAgentTopic, runtimeState, route));
 
         return command.ToLowerInvariant() switch
         {
@@ -90,10 +90,6 @@ public static class QChatDiagnosticsService
             "diag recent" or "diagnostics recent" => Handled(BuildRecentDiagnosticsText(runtimeState, route)),
             "diag toolbroker" or "diagnostics toolbroker" => Handled(BuildToolBrokerText(runtimeState, route)),
             "diag semantic" or "diagnostics semantic" => Handled(BuildSemanticDiagnosticsText(runtimeState, route)),
-            "diag dataagent evidence" or "diagnostics dataagent evidence" => Handled(BuildDataAgentEvidenceDiagnosticsText(runtimeState, route)),
-            "diag dataagent trace" or "diagnostics dataagent trace" => Handled(BuildDataAgentTraceDiagnosticsText(runtimeState, route)),
-            "diag dataagent progress" or "diagnostics dataagent progress" => Handled(BuildDataAgentProgressDiagnosticsText(runtimeState, route)),
-            "diag dataagent graph" or "diagnostics dataagent graph" => Handled(BuildDataAgentGraphDiagnosticsText(runtimeState, route)),
             "diag" or "diagnostics" => Handled(BuildDiagnosticsMenuText()),
             "files" => Handled("files=pending:0 downloaded:0 deleted:0"),
             "approvals" => Handled("approvals=pending:0"),
@@ -129,6 +125,21 @@ public static class QChatDiagnosticsService
     static QChatDiagnosticsResult Handled(string text)
     {
         return new QChatDiagnosticsResult(true, text);
+    }
+
+    static string BuildDataAgentDiagnosticsText(
+        QChatDataAgentDiagnosticsTopic topic,
+        QChatDiagnosticsRuntimeState runtimeState,
+        QChatAgentRoute route)
+    {
+        return topic switch
+        {
+            QChatDataAgentDiagnosticsTopic.Evidence => BuildDataAgentEvidenceDiagnosticsText(runtimeState, route),
+            QChatDataAgentDiagnosticsTopic.Trace => BuildDataAgentTraceDiagnosticsText(runtimeState, route),
+            QChatDataAgentDiagnosticsTopic.Progress => BuildDataAgentProgressDiagnosticsText(runtimeState, route),
+            QChatDataAgentDiagnosticsTopic.Graph => BuildDataAgentGraphDiagnosticsText(runtimeState, route),
+            _ => throw new InvalidOperationException($"Unknown DataAgent diagnostics topic: {topic}")
+        };
     }
 
     static string BuildRouteText(QChatAgentRoute route)
