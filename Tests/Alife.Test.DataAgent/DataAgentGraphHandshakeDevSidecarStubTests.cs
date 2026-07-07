@@ -64,6 +64,36 @@ public sealed class DataAgentGraphHandshakeDevSidecarStubTests
         });
     }
 
+    [Test]
+    public void PythonDevStubDocumentsV32ProgressShapeWithoutRuntimeDependency()
+    {
+        string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string app = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "app.py"));
+        string readme = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "README.md"));
+        string doc = File.ReadAllText(Path.Combine(root, "docs", "dataagent", "dataagent-v3.2-sidecar-progress-bridge.md"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(app, Does.Contain("Message: str"));
+            Assert.That(app, Does.Contain("Facts: dict[str, str]"));
+            Assert.That(app, Does.Contain("scenario_knowledge"));
+            Assert.That(app, Does.Contain("graph_sidecar"));
+            Assert.That(app, Does.Not.Contain("subprocess"));
+            Assert.That(app, Does.Not.Contain("sqlite"));
+            Assert.That(app, Does.Not.Contain("postgres"));
+            Assert.That(readme, Does.Contain("V3.2"));
+            Assert.That(readme, Does.Contain("progress shape"));
+            Assert.That(readme, Does.Contain("C# remains the only progress recorder"));
+            Assert.That(readme, Does.Contain("default tests do not require Python"));
+            Assert.That(doc, Does.Contain("DataAgent V3.2"));
+            Assert.That(doc, Does.Contain("sidecar progress is untrusted input"));
+            Assert.That(doc, Does.Contain("IDataAgentProgressSink"));
+            Assert.That(doc, Does.Contain("default tests do not require Python"));
+            Assert.That(doc, Does.Contain("SSE"));
+            Assert.That(doc, Does.Contain("NDJSON"));
+        });
+    }
+
     static string FindRepoRoot(string startDirectory)
     {
         DirectoryInfo? directory = new(startDirectory);

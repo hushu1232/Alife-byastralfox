@@ -32,3 +32,27 @@ desktop pet state, or manage external RAG sources.
 
 All sidecar output remains untrusted and must pass the C#
 `DataAgentGraphHandshakeValidator`.
+
+## V3.2 Progress Shape
+
+V3.2 lets the stub return a bounded progress shape on each
+`NodeProgress` item:
+
+```json
+{
+  "NodeName": "query_planner",
+  "Status": "Completed",
+  "ReasonCode": "planner_suggested",
+  "Message": "planner ready",
+  "Facts": {
+    "source": "graph_sidecar",
+    "stage": "planner"
+  }
+}
+```
+
+C# remains the only progress recorder and diagnostics publisher. The stub does
+not write to `DataAgentProgressRecorder`, does not publish owner diagnostics,
+and does not send visible chat text. default tests do not require Python,
+FastAPI, uvicorn, a live port, network access, QChat, QQ, PostgreSQL, browser
+automation, model calls, or a live sidecar.

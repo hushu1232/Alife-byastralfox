@@ -13,6 +13,8 @@ class GraphHandshakeProgress(BaseModel):
     NodeName: str
     Status: str
     ReasonCode: str
+    Message: str = ""
+    Facts: dict[str, str] = Field(default_factory=dict)
 
 
 class GraphHandshakeRequest(BaseModel):
@@ -55,7 +57,7 @@ def health() -> dict[str, str]:
 
 @app.post("/handshake")
 def handshake(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
-    selected_nodes = ["scenario_context", "query_planner", "diagnostics_router"]
+    selected_nodes = ["scenario_knowledge", "query_planner", "diagnostics_router"]
     return GraphHandshakeResponse(
         RequestId=request.RequestId,
         Accepted=True,
@@ -63,19 +65,25 @@ def handshake(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
         SelectedNodes=selected_nodes,
         NodeProgress=[
             GraphHandshakeProgress(
-                NodeName="scenario_context",
+                NodeName="scenario_knowledge",
                 Status="Completed",
                 ReasonCode="scenario_context_ready",
+                Message="scenario context ready",
+                Facts={"source": "graph_sidecar", "stage": "scenario"},
             ),
             GraphHandshakeProgress(
                 NodeName="query_planner",
                 Status="Completed",
                 ReasonCode="planner_suggested",
+                Message="planner ready",
+                Facts={"source": "graph_sidecar", "stage": "planner"},
             ),
             GraphHandshakeProgress(
                 NodeName="diagnostics_router",
                 Status="Completed",
                 ReasonCode="diagnostics_ready",
+                Message="diagnostics ready",
+                Facts={"source": "graph_sidecar", "stage": "diagnostics"},
             ),
         ],
         TraceSummary="ScenarioKnowledge:Completed>QueryPlanner:Completed>DiagnosticsRouter:Completed",
