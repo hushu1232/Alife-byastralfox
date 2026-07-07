@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Alife.Function.DataAgent;
 
@@ -18,7 +19,7 @@ public sealed class DataAgentGraphSidecarInvalidResponseException : Exception
 
 public sealed class DataAgentGraphHandshakeHttpClient : IDataAgentGraphSidecarClient
 {
-    static readonly JsonSerializerOptions JsonOptions = new();
+    static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     readonly HttpClient httpClient;
     readonly DataAgentGraphHandshakeHttpOptions options;
@@ -66,5 +67,12 @@ public sealed class DataAgentGraphHandshakeHttpClient : IDataAgentGraphSidecarCl
         {
             throw new TimeoutException("sidecar_timeout", exception);
         }
+    }
+
+    static JsonSerializerOptions CreateJsonOptions()
+    {
+        JsonSerializerOptions options = new();
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
     }
 }

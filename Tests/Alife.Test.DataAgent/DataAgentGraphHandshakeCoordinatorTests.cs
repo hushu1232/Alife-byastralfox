@@ -290,6 +290,116 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void EnabledCoordinatorPublishesAcceptedResponseNodeProgressMessageAndFactsThroughBridge()
+    {
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(
+                    DataAgentWorkflowNodeNames.QueryPlanner,
+                    DataAgentGraphHandshakeProgressStatus.Completed,
+                    "planner_suggested",
+                    "planner ready",
+                    new Dictionary<string, string>
+                    {
+                        ["stage"] = "planner"
+                    })
+            ]
+        });
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        DataAgentProgressEvent progress = progressSink.Events.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(progress.Facts["message"], Is.EqualTo("planner ready"));
+            Assert.That(progress.Facts["stage"], Is.EqualTo("planner"));
+            Assert.That(progress.Facts["source"], Is.EqualTo("graph_sidecar"));
+            Assert.That(progress.Facts["request_id"], Is.EqualTo(outcome.Request!.RequestId));
+            Assert.That(progress.ExecutedSql, Is.False);
+        });
+    }
+
+    [Test]
+    public void EnabledCoordinatorDoesNotPublishUnsafeResponseNodeProgressMessage()
+    {
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(
+                    DataAgentWorkflowNodeNames.QueryPlanner,
+                    DataAgentGraphHandshakeProgressStatus.Completed,
+                    "planner_suggested",
+                    "SELECT * FROM engineering_gate",
+                    new Dictionary<string, string>())
+            ]
+        });
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(progressSink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void EnabledCoordinatorDoesNotPublishReservedResponseNodeProgressFacts()
+    {
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress(
+                    DataAgentWorkflowNodeNames.QueryPlanner,
+                    DataAgentGraphHandshakeProgressStatus.Completed,
+                    "planner_suggested",
+                    "planner ready",
+                    new Dictionary<string, string>
+                    {
+                        ["source"] = "sidecar"
+                    })
+            ]
+        });
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(progressSink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
     public void AcceptedCoordinatorOutcomeSurvivesProgressPublishFailure()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);

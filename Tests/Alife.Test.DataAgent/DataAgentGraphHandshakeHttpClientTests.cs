@@ -44,6 +44,30 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
     }
 
     [Test]
+    public void TryHandshakeAcceptsPythonStubProgressShapeWithStringStatusMessageAndFacts()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(PythonStubResponseJson(request.RequestId), Encoding.UTF8, "application/json")
+        });
+
+        DataAgentGraphHandshakeResponse response = client.TryHandshake(request);
+        DataAgentGraphHandshakeValidationResult validation = DataAgentGraphHandshakeValidator.Validate(request, response);
+        DataAgentGraphHandshakeProgress progress = response.NodeProgress.Single(item => item.NodeName == DataAgentWorkflowNodeNames.QueryPlanner);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(validation.Accepted, Is.True);
+            Assert.That(progress.Status, Is.EqualTo(DataAgentGraphHandshakeProgressStatus.Completed));
+            Assert.That(progress.ReasonCode, Is.EqualTo("planner_suggested"));
+            Assert.That(progress.Message, Is.EqualTo("planner ready"));
+            Assert.That(progress.Facts, Is.Not.Null);
+            Assert.That(progress.Facts!["stage"], Is.EqualTo("planner"));
+        });
+    }
+
+    [Test]
     public void CoordinatorRejectsUnsafeHttpResponseAndDoesNotRetainRawPayload()
     {
         DataAgentGraphHandshakeHttpClient client = NewClient(httpRequest =>
@@ -124,6 +148,62 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
     static string Json<T>(T value)
     {
         return JsonSerializer.Serialize(value);
+    }
+
+    static string PythonStubResponseJson(string requestId)
+    {
+        return $$"""
+            {
+              "RequestId": "{{requestId}}",
+              "Accepted": true,
+              "ReasonCode": "handshake_accepted",
+              "SelectedNodes": [
+                "scenario_knowledge",
+                "query_planner",
+                "diagnostics_router"
+              ],
+              "NodeProgress": [
+                {
+                  "NodeName": "scenario_knowledge",
+                  "Status": "Completed",
+                  "ReasonCode": "scenario_context_ready",
+                  "Message": "scenario context ready",
+                  "Facts": {
+                    "stage": "scenario"
+                  }
+                },
+                {
+                  "NodeName": "query_planner",
+                  "Status": "Completed",
+                  "ReasonCode": "planner_suggested",
+                  "Message": "planner ready",
+                  "Facts": {
+                    "stage": "planner"
+                  }
+                },
+                {
+                  "NodeName": "diagnostics_router",
+                  "Status": "Completed",
+                  "ReasonCode": "diagnostics_ready",
+                  "Message": "diagnostics ready",
+                  "Facts": {
+                    "stage": "diagnostics"
+                  }
+                }
+              ],
+              "TraceSummary": "ScenarioKnowledge:Completed>QueryPlanner:Completed>DiagnosticsRouter:Completed",
+              "ContextContribution": "graph_handshake=accepted",
+              "FallbackRequired": false,
+              "NoSqlAuthority": true,
+              "ReadOnly": true,
+              "RequestedToolNames": [
+                "dataagent.query_plan.propose",
+                "dataagent.diagnostics.progress.read"
+              ],
+              "RequestsCheckpointMutation": false,
+              "RequestsVisibleText": false
+            }
+            """;
     }
 
     static DataAgentGraphHandshakeRequest NewRequest()

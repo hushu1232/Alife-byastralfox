@@ -352,7 +352,12 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
                 new DataAgentGraphHandshakeProgress(
                     DataAgentWorkflowNodeNames.ScenarioKnowledge,
                     DataAgentGraphHandshakeProgressStatus.Started,
-                    "scenario_started")
+                    "scenario_started",
+                    "scenario context ready",
+                    new Dictionary<string, string>
+                    {
+                        ["stage"] = "scenario"
+                    })
             ]);
 
         DataAgentProgressEvent progress = sink.Events.Single();
@@ -366,6 +371,8 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
             Assert.That(progress.ExecutedSql, Is.False);
             Assert.That(progress.Facts["source"], Is.EqualTo("graph_sidecar"));
             Assert.That(progress.Facts["node"], Is.EqualTo(DataAgentWorkflowNodeNames.ScenarioKnowledge));
+            Assert.That(progress.Facts["message"], Is.EqualTo("scenario context ready"));
+            Assert.That(progress.Facts["stage"], Is.EqualTo("scenario"));
         });
     }
 

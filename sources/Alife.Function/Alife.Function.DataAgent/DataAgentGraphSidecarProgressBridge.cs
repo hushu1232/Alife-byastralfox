@@ -80,9 +80,9 @@ public sealed class DataAgentGraphSidecarProgressBridge
                 item.NodeName,
                 MapStatus(item.Status),
                 item.ReasonCode,
-                string.Empty,
+                item.Message,
                 clock(),
-                new Dictionary<string, string>()));
+                item.Facts ?? new Dictionary<string, string>()));
         }
 
         return Publish(request, result, events);

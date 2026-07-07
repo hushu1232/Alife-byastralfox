@@ -106,7 +106,9 @@ public sealed record DataAgentGraphHandshakeRequest(
 public sealed record DataAgentGraphHandshakeProgress(
     string NodeName,
     DataAgentGraphHandshakeProgressStatus Status,
-    string ReasonCode);
+    string ReasonCode,
+    string Message = "",
+    IReadOnlyDictionary<string, string>? Facts = null);
 
 public sealed record DataAgentGraphHandshakeResponse(
     string RequestId,
