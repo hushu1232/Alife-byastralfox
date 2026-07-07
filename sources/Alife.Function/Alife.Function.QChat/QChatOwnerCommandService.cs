@@ -47,26 +47,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
             return true;
         }
 
-        const string dataAgentPrefix = "/dataagent";
-        if (text.StartsWith(dataAgentPrefix, StringComparison.OrdinalIgnoreCase) == false ||
-            (text.Length > dataAgentPrefix.Length && char.IsWhiteSpace(text[dataAgentPrefix.Length]) == false))
-        {
-            return false;
-        }
-
-        string command = text.Length == dataAgentPrefix.Length
-            ? string.Empty
-            : text[dataAgentPrefix.Length..].Trim();
-        command = StripCopiedMenuDescription(command);
-
-        return command.Equals("diag evidence", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics evidence", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diag trace", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics trace", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diag progress", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics progress", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diag graph", StringComparison.OrdinalIgnoreCase)
-               || command.Equals("diagnostics graph", StringComparison.OrdinalIgnoreCase);
+        return QChatDataAgentDiagnosticsCommandContract.TryParseDataAgentCommand(text, out _);
     }
 
     public static bool IsHelpAliasCommand(string text)
@@ -275,12 +256,6 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
     static bool ContainsAny(string text, params string[] values)
     {
         return values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
-    }
-
-    static string StripCopiedMenuDescription(string command)
-    {
-        int descriptionStart = command.IndexOf(" - ", StringComparison.Ordinal);
-        return descriptionStart >= 0 ? command[..descriptionStart].TrimEnd() : command;
     }
 
     static (OneBotMessageType Type, long TargetId) GetReplyTarget(OneBotMessageEvent messageEvent)
