@@ -59,6 +59,9 @@ public sealed class DataAgentGraphSidecarProgressBridge
         DataAgentOrchestrationResult result,
         IReadOnlyList<DataAgentGraphHandshakeProgress>? progress)
     {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(result);
+
         if (progress is null)
             return Publish(request, result, []);
 
@@ -228,7 +231,7 @@ public sealed class DataAgentGraphSidecarProgressBridge
 
     static bool IsReservedFactKey(string key)
     {
-        return ReservedFactKeys.Contains(key, StringComparer.Ordinal);
+        return ReservedFactKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
     }
 
     static bool IsIdentityMatch(string expected, string actual, int maxLength)

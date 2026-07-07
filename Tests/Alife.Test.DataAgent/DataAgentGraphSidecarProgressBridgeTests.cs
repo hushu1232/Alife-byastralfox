@@ -113,8 +113,15 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
         });
     }
 
-    [Test]
-    public void PublishRejectsReservedFactKeyWithoutPublishing()
+    [TestCase("source")]
+    [TestCase("node")]
+    [TestCase("request_id")]
+    [TestCase("message")]
+    [TestCase("Source")]
+    [TestCase("NODE")]
+    [TestCase("Request_Id")]
+    [TestCase("Message")]
+    public void PublishRejectsReservedFactKeyWithoutPublishing(string reservedFactKey)
     {
         RecordingProgressSink sink = new();
         DataAgentGraphSidecarProgressBridge bridge = new(sink, Now);
@@ -129,7 +136,7 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
                     Message = string.Empty,
                     Facts = new Dictionary<string, string>
                     {
-                        ["message"] = "sidecar controlled"
+                        [reservedFactKey] = "sidecar controlled"
                     }
                 }
             ]);
@@ -139,6 +146,31 @@ public sealed class DataAgentGraphSidecarProgressBridgeTests
             Assert.That(summary.AcceptedCount, Is.EqualTo(0));
             Assert.That(summary.RejectedCount, Is.EqualTo(1));
             Assert.That(sink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void PublishHandshakeProgressGuardsNullRequestAndResultBeforeAdaptingProgress()
+    {
+        DataAgentGraphSidecarProgressBridge bridge = new(clock: Now);
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        IReadOnlyList<DataAgentGraphHandshakeProgress> progress =
+        [
+            new DataAgentGraphHandshakeProgress(
+                DataAgentWorkflowNodeNames.ScenarioKnowledge,
+                DataAgentGraphHandshakeProgressStatus.Started,
+                "scenario_started")
+        ];
+
+        ArgumentNullException? nullRequest = Assert.Throws<ArgumentNullException>(() =>
+            bridge.PublishHandshakeProgress(null!, NewResult(), progress));
+        ArgumentNullException? nullResult = Assert.Throws<ArgumentNullException>(() =>
+            bridge.PublishHandshakeProgress(request, null!, progress));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(nullRequest?.ParamName, Is.EqualTo("request"));
+            Assert.That(nullResult?.ParamName, Is.EqualTo("result"));
         });
     }
 
