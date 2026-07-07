@@ -20,8 +20,11 @@ route state, cannot send QChat text, and cannot own QQ ingress.
 
 The bridge rejects progress with mismatched request or session ids, unknown
 manifest nodes, undefined statuses, unsafe reason codes, unsafe messages,
-unsafe fact keys, unsafe fact values, or over-budget event/fact payloads.
-Accepted facts are bounded and stamped with safe C# facts such as:
+unsafe fact keys, unsafe fact values, reserved fact keys, or over-budget
+event/fact payloads. Sidecar-supplied facts are optional hints only; they
+cannot claim C# authority fields such as `source`, `node`, `request_id`, or
+`message`. Accepted sidecar facts are bounded, then C# stamps safe authority
+facts such as:
 
 ```text
 source=graph_sidecar

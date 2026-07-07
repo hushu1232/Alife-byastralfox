@@ -1,10 +1,11 @@
 # DataAgent Graph Dev Sidecar
 
-This is an optional local-only development stub for DataAgent V3.1.
+This is an optional local-only development stub for DataAgent V3.1/V3.2.
 
 It is not a production runtime, not a LangGraph runtime, and not started by
 the C# application. It exists so developers can manually exercise the V3.1
-HTTP sidecar adapter while C# remains the authority boundary.
+HTTP sidecar adapter and V3.2 progress shape while C# remains the authority
+boundary.
 
 ## Run Manually
 
@@ -45,7 +46,6 @@ V3.2 lets the stub return a bounded progress shape on each
   "ReasonCode": "planner_suggested",
   "Message": "planner ready",
   "Facts": {
-    "source": "graph_sidecar",
     "stage": "planner"
   }
 }
@@ -53,6 +53,8 @@ V3.2 lets the stub return a bounded progress shape on each
 
 C# remains the only progress recorder and diagnostics publisher. The stub does
 not write to `DataAgentProgressRecorder`, does not publish owner diagnostics,
-and does not send visible chat text. default tests do not require Python,
+and does not send visible chat text. Sidecar-supplied `Facts` must not include
+reserved C# stamped fact keys. C# stamps facts such as `source=graph_sidecar`,
+`node`, and `request_id` after validation. default tests do not require Python,
 FastAPI, uvicorn, a live port, network access, QChat, QQ, PostgreSQL, browser
 automation, model calls, or a live sidecar.
