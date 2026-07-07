@@ -151,6 +151,51 @@ public sealed class DataAgentModuleServiceTests
         });
     }
 
+    [Test]
+    public void AwakeWiresGraphHandshakeHttpClientThroughLoopbackOptionsWithoutStartingRuntime()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("DataAgentGraphHandshakeHttpOptions.FromEnvironment"));
+            Assert.That(source, Does.Contain("CreateGraphHandshakeSidecarClient"));
+            Assert.That(source, Does.Contain("DataAgentGraphHandshakeHttpClient"));
+            Assert.That(source, Does.Contain("DisabledDataAgentGraphSidecarClient.Instance"));
+            Assert.That(source, Does.Not.Contain("Process.Start"));
+            Assert.That(source, Does.Not.Contain("uvicorn"));
+            Assert.That(source, Does.Not.Contain("FastAPI"));
+        });
+    }
+
+    [Test]
+    public void GraphHandshakeSidecarFactoryKeepsDefaultDisabledClient()
+    {
+        MethodInfo method = typeof(DataAgentModuleService).GetMethod(
+            "CreateGraphHandshakeSidecarClient",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+
+        object client = method.Invoke(
+            null,
+            [DataAgentGraphHandshakeOptions.Disabled, DataAgentGraphHandshakeHttpOptions.Disabled])!;
+
+        Assert.That(client, Is.SameAs(DisabledDataAgentGraphSidecarClient.Instance));
+    }
+
+    [Test]
+    public void GraphHandshakeSidecarFactoryCreatesHttpClientOnlyForEnabledLoopbackEndpoint()
+    {
+        MethodInfo method = typeof(DataAgentModuleService).GetMethod(
+            "CreateGraphHandshakeSidecarClient",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+        DataAgentGraphHandshakeHttpOptions options =
+            DataAgentGraphHandshakeHttpOptions.FromValues("http://127.0.0.1:8765/handshake", "800");
+
+        object client = method.Invoke(null, [new DataAgentGraphHandshakeOptions(true), options])!;
+
+        Assert.That(client, Is.TypeOf<DataAgentGraphHandshakeHttpClient>());
+    }
+
     static string ReadModuleSource()
     {
         string root = FindRepositoryRoot();

@@ -17,6 +17,20 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentAnalysisSessionStoreOptions options) =>
         DataAgentAnalysisSessionStoreFactory.Create(options);
 
+    internal static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClient(
+        DataAgentGraphHandshakeOptions graphOptions,
+        DataAgentGraphHandshakeHttpOptions httpOptions)
+    {
+        if (graphOptions.Enabled == false ||
+            httpOptions.Configured == false ||
+            httpOptions.Endpoint is null)
+        {
+            return DisabledDataAgentGraphSidecarClient.Instance;
+        }
+
+        return new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -44,9 +58,12 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         IDataAgentToolRouteContextAccessor routeContextAccessor =
             new XmlPolicyDataAgentToolRouteContextAccessor(functionService.ExecutionPolicy);
         IDataAgentTraceRecorder traceRecorder = new DataAgentTraceRecorder();
+        DataAgentGraphHandshakeOptions graphHandshakeOptions = DataAgentGraphHandshakeOptions.FromEnvironment();
+        DataAgentGraphHandshakeHttpOptions graphHandshakeHttpOptions =
+            DataAgentGraphHandshakeHttpOptions.FromEnvironment();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
-            DataAgentGraphHandshakeOptions.FromEnvironment(),
-            DisabledDataAgentGraphSidecarClient.Instance);
+            graphHandshakeOptions,
+            CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions));
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
