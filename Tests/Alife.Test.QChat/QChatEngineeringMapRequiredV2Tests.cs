@@ -39,6 +39,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
         "DataAgent graph sidecar contract",
         "DataAgent DataQueryGraph pilot",
         "DataAgent DataQueryGraph owner diagnostics",
+        "DataAgent diagnostics command contract",
         "QChat Kalman semantic state estimator",
         "QChat Kalman settle window integration",
         "Alife capability governance catalog",
@@ -238,6 +239,29 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void DataAgentDiagnosticsCommandContractCheckRequiresSharedParserAndQChatBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-qchat-engineering-map.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindAddCheckDeclaration(script, "DataAgent diagnostics command contract");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("QChatDataAgentDiagnosticsCommandContract"));
+            Assert.That(declaration, Does.Contain("QChatDataAgentDiagnosticsTopic"));
+            Assert.That(declaration, Does.Contain("SupportedDataAgentCommandSuffixes"));
+            Assert.That(declaration, Does.Contain("TryParseDataAgentCommand"));
+            Assert.That(declaration, Does.Contain("TryParseDataAgentCommandSuffix"));
+            Assert.That(declaration, Does.Contain("TryParseQChatDataAgentDiagnosticsCommandSuffix"));
+            Assert.That(declaration, Does.Contain("QChatCommandAccessPolicy.cs"));
+            Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
+            Assert.That(declaration, Does.Contain("DataAgentDataQueryGraph"));
+        });
+    }
+
+    [Test]
     public void QChatDoesNotDirectlyImportDataAgentBoundaryTypes()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -273,6 +297,25 @@ public sealed class QChatEngineeringMapRequiredV2Tests
     }
 
     [Test]
+    public void DataAgentDiagnosticsCommandConsumersUseSharedContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string qchatRoot = Path.Combine(repoRoot, "sources", "Alife.Function", "Alife.Function.QChat");
+        string accessPolicy = File.ReadAllText(Path.Combine(qchatRoot, "QChatCommandAccessPolicy.cs"));
+        string ownerCommands = File.ReadAllText(Path.Combine(qchatRoot, "QChatOwnerCommandService.cs"));
+        string diagnosticsService = File.ReadAllText(Path.Combine(qchatRoot, "QChatDiagnosticsService.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(accessPolicy, Does.Contain("QChatDataAgentDiagnosticsCommandContract.TryParseDataAgentCommand"));
+            Assert.That(ownerCommands, Does.Contain("QChatDataAgentDiagnosticsCommandContract.TryParseDataAgentCommand"));
+            Assert.That(diagnosticsService, Does.Contain("QChatDataAgentDiagnosticsCommandContract.TryParseDataAgentCommandSuffix"));
+            Assert.That(diagnosticsService, Does.Contain("QChatDataAgentDiagnosticsCommandContract.TryParseQChatDataAgentDiagnosticsCommandSuffix"));
+            Assert.That(diagnosticsService, Does.Contain("BuildDataAgentDiagnosticsText"));
+        });
+    }
+
+    [Test]
     public void QChatEngineeringMapDefaultModeExitsZeroAndPrintsSummary()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -285,7 +328,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
             Assert.That(GetEngineeringMapSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "Summary: 60 required passed, 0 required missing, 0 optional present, 0 optional missing"
+                "Summary: 61 required passed, 0 required missing, 0 optional present, 0 optional missing"
             }));
         });
     }
@@ -299,7 +342,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 60"));
+            Assert.That(script, Does.Contain("$expectedRequired = 61"));
             Assert.That(script, Does.Contain("engineering map check count mismatch"));
             Assert.That(script, Does.Contain("$requiredTotal"));
         });
