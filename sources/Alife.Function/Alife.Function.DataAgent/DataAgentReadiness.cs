@@ -272,6 +272,74 @@ public static class DataAgentReadiness
                 ? Pass("DataQueryGraphPilotPresent", dataQueryGraphDetail)
                 : Fail("DataQueryGraphPilotPresent", dataQueryGraphDetail));
 
+            DataAgentGraphHandshakeOptions graphHandshakeDefaultOptions = DataAgentGraphHandshakeOptions.FromValue(null);
+            IReadOnlyList<DataAgentGraphNodeManifest> graphHandshakeManifests = DataAgentGraphHandshakeManifestFactory.CreateDefault();
+            DataAgentGraphHandshakeRequest graphHandshakeRequest = new(
+                "readiness-request",
+                "readiness-session",
+                "turn-1",
+                "owner",
+                "Which required gates failed?",
+                "scenario_context=engineering_readiness",
+                "route_allowed",
+                "required=true;status!=passed;limit=50",
+                graphHandshakeManifests,
+                NoSqlAuthority: true,
+                ReadOnly: true,
+                FallbackAvailable: true,
+                TraceBudgetChars: DataAgentGraphHandshakeLimits.MaxTraceSummaryChars,
+                ProgressBudget: DataAgentGraphHandshakeLimits.MaxProgressEvents);
+            DataAgentGraphHandshakeResponse graphHandshakeSafeResponse = new(
+                "readiness-request",
+                true,
+                "planner_suggested",
+                [DataAgentWorkflowNodeNames.ScenarioKnowledge, DataAgentWorkflowNodeNames.QueryPlanner],
+                [new DataAgentGraphHandshakeProgress(DataAgentWorkflowNodeNames.QueryPlanner, DataAgentGraphHandshakeProgressStatus.Completed, "planner_suggested")],
+                "ScenarioKnowledge:Completed>QueryPlanner:Completed",
+                "graph_handshake=accepted",
+                FallbackRequired: false,
+                NoSqlAuthority: true,
+                ReadOnly: true,
+                [DataAgentGraphHandshakeToolNames.ProposeQueryPlan],
+                RequestsCheckpointMutation: false,
+                RequestsVisibleText: false);
+            DataAgentGraphHandshakeResponse graphHandshakeUnsafeResponse = graphHandshakeSafeResponse with
+            {
+                NoSqlAuthority = false,
+                TraceSummary = "SELECT * FROM document_index"
+            };
+            DataAgentGraphHandshakeValidationResult graphHandshakeSafeValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeSafeResponse);
+            DataAgentGraphHandshakeValidationResult graphHandshakeUnsafeValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeUnsafeResponse);
+            DataAgentGraphHandshakeOutcome graphHandshakeDisabledOutcome =
+                new DataAgentGraphHandshakeCoordinator(DataAgentGraphHandshakeOptions.Disabled, DisabledDataAgentGraphSidecarClient.Instance)
+                    .TryHandshake("owner", "Which required gates failed?", CreateReadinessDataQueryGraphAcceptedResult());
+            bool graphHandshakeNoSqlAuthority =
+                graphHandshakeRequest.NoSqlAuthority &&
+                graphHandshakeSafeResponse.NoSqlAuthority &&
+                graphHandshakeUnsafeValidation.Accepted == false &&
+                string.Equals(graphHandshakeUnsafeValidation.ReasonCode, "sql_authority_requested", StringComparison.Ordinal);
+            bool graphHandshakeScopedManifest =
+                graphHandshakeManifests.All(manifest =>
+                    manifest.AllowedToolNames.Contains(DataAgentGraphHandshakeToolNames.ExecuteReadOnlyQuery, StringComparer.Ordinal) == false);
+            bool graphHandshakeFallback =
+                graphHandshakeDisabledOutcome.FallbackRequired &&
+                string.Equals(graphHandshakeDisabledOutcome.ReasonCode, "sidecar_disabled", StringComparison.Ordinal);
+            bool graphHandshakeReady =
+                graphHandshakeDefaultOptions.Enabled == false &&
+                graphHandshakeSafeValidation.Accepted &&
+                graphHandshakeNoSqlAuthority &&
+                graphHandshakeScopedManifest &&
+                graphHandshakeFallback;
+            const string graphHandshakeReadyDetail =
+                "default_enabled=false;validator=true;no_sql_authority=true;scoped_node_manifest=true;fallback=true;runtime_required=false";
+            string graphHandshakeFailureDetail =
+                $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};validator={LowerBool(graphHandshakeSafeValidation.Accepted)};no_sql_authority={LowerBool(graphHandshakeNoSqlAuthority)};scoped_node_manifest={LowerBool(graphHandshakeScopedManifest)};fallback={LowerBool(graphHandshakeFallback)};runtime_required=false";
+            checks.Add(graphHandshakeReady
+                ? Pass("GraphHandshakeBoundaryPresent", graphHandshakeReadyDetail)
+                : Fail("GraphHandshakeBoundaryPresent", graphHandshakeFailureDetail));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =

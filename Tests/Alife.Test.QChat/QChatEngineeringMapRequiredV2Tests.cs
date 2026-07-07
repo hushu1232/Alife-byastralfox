@@ -260,6 +260,7 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             Assert.That(declaration, Does.Contain("QChatCommandAccessPolicy.cs"));
             Assert.That(declaration, Does.Contain("sources/Alife.Function/Alife.Function.QChat"));
             Assert.That(declaration, Does.Contain("DataAgentDataQueryGraph"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphHandshake"));
         });
     }
 
@@ -303,7 +304,8 @@ public sealed class QChatEngineeringMapRequiredV2Tests
             "DataAgentGraphSidecarPolicy",
             "DataAgentGraphSidecarRequest",
             "DataAgentGraphSidecarResponse",
-            "DataAgentDataQueryGraph"
+            "DataAgentDataQueryGraph",
+            "DataAgentGraphHandshake"
         ];
 
         string[] offenders = Directory.EnumerateFiles(qchatRoot, "*.cs", SearchOption.AllDirectories)
