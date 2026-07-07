@@ -21,10 +21,12 @@ public sealed class DisabledDataAgentGraphSidecarClient : IDataAgentGraphSidecar
 
 public sealed class DataAgentGraphHandshakeCoordinator(
     DataAgentGraphHandshakeOptions options,
-    IDataAgentGraphSidecarClient? sidecarClient = null)
+    IDataAgentGraphSidecarClient? sidecarClient = null,
+    DataAgentGraphSidecarProgressBridge? progressBridge = null)
 {
     readonly DataAgentGraphHandshakeOptions options = options ?? throw new ArgumentNullException(nameof(options));
     readonly IDataAgentGraphSidecarClient sidecarClient = sidecarClient ?? DisabledDataAgentGraphSidecarClient.Instance;
+    readonly DataAgentGraphSidecarProgressBridge? progressBridge = progressBridge;
 
     public DataAgentGraphHandshakeOutcome TryHandshake(
         string callerId,
@@ -59,6 +61,8 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     response: null,
                     validation);
             }
+
+            progressBridge?.PublishHandshakeProgress(request!, result, response.NodeProgress);
 
             return Outcome(
                 DataAgentGraphHandshakeStatus.Accepted,

@@ -261,6 +261,88 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void EnabledCoordinatorPublishesAcceptedResponseNodeProgressThroughBridge()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        DataAgentProgressEvent progress = progressSink.Events.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+            Assert.That(progress.Kind, Is.EqualTo(DataAgentProgressEventKind.Planner));
+            Assert.That(progress.Status, Is.EqualTo(DataAgentProgressEventStatus.Succeeded));
+            Assert.That(progress.ReasonCode, Is.EqualTo("planner_suggested"));
+            Assert.That(progress.CreatedAt, Is.EqualTo(Now()));
+            Assert.That(progress.ExecutedSql, Is.False);
+            Assert.That(progress.Facts["source"], Is.EqualTo("graph_sidecar"));
+            Assert.That(progress.Facts["node"], Is.EqualTo(DataAgentWorkflowNodeNames.QueryPlanner));
+        });
+    }
+
+    [Test]
+    public void RejectedCoordinatorOutcomeDoesNotPublishSidecarProgress()
+    {
+        RecordingSidecarClient sidecar = new(request => NewAcceptedResponse(request) with
+        {
+            NodeProgress =
+            [
+                new DataAgentGraphHandshakeProgress("unknown_node", DataAgentGraphHandshakeProgressStatus.Completed, "unknown_done")
+            ]
+        });
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Rejected));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("progress_invalid"));
+            Assert.That(outcome.Response, Is.Null);
+            Assert.That(progressSink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void DisabledCoordinatorDoesNotPublishSidecarProgress()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        RecordingProgressSink progressSink = new();
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            DataAgentGraphHandshakeOptions.Disabled,
+            sidecar,
+            new DataAgentGraphSidecarProgressBridge(progressSink, Now));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Disabled));
+            Assert.That(sidecar.Requests, Is.Empty);
+            Assert.That(progressSink.Events, Is.Empty);
+        });
+    }
+
+    [Test]
     public void ConstructorRejectsNullOptions()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);
@@ -369,6 +451,11 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             null);
     }
 
+    static DateTimeOffset Now()
+    {
+        return new DateTimeOffset(2026, 7, 7, 12, 0, 0, TimeSpan.Zero);
+    }
+
     sealed class RecordingSidecarClient(Func<DataAgentGraphHandshakeRequest, DataAgentGraphHandshakeResponse> responseFactory)
         : IDataAgentGraphSidecarClient
     {
@@ -388,6 +475,17 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
         public DataAgentGraphHandshakeResponse TryHandshake(DataAgentGraphHandshakeRequest request)
         {
             throw exception;
+        }
+    }
+
+    sealed class RecordingProgressSink : IDataAgentProgressSink
+    {
+        public List<DataAgentProgressEvent> Events { get; } = [];
+
+        public void Publish(DataAgentProgressEvent? progressEvent)
+        {
+            if (progressEvent is not null)
+                Events.Add(progressEvent);
         }
     }
 }

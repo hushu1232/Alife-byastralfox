@@ -63,7 +63,8 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             DataAgentGraphHandshakeHttpOptions.FromEnvironment();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
-            CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions));
+            CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions),
+            new DataAgentGraphSidecarProgressBridge(progressSink));
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
