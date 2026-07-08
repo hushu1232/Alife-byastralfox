@@ -714,7 +714,11 @@ public static class DataAgentReadiness
                 string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured, "graph_sidecar_not_configured", StringComparison.Ordinal) &&
                 string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable, "graph_sidecar_runtime_unavailable", StringComparison.Ordinal) &&
                 string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected, "graph_sidecar_response_rejected", StringComparison.Ordinal) &&
-                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.Accepted, "graph_sidecar_accepted", StringComparison.Ordinal);
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected, "graph_sidecar_progress_rejected", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.Accepted, "graph_sidecar_accepted", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed, "graph_sidecar_fallback_used", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing, "graph_sidecar_stream_final_response_missing", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected, "graph_sidecar_stream_final_response_rejected", StringComparison.Ordinal);
             bool graphHandshakeObservabilityFallbackReasonReady =
                 graphHandshakeDisabledOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.Disabled &&
                 graphHandshakeObservabilityNotConfiguredOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured &&

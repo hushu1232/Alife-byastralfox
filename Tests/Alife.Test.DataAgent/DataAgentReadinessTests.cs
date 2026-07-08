@@ -569,7 +569,11 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("graph_sidecar_not_configured"));
             Assert.That(declaration, Does.Contain("graph_sidecar_runtime_unavailable"));
             Assert.That(declaration, Does.Contain("graph_sidecar_response_rejected"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_progress_rejected"));
             Assert.That(declaration, Does.Contain("graph_sidecar_accepted"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_fallback_used"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_missing"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_rejected"));
             Assert.That(declaration, Does.Contain("DataAgentGraphSidecarObservabilityContext"));
             Assert.That(declaration, Does.Contain("CreateObservabilitySnapshot"));
             Assert.That(declaration, Does.Contain("NetworkAttempted"));
@@ -586,6 +590,35 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("sse_deferred=true"));
             Assert.That(declaration, Does.Contain("qchat_boundary=true"));
             Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+        });
+    }
+
+    [Test]
+    public void DynamicReadinessSourceContainsV37ExactObservabilityReasonCodeChecks()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "DataAgentReadiness.cs"));
+        string declaration = FindSourceBlock(
+            source,
+            "bool graphHandshakeObservabilityReasonCodesReady",
+            "bool graphHandshakeObservabilityFallbackReasonReady");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("graph_sidecar_disabled"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_not_configured"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_runtime_unavailable"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_response_rejected"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_progress_rejected"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_accepted"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_fallback_used"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_missing"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_rejected"));
         });
     }
 
@@ -836,6 +869,18 @@ public sealed class DataAgentReadinessTests
         return next < 0
             ? script[start..]
             : script[start..next];
+    }
+
+    static string FindSourceBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+            return string.Empty;
+
+        int end = source.IndexOf(endMarker, start, StringComparison.Ordinal);
+        return end < 0
+            ? source[start..]
+            : source[start..end];
     }
 
     static string FindNewCheckDeclaration(string script, string checkName)
