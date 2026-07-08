@@ -70,14 +70,16 @@ public sealed class DataAgentGraphHandshakeStreamCoordinatorTests
             Assert.That(outcome.ReasonCode, Is.EqualTo("sql_authority_requested"));
             Assert.That(outcome.Response, Is.Null);
             Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Rejected));
+            Assert.That(outcome.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected));
             Assert.That(progressSink.Events, Is.Empty);
         });
     }
 
-    [TestCase("invalid_stream_schema")]
-    [TestCase("missing_stream_final_response")]
-    [TestCase("stream_progress_over_budget")]
-    public void InvalidStreamFailuresDiscardProgressAndReturnReason(string reasonCode)
+    [TestCase("invalid_stream_schema", DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed)]
+    [TestCase("missing_stream_final_response", DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing)]
+    [TestCase("stream_progress_over_budget", DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected)]
+    public void InvalidStreamFailuresDiscardProgressAndReturnReason(string reasonCode, string observabilityReasonCode)
     {
         ThrowingStreamClient stream = new(new DataAgentGraphSidecarInvalidStreamException(reasonCode));
         RecordingProgressSink progressSink = new();
@@ -94,6 +96,9 @@ public sealed class DataAgentGraphHandshakeStreamCoordinatorTests
             Assert.That(outcome.ReasonCode, Is.EqualTo(reasonCode));
             Assert.That(outcome.FallbackRequired, Is.True);
             Assert.That(outcome.Response, Is.Null);
+            Assert.That(outcome.Observability!.ReasonCode, Is.EqualTo(observabilityReasonCode));
+            Assert.That(outcome.Observability.NetworkAttempted, Is.True);
+            Assert.That(outcome.Observability.FallbackUsed, Is.True);
             Assert.That(progressSink.Events, Is.Empty);
         });
     }

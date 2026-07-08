@@ -111,6 +111,10 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             Assert.That(outcome.Response, Is.Null);
             Assert.That(outcome.Validation.Accepted, Is.False);
             Assert.That(outcome.Validation.ReasonCode, Is.EqualTo("invalid_request_schema"));
+            Assert.That(outcome.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Fallback));
+            Assert.That(outcome.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed));
+            Assert.That(outcome.Observability.NetworkAttempted, Is.False);
+            Assert.That(outcome.Observability.FallbackUsed, Is.True);
             Assert.That(sidecar.Requests, Is.Empty);
         });
     }
@@ -281,9 +285,11 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     [Test]
     public void EnabledCoordinatorMapsInvalidSidecarResponseExceptionToInvalidFallback()
     {
+        DataAgentGraphSidecarObservabilityContext configured = new(EndpointConfigured: true, RuntimeStartedByAlife: false);
         DataAgentGraphHandshakeCoordinator coordinator = new(
             new DataAgentGraphHandshakeOptions(true),
-            new ThrowingSidecarClient(new DataAgentGraphSidecarInvalidResponseException("invalid_response_schema")));
+            new ThrowingSidecarClient(new DataAgentGraphSidecarInvalidResponseException("invalid_response_schema")),
+            observabilityContext: configured);
 
         DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
             "owner",
@@ -296,6 +302,10 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             Assert.That(outcome.ReasonCode, Is.EqualTo("invalid_response_schema"));
             Assert.That(outcome.FallbackRequired, Is.True);
             Assert.That(outcome.Response, Is.Null);
+            Assert.That(outcome.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Rejected));
+            Assert.That(outcome.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected));
+            Assert.That(outcome.Observability.NetworkAttempted, Is.True);
+            Assert.That(outcome.Observability.FallbackUsed, Is.True);
         });
     }
 

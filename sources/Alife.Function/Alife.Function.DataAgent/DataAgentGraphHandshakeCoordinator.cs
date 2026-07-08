@@ -50,7 +50,14 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             ? "dataagent_analysis"
             : goalOrQuestion.Trim();
         if (TryBuildRequest(normalizedCaller, normalizedQuestion, result, out DataAgentGraphHandshakeRequest? request) == false)
-            return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_request_schema", fallbackRequired: true, request: null);
+        {
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Invalid,
+                "invalid_request_schema",
+                fallbackRequired: true,
+                request: null,
+                observabilityReasonCode: DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed);
+        }
 
         if (streamClient is not null)
             return TryStreamHandshake(request!, result);
@@ -89,7 +96,8 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 "invalid_response_schema",
                 fallbackRequired: true,
                 request,
-                networkAttempted: observabilityContext.EndpointConfigured);
+                networkAttempted: observabilityContext.EndpointConfigured,
+                observabilityReasonCode: DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected);
         }
         catch (TimeoutException)
         {
@@ -129,7 +137,8 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     request,
                     response: null,
                     validation,
-                    networkAttempted: true);
+                    networkAttempted: true,
+                    observabilityReasonCode: DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected);
             }
 
             PublishProgressIfAvailable(request, result, streamResult.Progress);
@@ -151,7 +160,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 fallbackRequired: true,
                 request,
                 networkAttempted: observabilityContext.EndpointConfigured,
-                observabilityReasonCode: exception.ReasonCode);
+                observabilityReasonCode: MapInvalidStreamObservabilityReasonCode(exception.ReasonCode));
         }
         catch (TimeoutException)
         {
@@ -274,6 +283,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             status,
             sidecarEnabled,
             endpointConfigured,
+            networkAttempted,
             fallbackRequired);
         string reasonCode = reasonCodeOverride ?? MapObservabilityReasonCode(observabilityStatus);
         bool accepted = observabilityStatus == DataAgentGraphSidecarObservabilityStatus.Accepted;
@@ -294,6 +304,7 @@ public sealed class DataAgentGraphHandshakeCoordinator(
         DataAgentGraphHandshakeStatus status,
         bool sidecarEnabled,
         bool endpointConfigured,
+        bool networkAttempted,
         bool fallbackRequired)
     {
         if (sidecarEnabled == false)
@@ -308,10 +319,22 @@ public sealed class DataAgentGraphHandshakeCoordinator(
         return status switch
         {
             DataAgentGraphHandshakeStatus.Accepted => DataAgentGraphSidecarObservabilityStatus.Accepted,
-            DataAgentGraphHandshakeStatus.Rejected or DataAgentGraphHandshakeStatus.Invalid => DataAgentGraphSidecarObservabilityStatus.Rejected,
+            DataAgentGraphHandshakeStatus.Rejected => DataAgentGraphSidecarObservabilityStatus.Rejected,
+            DataAgentGraphHandshakeStatus.Invalid when networkAttempted => DataAgentGraphSidecarObservabilityStatus.Rejected,
+            DataAgentGraphHandshakeStatus.Invalid => DataAgentGraphSidecarObservabilityStatus.Fallback,
             DataAgentGraphHandshakeStatus.Timeout or DataAgentGraphHandshakeStatus.Unavailable => DataAgentGraphSidecarObservabilityStatus.RuntimeUnavailable,
             _ when fallbackRequired => DataAgentGraphSidecarObservabilityStatus.Fallback,
             _ => DataAgentGraphSidecarObservabilityStatus.Fallback
+        };
+    }
+
+    static string MapInvalidStreamObservabilityReasonCode(string reasonCode)
+    {
+        return reasonCode switch
+        {
+            "missing_stream_final_response" => DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing,
+            "stream_progress_over_budget" => DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected,
+            _ => DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed
         };
     }
 
