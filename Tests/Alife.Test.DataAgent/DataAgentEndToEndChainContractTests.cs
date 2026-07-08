@@ -2,6 +2,7 @@ using Alife.Function.DataAgent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Function.QChat;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Alife.Test.DataAgent;
 
@@ -19,6 +20,252 @@ public sealed class DataAgentEndToEndChainContractTests
         "dataagent_analysis_summarize",
         "dataagent_analysis_end"
     ];
+
+    [Test]
+    public void AcceptedAnalysisPublishesSessionStateAndAllDiagnostics()
+    {
+        DateTimeOffset now = new(2026, 7, 8, 12, 0, 0, TimeSpan.Zero);
+        RecordingDataAgentStore dataStore = new();
+        FixedPlanner planner = new(DocumentPlan());
+        DataAgentProgressRecorder progressRecorder = new();
+        List<string> progressDiagnostics = [];
+        DataAgentProgressDiagnosticsPublisher progressPublisher = new(
+            progressRecorder,
+            progressDiagnostics.Add,
+            () => now);
+        InMemoryDataAgentAnalysisSessionStore sessionStore = new();
+        DataAgentService dataAgentService = new(dataStore, planner);
+        DataAgentAnalysisService analysisService = new(
+            dataAgentService,
+            sessionStore,
+            progressPublisher,
+            () => now);
+        DataAgentAnalysisOrchestrator orchestrator = new(
+            analysisService,
+            sessionStore,
+            progressSink: progressPublisher,
+            progressClock: () => now);
+        List<string> publishedContexts = [];
+        List<string> evidenceDiagnostics = [];
+        List<string> traceDiagnostics = [];
+        List<string> graphDiagnostics = [];
+        DataAgentAnalysisToolHandler handler = new(
+            orchestrator,
+            publishedContexts.Add,
+            new FixedRouteContextAccessor(AllowedContext("dataagent_analysis_start", string.Empty)),
+            evidenceDiagnostics.Add,
+            traceDiagnostics.Add,
+            new DataAgentTraceRecorder(),
+            () => now,
+            graphDiagnostics.Add,
+            new DataAgentGraphHandshakeCoordinator(
+                DataAgentGraphHandshakeOptions.Disabled,
+                DisabledDataAgentGraphSidecarClient.Instance));
+
+        string context = handler.Start("owner", "DataAgent analyze project readiness");
+        string sessionId = ReadContextValue(context, "session_id=");
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        ToolRouteState inactiveState = caller.CreateToolRouteState(
+            isOwner: true,
+            isPrivateChat: true,
+            isTrustedRuntime: true);
+        caller.UpdateDataAgentAnalysisRouteSessionFromContext(context);
+        ToolRouteState activeState = caller.CreateToolRouteState(
+            isOwner: true,
+            isPrivateChat: true,
+            isTrustedRuntime: true);
+        QChatDiagnosticsRuntimeState runtimeState = new(
+            RecentDataAgentEvidence: evidenceDiagnostics.Single(),
+            RecentDataAgentTrace: traceDiagnostics.Single(),
+            RecentDataAgentProgress: progressDiagnostics.Last(),
+            RecentDataAgentGraph: graphDiagnostics.Single());
+        QChatDiagnosticsResult evidence = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag evidence",
+            OwnerPrivateRoute(),
+            OwnerProfile(),
+            runtimeState);
+        QChatDiagnosticsResult trace = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag trace",
+            OwnerPrivateRoute(),
+            OwnerProfile(),
+            runtimeState);
+        QChatDiagnosticsResult progress = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag progress",
+            OwnerPrivateRoute(),
+            OwnerProfile(),
+            runtimeState);
+        QChatDiagnosticsResult graph = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag graph",
+            OwnerPrivateRoute(),
+            OwnerProfile(),
+            runtimeState);
+        string combinedDiagnostics = string.Join(
+            Environment.NewLine,
+            evidenceDiagnostics.Single(),
+            traceDiagnostics.Single(),
+            progressDiagnostics.Last(),
+            graphDiagnostics.Single(),
+            evidence.Text,
+            trace.Text,
+            progress.Text,
+            graph.Text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(dataStore.QueryCount, Is.EqualTo(1));
+            Assert.That(dataStore.AcceptedAudit, Has.Count.EqualTo(1));
+            Assert.That(dataStore.RejectedAudit, Is.Empty);
+            Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
+            Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>SchemaContext:Succeeded>Plan:Succeeded>Validate:Succeeded>Execute:Succeeded>Explain:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("[data_agent_context]"));
+            Assert.That(context, Does.Contain("sql_status=validated"));
+            Assert.That(sessionId, Is.Not.Empty);
+            Assert.That(publishedContexts, Is.EqualTo(new[] { context }));
+            Assert.That(inactiveState.ActiveDataAgentSessionId, Is.Empty);
+            Assert.That(inactiveState.HasActiveDataAgentSession, Is.False);
+            Assert.That(activeState.ActiveDataAgentSessionId, Is.EqualTo(sessionId));
+            Assert.That(activeState.ActiveDataAgentStatus, Is.EqualTo("Active"));
+            Assert.That(activeState.HasActiveDataAgentSession, Is.True);
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("route_allowed=true"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("executed_sql=true"));
+            Assert.That(traceDiagnostics.Single(), Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(traceDiagnostics.Single(), Does.Contain("RouteGate Succeeded reason=route_allowed"));
+            Assert.That(traceDiagnostics.Single(), Does.Contain("Checkpoint Succeeded reason=checkpoint_created"));
+            Assert.That(progressDiagnostics.Last(), Does.Contain("DataAgent progress diagnostics"));
+            Assert.That(progressDiagnostics.Last(), Does.Contain("Checkpoint"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("DataAgent graph handshake"));
+            Assert.That(graphDiagnostics.Single(), Does.Contain("reason=sidecar_disabled"));
+            Assert.That(evidence.Handled, Is.True);
+            Assert.That(trace.Handled, Is.True);
+            Assert.That(progress.Handled, Is.True);
+            Assert.That(graph.Handled, Is.True);
+            Assert.That(evidence.Text, Does.Contain("DataAgent evidence diagnostics"));
+            Assert.That(trace.Text, Does.Contain("DataAgent trace diagnostics"));
+            Assert.That(progress.Text, Does.Contain("DataAgent progress diagnostics"));
+            Assert.That(graph.Text, Does.Contain("DataQueryGraph dry-run"));
+            Assert.That(combinedDiagnostics, Does.Not.Contain("sql.execute"));
+            Assert.That(combinedDiagnostics, Does.Not.Contain("RequestsVisibleText=True"));
+        });
+    }
+
+    [Test]
+    public void RouteDeniedAnalysisDoesNotExecuteSql()
+    {
+        DateTimeOffset now = new(2026, 7, 8, 12, 5, 0, TimeSpan.Zero);
+        RecordingDataAgentStore dataStore = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(dataStore, now);
+        DataAgentToolRouteContext routeContext = new(
+            true,
+            "dataagent_analysis_start",
+            false,
+            false,
+            "tool-capability-router-v0",
+            "analysis_start",
+            "owner_private_required",
+            string.Empty);
+
+        DataAgentOrchestrationResult result = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "DataAgent analyze project readiness",
+            null,
+            RouteAllowsQuery: false,
+            routeContext));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Steps.Select(step => step.Node), Is.EqualTo(new[]
+            {
+                DataAgentOrchestrationNodeKind.RouteGate,
+                DataAgentOrchestrationNodeKind.Reject,
+                DataAgentOrchestrationNodeKind.Checkpoint
+            }));
+            Assert.That(result.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
+            Assert.That(result.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(result.Response.Accepted, Is.False);
+            Assert.That(result.Response.RejectedReason, Is.EqualTo("owner_private_required"));
+            Assert.That(dataStore.QueryCount, Is.Zero);
+            Assert.That(dataStore.AcceptedAudit, Is.Empty);
+            Assert.That(dataStore.RejectedAudit, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped()
+    {
+        DateTimeOffset now = new(2026, 7, 8, 12, 10, 0, TimeSpan.Zero);
+        RecordingDataAgentStore dataStore = new();
+        DataAgentAnalysisOrchestrator orchestrator = Orchestrator(dataStore, now);
+        DataAgentOrchestrationResult start = orchestrator.Start(new DataAgentOrchestrationRequest(
+            "owner",
+            "DataAgent analyze project readiness",
+            null,
+            RouteAllowsQuery: true,
+            AllowedContext("dataagent_analysis_start", string.Empty)));
+        int queryCountAfterStart = dataStore.QueryCount;
+
+        DataAgentOrchestrationResult summary = orchestrator.Summarize(
+            start.SessionId,
+            AllowedContext("dataagent_analysis_summarize", start.SessionId));
+        DataAgentOrchestrationResult end = orchestrator.End(
+            start.SessionId,
+            AllowedContext("dataagent_analysis_end", start.SessionId));
+        DataAgentOrchestrationResult deniedSummary = orchestrator.Summarize(
+            start.SessionId,
+            DataAgentToolRouteContext.Missing("dataagent_analysis_summarize"));
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        XmlFunctionExecutionPolicy policy = new();
+        policy.SetGovernedToolNames(router.ToolNames);
+        policy.CurrentRoute = router.Route(
+            "continue DataAgent analysis",
+            RouteState(sessionId: start.SessionId, status: "Active"));
+
+        XmlFunctionExecutionDecision summarizeMissingSession = policy.TryConsume(
+            Function("dataagent_analysis_summarize"),
+            ContextWithSession(null));
+        XmlFunctionExecutionDecision summarizeWrongSession = policy.TryConsume(
+            Function("dataagent_analysis_summarize"),
+            ContextWithSession("different-session"));
+        XmlFunctionExecutionDecision summarizeMatchingSession = policy.TryConsume(
+            Function("dataagent_analysis_summarize"),
+            ContextWithSession(start.SessionId));
+        XmlFunctionExecutionDecision endMissingSession = policy.TryConsume(
+            Function("dataagent_analysis_end"),
+            ContextWithSession(null));
+        XmlFunctionExecutionDecision endWrongSession = policy.TryConsume(
+            Function("dataagent_analysis_end"),
+            ContextWithSession("different-session"));
+        XmlFunctionExecutionDecision endMatchingSession = policy.TryConsume(
+            Function("dataagent_analysis_end"),
+            ContextWithSession(start.SessionId));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(queryCountAfterStart, Is.EqualTo(1));
+            Assert.That(dataStore.QueryCount, Is.EqualTo(1));
+            Assert.That(summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
+            Assert.That(summary.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(end.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False);
+            Assert.That(end.Steps.Any(step => step.ExecutedSql), Is.False);
+            Assert.That(summary.RouteContext?.RouteSessionId, Is.EqualTo(start.SessionId));
+            Assert.That(end.RouteContext?.RouteSessionId, Is.EqualTo(start.SessionId));
+            Assert.That(deniedSummary.Steps[0].Node, Is.EqualTo(DataAgentOrchestrationNodeKind.RouteGate));
+            Assert.That(deniedSummary.Steps[0].Status, Is.EqualTo(DataAgentOrchestrationStepStatus.Rejected));
+            Assert.That(deniedSummary.Response.Accepted, Is.False);
+            Assert.That(deniedSummary.Response.RejectedReason, Is.EqualTo("tool_route_required"));
+            Assert.That(summarizeMissingSession.IsAllowed, Is.False);
+            Assert.That(summarizeMissingSession.Reason, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(summarizeWrongSession.IsAllowed, Is.False);
+            Assert.That(summarizeWrongSession.Reason, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(summarizeMatchingSession.IsAllowed, Is.True);
+            Assert.That(endMissingSession.IsAllowed, Is.False);
+            Assert.That(endMissingSession.Reason, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(endWrongSession.IsAllowed, Is.False);
+            Assert.That(endWrongSession.Reason, Is.EqualTo("tool_session_not_allowed_in_current_route"));
+            Assert.That(endMatchingSession.IsAllowed, Is.True);
+        });
+    }
 
     [Test]
     public void ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface()
@@ -164,6 +411,90 @@ public sealed class DataAgentEndToEndChainContractTests
             isTrustedRuntime);
     }
 
+    static DataAgentAnalysisOrchestrator Orchestrator(
+        IDataAgentStore dataStore,
+        DateTimeOffset now)
+    {
+        DataAgentService dataAgentService = new(dataStore, new FixedPlanner(DocumentPlan()));
+        InMemoryDataAgentAnalysisSessionStore sessionStore = new();
+        DataAgentAnalysisService analysisService = new(
+            dataAgentService,
+            sessionStore,
+            clock: () => now);
+
+        return new DataAgentAnalysisOrchestrator(
+            analysisService,
+            sessionStore,
+            progressClock: () => now);
+    }
+
+    static DataAgentQueryPlan DocumentPlan()
+    {
+        return new DataAgentQueryPlan(
+            "document_index",
+            "find_dataagent_documents",
+            ["path", "title"],
+            [new DataAgentFilter("tags", "contains", "dataagent")],
+            [],
+            20);
+    }
+
+    static DataAgentToolRouteContext AllowedContext(string toolName, string sessionId)
+    {
+        return new DataAgentToolRouteContext(
+            true,
+            toolName,
+            true,
+            true,
+            "tool-capability-router-v0",
+            toolName.Contains("start", StringComparison.OrdinalIgnoreCase)
+                ? "analysis_start"
+                : "analysis_continue",
+            "route_allowed",
+            sessionId);
+    }
+
+    static string ReadContextValue(string context, string prefix)
+    {
+        foreach (string rawLine in context.Split('\n'))
+        {
+            string line = rawLine.Trim().TrimEnd('\r');
+            if (line.StartsWith(prefix, StringComparison.Ordinal))
+                return line[prefix.Length..];
+        }
+
+        return string.Empty;
+    }
+
+    static QChatAgentRoute OwnerPrivateRoute()
+    {
+        return new QChatAgentRoute(
+            "xiayu",
+            10001,
+            QChatConversationKind.Private,
+            20002,
+            20002,
+            true,
+            "qq:xiayu:10001:private:20002");
+    }
+
+    static QChatAgentProfile OwnerProfile()
+    {
+        return new QChatAgentProfile(
+            "xiayu",
+            "XiaYu",
+            "persona.md",
+            "owner",
+            "test-model",
+            "owner",
+            [],
+            new QChatAgentCapabilities(
+                AllowComputerFileTools: true,
+                AllowProjectModification: true,
+                AllowRecall: true,
+                AllowPoke: true));
+    }
+
     static void AssertDataAgentDenied(
         ToolRouteDecision decision,
         string expectedReasonCode,
@@ -217,5 +548,107 @@ public sealed class DataAgentEndToEndChainContractTests
         }
 
         throw new InvalidOperationException("Could not find repository root containing Alife.slnx.");
+    }
+
+    sealed class FixedPlanner(DataAgentQueryPlan plan) : IDataAgentQueryPlanner
+    {
+        public DataAgentQueryPlanEnvelope Plan(DataAgentQueryRequest request)
+        {
+            return new DataAgentQueryPlanEnvelope(
+                plan,
+                new DataAgentPlannerExplanation(
+                    nameof(FixedPlanner),
+                    plan.Intent,
+                    plan.Dataset,
+                    "high",
+                    ["dataagent-v3.8", "chain-contract"],
+                    "deterministic document index plan"));
+        }
+    }
+
+    sealed class FixedRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor
+    {
+        public DataAgentToolRouteContext Get(string toolName, string? sessionId)
+        {
+            return routeContext with
+            {
+                ToolName = toolName,
+                RouteSessionId = sessionId ?? routeContext.RouteSessionId
+            };
+        }
+    }
+
+    sealed class RecordingDataAgentStore : IDataAgentStore
+    {
+        readonly List<DataAgentCompiledSql> queries = [];
+        readonly List<DataAgentAuditRecord> queryAudit = [];
+        readonly List<DataAgentToolBrokerAuditRecord> toolBrokerAudit = [];
+
+        public string ProviderName => "recording";
+        public int QueryCount => queries.Count;
+        public IReadOnlyList<DataAgentCompiledSql> Queries => queries;
+        public List<DataAgentAcceptedAuditInput> AcceptedAudit { get; } = [];
+        public List<DataAgentRejectedAuditInput> RejectedAudit { get; } = [];
+        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ToolBrokerAudit => toolBrokerAudit;
+
+        public void Initialize() { }
+        public void ImportFixtures() { }
+
+        public DataAgentQueryResult Query(DataAgentCompiledSql compiledSql)
+        {
+            queries.Add(compiledSql);
+            return new DataAgentQueryResult([
+                new Dictionary<string, object?>
+                {
+                    ["path"] = "docs/dataagent/dataagent-v3.8.md",
+                    ["title"] = "DataAgent V3.8 chain contract"
+                }
+            ]);
+        }
+
+        public void RecordAccepted(DataAgentAcceptedAuditInput input)
+        {
+            AcceptedAudit.Add(input);
+            queryAudit.Add(new DataAgentAuditRecord(
+                input.Question,
+                input.Dataset,
+                input.QueryPlanJson,
+                input.GeneratedSql,
+                true,
+                string.Empty,
+                input.RowCount,
+                input.Elapsed,
+                DateTimeOffset.UnixEpoch));
+        }
+
+        public void RecordRejected(DataAgentRejectedAuditInput input)
+        {
+            RejectedAudit.Add(input);
+            queryAudit.Add(new DataAgentAuditRecord(
+                input.Question,
+                input.Dataset,
+                input.QueryPlanJson,
+                input.GeneratedSql,
+                false,
+                input.RejectedReason,
+                0,
+                input.Elapsed,
+                DateTimeOffset.UnixEpoch));
+        }
+
+        public IReadOnlyList<DataAgentAuditRecord> ReadQueryAudit()
+        {
+            return queryAudit;
+        }
+
+        public void RecordToolBrokerAudit(DataAgentToolBrokerAuditRecord record)
+        {
+            toolBrokerAudit.Add(record);
+        }
+
+        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ReadToolBrokerAudit()
+        {
+            return toolBrokerAudit;
+        }
     }
 }
