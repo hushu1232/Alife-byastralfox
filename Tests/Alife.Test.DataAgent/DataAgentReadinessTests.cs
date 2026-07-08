@@ -208,7 +208,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 89 required passed, 0 required missing"
+                "  Summary: 90 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -251,7 +251,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 89"));
+            Assert.That(script, Does.Contain("$expectedRequired = 90"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -515,6 +515,30 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("DataAgentGraphSidecarProgressBridge"));
             Assert.That(declaration, Does.Contain("buffer_until_accepted=true"));
             Assert.That(declaration, Does.Contain("sse_deferred=true"));
+        });
+    }
+
+    [Test]
+    public void StaticReadinessScriptContainsV34LiveSmokeHarnessMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+        string declaration = FindNewCheckDeclaration(script, "GraphHandshakeDevSidecarLiveSmokeHarnessPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("run-dataagent-graph-sidecar-smoke.ps1"));
+            Assert.That(declaration, Does.Contain("/health"));
+            Assert.That(declaration, Does.Contain("/handshake"));
+            Assert.That(declaration, Does.Contain("/handshake-stream"));
+            Assert.That(declaration, Does.Contain("application/x-ndjson"));
+            Assert.That(declaration, Does.Contain("manual_only=true"));
+            Assert.That(declaration, Does.Contain("starts_runtime=false"));
+            Assert.That(declaration, Does.Contain("installs_dependencies=false"));
+            Assert.That(declaration, Does.Contain("loopback_only=true"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+            Assert.That(declaration, Does.Contain("sse_deferred=true"));
+            Assert.That(declaration, Does.Contain("qchat_boundary=true"));
         });
     }
 
