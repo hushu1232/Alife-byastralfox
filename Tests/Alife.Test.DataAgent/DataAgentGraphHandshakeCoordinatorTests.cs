@@ -52,26 +52,46 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     [Test]
     public void ObservabilityReasonCodesAreStableMachineTokens()
     {
-        string[] reasonCodes =
-        [
-            DataAgentGraphSidecarObservabilityReasonCodes.Disabled,
-            DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured,
-            DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable,
-            DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
-            DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected,
-            DataAgentGraphSidecarObservabilityReasonCodes.Accepted,
-            DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed,
-            DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing,
-            DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected
-        ];
+        Dictionary<string, string> reasonCodes = new()
+        {
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.Disabled)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.Disabled,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.Accepted)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.Accepted,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing,
+            [nameof(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected)] =
+                DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected
+        };
 
         Assert.Multiple(() =>
         {
-            Assert.That(reasonCodes, Is.Unique);
-            foreach (string reasonCode in reasonCodes)
+            Assert.That(reasonCodes.Values, Is.Unique);
+            Assert.That(reasonCodes, Has.Count.EqualTo(9));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.Disabled)], Is.EqualTo("graph_sidecar_disabled"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured)], Is.EqualTo("graph_sidecar_not_configured"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable)], Is.EqualTo("graph_sidecar_runtime_unavailable"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected)], Is.EqualTo("graph_sidecar_response_rejected"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected)], Is.EqualTo("graph_sidecar_progress_rejected"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.Accepted)], Is.EqualTo("graph_sidecar_accepted"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed)], Is.EqualTo("graph_sidecar_fallback_used"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing)], Is.EqualTo("graph_sidecar_stream_final_response_missing"));
+            Assert.That(reasonCodes[nameof(DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected)], Is.EqualTo("graph_sidecar_stream_final_response_rejected"));
+
+            foreach ((string name, string reasonCode) in reasonCodes)
             {
-                Assert.That(reasonCode, Does.Match("^[a-z][a-z0-9_]*$"), reasonCode);
-                Assert.That(reasonCode, Does.StartWith("graph_sidecar_"), reasonCode);
+                Assert.That(reasonCode, Does.Match("^[a-z][a-z0-9_]*$"), name);
+                Assert.That(reasonCode, Does.StartWith("graph_sidecar_"), name);
             }
         });
     }
