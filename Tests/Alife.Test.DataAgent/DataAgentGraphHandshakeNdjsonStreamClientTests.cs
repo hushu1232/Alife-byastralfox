@@ -71,6 +71,60 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
     }
 
     [Test]
+    public void BlankLineThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(" "));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void OverlongLineThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(new string('x', 16385)));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void EventAfterFinalResponseThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            EventJson(new DataAgentGraphHandshakeStreamEvent(
+                DataAgentGraphHandshakeStreamEventKind.FinalResponse,
+                Response: NewResponse(request))),
+            EventJson(new DataAgentGraphHandshakeStreamEvent(
+                DataAgentGraphHandshakeStreamEventKind.Progress,
+                NewProgress(DataAgentWorkflowNodeNames.ScenarioKnowledge, "scenario_ready")))));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(request))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void InvalidUtf8BytesThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent([0xff, 0xfe, 0xfd])
+        });
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
     public void UnknownEventKindThrowsInvalidStreamSchema()
     {
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
@@ -167,6 +221,37 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
     }
 
     [Test]
+    public void HandlerHttpRequestExceptionThrowsUnavailable()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => throw new HttpRequestException("connection failed"));
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("sidecar_unavailable"));
+            Assert.That(exception.InnerException, Is.TypeOf<HttpRequestException>());
+        });
+    }
+
+    [Test]
+    public void ResponseStreamIOExceptionThrowsUnavailable()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new ThrowingReadStream(new IOException("read failed")))
+        });
+
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("sidecar_unavailable"));
+            Assert.That(exception.InnerException, Is.TypeOf<IOException>());
+        });
+    }
+
+    [Test]
     public void TimeoutThrowsTimeoutException()
     {
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => throw new TaskCanceledException("timed out"));
@@ -174,6 +259,23 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
         TimeoutException exception = Assert.Throws<TimeoutException>(() => client.TryHandshakeStream(NewRequest()))!;
 
         Assert.That(exception.Message, Is.EqualTo("sidecar_timeout"));
+    }
+
+    [Test]
+    public void CancellationDuringStreamReadThrowsTimeoutException()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new ThrowingReadStream(new OperationCanceledException("read canceled")))
+        });
+
+        TimeoutException exception = Assert.Throws<TimeoutException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("sidecar_timeout"));
+            Assert.That(exception.InnerException, Is.TypeOf<OperationCanceledException>());
+        });
     }
 
     static DataAgentGraphHandshakeNdjsonStreamClient NewClient(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
@@ -260,6 +362,48 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    sealed class ThrowingReadStream(Exception exception) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            throw exception;
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.FromException<int>(exception);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
         }
     }
 }

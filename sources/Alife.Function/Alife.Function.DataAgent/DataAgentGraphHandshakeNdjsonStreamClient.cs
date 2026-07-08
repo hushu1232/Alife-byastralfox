@@ -8,6 +8,7 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphHandshakeStreamClient
 {
     const int MaxLineLengthChars = 16384;
+    static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     readonly HttpClient httpClient;
@@ -30,9 +31,13 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
 
         try
         {
-            using HttpResponseMessage response = httpClient.PostAsync(
-                    options.Endpoint,
-                    JsonContent.Create(request, options: JsonOptions),
+            using HttpRequestMessage requestMessage = new(HttpMethod.Post, options.Endpoint)
+            {
+                Content = JsonContent.Create(request, options: JsonOptions)
+            };
+            using HttpResponseMessage response = httpClient.SendAsync(
+                    requestMessage,
+                    HttpCompletionOption.ResponseHeadersRead,
                     cancellation.Token)
                 .GetAwaiter()
                 .GetResult();
@@ -46,9 +51,29 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
         {
             throw new DataAgentGraphSidecarInvalidStreamException("invalid_stream_schema", exception);
         }
-        catch (TaskCanceledException exception)
+        catch (DecoderFallbackException exception)
+        {
+            throw new DataAgentGraphSidecarInvalidStreamException("invalid_stream_schema", exception);
+        }
+        catch (DataAgentGraphSidecarInvalidStreamException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException exception)
         {
             throw new TimeoutException("sidecar_timeout", exception);
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new InvalidOperationException("sidecar_unavailable", exception);
+        }
+        catch (IOException exception)
+        {
+            throw new InvalidOperationException("sidecar_unavailable", exception);
         }
     }
 
@@ -60,7 +85,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
             .ReadAsStreamAsync(cancellationToken)
             .GetAwaiter()
             .GetResult();
-        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        using StreamReader reader = new(stream, StrictUtf8, detectEncodingFromByteOrderMarks: false);
 
         List<DataAgentGraphHandshakeProgress> progress = [];
         DataAgentGraphHandshakeResponse? finalResponse = null;
@@ -103,16 +128,39 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
         if (finalResponse is null)
             throw new DataAgentGraphSidecarInvalidStreamException("missing_stream_final_response");
 
-        return new DataAgentGraphHandshakeStreamResult(finalResponse, progress);
+        return new DataAgentGraphHandshakeStreamResult(finalResponse, progress.ToArray());
     }
 
     static string? ReadLine(StreamReader reader, CancellationToken cancellationToken)
     {
-        return reader
-            .ReadLineAsync(cancellationToken)
-            .AsTask()
-            .GetAwaiter()
-            .GetResult();
+        StringBuilder builder = new();
+        char[] buffer = new char[1];
+
+        while (true)
+        {
+            int charsRead = reader
+                .ReadAsync(buffer.AsMemory(0, 1), cancellationToken)
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+
+            if (charsRead == 0)
+                return builder.Length == 0 ? null : builder.ToString();
+
+            char current = buffer[0];
+            if (current == '\n')
+            {
+                if (builder.Length > 0 && builder[^1] == '\r')
+                    builder.Length--;
+
+                return builder.ToString();
+            }
+
+            if (builder.Length >= MaxLineLengthChars)
+                throw InvalidStreamSchema();
+
+            builder.Append(current);
+        }
     }
 
     static DataAgentGraphSidecarInvalidStreamException InvalidStreamSchema()
