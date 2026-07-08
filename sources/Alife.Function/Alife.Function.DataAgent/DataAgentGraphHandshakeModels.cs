@@ -63,6 +63,47 @@ public enum DataAgentGraphHandshakeProgressStatus
     Failed
 }
 
+public enum DataAgentGraphSidecarObservabilityStatus
+{
+    Disabled,
+    NotConfigured,
+    RuntimeUnavailable,
+    Rejected,
+    Accepted,
+    Fallback
+}
+
+public static class DataAgentGraphSidecarObservabilityReasonCodes
+{
+    public const string Disabled = "graph_sidecar_disabled";
+    public const string NotConfigured = "graph_sidecar_not_configured";
+    public const string RuntimeUnavailable = "graph_sidecar_runtime_unavailable";
+    public const string ResponseRejected = "graph_sidecar_response_rejected";
+    public const string ProgressRejected = "graph_sidecar_progress_rejected";
+    public const string Accepted = "graph_sidecar_accepted";
+    public const string FallbackUsed = "graph_sidecar_fallback_used";
+    public const string StreamFinalResponseMissing = "graph_sidecar_stream_final_response_missing";
+    public const string StreamFinalResponseRejected = "graph_sidecar_stream_final_response_rejected";
+}
+
+public sealed record DataAgentGraphSidecarObservabilityContext(
+    bool EndpointConfigured,
+    bool RuntimeStartedByAlife)
+{
+    public static DataAgentGraphSidecarObservabilityContext Default { get; } = new(false, false);
+}
+
+public sealed record DataAgentGraphSidecarObservabilitySnapshot(
+    string ReasonCode,
+    DataAgentGraphSidecarObservabilityStatus Status,
+    bool SidecarEnabled,
+    bool EndpointConfigured,
+    bool RuntimeStartedByAlife,
+    bool NetworkAttempted,
+    bool Accepted,
+    bool FallbackUsed,
+    string SafeSummary);
+
 public static class DataAgentGraphHandshakeToolNames
 {
     public const string ReadScenarioContext = "dataagent.scenario_context.read";
@@ -135,4 +176,5 @@ public sealed record DataAgentGraphHandshakeOutcome(
     bool FallbackRequired,
     DataAgentGraphHandshakeRequest? Request,
     DataAgentGraphHandshakeResponse? Response,
-    DataAgentGraphHandshakeValidationResult Validation);
+    DataAgentGraphHandshakeValidationResult Validation,
+    DataAgentGraphSidecarObservabilitySnapshot? Observability = null);

@@ -50,6 +50,45 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void ObservabilityReasonCodesAreStableMachineTokens()
+    {
+        string[] reasonCodes =
+        [
+            DataAgentGraphSidecarObservabilityReasonCodes.Disabled,
+            DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured,
+            DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable,
+            DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+            DataAgentGraphSidecarObservabilityReasonCodes.ProgressRejected,
+            DataAgentGraphSidecarObservabilityReasonCodes.Accepted,
+            DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed,
+            DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseMissing,
+            DataAgentGraphSidecarObservabilityReasonCodes.StreamFinalResponseRejected
+        ];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reasonCodes, Is.Unique);
+            foreach (string reasonCode in reasonCodes)
+            {
+                Assert.That(reasonCode, Does.Match("^[a-z][a-z0-9_]*$"), reasonCode);
+                Assert.That(reasonCode, Does.StartWith("graph_sidecar_"), reasonCode);
+            }
+        });
+    }
+
+    [Test]
+    public void ObservabilityContextDefaultsToOfflineAndNotConfigured()
+    {
+        DataAgentGraphSidecarObservabilityContext context = DataAgentGraphSidecarObservabilityContext.Default;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context.EndpointConfigured, Is.False);
+            Assert.That(context.RuntimeStartedByAlife, Is.False);
+        });
+    }
+
+    [Test]
     public void EnabledCoordinatorReturnsInvalidFallbackForMalformedResultWithoutCallingSidecar()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);
