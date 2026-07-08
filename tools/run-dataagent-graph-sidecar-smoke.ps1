@@ -211,12 +211,34 @@ function Assert-NonEmptyList {
         throw ("{0} must be non-null." -f $Name)
     }
 
-    $items = @($value)
+    $baseValue = $value.PSObject.BaseObject
+    if ($baseValue -is [string] -or $baseValue -isnot [System.Collections.IEnumerable]) {
+        throw ("{0} must be a JSON array." -f $Name)
+    }
+
+    $items = @()
+    foreach ($item in $baseValue) {
+        if ($null -eq $item) {
+            throw ("{0} entries must be non-null." -f $Name)
+        }
+
+        $items += $item
+    }
+
     if ($items.Count -le 0) {
         throw ("{0} must be non-empty." -f $Name)
     }
 
-    return $items
+    return ,$items
+}
+
+function Assert-AllowedProgressStatus {
+    param([string]$Status)
+
+    $allowedStatuses = @("Started", "Completed", "Skipped", "Rejected", "Failed")
+    if ($allowedStatuses -notcontains $Status) {
+        throw ("Progress Status must be one of {0}." -f ($allowedStatuses -join ", "))
+    }
 }
 
 function Test-HandshakeResponse {
@@ -250,7 +272,8 @@ function Test-HandshakeResponse {
 
     foreach ($progress in $nodeProgress) {
         Assert-RequiredString $progress "NodeName" | Out-Null
-        Assert-RequiredString $progress "Status" | Out-Null
+        $status = Assert-RequiredString $progress "Status"
+        Assert-AllowedProgressStatus $status
         Assert-RequiredString $progress "ReasonCode" | Out-Null
         if (Test-ReservedProgressFacts $progress.Facts) {
             throw "NodeProgress Facts must not include reserved C# stamped keys source, node, or request_id."
@@ -329,10 +352,7 @@ function Test-NdjsonStream {
             Assert-RequiredString $event.Progress "NodeName" | Out-Null
             $status = Assert-RequiredString $event.Progress "Status"
             Assert-RequiredString $event.Progress "ReasonCode" | Out-Null
-            $allowedStatuses = @("Started", "Completed", "Skipped", "Rejected", "Failed")
-            if ($allowedStatuses -notcontains $status) {
-                throw ("Progress Status must be one of {0}." -f ($allowedStatuses -join ", "))
-            }
+            Assert-AllowedProgressStatus $status
 
             if (Test-ReservedProgressFacts $event.Progress.Facts) {
                 throw "Stream progress Facts must not include reserved C# stamped keys source, node, or request_id."
