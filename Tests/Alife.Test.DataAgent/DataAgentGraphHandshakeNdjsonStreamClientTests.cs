@@ -165,6 +165,42 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
     }
 
     [Test]
+    public void NumericEventKindThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            """{"Kind":0,"Progress":{"NodeName":"scenario_knowledge","Status":"Completed","ReasonCode":"scenario_ready"}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void MissingEventKindThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            """{"Progress":{"NodeName":"scenario_knowledge","Status":"Completed","ReasonCode":"scenario_ready"}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void ProgressEventWithoutStatusThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            """{"Kind":"Progress","Progress":{"NodeName":"scenario_knowledge","ReasonCode":"scenario_ready"}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
     public void ProgressEventWithoutProgressThrowsInvalidStreamSchema()
     {
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
@@ -230,6 +266,31 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
         lines.Add(EventJson(new DataAgentGraphHandshakeStreamEvent(
             DataAgentGraphHandshakeStreamEventKind.FinalResponse,
             Response: NewResponse(request))));
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(lines.ToArray()));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(request))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("stream_progress_over_budget"));
+    }
+
+    [Test]
+    public void ProgressOverRequestBudgetThrowsStreamProgressOverBudget()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest(progressBudget: 1);
+        DataAgentGraphHandshakeResponse finalResponse = NewResponse(request);
+        List<string> lines =
+        [
+            EventJson(new DataAgentGraphHandshakeStreamEvent(
+                DataAgentGraphHandshakeStreamEventKind.Progress,
+                NewProgress(DataAgentWorkflowNodeNames.ScenarioKnowledge, "scenario_ready"))),
+            EventJson(new DataAgentGraphHandshakeStreamEvent(
+                DataAgentGraphHandshakeStreamEventKind.Progress,
+                NewProgress(DataAgentWorkflowNodeNames.QueryPlanner, "planner_suggested"))),
+            EventJson(new DataAgentGraphHandshakeStreamEvent(
+                DataAgentGraphHandshakeStreamEventKind.FinalResponse,
+                Response: finalResponse))
+        ];
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(lines.ToArray()));
 
         DataAgentGraphSidecarInvalidStreamException exception =
@@ -344,7 +405,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
         return options;
     }
 
-    static DataAgentGraphHandshakeRequest NewRequest()
+    static DataAgentGraphHandshakeRequest NewRequest(int progressBudget = DataAgentGraphHandshakeLimits.MaxProgressEvents)
     {
         return new DataAgentGraphHandshakeRequest(
             "graph-handshake-session-1-turn-1",
@@ -360,7 +421,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
             ReadOnly: true,
             FallbackAvailable: true,
             TraceBudgetChars: DataAgentGraphHandshakeLimits.MaxTraceSummaryChars,
-            ProgressBudget: DataAgentGraphHandshakeLimits.MaxProgressEvents);
+            ProgressBudget: progressBudget);
     }
 
     static DataAgentGraphHandshakeProgress NewProgress(string nodeName, string reasonCode)

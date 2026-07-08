@@ -48,7 +48,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
             if (response.IsSuccessStatusCode == false)
                 throw new InvalidOperationException("sidecar_unavailable");
 
-            return ReadStreamResult(response, cancellation.Token);
+            return ReadStreamResult(response, request.ProgressBudget, cancellation.Token);
         }
         catch (JsonException exception)
         {
@@ -82,6 +82,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
 
     static DataAgentGraphHandshakeStreamResult ReadStreamResult(
         HttpResponseMessage response,
+        int progressBudget,
         CancellationToken cancellationToken)
     {
         using Stream stream = response.Content
@@ -101,29 +102,45 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
             if (string.IsNullOrWhiteSpace(line) || line.Length > MaxLineLengthChars)
                 throw InvalidStreamSchema();
 
-            DataAgentGraphHandshakeStreamEvent streamEvent = JsonSerializer
-                .Deserialize<DataAgentGraphHandshakeStreamEvent>(line, JsonOptions)
-                ?? throw InvalidStreamSchema();
-
-            if (Enum.IsDefined(typeof(DataAgentGraphHandshakeStreamEventKind), streamEvent.Kind) == false)
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                root.TryGetProperty(nameof(DataAgentGraphHandshakeStreamEvent.Kind), out JsonElement kindElement) == false ||
+                TryReadEnum(kindElement, out DataAgentGraphHandshakeStreamEventKind kind) == false)
+            {
                 throw InvalidStreamSchema();
+            }
 
-            switch (streamEvent.Kind)
+            bool hasProgress = TryGetNonNullProperty(
+                root,
+                nameof(DataAgentGraphHandshakeStreamEvent.Progress),
+                out JsonElement progressElement);
+            bool hasResponse = TryGetNonNullProperty(
+                root,
+                nameof(DataAgentGraphHandshakeStreamEvent.Response),
+                out JsonElement responseElement);
+
+            switch (kind)
             {
                 case DataAgentGraphHandshakeStreamEventKind.Progress:
-                    if (streamEvent.Progress is null || streamEvent.Response is not null)
+                    if (hasProgress == false || hasResponse)
                         throw InvalidStreamSchema();
 
-                    progress.Add(streamEvent.Progress);
-                    if (progress.Count > DataAgentGraphHandshakeLimits.MaxProgressEvents)
+                    ValidateProgressElement(progressElement);
+                    progress.Add(progressElement.Deserialize<DataAgentGraphHandshakeProgress>(JsonOptions) ?? throw InvalidStreamSchema());
+                    if (progress.Count > progressBudget ||
+                        progress.Count > DataAgentGraphHandshakeLimits.MaxProgressEvents)
+                    {
                         throw new DataAgentGraphSidecarInvalidStreamException("stream_progress_over_budget");
+                    }
+
                     break;
 
                 case DataAgentGraphHandshakeStreamEventKind.FinalResponse:
-                    if (streamEvent.Response is null || streamEvent.Progress is not null)
+                    if (hasResponse == false || hasProgress || responseElement.ValueKind != JsonValueKind.Object)
                         throw InvalidStreamSchema();
 
-                    finalResponse = streamEvent.Response;
+                    finalResponse = responseElement.Deserialize<DataAgentGraphHandshakeResponse>(JsonOptions) ?? throw InvalidStreamSchema();
                     break;
             }
         }
@@ -179,6 +196,51 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
         }
     }
 
+    static bool TryGetNonNullProperty(JsonElement root, string propertyName, out JsonElement element)
+    {
+        if (root.TryGetProperty(propertyName, out element) == false ||
+            element.ValueKind == JsonValueKind.Null)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    static void ValidateProgressElement(JsonElement progressElement)
+    {
+        if (progressElement.ValueKind != JsonValueKind.Object ||
+            TryReadRequiredString(progressElement, nameof(DataAgentGraphHandshakeProgress.NodeName), out _) == false ||
+            TryReadRequiredString(progressElement, nameof(DataAgentGraphHandshakeProgress.ReasonCode), out _) == false ||
+            progressElement.TryGetProperty(nameof(DataAgentGraphHandshakeProgress.Status), out JsonElement statusElement) == false ||
+            TryReadEnum(statusElement, out DataAgentGraphHandshakeProgressStatus _) == false)
+        {
+            throw InvalidStreamSchema();
+        }
+    }
+
+    static bool TryReadRequiredString(JsonElement root, string propertyName, out string value)
+    {
+        value = "";
+        if (root.TryGetProperty(propertyName, out JsonElement element) == false ||
+            element.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = element.GetString() ?? "";
+        return string.IsNullOrWhiteSpace(value) == false;
+    }
+
+    static bool TryReadEnum<TEnum>(JsonElement element, out TEnum value)
+        where TEnum : struct, Enum
+    {
+        value = default;
+        return element.ValueKind == JsonValueKind.String &&
+               Enum.TryParse(element.GetString(), ignoreCase: false, out value) &&
+               Enum.IsDefined(value);
+    }
+
     static void AppendBounded(StringBuilder builder, char current)
     {
         if (builder.Length >= MaxLineLengthChars)
@@ -195,7 +257,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
     static JsonSerializerOptions CreateJsonOptions()
     {
         JsonSerializerOptions options = new();
-        options.Converters.Add(new JsonStringEnumConverter());
+        options.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         return options;
     }
 }
