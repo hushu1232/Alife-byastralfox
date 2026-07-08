@@ -7,6 +7,7 @@ namespace Alife.Function.DataAgent;
 
 public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphHandshakeStreamClient
 {
+    const string NdjsonMediaType = "application/x-ndjson";
     const int MaxLineLengthChars = 16384;
     static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
     static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
@@ -35,6 +36,8 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
             {
                 Content = JsonContent.Create(request, options: JsonOptions)
             };
+            requestMessage.Headers.Accept.ParseAdd(NdjsonMediaType);
+
             using HttpResponseMessage response = httpClient.SendAsync(
                     requestMessage,
                     HttpCompletionOption.ResponseHeadersRead,

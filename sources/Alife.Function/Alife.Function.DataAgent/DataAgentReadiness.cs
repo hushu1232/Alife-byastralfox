@@ -505,6 +505,111 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeDevSidecarProgressBridgePresent", "default_enabled=false;progress_bridge=true;csharp_recorder_authority=true;unsafe_progress_rejected=true;unsafe_progress_redacted=true;qchat_boundary=true;no_sql_authority=true;runtime_required=false")
                 : Fail("GraphHandshakeDevSidecarProgressBridgePresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};progress_bridge={LowerBool(graphSidecarProgressBridgeReady)};csharp_recorder_authority={LowerBool(graphSidecarProgressEvents.Count == 1)};unsafe_progress_rejected={LowerBool(graphSidecarProgressUnsafeRejected)};unsafe_progress_redacted={LowerBool(graphSidecarProgressUnsafeRedacted)};qchat_boundary={LowerBool(graphSidecarProgressQChatBoundary)};no_sql_authority={LowerBool(graphSidecarProgressEvents.All(item => item.ExecutedSql == false))};runtime_required=false"));
 
+            DataAgentGraphHandshakeStreamOptions graphHandshakeDefaultStreamOptions =
+                DataAgentGraphHandshakeStreamOptions.FromValues(null, null, null);
+            DataAgentGraphHandshakeStreamOptions graphHandshakeLoopbackStreamOptions =
+                DataAgentGraphHandshakeStreamOptions.FromValues(
+                    "true",
+                    "http://127.0.0.1:8765/handshake-stream",
+                    "800");
+            DataAgentGraphHandshakeStreamOptions graphHandshakeRemoteStreamOptions =
+                DataAgentGraphHandshakeStreamOptions.FromValues(
+                    "true",
+                    "http://example.com/handshake-stream",
+                    "800");
+            DataAgentGraphHandshakeStreamResult graphHandshakeStreamResult = new(
+                graphHandshakeSafeResponse with { NodeProgress = [] },
+                [
+                    new DataAgentGraphHandshakeProgress(
+                        DataAgentWorkflowNodeNames.QueryPlanner,
+                        DataAgentGraphHandshakeProgressStatus.Completed,
+                        "planner_suggested",
+                        "planner ready",
+                        new Dictionary<string, string>
+                        {
+                            ["stage"] = "planner"
+                        })
+                ]);
+            DataAgentGraphHandshakeValidationResult graphHandshakeStreamValidation =
+                DataAgentGraphHandshakeValidator.Validate(graphHandshakeRequest, graphHandshakeStreamResult.Response);
+            DataAgentProgressRecorder graphHandshakeStreamProgressRecorder = new();
+            List<string> graphHandshakeStreamDiagnostics = [];
+            DataAgentProgressDiagnosticsPublisher graphHandshakeStreamDiagnosticsPublisher = new(
+                graphHandshakeStreamProgressRecorder,
+                graphHandshakeStreamDiagnostics.Add,
+                () => graphSidecarProgressNow);
+            DataAgentGraphSidecarProgressBridge graphHandshakeStreamProgressBridge = new(
+                graphHandshakeStreamDiagnosticsPublisher,
+                () => graphSidecarProgressNow);
+            DataAgentGraphSidecarProgressBridgeResult graphHandshakeStreamBridgeResult =
+                graphHandshakeStreamValidation.Accepted
+                    ? graphHandshakeStreamProgressBridge.PublishHandshakeProgress(
+                        graphHandshakeRequest,
+                        graphSidecarProgressResult,
+                        graphHandshakeStreamResult.Progress)
+                    : new DataAgentGraphSidecarProgressBridgeResult(0, graphHandshakeStreamResult.Progress.Count);
+            IReadOnlyList<DataAgentProgressEvent> graphHandshakeStreamProgressEvents =
+                graphHandshakeStreamProgressRecorder.GetRecent(graphHandshakeRequest.SessionId, graphSidecarProgressNow);
+            bool graphHandshakeStreamDefaultDisabled =
+                graphHandshakeDefaultStreamOptions.Enabled == false &&
+                graphHandshakeDefaultStreamOptions.Configured == false &&
+                graphHandshakeDefaultStreamOptions.RuntimeStarted == false;
+            bool graphHandshakeStreamLoopbackOnly =
+                graphHandshakeLoopbackStreamOptions.Enabled &&
+                graphHandshakeLoopbackStreamOptions.Configured &&
+                graphHandshakeLoopbackStreamOptions.Endpoint?.IsLoopback == true &&
+                graphHandshakeLoopbackStreamOptions.RuntimeStarted == false &&
+                graphHandshakeRemoteStreamOptions.Configured == false &&
+                graphHandshakeRemoteStreamOptions.Endpoint is null;
+            bool graphHandshakeStreamEnvelopeTypesReady =
+                typeof(DataAgentGraphHandshakeStreamEvent).IsClass &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeStreamEventKind), DataAgentGraphHandshakeStreamEventKind.Progress) &&
+                typeof(DataAgentGraphHandshakeStreamResult).IsClass &&
+                typeof(IDataAgentGraphHandshakeStreamClient).IsInterface &&
+                typeof(DataAgentGraphSidecarInvalidStreamException).IsAssignableTo(typeof(Exception));
+            bool graphHandshakeNdjsonStreamReady =
+                typeof(DataAgentGraphHandshakeNdjsonStreamClient).IsAssignableTo(typeof(IDataAgentGraphHandshakeStreamClient)) &&
+                typeof(DataAgentGraphHandshakeNdjsonStreamClient).Name.Contains("Ndjson", StringComparison.Ordinal);
+            bool graphHandshakeStreamBufferedUntilAccepted =
+                graphHandshakeStreamValidation.Accepted &&
+                graphHandshakeStreamBridgeResult.AcceptedCount == 1 &&
+                graphHandshakeStreamBridgeResult.RejectedCount == 0 &&
+                graphHandshakeStreamProgressEvents.Count == 1 &&
+                string.Equals(graphHandshakeStreamProgressEvents.Single().Facts["stage"], "planner", StringComparison.Ordinal) &&
+                string.Equals(graphHandshakeStreamProgressEvents.Single().Facts["source"], "graph_sidecar", StringComparison.Ordinal);
+            bool graphHandshakeStreamFinalResponseRequired =
+                graphHandshakeStreamResult.Response is not null &&
+                string.Equals(
+                    new DataAgentGraphSidecarInvalidStreamException("missing_stream_final_response").ReasonCode,
+                    "missing_stream_final_response",
+                    StringComparison.Ordinal);
+            bool graphHandshakeStreamSseDeferred =
+                typeof(DataAgentGraphHandshakeNdjsonStreamClient).Assembly.GetTypes().All(type =>
+                    type.Name.Contains("EventSource", StringComparison.OrdinalIgnoreCase) == false);
+            bool graphHandshakeStreamCSharpBridgeAuthority =
+                string.Equals(typeof(DataAgentGraphSidecarProgressBridge).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                graphHandshakeStreamProgressEvents.Count == 1 &&
+                string.Equals(graphHandshakeStreamProgressEvents.Single().Facts["source"], "graph_sidecar", StringComparison.Ordinal);
+            bool graphHandshakeStreamQChatBoundary =
+                string.Equals(typeof(DataAgentGraphHandshakeStreamEvent).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                string.Equals(typeof(DataAgentGraphHandshakeNdjsonStreamClient).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                typeof(DataAgentGraphHandshakeNdjsonStreamClient).Assembly.GetName().Name?.Contains("QChat", StringComparison.OrdinalIgnoreCase) == false &&
+                typeof(DataAgentGraphHandshakeNdjsonStreamClient).Assembly.GetReferencedAssemblies().Any(assemblyName =>
+                    string.Equals(assemblyName.Name, "Alife.Function.QChat", StringComparison.Ordinal)) == false;
+            bool graphHandshakeStreamingTransportReady =
+                graphHandshakeStreamDefaultDisabled &&
+                graphHandshakeStreamLoopbackOnly &&
+                graphHandshakeStreamEnvelopeTypesReady &&
+                graphHandshakeNdjsonStreamReady &&
+                graphHandshakeStreamBufferedUntilAccepted &&
+                graphHandshakeStreamFinalResponseRequired &&
+                graphHandshakeStreamSseDeferred &&
+                graphHandshakeStreamCSharpBridgeAuthority &&
+                graphHandshakeStreamQChatBoundary;
+            checks.Add(graphHandshakeStreamingTransportReady
+                ? Pass("GraphHandshakeDevSidecarStreamingTransportPresent", "default_enabled=false;ndjson_stream=true;buffer_until_accepted=true;final_response_required=true;sse_deferred=true;csharp_bridge_authority=true;qchat_boundary=true;runtime_required=false")
+                : Fail("GraphHandshakeDevSidecarStreamingTransportPresent", $"default_enabled={LowerBool(graphHandshakeStreamDefaultDisabled)};ndjson_stream={LowerBool(graphHandshakeNdjsonStreamReady && graphHandshakeStreamEnvelopeTypesReady && graphHandshakeStreamLoopbackOnly)};buffer_until_accepted={LowerBool(graphHandshakeStreamBufferedUntilAccepted)};final_response_required={LowerBool(graphHandshakeStreamFinalResponseRequired)};sse_deferred={LowerBool(graphHandshakeStreamSseDeferred)};csharp_bridge_authority={LowerBool(graphHandshakeStreamCSharpBridgeAuthority)};qchat_boundary={LowerBool(graphHandshakeStreamQChatBoundary)};runtime_required={LowerBool(graphHandshakeDefaultStreamOptions.RuntimeStarted || graphHandshakeLoopbackStreamOptions.RuntimeStarted)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
