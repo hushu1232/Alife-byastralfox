@@ -92,6 +92,14 @@ public sealed class DataAgentGraphSidecarSmokeScriptContractTests
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string source = File.ReadAllText(Path.Combine(repoRoot, "Tests", "Alife.Test.DataAgent", "DataAgentGraphSidecarSmokeScriptContractTests.cs"));
+        string[] forbiddenRuntimeMarkers =
+        [
+            "Invoke-" + "WebRequest",
+            "Start-" + "Process",
+            "uvicorn " + "app:app",
+            "text/" + "event-stream",
+            "Event" + "Source"
+        ];
 
         Assert.Multiple(() =>
         {
@@ -99,11 +107,11 @@ public sealed class DataAgentGraphSidecarSmokeScriptContractTests
             Assert.That(source, Does.Contain("FunctionDefinitionAst"));
             Assert.That(source, Does.Contain("Test-HandshakeResponse"));
             Assert.That(source, Does.Contain("Test-NdjsonStream"));
-            Assert.That(source, Does.Not.Contain("Invoke-WebRequest"));
-            Assert.That(source, Does.Not.Contain("Start-Process"));
-            Assert.That(source, Does.Not.Contain("uvicorn app:app"));
-            Assert.That(source, Does.Not.Contain("text/event-stream"));
-            Assert.That(source, Does.Not.Contain("EventSource"));
+            Assert.That(source, Does.Not.Contain("127.0.0.1:" + "8765"));
+            foreach (string marker in forbiddenRuntimeMarkers)
+            {
+                Assert.That(source, Does.Not.Contain(marker));
+            }
         });
     }
 
