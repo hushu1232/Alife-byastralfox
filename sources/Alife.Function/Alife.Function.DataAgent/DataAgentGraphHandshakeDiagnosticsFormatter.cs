@@ -73,7 +73,7 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
             $"network_attempted={Bool(snapshot.NetworkAttempted)}",
             $"accepted={Bool(snapshot.Accepted)}",
             $"fallback={Bool(snapshot.FallbackUsed)}",
-            $"summary={SafeDiagnosticText(snapshot.SafeSummary, DataAgentGraphHandshakeLimits.MaxReasonCodeLength)}");
+            $"summary={SafeDiagnosticToken(snapshot.SafeSummary, DataAgentGraphHandshakeLimits.MaxReasonCodeLength)}");
     }
 
     static string FormatProgress(IReadOnlyList<DataAgentGraphHandshakeProgress>? progress)
@@ -138,6 +138,22 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
 
         string sanitized = builder.ToString().Trim();
         return sanitized.Length == 0 ? "empty" : sanitized;
+    }
+
+    static string SafeDiagnosticToken(string? value, int maxInputChars)
+    {
+        string sanitized = SafeDiagnosticText(value, maxInputChars);
+        if (sanitized is Redacted or "empty")
+            return sanitized;
+
+        StringBuilder builder = new(sanitized.Length);
+        foreach (char current in sanitized)
+        {
+            builder.Append(IsTokenChar(current) ? current : '_');
+        }
+
+        string tokenized = builder.ToString().Trim('_');
+        return tokenized.Length == 0 ? "empty" : tokenized;
     }
 
     static string BoundInput(string value, int maxChars)

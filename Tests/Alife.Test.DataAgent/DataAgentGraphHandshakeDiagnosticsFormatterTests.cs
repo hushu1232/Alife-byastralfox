@@ -69,6 +69,43 @@ public sealed class DataAgentGraphHandshakeDiagnosticsFormatterTests
     }
 
     [Test]
+    public void FormatOutcomeWithObservabilityTokenizesMultiWordSummary()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Rejected,
+            "network_timeout",
+            FallbackRequired: true,
+            request,
+            Response: null,
+            new DataAgentGraphHandshakeValidationResult(false, "network_timeout"),
+            new DataAgentGraphSidecarObservabilitySnapshot(
+                DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+                DataAgentGraphSidecarObservabilityStatus.Rejected,
+                SidecarEnabled: true,
+                EndpointConfigured: true,
+                RuntimeStartedByAlife: false,
+                NetworkAttempted: true,
+                Accepted: false,
+                FallbackUsed: true,
+                SafeSummary: "network timeout after retry=3.0-phase-2"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+        string sidecarLine = formatted
+            .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.StartsWith("graph_sidecar ", StringComparison.Ordinal));
+        string[] tokens = sidecarLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sidecarLine, Does.Contain("summary=network_timeout_after_retry_3.0-phase-2"));
+            Assert.That(tokens.Skip(1), Is.All.Contains("="));
+            Assert.That(tokens, Does.Not.Contain("timeout"));
+            Assert.That(tokens, Does.Not.Contain("after"));
+        });
+    }
+
+    [Test]
     public void FormatOutcomeWithObservabilityRedactsUnsafeSummary()
     {
         DataAgentGraphHandshakeRequest request = NewRequest();
