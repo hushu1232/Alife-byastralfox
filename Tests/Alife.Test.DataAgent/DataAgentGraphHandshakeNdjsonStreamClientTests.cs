@@ -41,6 +41,8 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
             Assert.That(capturedRequest, Is.Not.Null);
             Assert.That(capturedRequest!.Method, Is.EqualTo(HttpMethod.Post));
             Assert.That(capturedRequest.RequestUri, Is.EqualTo(new Uri("http://localhost:32123/handshake-stream")));
+            Assert.That(capturedRequest.Headers.Accept.Any(value =>
+                string.Equals(value.MediaType, "application/x-ndjson", StringComparison.Ordinal)), Is.True);
             Assert.That(capturedPayload, Is.Not.Null);
             Assert.That(capturedPayload!.RequestId, Is.EqualTo(request.RequestId));
             Assert.That(capturedPayload.NoSqlAuthority, Is.True);

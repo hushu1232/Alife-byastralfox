@@ -519,6 +519,30 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void DynamicReadinessSourceContainsV33StreamBehaviorEvidence()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "DataAgentReadiness.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("FixedGraphHandshakeStreamClient"));
+            Assert.That(source, Does.Contain("DelegateHttpHandler"));
+            Assert.That(source, Does.Contain("new DataAgentGraphHandshakeCoordinator"));
+            Assert.That(source, Does.Contain("TryHandshake("));
+            Assert.That(source, Does.Contain("missing_stream_final_response"));
+            Assert.That(source, Does.Contain("accepted_stream="));
+            Assert.That(source, Does.Contain("rejected_no_publish="));
+            Assert.That(source, Does.Contain("missing_final_response="));
+        });
+    }
+
+    [Test]
     public void ReadinessScriptProtectsV214GraphSidecarContract()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
