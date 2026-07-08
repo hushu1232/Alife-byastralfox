@@ -135,6 +135,7 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
     {
         StringBuilder builder = new();
         char[] buffer = new char[1];
+        bool pendingCarriageReturn = false;
 
         while (true)
         {
@@ -145,22 +146,42 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
                 .GetResult();
 
             if (charsRead == 0)
-                return builder.Length == 0 ? null : builder.ToString();
-
-            char current = buffer[0];
-            if (current == '\n')
             {
-                if (builder.Length > 0 && builder[^1] == '\r')
-                    builder.Length--;
+                if (pendingCarriageReturn)
+                    AppendBounded(builder, '\r');
 
-                return builder.ToString();
+                return builder.Length == 0 ? null : builder.ToString();
             }
 
-            if (builder.Length >= MaxLineLengthChars)
-                throw InvalidStreamSchema();
+            char current = buffer[0];
+            if (pendingCarriageReturn)
+            {
+                pendingCarriageReturn = false;
+                if (current == '\n')
+                    return builder.ToString();
 
-            builder.Append(current);
+                AppendBounded(builder, '\r');
+            }
+
+            if (current == '\r')
+            {
+                pendingCarriageReturn = true;
+                continue;
+            }
+
+            if (current == '\n')
+                return builder.ToString();
+
+            AppendBounded(builder, current);
         }
+    }
+
+    static void AppendBounded(StringBuilder builder, char current)
+    {
+        if (builder.Length >= MaxLineLengthChars)
+            throw InvalidStreamSchema();
+
+        builder.Append(current);
     }
 
     static DataAgentGraphSidecarInvalidStreamException InvalidStreamSchema()

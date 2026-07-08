@@ -82,6 +82,32 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
     }
 
     [Test]
+    public void EmptyLineThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkRawNdjson("\n"));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void MaxLengthPayloadLineWithCrLfTerminatorDoesNotCountCarriageReturnAsPayload()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        string finalResponseEvent = EventJson(new DataAgentGraphHandshakeStreamEvent(
+            DataAgentGraphHandshakeStreamEventKind.FinalResponse,
+            Response: NewResponse(request)));
+        string paddedLine = finalResponseEvent + new string(' ', 16384 - finalResponseEvent.Length);
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkRawNdjson(paddedLine + "\r\n"));
+
+        DataAgentGraphHandshakeStreamResult result = client.TryHandshakeStream(request);
+
+        Assert.That(result.Response.RequestId, Is.EqualTo(request.RequestId));
+    }
+
+    [Test]
     public void OverlongLineThrowsInvalidStreamSchema()
     {
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(new string('x', 16385)));
@@ -293,9 +319,14 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
 
     static HttpResponseMessage OkNdjson(params string[] lines)
     {
+        return OkRawNdjson(string.Join('\n', lines));
+    }
+
+    static HttpResponseMessage OkRawNdjson(string content)
+    {
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent(string.Join('\n', lines), Encoding.UTF8, "application/x-ndjson")
+            Content = new StringContent(content, Encoding.UTF8, "application/x-ndjson")
         };
     }
 
