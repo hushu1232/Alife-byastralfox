@@ -14,7 +14,8 @@ browser automation, model calls, or any already running sidecar.
 
 Start the dev sidecar manually first, using the local instructions in
 `tools\dataagent-graph-sidecar\README.md`. After the already running sidecar is
-listening on loopback, run:
+listening on loopback, return to the repository root and run the smoke command
+from the repository root:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\run-dataagent-graph-sidecar-smoke.ps1 -BaseUri "http://127.0.0.1:8765" -TimeoutMs 2000

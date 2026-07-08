@@ -89,17 +89,27 @@ sidecar.
 ## V3.4 Manual Live Smoke
 
 V3.4 adds a manual live smoke harness for checking an already running sidecar on
-loopback:
+loopback. Run the dev sidecar manually first and leave that sidecar process
+running.
+
+Then, from the repository root, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\run-dataagent-graph-sidecar-smoke.ps1 -BaseUri "http://127.0.0.1:8765" -TimeoutMs 2000
 ```
 
-Run the dev sidecar manually before running this harness. The smoke script
-does not start Python, does not create a virtual environment, does not install dependencies,
+If your shell is still in `tools\dataagent-graph-sidecar` from the manual run
+steps above, return to the repository root before invoking
+`tools\run-dataagent-graph-sidecar-smoke.ps1`. The smoke script does not start Python,
+does not create a virtual environment, does not install dependencies,
 does not launch uvicorn, does not bind ports, and does not manage background
 processes. It only calls the already running sidecar at the supplied loopback
 `BaseUri`.
+
+This is manual live smoke coverage only; default tests do not call a live
+sidecar. They do not require Python, FastAPI, uvicorn, a live port, network
+access, QChat, QQ, PostgreSQL, browser automation, model calls, or a live
+sidecar.
 
 The harness checks `/health`, `/handshake`, and `/handshake-stream`. The stream
 response must use `application/x-ndjson`; SSE is deferred and this V3.4 harness
