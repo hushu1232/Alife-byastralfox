@@ -650,6 +650,111 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeDevSidecarStreamingTransportPresent", "default_enabled=false;ndjson_stream=true;buffer_until_accepted=true;final_response_required=true;sse_deferred=true;csharp_bridge_authority=true;qchat_boundary=true;runtime_required=false")
                 : Fail("GraphHandshakeDevSidecarStreamingTransportPresent", $"default_enabled={LowerBool(graphHandshakeStreamDefaultDisabled)};loopback_only={LowerBool(graphHandshakeStreamLoopbackOnly)};envelope_types={LowerBool(graphHandshakeStreamEnvelopeTypesReady)};stream_client={LowerBool(graphHandshakeNdjsonStreamReady)};accepted_stream={LowerBool(graphHandshakeAcceptedStreamReady)};rejected_no_publish={LowerBool(graphHandshakeRejectedStreamNoPublish)};missing_final_response={LowerBool(graphHandshakeMissingFinalResponseReady)};sse_deferred={LowerBool(graphHandshakeStreamSseDeferred)};csharp_bridge_authority={LowerBool(graphHandshakeStreamCSharpBridgeAuthority)};qchat_boundary={LowerBool(graphHandshakeStreamQChatBoundary)};runtime_required={LowerBool(graphHandshakeDefaultStreamOptions.RuntimeStarted || graphHandshakeLoopbackStreamOptions.RuntimeStarted)}"));
 
+            DataAgentGraphSidecarObservabilityContext graphHandshakeObservabilityDefaultContext =
+                DataAgentGraphSidecarObservabilityContext.Default;
+            DataAgentGraphSidecarObservabilityContext graphHandshakeObservabilityConfiguredContext =
+                new(EndpointConfigured: true, RuntimeStartedByAlife: false);
+            DataAgentGraphHandshakeOutcome graphHandshakeObservabilityNotConfiguredOutcome =
+                new DataAgentGraphHandshakeCoordinator(
+                    new DataAgentGraphHandshakeOptions(true),
+                    DisabledDataAgentGraphSidecarClient.Instance,
+                    observabilityContext: graphHandshakeObservabilityDefaultContext)
+                .TryHandshake("owner", "Which required gates failed?", graphSidecarProgressResult);
+            DataAgentGraphHandshakeOutcome graphHandshakeObservabilityUnavailableOutcome =
+                new DataAgentGraphHandshakeCoordinator(
+                    new DataAgentGraphHandshakeOptions(true),
+                    new FixedGraphSidecarClient(_ => throw new InvalidOperationException("sidecar offline")),
+                    observabilityContext: graphHandshakeObservabilityConfiguredContext)
+                .TryHandshake("owner", "Which required gates failed?", graphSidecarProgressResult);
+            DataAgentGraphHandshakeOutcome graphHandshakeObservabilityRejectedOutcome =
+                new DataAgentGraphHandshakeCoordinator(
+                    new DataAgentGraphHandshakeOptions(true),
+                    new FixedGraphSidecarClient(request => graphHandshakeSafeResponse with
+                    {
+                        RequestId = request.RequestId,
+                        NoSqlAuthority = false
+                    }),
+                    observabilityContext: graphHandshakeObservabilityConfiguredContext)
+                .TryHandshake("owner", "Which required gates failed?", graphSidecarProgressResult);
+            DataAgentGraphHandshakeOutcome graphHandshakeObservabilityAcceptedOutcome =
+                new DataAgentGraphHandshakeCoordinator(
+                    new DataAgentGraphHandshakeOptions(true),
+                    new FixedGraphSidecarClient(request => graphHandshakeSafeResponse with
+                    {
+                        RequestId = request.RequestId
+                    }),
+                    observabilityContext: graphHandshakeObservabilityConfiguredContext)
+                .TryHandshake("owner", "Which required gates failed?", graphSidecarProgressResult);
+            string graphHandshakeUnsafeObservabilityDiagnostics = DataAgentGraphHandshakeDiagnosticsFormatter.Format(
+                new DataAgentGraphHandshakeOutcome(
+                    DataAgentGraphHandshakeStatus.Rejected,
+                    "unsafe_trace",
+                    true,
+                    graphHandshakeRequest,
+                    null,
+                    new DataAgentGraphHandshakeValidationResult(false, "unsafe_trace"),
+                    new DataAgentGraphSidecarObservabilitySnapshot(
+                        DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+                        DataAgentGraphSidecarObservabilityStatus.Rejected,
+                        SidecarEnabled: true,
+                        EndpointConfigured: true,
+                        RuntimeStartedByAlife: false,
+                        NetworkAttempted: true,
+                        Accepted: false,
+                        FallbackUsed: true,
+                        SafeSummary: "SELECT * FROM engineering_gate [hidden_context]secret[/hidden_context]")));
+            bool graphHandshakeObservabilityModelReady =
+                typeof(DataAgentGraphSidecarObservabilitySnapshot).IsClass &&
+                Enum.IsDefined(typeof(DataAgentGraphSidecarObservabilityStatus), DataAgentGraphSidecarObservabilityStatus.Disabled) &&
+                typeof(DataAgentGraphSidecarObservabilityContext).GetProperty(nameof(DataAgentGraphSidecarObservabilityContext.RuntimeStartedByAlife)) is not null &&
+                graphHandshakeDisabledOutcome.Observability is not null &&
+                graphHandshakeObservabilityAcceptedOutcome.Observability is not null;
+            bool graphHandshakeObservabilityReasonCodesReady =
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.Disabled, "graph_sidecar_disabled", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured, "graph_sidecar_not_configured", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable, "graph_sidecar_runtime_unavailable", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected, "graph_sidecar_response_rejected", StringComparison.Ordinal) &&
+                string.Equals(DataAgentGraphSidecarObservabilityReasonCodes.Accepted, "graph_sidecar_accepted", StringComparison.Ordinal);
+            bool graphHandshakeObservabilityFallbackReasonReady =
+                graphHandshakeDisabledOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.Disabled &&
+                graphHandshakeObservabilityNotConfiguredOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured &&
+                graphHandshakeObservabilityUnavailableOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable &&
+                graphHandshakeObservabilityRejectedOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected &&
+                graphHandshakeObservabilityAcceptedOutcome.Observability?.ReasonCode == DataAgentGraphSidecarObservabilityReasonCodes.Accepted &&
+                graphHandshakeObservabilityRejectedOutcome.Observability.FallbackUsed &&
+                graphHandshakeObservabilityAcceptedOutcome.Observability.FallbackUsed == false;
+            bool graphHandshakeUnsafeDiagnosticsRedacted =
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("graph_sidecar", StringComparison.Ordinal) &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("endpoint_configured=true", StringComparison.Ordinal) &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("network_attempted=true", StringComparison.Ordinal) &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("summary=redacted", StringComparison.Ordinal) &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                graphHandshakeUnsafeObservabilityDiagnostics.Contains("secret", StringComparison.OrdinalIgnoreCase) == false;
+            bool graphHandshakeObservabilityQChatBoundary =
+                string.Equals(typeof(DataAgentGraphSidecarObservabilitySnapshot).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                string.Equals(typeof(DataAgentGraphHandshakeDiagnosticsFormatter).Namespace, "Alife.Function.DataAgent", StringComparison.Ordinal) &&
+                typeof(DataAgentGraphSidecarObservabilitySnapshot).Assembly.GetName().Name?.Contains("QChat", StringComparison.OrdinalIgnoreCase) == false &&
+                typeof(DataAgentGraphSidecarObservabilitySnapshot).Assembly.GetReferencedAssemblies().Any(assemblyName =>
+                    string.Equals(assemblyName.Name, "Alife.Function.QChat", StringComparison.Ordinal)) == false;
+            bool graphHandshakeObservabilityDefaultTestsLiveRuntime =
+                graphHandshakeDefaultHttpOptions.RuntimeStarted ||
+                graphHandshakeDefaultStreamOptions.RuntimeStarted ||
+                graphHandshakeObservabilityDefaultContext.RuntimeStartedByAlife ||
+                graphHandshakeObservabilityConfiguredContext.RuntimeStartedByAlife;
+            bool graphHandshakeObservabilityReady =
+                graphHandshakeDefaultOptions.Enabled == false &&
+                graphHandshakeObservabilityModelReady &&
+                graphHandshakeObservabilityReasonCodesReady &&
+                graphHandshakeObservabilityFallbackReasonReady &&
+                graphHandshakeUnsafeDiagnosticsRedacted &&
+                graphHandshakeStreamSseDeferred &&
+                graphHandshakeObservabilityQChatBoundary &&
+                graphHandshakeObservabilityDefaultTestsLiveRuntime == false;
+            checks.Add(graphHandshakeObservabilityReady
+                ? Pass("GraphHandshakeDevSidecarObservabilityContractPresent", "default_enabled=false;observability_model=true;reason_codes=true;fallback_reason=true;unsafe_diagnostics_redacted=true;sse_deferred=true;qchat_boundary=true;default_tests_live_runtime=false")
+                : Fail("GraphHandshakeDevSidecarObservabilityContractPresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};observability_model={LowerBool(graphHandshakeObservabilityModelReady)};reason_codes={LowerBool(graphHandshakeObservabilityReasonCodesReady)};fallback_reason={LowerBool(graphHandshakeObservabilityFallbackReasonReady)};unsafe_diagnostics_redacted={LowerBool(graphHandshakeUnsafeDiagnosticsRedacted)};sse_deferred={LowerBool(graphHandshakeStreamSseDeferred)};qchat_boundary={LowerBool(graphHandshakeObservabilityQChatBoundary)};default_tests_live_runtime={LowerBool(graphHandshakeObservabilityDefaultTestsLiveRuntime)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
@@ -1871,6 +1976,15 @@ public static class DataAgentReadiness
         public DataAgentGraphHandshakeStreamResult TryHandshakeStream(DataAgentGraphHandshakeRequest request)
         {
             return resultFactory(request);
+        }
+    }
+
+    sealed class FixedGraphSidecarClient(Func<DataAgentGraphHandshakeRequest, DataAgentGraphHandshakeResponse> responseFactory)
+        : IDataAgentGraphSidecarClient
+    {
+        public DataAgentGraphHandshakeResponse TryHandshake(DataAgentGraphHandshakeRequest request)
+        {
+            return responseFactory(request);
         }
     }
 

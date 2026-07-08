@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(75));
+            Assert.That(checks, Has.Count.EqualTo(76));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -94,6 +94,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeStreamingTransportCheck.Detail, Does.Contain("csharp_bridge_authority=true"));
             Assert.That(graphHandshakeStreamingTransportCheck.Detail, Does.Contain("qchat_boundary=true"));
             Assert.That(graphHandshakeStreamingTransportCheck.Detail, Does.Contain("runtime_required=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeDevSidecarObservabilityContractPresent"));
+            DataAgentReadinessCheck graphHandshakeObservabilityCheck = checks.Single(check => check.Name == "GraphHandshakeDevSidecarObservabilityContractPresent");
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("default_enabled=false"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("observability_model=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("reason_codes=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("fallback_reason=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("unsafe_diagnostics_redacted=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("sse_deferred=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("qchat_boundary=true"));
+            Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -208,7 +218,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 90 required passed, 0 required missing"
+                "  Summary: 91 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -234,6 +244,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarAdapterPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarProgressBridgePresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarStreamingTransportPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarObservabilityContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -251,7 +262,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 90"));
+            Assert.That(script, Does.Contain("$expectedRequired = 91"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -539,6 +550,42 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(declaration, Does.Contain("sse_deferred=true"));
             Assert.That(declaration, Does.Contain("qchat_boundary=true"));
+        });
+    }
+
+    [Test]
+    public void StaticReadinessScriptContainsV36SidecarObservabilityMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+        string declaration = FindNewCheckDeclaration(script, "GraphHandshakeDevSidecarObservabilityContractPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarObservabilitySnapshot"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarObservabilityStatus"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarObservabilityReasonCodes"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_disabled"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_not_configured"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_runtime_unavailable"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_response_rejected"));
+            Assert.That(declaration, Does.Contain("graph_sidecar_accepted"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphSidecarObservabilityContext"));
+            Assert.That(declaration, Does.Contain("CreateObservabilitySnapshot"));
+            Assert.That(declaration, Does.Contain("NetworkAttempted"));
+            Assert.That(declaration, Does.Contain("RuntimeStartedByAlife"));
+            Assert.That(declaration, Does.Contain("FormatObservability"));
+            Assert.That(declaration, Does.Contain("graph_sidecar"));
+            Assert.That(declaration, Does.Contain("endpoint_configured"));
+            Assert.That(declaration, Does.Contain("network_attempted"));
+            Assert.That(declaration, Does.Contain("summary="));
+            Assert.That(declaration, Does.Contain("ObservabilityReasonCodesAreStableMachineTokens"));
+            Assert.That(declaration, Does.Contain("UnavailableTimeoutRejectedAndAcceptedOutcomesEmitObservabilitySnapshots"));
+            Assert.That(declaration, Does.Contain("FormatOutcomeWithObservabilityEmitsStableSidecarFields"));
+            Assert.That(declaration, Does.Contain("FormatOutcomeWithObservabilityRedactsUnsafeSummary"));
+            Assert.That(declaration, Does.Contain("sse_deferred=true"));
+            Assert.That(declaration, Does.Contain("qchat_boundary=true"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
         });
     }
 
