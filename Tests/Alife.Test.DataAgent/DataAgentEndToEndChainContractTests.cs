@@ -49,10 +49,16 @@ public sealed class DataAgentEndToEndChainContractTests
         List<string> evidenceDiagnostics = [];
         List<string> traceDiagnostics = [];
         List<string> graphDiagnostics = [];
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault();
+        XmlFunctionExecutionPolicy policy = new();
+        policy.SetGovernedToolNames(router.ToolNames);
+        policy.CurrentRoute = router.Route(
+            "DataAgent analyze project readiness",
+            RouteState(isOwner: true, isPrivateChat: true, isTrustedRuntime: true));
         DataAgentAnalysisToolHandler handler = new(
             orchestrator,
             publishedContexts.Add,
-            new FixedRouteContextAccessor(AllowedContext("dataagent_analysis_start", string.Empty)),
+            new XmlPolicyDataAgentToolRouteContextAccessor(policy),
             evidenceDiagnostics.Add,
             traceDiagnostics.Add,
             new DataAgentTraceRecorder(),
@@ -62,6 +68,9 @@ public sealed class DataAgentEndToEndChainContractTests
                 DataAgentGraphHandshakeOptions.Disabled,
                 DisabledDataAgentGraphSidecarClient.Instance));
 
+        XmlFunctionExecutionDecision startDecision = policy.TryConsume(
+            Function("dataagent_analysis_start"),
+            ContextWithSession(null));
         string context = handler.Start("owner", "DataAgent analyze project readiness");
         string sessionId = ReadContextValue(context, "session_id=");
         XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
@@ -112,11 +121,17 @@ public sealed class DataAgentEndToEndChainContractTests
 
         Assert.Multiple(() =>
         {
+            Assert.That(startDecision.IsAllowed, Is.True);
             Assert.That(dataStore.QueryCount, Is.EqualTo(1));
             Assert.That(dataStore.AcceptedAudit, Has.Count.EqualTo(1));
             Assert.That(dataStore.RejectedAudit, Is.Empty);
             Assert.That(context, Does.Contain("[data_agent_analysis_session_context]"));
             Assert.That(context, Does.Contain("orchestration_trace=RouteGate:Succeeded>SchemaContext:Succeeded>Plan:Succeeded>Validate:Succeeded>Execute:Succeeded>Explain:Succeeded>Checkpoint:Succeeded"));
+            Assert.That(context, Does.Contain("route_present=true"));
+            Assert.That(context, Does.Contain("route_tool=dataagent_analysis_start"));
+            Assert.That(context, Does.Contain("route_allows_query=true"));
+            Assert.That(context, Does.Contain("route_reason_code=route_allowed"));
+            Assert.That(context, Does.Contain("route_session_id="));
             Assert.That(context, Does.Contain("[data_agent_context]"));
             Assert.That(context, Does.Contain("sql_status=validated"));
             Assert.That(sessionId, Is.Not.Empty);
@@ -128,6 +143,7 @@ public sealed class DataAgentEndToEndChainContractTests
             Assert.That(activeState.HasActiveDataAgentSession, Is.True);
             Assert.That(evidenceDiagnostics.Single(), Does.Contain("DataAgent evidence diagnostics"));
             Assert.That(evidenceDiagnostics.Single(), Does.Contain("route_allowed=true"));
+            Assert.That(evidenceDiagnostics.Single(), Does.Contain("route_allows_query=true"));
             Assert.That(evidenceDiagnostics.Single(), Does.Contain("executed_sql=true"));
             Assert.That(traceDiagnostics.Single(), Does.Contain("DataAgent trace diagnostics"));
             Assert.That(traceDiagnostics.Single(), Does.Contain("RouteGate Succeeded reason=route_allowed"));
@@ -563,18 +579,6 @@ public sealed class DataAgentEndToEndChainContractTests
                     "high",
                     ["dataagent-v3.8", "chain-contract"],
                     "deterministic document index plan"));
-        }
-    }
-
-    sealed class FixedRouteContextAccessor(DataAgentToolRouteContext routeContext) : IDataAgentToolRouteContextAccessor
-    {
-        public DataAgentToolRouteContext Get(string toolName, string? sessionId)
-        {
-            return routeContext with
-            {
-                ToolName = toolName,
-                RouteSessionId = sessionId ?? routeContext.RouteSessionId
-            };
         }
     }
 

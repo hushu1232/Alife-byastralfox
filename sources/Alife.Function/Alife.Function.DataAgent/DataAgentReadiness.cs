@@ -784,6 +784,8 @@ public static class DataAgentReadiness
             }
             bool ContractContains(string source, string marker) =>
                 source.Contains(marker, StringComparison.Ordinal);
+            bool ContractDoesNotContainComposedForbiddenToken(string source, string prefix, string suffix) =>
+                source.Contains(prefix + suffix, StringComparison.Ordinal) == false;
             int firstTestStart = dataAgentEndToEndContractSource.IndexOf("\n    [Test]", StringComparison.Ordinal);
             string dataAgentEndToEndClassConstantsSource = firstTestStart < 0
                 ? dataAgentEndToEndContractSource
@@ -823,17 +825,30 @@ public static class DataAgentReadiness
                 ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.RouteGate") &&
                 ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Reject") &&
                 ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Checkpoint") &&
-                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Execute") &&
-                ContractContains(dataAgentEndToEndRouteDeniedSource, "ExecutedSql") &&
-                ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount") &&
-                ContractContains(dataAgentEndToEndRouteDeniedSource, "AcceptedAudit") &&
-                ContractContains(dataAgentEndToEndRouteDeniedSource, "RejectedAudit");
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "step.ExecutedSql), Is.False") &&
+                (ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount, Is.Zero") ||
+                 ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount, Is.EqualTo(0)")) &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "AcceptedAudit, Is.Empty") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "RejectedAudit, Is.Empty") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "owner_private_required");
             bool dataAgentEndToEndTerminalNoExecuteReady =
                 ContractContains(dataAgentEndToEndTerminalActionsSource, "TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped") &&
                 ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_summarize") &&
                 ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_end") &&
-                ContractContains(dataAgentEndToEndTerminalActionsSource, "DataAgentOrchestrationNodeKind.Execute") &&
-                ContractContains(dataAgentEndToEndTerminalActionsSource, "ExecutedSql") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summary.Steps.Any(step => step.ExecutedSql), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "end.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "end.Steps.Any(step => step.ExecutedSql), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "queryCountAfterStart, Is.EqualTo(1)") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataStore.QueryCount, Is.EqualTo(1)") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeMissingSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeWrongSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeMatchingSession.IsAllowed, Is.True") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endMissingSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endWrongSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endMatchingSession.IsAllowed, Is.True") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "tool_route_required") &&
                 ContractContains(dataAgentEndToEndTerminalActionsSource, "tool_session_not_allowed_in_current_route");
             bool dataAgentEndToEndSidecarAuthorityBoundaryReady =
                 ContractContains(dataAgentEndToEndOfflineBoundarySource, "sidecar_authority=false") &&
@@ -845,7 +860,12 @@ public static class DataAgentReadiness
                 ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Start-\" + \"Process\")") &&
                 ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"uvi\" + \"corn\")") &&
                 ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"127.0.0.\" + \"1:8765\")") &&
-                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Event\" + \"Source\")");
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Event\" + \"Source\")") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Invoke-", "WebRequest") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Start-", "Process") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "uvi", "corn") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "127.0.0.", "1:8765") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Event", "Source");
             bool dataAgentEndToEndChainContractReady =
                 dataAgentEndToEndRouteBoundaryReady &&
                 dataAgentEndToEndXmlPolicyReady &&
