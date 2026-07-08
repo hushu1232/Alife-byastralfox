@@ -31,6 +31,11 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         builder.AppendLine("scoped_node_manifest=true");
         builder.AppendLine("runtime_required=false");
 
+        if (outcome.Observability is not null)
+        {
+            builder.AppendLine(FormatObservability(outcome.Observability));
+        }
+
         if (outcome.Response is not null)
         {
             builder.AppendLine($"selected_nodes={FormatTokens(outcome.Response.SelectedNodes)}");
@@ -54,6 +59,21 @@ public static class DataAgentGraphHandshakeDiagnosticsFormatter
         return string.Join(",", values
             .Take(DataAgentGraphHandshakeLimits.MaxNodeManifests)
             .Select(SafeToken));
+    }
+
+    static string FormatObservability(DataAgentGraphSidecarObservabilitySnapshot snapshot)
+    {
+        return string.Join(' ',
+            "graph_sidecar",
+            $"status={SafeToken(snapshot.Status.ToString().ToLowerInvariant())}",
+            $"reason={SafeToken(snapshot.ReasonCode)}",
+            $"enabled={Bool(snapshot.SidecarEnabled)}",
+            $"endpoint_configured={Bool(snapshot.EndpointConfigured)}",
+            $"runtime_started_by_alife={Bool(snapshot.RuntimeStartedByAlife)}",
+            $"network_attempted={Bool(snapshot.NetworkAttempted)}",
+            $"accepted={Bool(snapshot.Accepted)}",
+            $"fallback={Bool(snapshot.FallbackUsed)}",
+            $"summary={SafeDiagnosticText(snapshot.SafeSummary, DataAgentGraphHandshakeLimits.MaxReasonCodeLength)}");
     }
 
     static string FormatProgress(IReadOnlyList<DataAgentGraphHandshakeProgress>? progress)

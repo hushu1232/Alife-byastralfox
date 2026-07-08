@@ -32,6 +32,75 @@ public sealed class DataAgentGraphHandshakeDiagnosticsFormatterTests
     }
 
     [Test]
+    public void FormatOutcomeWithObservabilityEmitsStableSidecarFields()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Rejected,
+            "sql_authority_requested",
+            FallbackRequired: true,
+            request,
+            Response: null,
+            new DataAgentGraphHandshakeValidationResult(false, "sql_authority_requested"),
+            new DataAgentGraphSidecarObservabilitySnapshot(
+                DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+                DataAgentGraphSidecarObservabilityStatus.Rejected,
+                SidecarEnabled: true,
+                EndpointConfigured: true,
+                RuntimeStartedByAlife: false,
+                NetworkAttempted: true,
+                Accepted: false,
+                FallbackUsed: true,
+                SafeSummary: "graph_sidecar_response_rejected"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("graph_sidecar status=rejected"));
+            Assert.That(formatted, Does.Contain("reason=graph_sidecar_response_rejected"));
+            Assert.That(formatted, Does.Contain("enabled=true"));
+            Assert.That(formatted, Does.Contain("endpoint_configured=true"));
+            Assert.That(formatted, Does.Contain("runtime_started_by_alife=false"));
+            Assert.That(formatted, Does.Contain("network_attempted=true"));
+            Assert.That(formatted, Does.Contain("accepted=false"));
+            Assert.That(formatted, Does.Contain("fallback=true"));
+        });
+    }
+
+    [Test]
+    public void FormatOutcomeWithObservabilityRedactsUnsafeSummary()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeOutcome outcome = new(
+            DataAgentGraphHandshakeStatus.Rejected,
+            "unsafe_trace",
+            FallbackRequired: true,
+            request,
+            Response: null,
+            new DataAgentGraphHandshakeValidationResult(false, "unsafe_trace"),
+            new DataAgentGraphSidecarObservabilitySnapshot(
+                DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+                DataAgentGraphSidecarObservabilityStatus.Rejected,
+                SidecarEnabled: true,
+                EndpointConfigured: true,
+                RuntimeStartedByAlife: false,
+                NetworkAttempted: true,
+                Accepted: false,
+                FallbackUsed: true,
+                SafeSummary: "SELECT * FROM document_index"));
+
+        string formatted = DataAgentGraphHandshakeDiagnosticsFormatter.Format(outcome);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("summary=redacted"));
+            Assert.That(formatted, Does.Not.Contain("SELECT"));
+            Assert.That(formatted, Does.Not.Contain("document_index"));
+        });
+    }
+
+    [Test]
     public void FormatAcceptedOutcomeEmitsSelectedNodesAndBoundsTrace()
     {
         DataAgentGraphHandshakeRequest request = NewRequest();
