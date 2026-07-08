@@ -20,6 +20,11 @@ response is received and accepted by `DataAgentGraphHandshakeValidator`. Only
 after the final response is accepted may progress be published by
 `DataAgentGraphSidecarProgressBridge`.
 
+The dev stub final response may still include normal `NodeProgress` entries so
+the non-stream `/handshake` endpoint keeps its V3.2 progress shape. In the
+stream path, the coordinator publishes the buffered `Progress` envelope events
+only after final response acceptance.
+
 ## Failure Semantics
 
 The stream client reports explicit failure reason codes for stream transport
@@ -31,8 +36,8 @@ and schema failures:
 - `sidecar_timeout`
 - `sidecar_unavailable`
 
-No sidecar progress is published for rejected, invalid, timed out, unavailable,
-malformed, incomplete, or over-budget streams.
+Rejected, invalid, timed out, unavailable, malformed, incomplete, and
+over-budget streams publish no sidecar progress.
 
 ## Boundaries
 

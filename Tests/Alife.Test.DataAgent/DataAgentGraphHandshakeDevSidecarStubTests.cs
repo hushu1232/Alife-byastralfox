@@ -4,7 +4,7 @@ namespace Alife.Test.DataAgent;
 public sealed class DataAgentGraphHandshakeDevSidecarStubTests
 {
     [Test]
-    public void PythonDevStubExposesOnlyHandshakeAndHealthEndpoints()
+    public void PythonDevStubExposesManualLocalOnlyEndpoints()
     {
         string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string app = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "app.py"));
@@ -129,6 +129,10 @@ public sealed class DataAgentGraphHandshakeDevSidecarStubTests
             Assert.That(readme, Does.Contain("V3.3"));
             Assert.That(readme, Does.Contain("/handshake-stream"));
             Assert.That(readme, Does.Contain("NDJSON"));
+            Assert.That(readme, Does.Contain("ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_ENABLED"));
+            Assert.That(readme, Does.Contain("ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_ENDPOINT"));
+            Assert.That(readme, Does.Contain("ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_TIMEOUT_MS"));
+            Assert.That(readme, Does.Contain("DataAgentGraphSidecarProgressBridge"));
             Assert.That(readme, Does.Contain("SSE is deferred"));
             Assert.That(readme, Does.Contain("buffered until the final response is accepted"));
             Assert.That(readme, Does.Contain("default tests do not require Python"));
@@ -137,6 +141,10 @@ public sealed class DataAgentGraphHandshakeDevSidecarStubTests
             Assert.That(doc, Does.Contain("invalid_stream_schema"));
             Assert.That(doc, Does.Contain("missing_stream_final_response"));
             Assert.That(doc, Does.Contain("stream_progress_over_budget"));
+            Assert.That(doc, Does.Contain("sidecar_timeout"));
+            Assert.That(doc, Does.Contain("sidecar_unavailable"));
+            Assert.That(doc, Does.Contain("Rejected, invalid, timed out, unavailable, malformed, incomplete, and"));
+            Assert.That(doc, Does.Contain("over-budget streams publish no sidecar progress"));
             Assert.That(doc, Does.Contain("SSE is deferred"));
         });
     }

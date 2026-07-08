@@ -1,11 +1,11 @@
 # DataAgent Graph Dev Sidecar
 
-This is an optional local-only development stub for DataAgent V3.1/V3.2.
+This is an optional local-only development stub for DataAgent V3.1/V3.2/V3.3.
 
 It is not a production runtime, not a LangGraph runtime, and not started by
 the C# application. It exists so developers can manually exercise the V3.1
-HTTP sidecar adapter and V3.2 progress shape while C# remains the authority
-boundary.
+HTTP sidecar adapter, V3.2 progress shape, and V3.3 NDJSON stream smoke while
+C# remains the authority boundary.
 
 ## Run Manually
 
