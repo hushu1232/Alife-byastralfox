@@ -58,3 +58,30 @@ reserved C# stamped fact keys. C# stamps facts such as `source=graph_sidecar`,
 `node`, and `request_id` after validation. default tests do not require Python,
 FastAPI, uvicorn, a live port, network access, QChat, QQ, PostgreSQL, browser
 automation, model calls, or a live sidecar.
+
+## V3.3 NDJSON Stream
+
+V3.3 adds an optional `/handshake-stream` endpoint for local NDJSON transport
+smoke testing. It returns one JSON object per line: progress events first, then
+a final response event.
+
+Configure DataAgent separately when manually exercising the stream path:
+
+```powershell
+$env:ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_ENABLED = "true"
+$env:ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_ENDPOINT = "http://127.0.0.1:8765/handshake-stream"
+$env:ALIFE_DATAAGENT_GRAPH_HANDSHAKE_STREAM_TIMEOUT_MS = "800"
+```
+
+Progress events are untrusted and are buffered until the final response is accepted
+by `DataAgentGraphHandshakeValidator`. After acceptance, C# may publish the
+buffered progress through `DataAgentGraphSidecarProgressBridge`. Rejected,
+invalid, timed out, unavailable, malformed, incomplete, or over-budget streams do
+not publish sidecar progress.
+
+SSE is deferred. This stub does not implement `text/event-stream`, event ids,
+heartbeats, reconnect behavior, or browser-facing stream behavior.
+
+The default tests do not require Python, FastAPI, uvicorn, a live port, network
+access, QChat, QQ, PostgreSQL, browser automation, model calls, or a live
+sidecar.

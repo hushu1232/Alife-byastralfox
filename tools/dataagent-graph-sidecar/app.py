@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 
@@ -55,8 +58,7 @@ def health() -> dict[str, str]:
     return {"status": "ok", "runtime": "dev_sidecar"}
 
 
-@app.post("/handshake")
-def handshake(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
+def build_handshake_response(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
     selected_nodes = ["scenario_knowledge", "query_planner", "diagnostics_router"]
     return GraphHandshakeResponse(
         RequestId=request.RequestId,
@@ -94,4 +96,25 @@ def handshake(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
         RequestedToolNames=["dataagent.query_plan.propose", "dataagent.diagnostics.progress.read"],
         RequestsCheckpointMutation=False,
         RequestsVisibleText=False,
+    )
+
+
+@app.post("/handshake")
+def handshake(request: GraphHandshakeRequest) -> GraphHandshakeResponse:
+    return build_handshake_response(request)
+
+
+def stream_handshake_events(response: GraphHandshakeResponse) -> Iterable[str]:
+    for progress in response.NodeProgress:
+        yield json.dumps({"Kind": "Progress", "Progress": progress.model_dump()}) + "\n"
+
+    yield json.dumps({"Kind": "FinalResponse", "Response": response.model_dump()}) + "\n"
+
+
+@app.post("/handshake-stream")
+def handshake_stream(request: GraphHandshakeRequest) -> StreamingResponse:
+    response = build_handshake_response(request)
+    return StreamingResponse(
+        stream_handshake_events(response),
+        media_type="application/x-ndjson",
     )

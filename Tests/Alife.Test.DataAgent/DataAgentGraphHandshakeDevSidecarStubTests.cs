@@ -100,6 +100,47 @@ public sealed class DataAgentGraphHandshakeDevSidecarStubTests
         });
     }
 
+    [Test]
+    public void PythonDevStubDocumentsV33NdjsonStreamWithoutRuntimeDependency()
+    {
+        string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string app = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "app.py"));
+        string readme = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "README.md"));
+        string doc = File.ReadAllText(Path.Combine(root, "docs", "dataagent", "dataagent-v3.3-ndjson-streaming-transport.md"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(app, Does.Contain("@app.post(\"/handshake-stream\")"));
+            Assert.That(app, Does.Contain("StreamingResponse"));
+            Assert.That(app, Does.Contain("application/x-ndjson"));
+            Assert.That(app, Does.Contain("\"Kind\": \"Progress\""));
+            Assert.That(app, Does.Contain("\"Kind\": \"FinalResponse\""));
+            Assert.That(app, Does.Contain("\"Progress\""));
+            Assert.That(app, Does.Contain("\"Response\""));
+            Assert.That(app, Does.Contain("\"stage\": \"planner\""));
+            Assert.That(app, Does.Not.Contain("\"source\": \"graph_sidecar\""));
+            Assert.That(app, Does.Not.Contain("\"node\":"));
+            Assert.That(app, Does.Not.Contain("\"request_id\":"));
+            Assert.That(app, Does.Not.Contain("EventSource"));
+            Assert.That(app, Does.Not.Contain("text/event-stream"));
+            Assert.That(app, Does.Not.Contain("subprocess"));
+            Assert.That(app, Does.Not.Contain("sqlite"));
+            Assert.That(app, Does.Not.Contain("postgres"));
+            Assert.That(readme, Does.Contain("V3.3"));
+            Assert.That(readme, Does.Contain("/handshake-stream"));
+            Assert.That(readme, Does.Contain("NDJSON"));
+            Assert.That(readme, Does.Contain("SSE is deferred"));
+            Assert.That(readme, Does.Contain("buffered until the final response is accepted"));
+            Assert.That(readme, Does.Contain("default tests do not require Python"));
+            Assert.That(doc, Does.Contain("DataAgent V3.3"));
+            Assert.That(doc, Does.Contain("NDJSON streaming transport smoke"));
+            Assert.That(doc, Does.Contain("invalid_stream_schema"));
+            Assert.That(doc, Does.Contain("missing_stream_final_response"));
+            Assert.That(doc, Does.Contain("stream_progress_over_budget"));
+            Assert.That(doc, Does.Contain("SSE is deferred"));
+        });
+    }
+
     static string FindRepoRoot(string startDirectory)
     {
         DirectoryInfo? directory = new(startDirectory);
