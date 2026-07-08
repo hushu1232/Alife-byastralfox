@@ -1,6 +1,6 @@
 # DataAgent Graph Dev Sidecar
 
-This is an optional local-only development stub for DataAgent V3.1/V3.2/V3.3.
+This is an optional local-only development stub for DataAgent V3.1+.
 
 It is not a production runtime, not a LangGraph runtime, and not started by
 the C# application. It exists so developers can manually exercise the V3.1

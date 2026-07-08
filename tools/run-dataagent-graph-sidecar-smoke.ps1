@@ -131,6 +131,10 @@ function Test-ForbiddenToolName {
     }
 
     $forbiddenMarkers = @(
+        "sql.execute",
+        "execute_sql",
+        "execute-readonly",
+        "execute_readonly",
         "qchat",
         "qq",
         "browser",
@@ -149,29 +153,108 @@ function Test-ForbiddenToolName {
     return $false
 }
 
-function Test-ReservedProgressFacts {
-    param($Facts)
+function Test-ExactStringInList {
+    param($Values, [string]$Value)
 
-    if ($null -eq $Facts) {
-        return $false
-    }
-
-    $reserved = @("source", "node", "request_id")
-    foreach ($key in $Facts.PSObject.Properties.Name) {
-        foreach ($reservedKey in $reserved) {
-            if ([string]::Equals($key, $reservedKey, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
-            }
+    foreach ($candidate in $Values) {
+        if ([string]::Equals([string]$candidate, $Value, [System.StringComparison]::Ordinal)) {
+            return $true
         }
     }
 
     return $false
 }
 
+function New-HandshakeRequestContract {
+    param($Request)
+
+    $requestId = Assert-RequiredString $Request "RequestId"
+    $manifests = Assert-NonEmptyList $Request "NodeManifests"
+    $allowedNodeNames = @()
+    $allowedToolNames = @()
+
+    foreach ($manifest in $manifests) {
+        $nodeName = Assert-RequiredString $manifest "NodeName"
+        if ((Test-ExactStringInList $allowedNodeNames $nodeName) -eq $false) {
+            $allowedNodeNames += $nodeName
+        }
+
+        $manifestTools = Assert-NonEmptyList $manifest "AllowedToolNames"
+        foreach ($toolName in $manifestTools) {
+            if ($toolName -isnot [string] -or [string]::IsNullOrWhiteSpace($toolName)) {
+                throw "NodeManifests AllowedToolNames entries must be non-empty strings."
+            }
+
+            if ((Test-ExactStringInList $allowedToolNames $toolName) -eq $false) {
+                $allowedToolNames += $toolName
+            }
+        }
+    }
+
+    [pscustomobject]@{
+        RequestId = $requestId
+        AllowedNodeNames = $allowedNodeNames
+        AllowedToolNames = $allowedToolNames
+    }
+}
+
+function Assert-AllowedNodeName {
+    param($Object, [string]$Name, $AllowedNodeNames)
+
+    $nodeName = Assert-RequiredString $Object $Name
+    if ((Test-ExactStringInList $AllowedNodeNames $nodeName) -eq $false) {
+        throw ("{0} must belong to the request NodeManifests: {1}" -f $Name, $nodeName)
+    }
+
+    return $nodeName
+}
+
+function Assert-ProgressFacts {
+    param($Facts)
+
+    if ($null -eq $Facts) {
+        return
+    }
+
+    $baseFacts = $Facts.PSObject.BaseObject
+    if ($baseFacts -isnot [System.Management.Automation.PSCustomObject]) {
+        throw "NodeProgress Facts must be a JSON object with string values."
+    }
+
+    $reserved = @("source", "node", "request_id")
+    foreach ($key in $Facts.PSObject.Properties.Name) {
+        if ([string]::IsNullOrWhiteSpace($key)) {
+            throw "NodeProgress Facts keys must be non-empty strings."
+        }
+
+        foreach ($reservedKey in $reserved) {
+            if ([string]::Equals($key, $reservedKey, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw "NodeProgress Facts must not include reserved C# stamped keys source, node, or request_id."
+            }
+        }
+
+        if ($Facts.$key -isnot [string]) {
+            throw "NodeProgress Facts values must be strings."
+        }
+    }
+}
+
 function Assert-PropertyPresent {
     param($Object, [string]$Name)
 
-    if ($null -eq $Object -or $Object.PSObject.Properties.Name -notcontains $Name) {
+    if ($null -eq $Object) {
+        throw ("missing property {0}" -f $Name)
+    }
+
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) {
+            return
+        }
+
+        throw ("missing property {0}" -f $Name)
+    }
+
+    if ($Object.PSObject.Properties.Name -notcontains $Name) {
         throw ("missing property {0}" -f $Name)
     }
 }
@@ -180,7 +263,12 @@ function Assert-RequiredString {
     param($Object, [string]$Name)
 
     Assert-PropertyPresent $Object $Name
-    $value = $Object.$Name
+    if ($Object -is [System.Collections.IDictionary]) {
+        $value = $Object[$Name]
+    }
+    else {
+        $value = $Object.$Name
+    }
     if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
         throw ("{0} must be a non-empty string." -f $Name)
     }
@@ -192,7 +280,12 @@ function Assert-BooleanEquals {
     param($Object, [string]$Name, [bool]$Expected)
 
     Assert-PropertyPresent $Object $Name
-    $value = $Object.$Name
+    if ($Object -is [System.Collections.IDictionary]) {
+        $value = $Object[$Name]
+    }
+    else {
+        $value = $Object.$Name
+    }
     if ($value -isnot [bool]) {
         throw ("{0} must be a JSON boolean." -f $Name)
     }
@@ -206,7 +299,12 @@ function Assert-NonEmptyList {
     param($Object, [string]$Name)
 
     Assert-PropertyPresent $Object $Name
-    $value = $Object.$Name
+    if ($Object -is [System.Collections.IDictionary]) {
+        $value = $Object[$Name]
+    }
+    else {
+        $value = $Object.$Name
+    }
     if ($null -eq $value) {
         throw ("{0} must be non-null." -f $Name)
     }
@@ -242,11 +340,12 @@ function Assert-AllowedProgressStatus {
 }
 
 function Test-HandshakeResponse {
-    param($Response, [string]$ExpectedRequestId)
+    param($Response, $Request)
 
+    $contract = New-HandshakeRequestContract $Request
     $requestId = Assert-RequiredString $Response "RequestId"
-    if ($requestId -ne $ExpectedRequestId) {
-        throw ("RequestId mismatch: expected {0}, got {1}" -f $ExpectedRequestId, $requestId)
+    if ($requestId -ne $contract.RequestId) {
+        throw ("RequestId mismatch: expected {0}, got {1}" -f $contract.RequestId, $requestId)
     }
 
     Assert-BooleanEquals $Response "Accepted" $true
@@ -260,6 +359,16 @@ function Test-HandshakeResponse {
     $nodeProgress = Assert-NonEmptyList $Response "NodeProgress"
     $requestedToolNames = Assert-NonEmptyList $Response "RequestedToolNames"
 
+    foreach ($nodeName in $selectedNodes) {
+        if ($nodeName -isnot [string] -or [string]::IsNullOrWhiteSpace($nodeName)) {
+            throw "SelectedNodes entries must be non-empty strings."
+        }
+
+        if ((Test-ExactStringInList $contract.AllowedNodeNames $nodeName) -eq $false) {
+            throw ("SelectedNodes entries must belong to the request NodeManifests: {0}" -f $nodeName)
+        }
+    }
+
     foreach ($toolName in $requestedToolNames) {
         if ($toolName -isnot [string] -or [string]::IsNullOrWhiteSpace($toolName)) {
             throw "RequestedToolNames entries must be non-empty strings."
@@ -268,16 +377,18 @@ function Test-HandshakeResponse {
         if (Test-ForbiddenToolName ([string]$toolName)) {
             throw ("RequestedToolNames contains forbidden authority marker: {0}" -f $toolName)
         }
+
+        if ((Test-ExactStringInList $contract.AllowedToolNames $toolName) -eq $false) {
+            throw ("RequestedToolNames entries must belong to the request NodeManifests AllowedToolNames: {0}" -f $toolName)
+        }
     }
 
     foreach ($progress in $nodeProgress) {
-        Assert-RequiredString $progress "NodeName" | Out-Null
+        Assert-AllowedNodeName $progress "NodeName" $contract.AllowedNodeNames | Out-Null
         $status = Assert-RequiredString $progress "Status"
         Assert-AllowedProgressStatus $status
         Assert-RequiredString $progress "ReasonCode" | Out-Null
-        if (Test-ReservedProgressFacts $progress.Facts) {
-            throw "NodeProgress Facts must not include reserved C# stamped keys source, node, or request_id."
-        }
+        Assert-ProgressFacts $progress.Facts
     }
 }
 
@@ -321,7 +432,9 @@ function ConvertFrom-StrictJson {
 }
 
 function Test-NdjsonStream {
-    param([string]$Body, [string]$ExpectedRequestId)
+    param([string]$Body, $Request)
+
+    $contract = New-HandshakeRequestContract $Request
 
     $lines = @($Body -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     if ($lines.Count -eq 0) {
@@ -349,14 +462,11 @@ function Test-NdjsonStream {
                 throw "Progress event must contain Progress and must not contain Response."
             }
 
-            Assert-RequiredString $event.Progress "NodeName" | Out-Null
+            Assert-AllowedNodeName $event.Progress "NodeName" $contract.AllowedNodeNames | Out-Null
             $status = Assert-RequiredString $event.Progress "Status"
             Assert-RequiredString $event.Progress "ReasonCode" | Out-Null
             Assert-AllowedProgressStatus $status
-
-            if (Test-ReservedProgressFacts $event.Progress.Facts) {
-                throw "Stream progress Facts must not include reserved C# stamped keys source, node, or request_id."
-            }
+            Assert-ProgressFacts $event.Progress.Facts
 
             $progressCount++
             continue
@@ -368,7 +478,7 @@ function Test-NdjsonStream {
 
         $seenFinal = $true
         $finalCount++
-        Test-HandshakeResponse $event.Response $ExpectedRequestId
+        Test-HandshakeResponse $event.Response $Request
     }
 
     if ($progressCount -le 0) {
@@ -414,7 +524,7 @@ try {
     try {
         $handshakeResponse = Invoke-SidecarRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake") -Body $request -TimeoutSeconds $timeoutSeconds
         $handshake = ConvertFrom-StrictJson $handshakeResponse.Content
-        Test-HandshakeResponse $handshake $request.RequestId
+        Test-HandshakeResponse $handshake $request
         Write-Pass "handshake" ("accepted=true selected_nodes={0} progress={1}" -f @($handshake.SelectedNodes).Count, @($handshake.NodeProgress).Count)
     }
     catch {
@@ -433,7 +543,7 @@ try {
             throw ("expected application/x-ndjson content type, got {0}" -f $contentType)
         }
 
-        $stream = Test-NdjsonStream $streamResponse.Content $request.RequestId
+        $stream = Test-NdjsonStream $streamResponse.Content $request
         Write-Pass "handshake-stream" ("progress={0} final_response={1}" -f $stream.ProgressCount, $stream.FinalResponse.ToString().ToLowerInvariant())
     }
     catch {
