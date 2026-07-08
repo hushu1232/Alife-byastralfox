@@ -149,6 +149,48 @@ public sealed class DataAgentGraphHandshakeDevSidecarStubTests
         });
     }
 
+    [Test]
+    public void PythonDevStubDocumentsV34LiveSmokeHarnessWithoutRuntimeStartup()
+    {
+        string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(root, "tools", "run-dataagent-graph-sidecar-smoke.ps1"));
+        string readme = File.ReadAllText(Path.Combine(root, "tools", "dataagent-graph-sidecar", "README.md"));
+        string doc = File.ReadAllText(Path.Combine(root, "docs", "dataagent", "dataagent-v3.4-dev-sidecar-live-smoke-harness.md"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("DataAgent graph sidecar live smoke"));
+            Assert.That(script, Does.Contain("/health"));
+            Assert.That(script, Does.Contain("/handshake"));
+            Assert.That(script, Does.Contain("/handshake-stream"));
+            Assert.That(script, Does.Contain("application/x-ndjson"));
+            Assert.That(script, Does.Contain("Assert-LoopbackBaseUri"));
+            Assert.That(script, Does.Contain("Invoke-SidecarRequest"));
+            Assert.That(script, Does.Contain("Test-HandshakeResponse"));
+            Assert.That(script, Does.Contain("Test-NdjsonStream"));
+            Assert.That(script, Does.Contain("starts_runtime=false"));
+            Assert.That(script, Does.Contain("installs_dependencies=false"));
+            Assert.That(script, Does.Contain("manual_only=true"));
+            Assert.That(script, Does.Not.Contain("Start-Process"));
+            Assert.That(script, Does.Not.Contain("pip install"));
+            Assert.That(script, Does.Not.Contain("python -m venv"));
+            Assert.That(script, Does.Not.Contain("uvicorn app:app"));
+            Assert.That(script, Does.Not.Contain("text/event-stream"));
+            Assert.That(script, Does.Not.Contain("EventSource"));
+            Assert.That(readme, Does.Contain("V3.4"));
+            Assert.That(readme, Does.Contain("run-dataagent-graph-sidecar-smoke.ps1"));
+            Assert.That(readme, Does.Contain("does not start Python"));
+            Assert.That(readme, Does.Contain("does not install dependencies"));
+            Assert.That(readme, Does.Contain("already running sidecar"));
+            Assert.That(readme, Does.Contain("SSE is deferred"));
+            Assert.That(doc, Does.Contain("DataAgent V3.4"));
+            Assert.That(doc, Does.Contain("manual live smoke"));
+            Assert.That(doc, Does.Contain("already running sidecar"));
+            Assert.That(doc, Does.Contain("default tests do not call a live sidecar"));
+            Assert.That(doc, Does.Contain("QChat"));
+        });
+    }
+
     static string FindRepoRoot(string startDirectory)
     {
         DirectoryInfo? directory = new(startDirectory);
