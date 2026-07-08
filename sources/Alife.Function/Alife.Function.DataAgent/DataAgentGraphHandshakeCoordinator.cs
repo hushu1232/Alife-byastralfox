@@ -22,11 +22,13 @@ public sealed class DisabledDataAgentGraphSidecarClient : IDataAgentGraphSidecar
 public sealed class DataAgentGraphHandshakeCoordinator(
     DataAgentGraphHandshakeOptions options,
     IDataAgentGraphSidecarClient? sidecarClient = null,
-    DataAgentGraphSidecarProgressBridge? progressBridge = null)
+    DataAgentGraphSidecarProgressBridge? progressBridge = null,
+    IDataAgentGraphHandshakeStreamClient? streamClient = null)
 {
     readonly DataAgentGraphHandshakeOptions options = options ?? throw new ArgumentNullException(nameof(options));
     readonly IDataAgentGraphSidecarClient sidecarClient = sidecarClient ?? DisabledDataAgentGraphSidecarClient.Instance;
     readonly DataAgentGraphSidecarProgressBridge? progressBridge = progressBridge;
+    readonly IDataAgentGraphHandshakeStreamClient? streamClient = streamClient;
 
     public DataAgentGraphHandshakeOutcome TryHandshake(
         string callerId,
@@ -46,6 +48,9 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             : goalOrQuestion.Trim();
         if (TryBuildRequest(normalizedCaller, normalizedQuestion, result, out DataAgentGraphHandshakeRequest? request) == false)
             return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_request_schema", fallbackRequired: true, request: null);
+
+        if (streamClient is not null)
+            return TryStreamHandshake(request!, result);
 
         try
         {
@@ -75,6 +80,50 @@ public sealed class DataAgentGraphHandshakeCoordinator(
         catch (DataAgentGraphSidecarInvalidResponseException)
         {
             return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_response_schema", fallbackRequired: true, request);
+        }
+        catch (TimeoutException)
+        {
+            return Outcome(DataAgentGraphHandshakeStatus.Timeout, "sidecar_timeout", fallbackRequired: true, request);
+        }
+        catch (Exception)
+        {
+            return Outcome(DataAgentGraphHandshakeStatus.Unavailable, "sidecar_unavailable", fallbackRequired: true, request);
+        }
+    }
+
+    DataAgentGraphHandshakeOutcome TryStreamHandshake(
+        DataAgentGraphHandshakeRequest request,
+        DataAgentOrchestrationResult result)
+    {
+        try
+        {
+            DataAgentGraphHandshakeStreamResult streamResult = streamClient!.TryHandshakeStream(request);
+            DataAgentGraphHandshakeValidationResult validation =
+                DataAgentGraphHandshakeValidator.Validate(request, streamResult.Response);
+            if (validation.Accepted == false)
+            {
+                return Outcome(
+                    DataAgentGraphHandshakeStatus.Rejected,
+                    validation.ReasonCode,
+                    fallbackRequired: true,
+                    request,
+                    response: null,
+                    validation);
+            }
+
+            PublishProgressIfAvailable(request, result, streamResult.Progress);
+
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Accepted,
+                validation.ReasonCode,
+                streamResult.Response.FallbackRequired,
+                request,
+                streamResult.Response,
+                validation);
+        }
+        catch (DataAgentGraphSidecarInvalidStreamException exception)
+        {
+            return Outcome(DataAgentGraphHandshakeStatus.Invalid, exception.ReasonCode, fallbackRequired: true, request);
         }
         catch (TimeoutException)
         {

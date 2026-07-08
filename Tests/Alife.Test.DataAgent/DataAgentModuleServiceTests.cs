@@ -196,6 +196,41 @@ public sealed class DataAgentModuleServiceTests
         Assert.That(client, Is.TypeOf<DataAgentGraphHandshakeHttpClient>());
     }
 
+    [Test]
+    public void CreateGraphHandshakeStreamClientReturnsNullUnlessGraphAndStreamAreConfigured()
+    {
+        MethodInfo method = StreamClientFactoryMethod();
+        DataAgentGraphHandshakeStreamOptions configuredStreamOptions =
+            DataAgentGraphHandshakeStreamOptions.FromValues("true", "http://127.0.0.1:8765/handshake-stream", "800");
+
+        object? disabledGraphClient = method.Invoke(
+            null,
+            [DataAgentGraphHandshakeOptions.Disabled, configuredStreamOptions]);
+        object? disabledStreamClient = method.Invoke(
+            null,
+            [new DataAgentGraphHandshakeOptions(true), DataAgentGraphHandshakeStreamOptions.Disabled]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(disabledGraphClient, Is.Null);
+            Assert.That(disabledStreamClient, Is.Null);
+        });
+    }
+
+    [Test]
+    public void CreateGraphHandshakeStreamClientCreatesNdjsonClientForConfiguredLoopbackEndpoint()
+    {
+        MethodInfo method = StreamClientFactoryMethod();
+        DataAgentGraphHandshakeStreamOptions configuredStreamOptions =
+            DataAgentGraphHandshakeStreamOptions.FromValues("true", "http://127.0.0.1:8765/handshake-stream", "800");
+
+        object client = method.Invoke(
+            null,
+            [new DataAgentGraphHandshakeOptions(true), configuredStreamOptions])!;
+
+        Assert.That(client, Is.TypeOf<DataAgentGraphHandshakeNdjsonStreamClient>());
+    }
+
     static string ReadModuleSource()
     {
         string root = FindRepositoryRoot();
@@ -220,5 +255,15 @@ public sealed class DataAgentModuleServiceTests
         }
 
         throw new DirectoryNotFoundException("Repository root not found.");
+    }
+
+    static MethodInfo StreamClientFactoryMethod()
+    {
+        MethodInfo? method = typeof(DataAgentModuleService).GetMethod(
+            "CreateGraphHandshakeStreamClient",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+
+        Assert.That(method, Is.Not.Null);
+        return method!;
     }
 }

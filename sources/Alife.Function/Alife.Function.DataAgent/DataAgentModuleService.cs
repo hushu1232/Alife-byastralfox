@@ -31,6 +31,21 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         return new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
     }
 
+    internal static IDataAgentGraphHandshakeStreamClient? CreateGraphHandshakeStreamClient(
+        DataAgentGraphHandshakeOptions graphOptions,
+        DataAgentGraphHandshakeStreamOptions streamOptions)
+    {
+        if (graphOptions.Enabled == false ||
+            streamOptions.Enabled == false ||
+            streamOptions.Configured == false ||
+            streamOptions.Endpoint is null)
+        {
+            return null;
+        }
+
+        return new DataAgentGraphHandshakeNdjsonStreamClient(new HttpClient(), streamOptions);
+    }
+
     public override async Task AwakeAsync(AwakeContext context)
     {
         await base.AwakeAsync(context);
@@ -61,10 +76,13 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentGraphHandshakeOptions graphHandshakeOptions = DataAgentGraphHandshakeOptions.FromEnvironment();
         DataAgentGraphHandshakeHttpOptions graphHandshakeHttpOptions =
             DataAgentGraphHandshakeHttpOptions.FromEnvironment();
+        DataAgentGraphHandshakeStreamOptions graphHandshakeStreamOptions =
+            DataAgentGraphHandshakeStreamOptions.FromEnvironment();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
             CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions),
-            new DataAgentGraphSidecarProgressBridge(progressSink));
+            new DataAgentGraphSidecarProgressBridge(progressSink),
+            CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions));
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));
