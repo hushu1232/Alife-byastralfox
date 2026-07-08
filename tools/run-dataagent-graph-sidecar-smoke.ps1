@@ -61,6 +61,10 @@ function Assert-LoopbackBaseUri {
         throw "BaseUri must use http or https."
     }
 
+    if ([string]::IsNullOrEmpty($uri.UserInfo) -eq $false) {
+        throw "BaseUri must not include user information."
+    }
+
     $allowedHosts = @("127.0.0.1", "localhost")
     if ($allowedHosts -notcontains $uri.Host) {
         throw "BaseUri must target loopback host 127.0.0.1 or localhost."
@@ -172,58 +176,82 @@ function Assert-PropertyPresent {
     }
 }
 
+function Assert-RequiredString {
+    param($Object, [string]$Name)
+
+    Assert-PropertyPresent $Object $Name
+    $value = $Object.$Name
+    if ($value -isnot [string] -or [string]::IsNullOrWhiteSpace($value)) {
+        throw ("{0} must be a non-empty string." -f $Name)
+    }
+
+    return $value
+}
+
+function Assert-BooleanEquals {
+    param($Object, [string]$Name, [bool]$Expected)
+
+    Assert-PropertyPresent $Object $Name
+    $value = $Object.$Name
+    if ($value -isnot [bool]) {
+        throw ("{0} must be a JSON boolean." -f $Name)
+    }
+
+    if ($value -ne $Expected) {
+        throw ("{0} must be {1}." -f $Name, $Expected.ToString().ToLowerInvariant())
+    }
+}
+
+function Assert-NonEmptyList {
+    param($Object, [string]$Name)
+
+    Assert-PropertyPresent $Object $Name
+    $value = $Object.$Name
+    if ($null -eq $value) {
+        throw ("{0} must be non-null." -f $Name)
+    }
+
+    $items = @($value)
+    if ($items.Count -le 0) {
+        throw ("{0} must be non-empty." -f $Name)
+    }
+
+    return $items
+}
+
 function Test-HandshakeResponse {
     param($Response, [string]$ExpectedRequestId)
 
-    Assert-PropertyPresent $Response "RequestId"
-    Assert-PropertyPresent $Response "Accepted"
-    Assert-PropertyPresent $Response "NoSqlAuthority"
-    Assert-PropertyPresent $Response "ReadOnly"
-    Assert-PropertyPresent $Response "FallbackRequired"
-    Assert-PropertyPresent $Response "RequestsCheckpointMutation"
-    Assert-PropertyPresent $Response "RequestsVisibleText"
-    Assert-PropertyPresent $Response "SelectedNodes"
-    Assert-PropertyPresent $Response "NodeProgress"
-    Assert-PropertyPresent $Response "RequestedToolNames"
-
-    if ($Response.RequestId -ne $ExpectedRequestId) {
-        throw ("RequestId mismatch: expected {0}, got {1}" -f $ExpectedRequestId, $Response.RequestId)
+    $requestId = Assert-RequiredString $Response "RequestId"
+    if ($requestId -ne $ExpectedRequestId) {
+        throw ("RequestId mismatch: expected {0}, got {1}" -f $ExpectedRequestId, $requestId)
     }
 
-    if ($Response.Accepted -ne $true) {
-        throw "Accepted must be true."
-    }
+    Assert-BooleanEquals $Response "Accepted" $true
+    Assert-BooleanEquals $Response "NoSqlAuthority" $true
+    Assert-BooleanEquals $Response "ReadOnly" $true
+    Assert-BooleanEquals $Response "FallbackRequired" $false
+    Assert-BooleanEquals $Response "RequestsCheckpointMutation" $false
+    Assert-BooleanEquals $Response "RequestsVisibleText" $false
 
-    if ($Response.NoSqlAuthority -ne $true -or $Response.ReadOnly -ne $true) {
-        throw "Response must preserve NoSqlAuthority=true and ReadOnly=true."
-    }
+    $selectedNodes = Assert-NonEmptyList $Response "SelectedNodes"
+    $nodeProgress = Assert-NonEmptyList $Response "NodeProgress"
+    $requestedToolNames = Assert-NonEmptyList $Response "RequestedToolNames"
 
-    if ($Response.FallbackRequired -ne $false) {
-        throw "FallbackRequired must be false for accepted smoke response."
-    }
+    foreach ($toolName in $requestedToolNames) {
+        if ($toolName -isnot [string] -or [string]::IsNullOrWhiteSpace($toolName)) {
+            throw "RequestedToolNames entries must be non-empty strings."
+        }
 
-    if ($Response.RequestsCheckpointMutation -ne $false -or $Response.RequestsVisibleText -ne $false) {
-        throw "Response must not request checkpoint mutation or visible text."
-    }
-
-    if (@($Response.SelectedNodes).Count -le 0) {
-        throw "SelectedNodes must be non-empty."
-    }
-
-    if (@($Response.NodeProgress).Count -le 0) {
-        throw "NodeProgress must be non-empty."
-    }
-
-    foreach ($toolName in @($Response.RequestedToolNames)) {
         if (Test-ForbiddenToolName ([string]$toolName)) {
             throw ("RequestedToolNames contains forbidden authority marker: {0}" -f $toolName)
         }
     }
 
-    foreach ($progress in @($Response.NodeProgress)) {
-        Assert-PropertyPresent $progress "NodeName"
-        Assert-PropertyPresent $progress "Status"
-        Assert-PropertyPresent $progress "ReasonCode"
+    foreach ($progress in $nodeProgress) {
+        Assert-RequiredString $progress "NodeName" | Out-Null
+        Assert-RequiredString $progress "Status" | Out-Null
+        Assert-RequiredString $progress "ReasonCode" | Out-Null
         if (Test-ReservedProgressFacts $progress.Facts) {
             throw "NodeProgress Facts must not include reserved C# stamped keys source, node, or request_id."
         }
@@ -283,24 +311,29 @@ function Test-NdjsonStream {
 
     foreach ($line in $lines) {
         $event = ConvertFrom-StrictJson $line
-        Assert-PropertyPresent $event "Kind"
+        $kind = Assert-RequiredString $event "Kind"
 
-        if ($event.Kind -ne "Progress" -and $event.Kind -ne "FinalResponse") {
-            throw ("invalid NDJSON event Kind: {0}" -f $event.Kind)
+        if ($kind -ne "Progress" -and $kind -ne "FinalResponse") {
+            throw ("invalid NDJSON event Kind: {0}" -f $kind)
         }
 
         if ($seenFinal) {
             throw "No event may appear after FinalResponse."
         }
 
-        if ($event.Kind -eq "Progress") {
+        if ($kind -eq "Progress") {
             if ($event.PSObject.Properties.Name -notcontains "Progress" -or $event.PSObject.Properties.Name -contains "Response") {
                 throw "Progress event must contain Progress and must not contain Response."
             }
 
-            Assert-PropertyPresent $event.Progress "NodeName"
-            Assert-PropertyPresent $event.Progress "Status"
-            Assert-PropertyPresent $event.Progress "ReasonCode"
+            Assert-RequiredString $event.Progress "NodeName" | Out-Null
+            $status = Assert-RequiredString $event.Progress "Status"
+            Assert-RequiredString $event.Progress "ReasonCode" | Out-Null
+            $allowedStatuses = @("Started", "Completed", "Skipped", "Rejected", "Failed")
+            if ($allowedStatuses -notcontains $status) {
+                throw ("Progress Status must be one of {0}." -f ($allowedStatuses -join ", "))
+            }
+
             if (Test-ReservedProgressFacts $event.Progress.Facts) {
                 throw "Stream progress Facts must not include reserved C# stamped keys source, node, or request_id."
             }
@@ -371,6 +404,11 @@ try {
     try {
         $streamResponse = Invoke-SidecarRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake-stream") -Body $request -TimeoutSeconds $timeoutSeconds
         $contentType = [string]$streamResponse.Headers["Content-Type"]
+        $sseMediaType = ("text/" + "event-stream")
+        if ($contentType.IndexOf($sseMediaType, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            throw "SSE media type is deferred and must not be returned by V3.4 smoke."
+        }
+
         if ($contentType.IndexOf("application/x-ndjson", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
             throw ("expected application/x-ndjson content type, got {0}" -f $contentType)
         }
