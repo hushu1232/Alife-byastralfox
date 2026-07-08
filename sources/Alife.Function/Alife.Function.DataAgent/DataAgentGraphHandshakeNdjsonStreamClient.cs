@@ -236,9 +236,14 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClient : IDataAgentGraphH
         where TEnum : struct, Enum
     {
         value = default;
-        return element.ValueKind == JsonValueKind.String &&
-               Enum.TryParse(element.GetString(), ignoreCase: false, out value) &&
-               Enum.IsDefined(value);
+        if (element.ValueKind != JsonValueKind.String)
+            return false;
+
+        string? rawValue = element.GetString();
+        return string.IsNullOrEmpty(rawValue) == false &&
+               Enum.TryParse(rawValue, ignoreCase: false, out value) &&
+               Enum.IsDefined(value) &&
+               string.Equals(Enum.GetName(value), rawValue, StringComparison.Ordinal);
     }
 
     static void AppendBounded(StringBuilder builder, char current)

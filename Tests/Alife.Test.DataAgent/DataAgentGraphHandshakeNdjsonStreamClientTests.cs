@@ -189,10 +189,62 @@ public sealed class DataAgentGraphHandshakeNdjsonStreamClientTests
     }
 
     [Test]
+    public void CompositeEventKindThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse finalResponse = NewResponse(request);
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            $$"""{"Kind":"Progress, FinalResponse","Response":{{JsonSerializer.Serialize(finalResponse, JsonOptions)}}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(request))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void WhitespacePaddedEventKindThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeRequest request = NewRequest();
+        DataAgentGraphHandshakeResponse finalResponse = NewResponse(request);
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            $$"""{"Kind":" FinalResponse","Response":{{JsonSerializer.Serialize(finalResponse, JsonOptions)}}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(request))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
     public void ProgressEventWithoutStatusThrowsInvalidStreamSchema()
     {
         DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
             """{"Kind":"Progress","Progress":{"NodeName":"scenario_knowledge","ReasonCode":"scenario_ready"}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void CompositeProgressStatusThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            """{"Kind":"Progress","Progress":{"NodeName":"scenario_knowledge","Status":"Started, Completed","ReasonCode":"scenario_ready"}}"""));
+
+        DataAgentGraphSidecarInvalidStreamException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
+
+        Assert.That(exception.ReasonCode, Is.EqualTo("invalid_stream_schema"));
+    }
+
+    [Test]
+    public void WhitespacePaddedProgressStatusThrowsInvalidStreamSchema()
+    {
+        DataAgentGraphHandshakeNdjsonStreamClient client = NewClient(_ => OkNdjson(
+            """{"Kind":"Progress","Progress":{"NodeName":"scenario_knowledge","Status":" Completed","ReasonCode":"scenario_ready"}}"""));
 
         DataAgentGraphSidecarInvalidStreamException exception =
             Assert.Throws<DataAgentGraphSidecarInvalidStreamException>(() => client.TryHandshakeStream(NewRequest()))!;
