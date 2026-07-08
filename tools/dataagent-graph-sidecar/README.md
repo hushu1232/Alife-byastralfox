@@ -85,3 +85,23 @@ heartbeats, reconnect behavior, or browser-facing stream behavior.
 The default tests do not require Python, FastAPI, uvicorn, a live port, network
 access, QChat, QQ, PostgreSQL, browser automation, model calls, or a live
 sidecar.
+
+## V3.4 Manual Live Smoke
+
+V3.4 adds a manual live smoke harness for checking an already running sidecar on
+loopback:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\run-dataagent-graph-sidecar-smoke.ps1 -BaseUri "http://127.0.0.1:8765" -TimeoutMs 2000
+```
+
+Run the dev sidecar manually before running this harness. The smoke script
+does not start Python, does not create a virtual environment, does not install dependencies,
+does not launch uvicorn, does not bind ports, and does not manage background
+processes. It only calls the already running sidecar at the supplied loopback
+`BaseUri`.
+
+The harness checks `/health`, `/handshake`, and `/handshake-stream`. The stream
+response must use `application/x-ndjson`; SSE is deferred and this V3.4 harness
+does not implement event ids, heartbeats, reconnect behavior, or browser
+streaming semantics.
