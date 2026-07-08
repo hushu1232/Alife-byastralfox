@@ -82,7 +82,10 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             graphHandshakeOptions,
             CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions),
             new DataAgentGraphSidecarProgressBridge(progressSink),
-            CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions));
+            CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions),
+            new DataAgentGraphSidecarObservabilityContext(
+                graphHandshakeHttpOptions.Configured || graphHandshakeStreamOptions.Configured,
+                graphHandshakeHttpOptions.RuntimeStarted || graphHandshakeStreamOptions.RuntimeStarted));
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));

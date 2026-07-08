@@ -515,6 +515,100 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void DisabledCoordinatorEmitsDisabledObservabilitySnapshot()
+    {
+        RecordingSidecarClient sidecar = new(NewAcceptedResponse);
+        DataAgentGraphHandshakeCoordinator coordinator = new(DataAgentGraphHandshakeOptions.Disabled, sidecar);
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Observability, Is.Not.Null);
+            Assert.That(outcome.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Disabled));
+            Assert.That(outcome.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.Disabled));
+            Assert.That(outcome.Observability.SidecarEnabled, Is.False);
+            Assert.That(outcome.Observability.EndpointConfigured, Is.False);
+            Assert.That(outcome.Observability.NetworkAttempted, Is.False);
+            Assert.That(outcome.Observability.Accepted, Is.False);
+            Assert.That(outcome.Observability.FallbackUsed, Is.True);
+        });
+    }
+
+    [Test]
+    public void EnabledCoordinatorWithoutEndpointEmitsNotConfiguredObservabilitySnapshot()
+    {
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            DisabledDataAgentGraphSidecarClient.Instance,
+            observabilityContext: DataAgentGraphSidecarObservabilityContext.Default);
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Unavailable));
+            Assert.That(outcome.Observability, Is.Not.Null);
+            Assert.That(outcome.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.NotConfigured));
+            Assert.That(outcome.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured));
+            Assert.That(outcome.Observability.SidecarEnabled, Is.True);
+            Assert.That(outcome.Observability.EndpointConfigured, Is.False);
+            Assert.That(outcome.Observability.NetworkAttempted, Is.False);
+            Assert.That(outcome.Observability.FallbackUsed, Is.True);
+        });
+    }
+
+    [Test]
+    public void UnavailableTimeoutRejectedAndAcceptedOutcomesEmitObservabilitySnapshots()
+    {
+        DataAgentGraphSidecarObservabilityContext configured = new(EndpointConfigured: true, RuntimeStartedByAlife: false);
+        DataAgentGraphHandshakeCoordinator unavailableCoordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new InvalidOperationException("sidecar offline")),
+            observabilityContext: configured);
+        DataAgentGraphHandshakeCoordinator timeoutCoordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new TimeoutException("sidecar timeout")),
+            observabilityContext: configured);
+        DataAgentGraphHandshakeCoordinator rejectedCoordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new RecordingSidecarClient(request => NewAcceptedResponse(request) with { NoSqlAuthority = false }),
+            observabilityContext: configured);
+        DataAgentGraphHandshakeCoordinator acceptedCoordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new RecordingSidecarClient(NewAcceptedResponse),
+            observabilityContext: configured);
+
+        DataAgentGraphHandshakeOutcome unavailable = unavailableCoordinator.TryHandshake("owner", "Which gates failed?", AcceptedResult());
+        DataAgentGraphHandshakeOutcome timeout = timeoutCoordinator.TryHandshake("owner", "Which gates failed?", AcceptedResult());
+        DataAgentGraphHandshakeOutcome rejected = rejectedCoordinator.TryHandshake("owner", "Which gates failed?", AcceptedResult());
+        DataAgentGraphHandshakeOutcome accepted = acceptedCoordinator.TryHandshake("owner", "Which gates failed?", AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(unavailable.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.RuntimeUnavailable));
+            Assert.That(unavailable.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable));
+            Assert.That(unavailable.Observability.NetworkAttempted, Is.True);
+            Assert.That(timeout.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.RuntimeUnavailable));
+            Assert.That(timeout.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable));
+            Assert.That(rejected.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Rejected));
+            Assert.That(rejected.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected));
+            Assert.That(rejected.Observability.Accepted, Is.False);
+            Assert.That(rejected.Observability.FallbackUsed, Is.True);
+            Assert.That(accepted.Observability!.Status, Is.EqualTo(DataAgentGraphSidecarObservabilityStatus.Accepted));
+            Assert.That(accepted.Observability.ReasonCode, Is.EqualTo(DataAgentGraphSidecarObservabilityReasonCodes.Accepted));
+            Assert.That(accepted.Observability.Accepted, Is.True);
+            Assert.That(accepted.Observability.FallbackUsed, Is.False);
+        });
+    }
+
+    [Test]
     public void ConstructorRejectsNullOptions()
     {
         RecordingSidecarClient sidecar = new(NewAcceptedResponse);

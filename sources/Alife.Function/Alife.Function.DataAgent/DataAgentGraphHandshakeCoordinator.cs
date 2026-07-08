@@ -23,12 +23,15 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     DataAgentGraphHandshakeOptions options,
     IDataAgentGraphSidecarClient? sidecarClient = null,
     DataAgentGraphSidecarProgressBridge? progressBridge = null,
-    IDataAgentGraphHandshakeStreamClient? streamClient = null)
+    IDataAgentGraphHandshakeStreamClient? streamClient = null,
+    DataAgentGraphSidecarObservabilityContext? observabilityContext = null)
 {
     readonly DataAgentGraphHandshakeOptions options = options ?? throw new ArgumentNullException(nameof(options));
     readonly IDataAgentGraphSidecarClient sidecarClient = sidecarClient ?? DisabledDataAgentGraphSidecarClient.Instance;
     readonly DataAgentGraphSidecarProgressBridge? progressBridge = progressBridge;
     readonly IDataAgentGraphHandshakeStreamClient? streamClient = streamClient;
+    readonly DataAgentGraphSidecarObservabilityContext observabilityContext =
+        observabilityContext ?? InferObservabilityContext(sidecarClient, streamClient);
 
     public DataAgentGraphHandshakeOutcome TryHandshake(
         string callerId,
@@ -64,7 +67,8 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     fallbackRequired: true,
                     request,
                     response: null,
-                    validation);
+                    validation,
+                    networkAttempted: true);
             }
 
             PublishProgressIfAvailable(request!, result, response.NodeProgress);
@@ -75,19 +79,35 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 response.FallbackRequired,
                 request,
                 response,
-                validation);
+                validation,
+                networkAttempted: true);
         }
         catch (DataAgentGraphSidecarInvalidResponseException)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Invalid, "invalid_response_schema", fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Invalid,
+                "invalid_response_schema",
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured);
         }
         catch (TimeoutException)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Timeout, "sidecar_timeout", fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Timeout,
+                "sidecar_timeout",
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured);
         }
         catch (Exception)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Unavailable, "sidecar_unavailable", fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Unavailable,
+                "sidecar_unavailable",
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured);
         }
     }
 
@@ -108,7 +128,8 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                     fallbackRequired: true,
                     request,
                     response: null,
-                    validation);
+                    validation,
+                    networkAttempted: true);
             }
 
             PublishProgressIfAvailable(request, result, streamResult.Progress);
@@ -119,19 +140,36 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 streamResult.Response.FallbackRequired,
                 request,
                 streamResult.Response,
-                validation);
+                validation,
+                networkAttempted: true);
         }
         catch (DataAgentGraphSidecarInvalidStreamException exception)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Invalid, exception.ReasonCode, fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Invalid,
+                exception.ReasonCode,
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured,
+                observabilityReasonCode: exception.ReasonCode);
         }
         catch (TimeoutException)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Timeout, "sidecar_timeout", fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Timeout,
+                "sidecar_timeout",
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured);
         }
         catch (Exception)
         {
-            return Outcome(DataAgentGraphHandshakeStatus.Unavailable, "sidecar_unavailable", fallbackRequired: true, request);
+            return Outcome(
+                DataAgentGraphHandshakeStatus.Unavailable,
+                "sidecar_unavailable",
+                fallbackRequired: true,
+                request,
+                networkAttempted: observabilityContext.EndpointConfigured);
         }
     }
 
@@ -188,21 +226,106 @@ public sealed class DataAgentGraphHandshakeCoordinator(
             ProgressBudget: DataAgentGraphHandshakeLimits.MaxProgressEvents);
     }
 
-    static DataAgentGraphHandshakeOutcome Outcome(
+    static DataAgentGraphSidecarObservabilityContext InferObservabilityContext(
+        IDataAgentGraphSidecarClient? sidecarClient,
+        IDataAgentGraphHandshakeStreamClient? streamClient)
+    {
+        return new DataAgentGraphSidecarObservabilityContext(
+            EndpointConfigured: (sidecarClient is not null && sidecarClient is not DisabledDataAgentGraphSidecarClient) ||
+                streamClient is not null,
+            RuntimeStartedByAlife: false);
+    }
+
+    DataAgentGraphHandshakeOutcome Outcome(
         DataAgentGraphHandshakeStatus status,
         string reasonCode,
         bool fallbackRequired,
         DataAgentGraphHandshakeRequest? request,
         DataAgentGraphHandshakeResponse? response = null,
-        DataAgentGraphHandshakeValidationResult? validation = null)
+        DataAgentGraphHandshakeValidationResult? validation = null,
+        bool networkAttempted = false,
+        string? observabilityReasonCode = null)
     {
+        DataAgentGraphSidecarObservabilitySnapshot observability = CreateObservabilitySnapshot(
+            status,
+            fallbackRequired,
+            networkAttempted,
+            observabilityReasonCode);
+
         return new DataAgentGraphHandshakeOutcome(
             status,
             reasonCode,
             fallbackRequired,
             request,
             response,
-            validation ?? new DataAgentGraphHandshakeValidationResult(false, reasonCode));
+            validation ?? new DataAgentGraphHandshakeValidationResult(false, reasonCode),
+            observability);
+    }
+
+    DataAgentGraphSidecarObservabilitySnapshot CreateObservabilitySnapshot(
+        DataAgentGraphHandshakeStatus status,
+        bool fallbackRequired,
+        bool networkAttempted,
+        string? reasonCodeOverride)
+    {
+        bool sidecarEnabled = options.Enabled;
+        bool endpointConfigured = sidecarEnabled && observabilityContext.EndpointConfigured;
+        DataAgentGraphSidecarObservabilityStatus observabilityStatus = MapObservabilityStatus(
+            status,
+            sidecarEnabled,
+            endpointConfigured,
+            fallbackRequired);
+        string reasonCode = reasonCodeOverride ?? MapObservabilityReasonCode(observabilityStatus);
+        bool accepted = observabilityStatus == DataAgentGraphSidecarObservabilityStatus.Accepted;
+
+        return new DataAgentGraphSidecarObservabilitySnapshot(
+            reasonCode,
+            observabilityStatus,
+            sidecarEnabled,
+            endpointConfigured,
+            observabilityContext.RuntimeStartedByAlife,
+            networkAttempted,
+            accepted,
+            fallbackRequired,
+            SafeSummary: reasonCode);
+    }
+
+    static DataAgentGraphSidecarObservabilityStatus MapObservabilityStatus(
+        DataAgentGraphHandshakeStatus status,
+        bool sidecarEnabled,
+        bool endpointConfigured,
+        bool fallbackRequired)
+    {
+        if (sidecarEnabled == false)
+            return DataAgentGraphSidecarObservabilityStatus.Disabled;
+
+        if (endpointConfigured == false &&
+            status is DataAgentGraphHandshakeStatus.Unavailable or DataAgentGraphHandshakeStatus.Disabled)
+        {
+            return DataAgentGraphSidecarObservabilityStatus.NotConfigured;
+        }
+
+        return status switch
+        {
+            DataAgentGraphHandshakeStatus.Accepted => DataAgentGraphSidecarObservabilityStatus.Accepted,
+            DataAgentGraphHandshakeStatus.Rejected or DataAgentGraphHandshakeStatus.Invalid => DataAgentGraphSidecarObservabilityStatus.Rejected,
+            DataAgentGraphHandshakeStatus.Timeout or DataAgentGraphHandshakeStatus.Unavailable => DataAgentGraphSidecarObservabilityStatus.RuntimeUnavailable,
+            _ when fallbackRequired => DataAgentGraphSidecarObservabilityStatus.Fallback,
+            _ => DataAgentGraphSidecarObservabilityStatus.Fallback
+        };
+    }
+
+    static string MapObservabilityReasonCode(DataAgentGraphSidecarObservabilityStatus status)
+    {
+        return status switch
+        {
+            DataAgentGraphSidecarObservabilityStatus.Disabled => DataAgentGraphSidecarObservabilityReasonCodes.Disabled,
+            DataAgentGraphSidecarObservabilityStatus.NotConfigured => DataAgentGraphSidecarObservabilityReasonCodes.NotConfigured,
+            DataAgentGraphSidecarObservabilityStatus.RuntimeUnavailable => DataAgentGraphSidecarObservabilityReasonCodes.RuntimeUnavailable,
+            DataAgentGraphSidecarObservabilityStatus.Rejected => DataAgentGraphSidecarObservabilityReasonCodes.ResponseRejected,
+            DataAgentGraphSidecarObservabilityStatus.Accepted => DataAgentGraphSidecarObservabilityReasonCodes.Accepted,
+            _ => DataAgentGraphSidecarObservabilityReasonCodes.FallbackUsed
+        };
     }
 
     void PublishProgressIfAvailable(
