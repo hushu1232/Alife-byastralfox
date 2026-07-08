@@ -759,6 +759,110 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeDevSidecarObservabilityContractPresent", "default_enabled=false;observability_model=true;reason_codes=true;fallback_reason=true;unsafe_diagnostics_redacted=true;sse_deferred=true;qchat_boundary=true;default_tests_live_runtime=false")
                 : Fail("GraphHandshakeDevSidecarObservabilityContractPresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};observability_model={LowerBool(graphHandshakeObservabilityModelReady)};reason_codes={LowerBool(graphHandshakeObservabilityReasonCodesReady)};fallback_reason={LowerBool(graphHandshakeObservabilityFallbackReasonReady)};unsafe_diagnostics_redacted={LowerBool(graphHandshakeUnsafeDiagnosticsRedacted)};sse_deferred={LowerBool(graphHandshakeStreamSseDeferred)};qchat_boundary={LowerBool(graphHandshakeObservabilityQChatBoundary)};default_tests_live_runtime={LowerBool(graphHandshakeObservabilityDefaultTestsLiveRuntime)}"));
 
+            string dataAgentEndToEndContractPath = Path.Combine(
+                FindRepositoryRoot(AppContext.BaseDirectory),
+                "Tests",
+                "Alife.Test.DataAgent",
+                "DataAgentEndToEndChainContractTests.cs");
+            string dataAgentEndToEndContractSource = File.Exists(dataAgentEndToEndContractPath)
+                ? File.ReadAllText(dataAgentEndToEndContractPath)
+                : string.Empty;
+            string ExtractTestMethodBlock(string methodName)
+            {
+                string signature = $"public void {methodName}(";
+                int methodStart = dataAgentEndToEndContractSource.IndexOf(signature, StringComparison.Ordinal);
+                if (methodStart < 0)
+                    return string.Empty;
+
+                int nextTestStart = dataAgentEndToEndContractSource.IndexOf(
+                    "\n    [Test]",
+                    methodStart + signature.Length,
+                    StringComparison.Ordinal);
+                return nextTestStart < 0
+                    ? dataAgentEndToEndContractSource[methodStart..]
+                    : dataAgentEndToEndContractSource[methodStart..nextTestStart];
+            }
+            bool ContractContains(string source, string marker) =>
+                source.Contains(marker, StringComparison.Ordinal);
+            int firstTestStart = dataAgentEndToEndContractSource.IndexOf("\n    [Test]", StringComparison.Ordinal);
+            string dataAgentEndToEndClassConstantsSource = firstTestStart < 0
+                ? dataAgentEndToEndContractSource
+                : dataAgentEndToEndContractSource[..firstTestStart];
+            string dataAgentEndToEndRouteBoundarySource = ExtractTestMethodBlock("ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface");
+            string dataAgentEndToEndXmlPolicySource = ExtractTestMethodBlock("XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools");
+            string dataAgentEndToEndAcceptedAnalysisSource = ExtractTestMethodBlock("AcceptedAnalysisPublishesSessionStateAndAllDiagnostics");
+            string dataAgentEndToEndRouteDeniedSource = ExtractTestMethodBlock("RouteDeniedAnalysisDoesNotExecuteSql");
+            string dataAgentEndToEndTerminalActionsSource = ExtractTestMethodBlock("TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped");
+            string dataAgentEndToEndOfflineBoundarySource =
+                dataAgentEndToEndClassConstantsSource +
+                ExtractTestMethodBlock("OfflineBoundaryMarkersLockNoLiveRuntimeAndNoSidecarAuthority");
+            bool dataAgentEndToEndRouteBoundaryReady =
+                typeof(DataAgentAnalysisToolHandler).IsClass &&
+                typeof(DataAgentService).IsClass &&
+                typeof(ToolCapabilityRouter).IsClass &&
+                ContractContains(dataAgentEndToEndRouteBoundarySource, "ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface");
+            bool dataAgentEndToEndXmlPolicyReady =
+                typeof(XmlFunctionExecutionPolicy).IsClass &&
+                ContractContains(dataAgentEndToEndXmlPolicySource, "XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools");
+            bool dataAgentEndToEndSessionStateReady =
+                typeof(DataAgentAnalysisOrchestrator).IsClass &&
+                typeof(DataAgentAnalysisService).IsClass &&
+                typeof(XmlFunctionCaller).IsClass &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "AcceptedAnalysisPublishesSessionStateAndAllDiagnostics") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "UpdateDataAgentAnalysisRouteSessionFromContext");
+            bool dataAgentEndToEndDiagnosticsClosureReady =
+                typeof(DataAgentEvidenceDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentTraceDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentProgressDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentDataQueryGraphTraceFormatter).IsClass &&
+                typeof(DataAgentGraphHandshakeDiagnosticsFormatter).IsClass &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "QChatDiagnosticsService") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "AcceptedAnalysisPublishesSessionStateAndAllDiagnostics");
+            bool dataAgentEndToEndRouteDeniedNoExecuteReady =
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "RouteDeniedAnalysisDoesNotExecuteSql") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.RouteGate") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Reject") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Checkpoint") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Execute") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "ExecutedSql") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "AcceptedAudit") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "RejectedAudit");
+            bool dataAgentEndToEndTerminalNoExecuteReady =
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_summarize") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_end") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "DataAgentOrchestrationNodeKind.Execute") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "ExecutedSql") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "tool_session_not_allowed_in_current_route");
+            bool dataAgentEndToEndSidecarAuthorityBoundaryReady =
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "sidecar_authority=false") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "DataAgentGraphHandshakeOptions.Disabled") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "DisabledDataAgentGraphSidecarClient");
+            bool dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady =
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "default_tests_live_runtime=false") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Invoke-\" + \"WebRequest\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Start-\" + \"Process\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"uvi\" + \"corn\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"127.0.0.\" + \"1:8765\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Event\" + \"Source\")");
+            bool dataAgentEndToEndChainContractReady =
+                dataAgentEndToEndRouteBoundaryReady &&
+                dataAgentEndToEndXmlPolicyReady &&
+                dataAgentEndToEndSessionStateReady &&
+                dataAgentEndToEndDiagnosticsClosureReady &&
+                dataAgentEndToEndRouteDeniedNoExecuteReady &&
+                dataAgentEndToEndTerminalNoExecuteReady &&
+                dataAgentEndToEndSidecarAuthorityBoundaryReady &&
+                dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady;
+            const string dataAgentEndToEndChainContractPassDetail =
+                "route_boundary=true;xml_policy=true;session_state=true;diagnostics_closure=true;route_denied_no_execute=true;terminal_no_execute=true;sidecar_authority=false;default_tests_live_runtime=false";
+            string dataAgentEndToEndChainContractFailDetail =
+                $"route_boundary={LowerBool(dataAgentEndToEndRouteBoundaryReady)};xml_policy={LowerBool(dataAgentEndToEndXmlPolicyReady)};session_state={LowerBool(dataAgentEndToEndSessionStateReady)};diagnostics_closure={LowerBool(dataAgentEndToEndDiagnosticsClosureReady)};route_denied_no_execute={LowerBool(dataAgentEndToEndRouteDeniedNoExecuteReady)};terminal_no_execute={LowerBool(dataAgentEndToEndTerminalNoExecuteReady)};sidecar_authority={LowerBool(dataAgentEndToEndSidecarAuthorityBoundaryReady == false)};default_tests_live_runtime={LowerBool(dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady == false)}";
+            checks.Add(dataAgentEndToEndChainContractReady
+                ? Pass("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractPassDetail)
+                : Fail("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractFailDetail));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
