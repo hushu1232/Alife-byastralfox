@@ -19,6 +19,7 @@ public sealed class DataAgentGraphSidecarSmokeScriptContractTests
         "PASS rejects array Facts",
         "PASS rejects Facts reserved source key",
         "PASS rejects Facts non-string value",
+        "PASS valid NDJSON accepted",
         "PASS rejects NDJSON final response sql.execute",
         "PASS accepts null Facts"
     ];
@@ -248,8 +249,6 @@ Assert-Rejects "rejects Facts non-string value" {
     Test-HandshakeResponse $nonStringFactValue $request
 }
 
-$ndjsonSql = Copy-Response $valid
-$ndjsonSql.RequestedToolNames = @("sql.execute")
 $progressEvent = [ordered]@{
     Kind = "Progress"
     Progress = [ordered]@{
@@ -259,6 +258,18 @@ $progressEvent = [ordered]@{
         Facts = [ordered]@{ safe = "true" }
     }
 }
+
+$validFinalEvent = [ordered]@{
+    Kind = "FinalResponse"
+    Response = $valid
+}
+$validNdjson = (ConvertTo-DataJson $progressEvent) + "`n" + (ConvertTo-DataJson $validFinalEvent)
+Assert-Accepts "valid NDJSON accepted" {
+    Test-NdjsonStream $validNdjson $request | Out-Null
+}
+
+$ndjsonSql = Copy-Response $valid
+$ndjsonSql.RequestedToolNames = @("sql.execute")
 $finalEvent = [ordered]@{
     Kind = "FinalResponse"
     Response = $ndjsonSql
@@ -302,19 +313,64 @@ Assert-Accepts "accepts null Facts" {
         startInfo.ArgumentList.Add("-Command");
         startInfo.ArgumentList.Add(command);
 
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Failed to start PowerShell.");
+        StringBuilder stdout = new();
+        StringBuilder stderr = new();
+        object stdoutLock = new();
+        object stderrLock = new();
 
-        string stdout = process.StandardOutput.ReadToEnd();
-        string stderr = process.StandardError.ReadToEnd();
+        using Process process = new()
+        {
+            StartInfo = startInfo
+        };
+
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (args.Data == null)
+            {
+                return;
+            }
+
+            lock (stdoutLock)
+            {
+                stdout.AppendLine(args.Data);
+            }
+        };
+
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (args.Data == null)
+            {
+                return;
+            }
+
+            lock (stderrLock)
+            {
+                stderr.AppendLine(args.Data);
+            }
+        };
+
+        if (process.Start() == false)
+        {
+            throw new InvalidOperationException("Failed to start PowerShell.");
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
 
         if (process.WaitForExit(15000) == false)
         {
             process.Kill(entireProcessTree: true);
+            process.WaitForExit();
             throw new TimeoutException("Smoke script contract harness did not exit within 15 seconds.");
         }
 
-        return new ScriptResult(process.ExitCode, stdout, stderr);
+        process.WaitForExit();
+
+        lock (stdoutLock)
+        lock (stderrLock)
+        {
+            return new ScriptResult(process.ExitCode, stdout.ToString(), stderr.ToString());
+        }
     }
 
     static string FindRepoRoot(string startDirectory)
