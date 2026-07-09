@@ -1601,6 +1601,89 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeAgentAdvisoryContractPresent", "agent_advisory_contract=true;contract_version=v3.24;token_budget_context_layers=true;evidence_first_response=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;langgraph_provider_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeAgentAdvisoryContractPresent", $"doc={LowerBool(v324DocExists)};engineering_doc={LowerBool(v324BoundaryDocExists)};doc_markers={LowerBool(v324DocMarkers)};boundary={LowerBool(v324Boundary)};engineering_boundary={LowerBool(v324EngineeringBoundary)};model={LowerBool(v324ModelReady)};packet={LowerBool(v324PacketMarkers)}"));
 
+            string v325DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.25-real-langgraph-manual-shadow-provider.md");
+            bool v325DocExists = File.Exists(v325DocPath);
+            string v325Doc = v325DocExists ? File.ReadAllText(v325DocPath) : string.Empty;
+            DataAgentLangGraphManualShadowPayload v325Payload = new(
+                ProviderName: "langgraph",
+                CapturedByOperator: true,
+                RuntimeStartedByAlife: false,
+                DependenciesInstalledByAlife: false,
+                SidecarCalledByAlife: false,
+                v324SafeResponse);
+            DataAgentLangGraphManualShadowResult v325Accepted =
+                DataAgentLangGraphManualShadowProvider.Evaluate(v324Request, v325Payload);
+            DataAgentLangGraphManualShadowResult v325Rejected =
+                DataAgentLangGraphManualShadowProvider.Evaluate(
+                    v324Request,
+                    v325Payload with
+                    {
+                        Advisory = v324SafeResponse with
+                        {
+                            ForbiddenAuthorityClaims = ["execute_sql"],
+                            RequestsExecution = true
+                        }
+                    });
+            DataAgentLangGraphManualShadowResult v325Missing =
+                DataAgentLangGraphManualShadowProvider.Evaluate(v324Request, null);
+            string v325Packet = DataAgentLangGraphManualShadowFormatter.Format(v325Accepted);
+            bool v325DocMarkers =
+                v325Doc.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v325Doc.Contains("langgraph_provider_only=true", StringComparison.Ordinal) &&
+                v325Doc.Contains("manual_shadow_only=true", StringComparison.Ordinal) &&
+                v325Doc.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal);
+            bool v325Boundary =
+                v325Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v325Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v325ModelReady =
+                typeof(DataAgentLangGraphManualShadowPayload).IsClass &&
+                typeof(DataAgentLangGraphManualShadowResult).IsClass &&
+                typeof(DataAgentLangGraphManualShadowProvider).IsClass &&
+                typeof(DataAgentLangGraphManualShadowFormatter).IsClass &&
+                v325Accepted.Accepted &&
+                string.Equals(v325Accepted.ReasonCode, "langgraph_manual_shadow_advisory_accepted", StringComparison.Ordinal) &&
+                v325Accepted.ManualShadowOnly &&
+                v325Accepted.StartsRuntime == false &&
+                v325Accepted.InstallsDependencies == false &&
+                v325Accepted.CallsSidecar == false &&
+                v325Accepted.DefaultResultChanged == false &&
+                v325Accepted.StoresSecrets == false &&
+                v325Accepted.StoresSql == false &&
+                v325Accepted.StoresHiddenContext == false &&
+                v325Rejected.Accepted == false &&
+                string.Equals(v325Rejected.ReasonCode, "advisory_forbidden_authority_claimed", StringComparison.Ordinal) &&
+                v325Rejected.FallbackRequired &&
+                v325Missing.Accepted == false &&
+                string.Equals(v325Missing.ReasonCode, "langgraph_manual_shadow_payload_missing", StringComparison.Ordinal);
+            bool v325PacketMarkers =
+                v325Packet.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v325Packet.Contains("langgraph_provider_only=true", StringComparison.Ordinal) &&
+                v325Packet.Contains("manual_shadow_only=true", StringComparison.Ordinal) &&
+                v325Packet.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal) &&
+                v325Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v325Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v325Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v325Ready =
+                v325DocExists &&
+                v325DocMarkers &&
+                v325Boundary &&
+                v325ModelReady &&
+                v325PacketMarkers;
+            checks.Add(v325Ready
+                ? Pass("GraphHandshakeRealLangGraphManualShadowProviderPresent", "real_langgraph_manual_shadow_provider=true;langgraph_provider_only=true;manual_shadow_only=true;agent_advisory_contract=v3.24;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeRealLangGraphManualShadowProviderPresent", $"doc={LowerBool(v325DocExists)};doc_markers={LowerBool(v325DocMarkers)};boundary={LowerBool(v325Boundary)};model={LowerBool(v325ModelReady)};packet={LowerBool(v325PacketMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
