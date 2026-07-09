@@ -813,6 +813,45 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeRealLangGraphSidecarSkeletonPresent", "manual_only=true;loopback_only=true;default_enabled=false;runtime_started=false;default_tests_live_runtime=false;no_sql_authority=true;langgraph_hook=true;fallback=true")
                 : Fail("GraphHandshakeRealLangGraphSidecarSkeletonPresent", $"doc={LowerBool(v311DocExists)};sidecar={LowerBool(v311SidecarExists)};readme={LowerBool(v311ReadmeExists)};manual_only={LowerBool(v311ManualOnly)};loopback_only={LowerBool(v311LoopbackOnly)};default_enabled={LowerBool(v311DefaultDisabled)};runtime_started={LowerBool(v311RuntimeStarted)};default_tests_live_runtime={LowerBool(v311DefaultTestsLiveRuntime)};no_sql_authority={LowerBool(v311NoSqlAuthority)};langgraph_hook={LowerBool(v311LangGraphHook)};fallback={LowerBool(v311Fallback)}"));
 
+            string v312DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.12-replay-parity-shadow-comparison.md");
+            bool v312DocExists = File.Exists(v312DocPath);
+            string v312Doc = v312DocExists ? File.ReadAllText(v312DocPath) : string.Empty;
+            bool v312ComparisonModelReady =
+                typeof(DataAgentGraphHandshakeShadowComparison).IsClass &&
+                typeof(DataAgentGraphHandshakeShadowComparisonStatus).IsEnum &&
+                typeof(DataAgentGraphHandshakeShadowComparer).IsClass &&
+                typeof(DataAgentGraphHandshakeShadowComparisonFormatter).IsClass;
+            bool v312CategoryReady =
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.Match) &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.AcceptedAdvisoryDifference) &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.RejectedAuthorityClaim) &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.FallbackUsed) &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.InvalidSchema) &&
+                Enum.IsDefined(typeof(DataAgentGraphHandshakeShadowComparisonStatus), DataAgentGraphHandshakeShadowComparisonStatus.TimeoutOrTransportFailure);
+            bool v312ShadowOnly =
+                v312Doc.Contains("shadow_only=true", StringComparison.Ordinal) &&
+                v312Doc.Contains("default_result_changed=false", StringComparison.Ordinal);
+            bool v312ReplayParity =
+                v312Doc.Contains("replay_parity_required=true", StringComparison.Ordinal) &&
+                v312Doc.Contains("accepted_advisory_difference", StringComparison.Ordinal) &&
+                v312Doc.Contains("rejected_authority_claim", StringComparison.Ordinal) &&
+                v312Doc.Contains("timeout_or_transport_failure", StringComparison.Ordinal);
+            bool v312NoAuthority =
+                v312Doc.Contains("no_sql_authority=true", StringComparison.Ordinal) &&
+                v312Doc.Contains("no_checkpoint_mutation=true", StringComparison.Ordinal) &&
+                v312Doc.Contains("no_visible_text=true", StringComparison.Ordinal) &&
+                v312Doc.Contains("fallback_required=true", StringComparison.Ordinal);
+            bool v312Ready =
+                v312DocExists &&
+                v312ComparisonModelReady &&
+                v312CategoryReady &&
+                v312ShadowOnly &&
+                v312ReplayParity &&
+                v312NoAuthority;
+            checks.Add(v312Ready
+                ? Pass("GraphHandshakeReplayParityShadowComparisonPresent", "shadow_only=true;default_result_changed=false;replay_parity_required=true;categories=true;no_sql_authority=true;fallback=true")
+                : Fail("GraphHandshakeReplayParityShadowComparisonPresent", $"doc={LowerBool(v312DocExists)};comparison_model={LowerBool(v312ComparisonModelReady)};categories={LowerBool(v312CategoryReady)};shadow_only={LowerBool(v312ShadowOnly)};replay_parity={LowerBool(v312ReplayParity)};no_authority={LowerBool(v312NoAuthority)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
