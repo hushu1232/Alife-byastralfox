@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(82));
+            Assert.That(checks, Has.Count.EqualTo(83));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -161,6 +161,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeLiveSmokeCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(graphHandshakeLiveSmokeCheck.Detail, Does.Contain("starts_runtime=false"));
             Assert.That(graphHandshakeLiveSmokeCheck.Detail, Does.Contain("installs_dependencies=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeLangGraphManualSmokeHarnessPresent"));
+            DataAgentReadinessCheck graphHandshakeManualSmokeCheck = checks.Single(check => check.Name == "GraphHandshakeLangGraphManualSmokeHarnessPresent");
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("manual_smoke=true"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("operator_only=true"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("default_result_changed=false"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("sidecar_write_authority=false"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("csharp_execution_authority=true"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("fallback_required=true"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("manual_only=true"));
+            Assert.That(graphHandshakeManualSmokeCheck.Detail, Does.Contain("loopback_only=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -275,7 +285,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 97 required passed, 0 required missing"
+                "  Summary: 98 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -308,6 +318,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeCrossModulePlannerManifestsPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeAuthorityFallbackRegressionPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeLangGraphLiveSmokeReadinessPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeLangGraphManualSmokeHarnessPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -325,7 +336,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 97"));
+            Assert.That(script, Does.Contain("$expectedRequired = 98"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

@@ -1098,6 +1098,54 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeLangGraphLiveSmokeReadinessPresent", "operator_runbook=true;manual_start=true;loopback_check=true;smoke_valid_advisory=true;smoke_forbidden_authority_rejected=true;smoke_timeout_fallback=true;kill_switch=true;default_tests_live_runtime=false;starts_runtime=false;installs_dependencies=false")
                 : Fail("GraphHandshakeLangGraphLiveSmokeReadinessPresent", $"doc={LowerBool(v316DocExists)};operator_runbook={LowerBool(v316OperatorRunbook)};manual_start={LowerBool(v316ManualStart)};loopback_check={LowerBool(v316LoopbackCheck)};smoke_coverage={LowerBool(v316SmokeCoverage)};kill_switch={LowerBool(v316KillSwitch)};default_tests_live_runtime={LowerBool(v316DefaultTestsNoLiveRuntime)}"));
 
+            string v317DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.17-langgraph-manual-smoke.md");
+            string v317ScriptPath = Path.Combine(v311RepoRoot, "tools", "run-dataagent-langgraph-manual-smoke.ps1");
+            bool v317DocExists = File.Exists(v317DocPath);
+            bool v317ScriptExists = File.Exists(v317ScriptPath);
+            string v317Doc = v317DocExists ? File.ReadAllText(v317DocPath) : string.Empty;
+            string v317Script = v317ScriptExists ? File.ReadAllText(v317ScriptPath) : string.Empty;
+            bool v317OperatorOnly =
+                v317Doc.Contains("manual_smoke=true", StringComparison.Ordinal) &&
+                v317Doc.Contains("operator_only=true", StringComparison.Ordinal) &&
+                v317Script.Contains("manual_only=true", StringComparison.Ordinal);
+            bool v317DefaultUnchanged =
+                v317Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v317Script.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v317Script.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v317Script.Contains("creates_venv=false", StringComparison.Ordinal) &&
+                v317Script.Contains("binds_port=false", StringComparison.Ordinal);
+            bool v317AuthorityBoundary =
+                v317Doc.Contains("sidecar_write_authority=false", StringComparison.Ordinal) &&
+                v317Doc.Contains("csharp_execution_authority=true", StringComparison.Ordinal) &&
+                v317Doc.Contains("fallback_required=true", StringComparison.Ordinal);
+            bool v317ManualOnly =
+                v317Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v317Script.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v317Script.Contains("Start-Process", StringComparison.Ordinal) == false &&
+                v317Script.Contains("pip install", StringComparison.Ordinal) == false &&
+                v317Script.Contains("python -m venv", StringComparison.Ordinal) == false &&
+                v317Script.Contains("uvicorn", StringComparison.Ordinal) == false;
+            bool v317LoopbackOnly =
+                v317Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v317Script.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v317Script.Contains("Only loopback hosts are allowed.", StringComparison.Ordinal);
+            bool v317SmokeMarkers =
+                v317Script.Contains("smoke_valid_advisory=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_forbidden_authority_rejected=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_timeout_fallback=true", StringComparison.Ordinal);
+            bool v317Ready =
+                v317DocExists &&
+                v317ScriptExists &&
+                v317OperatorOnly &&
+                v317DefaultUnchanged &&
+                v317AuthorityBoundary &&
+                v317ManualOnly &&
+                v317LoopbackOnly &&
+                v317SmokeMarkers;
+            checks.Add(v317Ready
+                ? Pass("GraphHandshakeLangGraphManualSmokeHarnessPresent", "manual_smoke=true;operator_only=true;default_result_changed=false;sidecar_write_authority=false;csharp_execution_authority=true;fallback_required=true;manual_only=true;loopback_only=true")
+                : Fail("GraphHandshakeLangGraphManualSmokeHarnessPresent", $"doc={LowerBool(v317DocExists)};script={LowerBool(v317ScriptExists)};operator_only={LowerBool(v317OperatorOnly)};default_unchanged={LowerBool(v317DefaultUnchanged)};authority_boundary={LowerBool(v317AuthorityBoundary)};manual_only={LowerBool(v317ManualOnly)};loopback_only={LowerBool(v317LoopbackOnly)};smoke_markers={LowerBool(v317SmokeMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
