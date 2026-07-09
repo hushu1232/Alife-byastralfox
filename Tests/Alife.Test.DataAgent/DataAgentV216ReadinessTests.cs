@@ -39,7 +39,7 @@ public sealed class DataAgentV216ReadinessTests
             Assert.That(script, Does.Contain("RecentDataAgentGraphDiagnostics"));
             Assert.That(script, Does.Contain("dataQueryGraphDiagnosticsPublisher"));
             Assert.That(script, Does.Contain("DataAgentDataQueryGraphTraceFormatter.Format"));
-            Assert.That(script, Does.Contain("$expectedRequired = 96"));
+            Assert.That(script, Does.Contain("$expectedRequired = 97"));
         });
     }
 

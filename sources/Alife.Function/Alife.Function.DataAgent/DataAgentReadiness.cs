@@ -1048,6 +1048,56 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeAuthorityFallbackRegressionPresent", "authority_regression=true;forbidden_authorities_rejected=true;fallback_required=true;default_result_changed=false;no_sql_authority=true;no_visible_text=true")
                 : Fail("GraphHandshakeAuthorityFallbackRegressionPresent", $"doc={LowerBool(v315DocExists)};authority_regression={LowerBool(v315AuthorityRegression)};forbidden_authorities_rejected={LowerBool(v315ForbiddenAuthoritiesRejected)};handshake_regression={LowerBool(v315HandshakeRegression)};fallback_required={LowerBool(v315Fallback)};no_authority={LowerBool(v315NoAuthority)}"));
 
+            string v316DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.16-langgraph-live-smoke-readiness.md");
+            bool v316DocExists = File.Exists(v316DocPath);
+            string v316Doc = v316DocExists ? File.ReadAllText(v316DocPath) : string.Empty;
+            bool v316OperatorRunbook =
+                v316Doc.Contains("operator_runbook=true", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to start sidecar manually", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to verify loopback binding", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to run smoke tests", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to inspect diagnostics", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to stop sidecar", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to confirm fallback works", StringComparison.Ordinal) &&
+                v316Doc.Contains("how to prove default chain is unchanged", StringComparison.Ordinal);
+            bool v316ManualStart =
+                v316Doc.Contains("manual_start=true", StringComparison.Ordinal) &&
+                v311Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v311Readme.Contains("manual-only", StringComparison.OrdinalIgnoreCase);
+            bool v316LoopbackCheck =
+                v316Doc.Contains("loopback_check=true", StringComparison.Ordinal) &&
+                v311Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("Only loopback hosts are allowed.", StringComparison.Ordinal);
+            bool v316SmokeCoverage =
+                v316Doc.Contains("smoke_valid_advisory=true", StringComparison.Ordinal) &&
+                v316Doc.Contains("smoke_forbidden_authority_rejected=true", StringComparison.Ordinal) &&
+                v316Doc.Contains("smoke_timeout_fallback=true", StringComparison.Ordinal) &&
+                v316Doc.Contains("NoSqlAuthority=true", StringComparison.Ordinal) &&
+                v316Doc.Contains("FallbackRequired=true", StringComparison.Ordinal);
+            bool v316KillSwitch =
+                v316Doc.Contains("kill_switch=true", StringComparison.Ordinal) &&
+                graphHandshakeDefaultOptions.Enabled == false;
+            bool v316DefaultTestsNoLiveRuntime =
+                v316Doc.Contains("default_tests_live_runtime=false", StringComparison.Ordinal) &&
+                v316Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v316Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                graphHandshakeDefaultHttpOptions.RuntimeStarted == false &&
+                graphHandshakeDefaultStreamOptions.RuntimeStarted == false &&
+                v311Sidecar.Contains("Process.Start", StringComparison.Ordinal) == false &&
+                v311Sidecar.Contains("subprocess", StringComparison.Ordinal) == false &&
+                v311Sidecar.Contains("pip install", StringComparison.Ordinal) == false;
+            bool v316Ready =
+                v316DocExists &&
+                v316OperatorRunbook &&
+                v316ManualStart &&
+                v316LoopbackCheck &&
+                v316SmokeCoverage &&
+                v316KillSwitch &&
+                v316DefaultTestsNoLiveRuntime;
+            checks.Add(v316Ready
+                ? Pass("GraphHandshakeLangGraphLiveSmokeReadinessPresent", "operator_runbook=true;manual_start=true;loopback_check=true;smoke_valid_advisory=true;smoke_forbidden_authority_rejected=true;smoke_timeout_fallback=true;kill_switch=true;default_tests_live_runtime=false;starts_runtime=false;installs_dependencies=false")
+                : Fail("GraphHandshakeLangGraphLiveSmokeReadinessPresent", $"doc={LowerBool(v316DocExists)};operator_runbook={LowerBool(v316OperatorRunbook)};manual_start={LowerBool(v316ManualStart)};loopback_check={LowerBool(v316LoopbackCheck)};smoke_coverage={LowerBool(v316SmokeCoverage)};kill_switch={LowerBool(v316KillSwitch)};default_tests_live_runtime={LowerBool(v316DefaultTestsNoLiveRuntime)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
