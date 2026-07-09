@@ -128,7 +128,6 @@ try {
 
     $artifact = [ordered]@{
         real_langgraph_manual_shadow_integration = $true
-        source_baseline = "v3.28"
         manual_only = $true
         operator_started_runtime = $true
         loopback_only = $true
