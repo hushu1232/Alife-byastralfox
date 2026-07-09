@@ -1232,6 +1232,70 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeReplayFixturePackPresent", "replay_fixture_pack=true;successful_advisory=true;rejected_authority=true;timeout_fallback=true;invalid_schema=true;default_result_changed=false;stores_secrets=false;stores_sql=false")
                 : Fail("GraphHandshakeReplayFixturePackPresent", $"doc={LowerBool(v319DocExists)};fixtures={LowerBool(v319FixturesExist)};doc_markers={LowerBool(v319DocMarkers)};boundary={LowerBool(v319Boundary)};fixture_markers={LowerBool(v319FixtureMarkers)}"));
 
+            string v320DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.20-shadow-replay-report.md");
+            bool v320DocExists = File.Exists(v320DocPath);
+            string v320Doc = v320DocExists ? File.ReadAllText(v320DocPath) : string.Empty;
+            DataAgentGraphHandshakeReplayReport v320SampleReport =
+                DataAgentGraphHandshakeReplayReportConsolidator.Create(
+                    "v3.20-readiness",
+                    [
+                        new DataAgentGraphHandshakeReplayInput(
+                            "successful_advisory",
+                            new DataAgentGraphHandshakeOutcome(
+                                DataAgentGraphHandshakeStatus.Disabled,
+                                "sidecar_disabled",
+                                true,
+                                Request: null,
+                                Response: null,
+                                new DataAgentGraphHandshakeValidationResult(false, "sidecar_disabled")),
+                            new DataAgentGraphHandshakeOutcome(
+                                DataAgentGraphHandshakeStatus.Accepted,
+                                "handshake_accepted",
+                                false,
+                                Request: null,
+                                Response: null,
+                                new DataAgentGraphHandshakeValidationResult(true, "handshake_accepted")))
+                    ]);
+            string v320SampleMarkdown = DataAgentGraphHandshakeReplayReportFormatter.FormatMarkdown(v320SampleReport);
+            bool v320DocMarkers =
+                v320Doc.Contains("shadow_replay_report=true", StringComparison.Ordinal) &&
+                v320Doc.Contains("replay_fixture_pack=true", StringComparison.Ordinal) &&
+                v320Doc.Contains("source_fixture_pack=v3.19", StringComparison.Ordinal) &&
+                v320Doc.Contains("shadow_only=true", StringComparison.Ordinal);
+            bool v320Boundary =
+                v320Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v320Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v320Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v320Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v320Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v320ModelReady =
+                typeof(DataAgentGraphHandshakeReplayInput).IsClass &&
+                typeof(DataAgentGraphHandshakeReplayReport).IsClass &&
+                typeof(DataAgentGraphHandshakeReplayReportConsolidator).IsClass &&
+                typeof(DataAgentGraphHandshakeReplayReportFormatter).IsClass &&
+                v320SampleReport.ComparisonCount == 1 &&
+                v320SampleReport.DefaultResultChanged == false &&
+                v320SampleReport.Passed;
+            bool v320FormatterReady =
+                v320SampleMarkdown.Contains("shadow_replay_report=true", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("replay_fixture_pack=true", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("source_fixture_pack=v3.19", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("fixture_successful_advisory=accepted_advisory_difference", StringComparison.Ordinal) &&
+                v320SampleMarkdown.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v320SampleMarkdown.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v320Ready =
+                v320DocExists &&
+                v320DocMarkers &&
+                v320Boundary &&
+                v320ModelReady &&
+                v320FormatterReady;
+            checks.Add(v320Ready
+                ? Pass("GraphHandshakeShadowReplayReportPresent", "shadow_replay_report=true;replay_fixture_pack=true;source_fixture_pack=v3.19;shadow_only=true;default_result_changed=false;starts_runtime=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeShadowReplayReportPresent", $"doc={LowerBool(v320DocExists)};doc_markers={LowerBool(v320DocMarkers)};boundary={LowerBool(v320Boundary)};model={LowerBool(v320ModelReady)};formatter={LowerBool(v320FormatterReady)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
