@@ -1,0 +1,17 @@
+{
+  "replay_fixture_pack": true,
+  "fixture_id": "successful_advisory",
+  "default_result_changed": false,
+  "no_sql_authority": true,
+  "fallback_required": true,
+  "deterministic": {
+    "status": "Disabled",
+    "reason_code": "sidecar_disabled",
+    "fallback_required": true
+  },
+  "sidecar": {
+    "status": "Accepted",
+    "reason_code": "handshake_accepted",
+    "fallback_required": false
+  }
+}

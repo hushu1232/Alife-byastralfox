@@ -1189,6 +1189,49 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeSmokeResultArtifactFormatterPresent", "smoke_result_artifact=true;artifact_formatter=true;manual_only=true;stores_secrets=false;stores_sql=false;stores_hidden_context=false;sanitizes_unsafe_text=true;default_result_changed=false")
                 : Fail("GraphHandshakeSmokeResultArtifactFormatterPresent", $"doc={LowerBool(v318DocExists)};script={LowerBool(v318ScriptExists)};artifact_formatter={LowerBool(v318ArtifactFormatter)};manual_only={LowerBool(v318ManualOnly)};storage_boundary={LowerBool(v318StorageBoundary)};sanitizes_unsafe_text={LowerBool(v318SanitizesUnsafeText)};default_result_changed={LowerBool(v318DefaultUnchanged)}"));
 
+            string v319DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.19-replay-fixture-pack.md");
+            string v319FixtureDirectory = Path.Combine(v311RepoRoot, "Tests", "Alife.Test.DataAgent", "Fixtures", "DataAgent", "V319Replay");
+            bool v319DocExists = File.Exists(v319DocPath);
+            string v319Doc = v319DocExists ? File.ReadAllText(v319DocPath) : string.Empty;
+            string[] v319FixtureIds =
+            [
+                "successful_advisory",
+                "rejected_authority",
+                "timeout_fallback",
+                "invalid_schema"
+            ];
+            bool v319FixturesExist = v319FixtureIds.All(id => File.Exists(Path.Combine(v319FixtureDirectory, $"{id}.json")));
+            bool v319DocMarkers =
+                v319Doc.Contains("replay_fixture_pack=true", StringComparison.Ordinal) &&
+                v319Doc.Contains("successful_advisory=true", StringComparison.Ordinal) &&
+                v319Doc.Contains("rejected_authority=true", StringComparison.Ordinal) &&
+                v319Doc.Contains("timeout_fallback=true", StringComparison.Ordinal) &&
+                v319Doc.Contains("invalid_schema=true", StringComparison.Ordinal);
+            bool v319Boundary =
+                v319Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v319Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v319Doc.Contains("stores_sql=false", StringComparison.Ordinal);
+            bool v319FixtureMarkers = v319FixturesExist && v319FixtureIds.All(id =>
+            {
+                string fixtureText = File.ReadAllText(Path.Combine(v319FixtureDirectory, $"{id}.json"));
+                return fixtureText.Contains("\"replay_fixture_pack\": true", StringComparison.Ordinal) &&
+                       fixtureText.Contains("\"default_result_changed\": false", StringComparison.Ordinal) &&
+                       fixtureText.Contains("\"no_sql_authority\": true", StringComparison.Ordinal) &&
+                       fixtureText.Contains("\"fallback_required\": true", StringComparison.Ordinal) &&
+                       fixtureText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                       fixtureText.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                       fixtureText.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false &&
+                       fixtureText.Contains("secret", StringComparison.OrdinalIgnoreCase) == false;
+            });
+            bool v319Ready =
+                v319DocExists &&
+                v319DocMarkers &&
+                v319Boundary &&
+                v319FixtureMarkers;
+            checks.Add(v319Ready
+                ? Pass("GraphHandshakeReplayFixturePackPresent", "replay_fixture_pack=true;successful_advisory=true;rejected_authority=true;timeout_fallback=true;invalid_schema=true;default_result_changed=false;stores_secrets=false;stores_sql=false")
+                : Fail("GraphHandshakeReplayFixturePackPresent", $"doc={LowerBool(v319DocExists)};fixtures={LowerBool(v319FixturesExist)};doc_markers={LowerBool(v319DocMarkers)};boundary={LowerBool(v319Boundary)};fixture_markers={LowerBool(v319FixtureMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =

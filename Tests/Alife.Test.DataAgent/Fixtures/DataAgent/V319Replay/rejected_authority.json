@@ -1,0 +1,17 @@
+{
+  "replay_fixture_pack": true,
+  "fixture_id": "rejected_authority",
+  "default_result_changed": false,
+  "no_sql_authority": true,
+  "fallback_required": true,
+  "deterministic": {
+    "status": "Disabled",
+    "reason_code": "sidecar_disabled",
+    "fallback_required": true
+  },
+  "sidecar": {
+    "status": "Rejected",
+    "reason_code": "sql_authority_requested",
+    "fallback_required": true
+  }
+}
