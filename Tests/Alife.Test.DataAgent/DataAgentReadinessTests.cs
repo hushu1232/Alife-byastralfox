@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(77));
+            Assert.That(checks, Has.Count.EqualTo(78));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -114,6 +114,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("terminal_no_execute=true"));
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("sidecar_authority=false"));
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentReplayRunbookPresent"));
+            DataAgentReadinessCheck replayRunbookCheck = checks.Single(check => check.Name == "DataAgentReplayRunbookPresent");
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("cli=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("fixture=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("real_chain=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("markdown=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("json=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("expected_markers=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("sidecar_authority=false"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
