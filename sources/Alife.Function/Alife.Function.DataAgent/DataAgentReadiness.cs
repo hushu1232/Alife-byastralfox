@@ -898,6 +898,58 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeBoundedDiagnosticsExplanationPresent", "bounded_explanation=true;advisory_only=true;csharp_write_authority=true;sidecar_write_authority=false;requests_visible_text=false;unsafe_text_rejected=true;fallback=true")
                 : Fail("GraphHandshakeBoundedDiagnosticsExplanationPresent", $"doc={LowerBool(v313DocExists)};model={LowerBool(v313ModelReady)};bounded_explanation={LowerBool(v313BoundedExplanation)};advisory_only={LowerBool(v313AdvisoryOnly)};authority={LowerBool(v313AuthorityReady)};unsafe_text_rejected={LowerBool(v313UnsafeRejected)};fallback={LowerBool(v313Fallback)}"));
 
+            string v314DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.14-cross-module-planner-manifests.md");
+            bool v314DocExists = File.Exists(v314DocPath);
+            string v314Doc = v314DocExists ? File.ReadAllText(v314DocPath) : string.Empty;
+            IReadOnlyList<DataAgentCrossModulePlannerManifest> v314Manifests =
+                DataAgentCrossModulePlannerManifestFactory.CreateDefault();
+            bool v314ManifestModelReady =
+                typeof(DataAgentCrossModulePlannerManifest).IsClass &&
+                typeof(DataAgentCrossModulePlannerManifestFactory).IsClass &&
+                typeof(DataAgentCrossModulePlannerManifestValidator).IsClass;
+            bool v314PlannerOnly =
+                v314Doc.Contains("planner_only=true", StringComparison.Ordinal) &&
+                v314Manifests.Count == 6 &&
+                v314Manifests.All(manifest => manifest.PlannerOnly);
+            bool v314CrossModuleAdvisory =
+                v314Doc.Contains("cross_module_advisory=true", StringComparison.Ordinal) &&
+                v314Manifests.Select(manifest => manifest.CapabilityName).SequenceEqual(
+                    [
+                        "qchat.intent_hint",
+                        "memory.candidate_summary",
+                        "browser.task_plan",
+                        "desktop.task_plan",
+                        "emotion.expression_hint",
+                        "deskpet.expression_hint"
+                    ],
+                    StringComparer.Ordinal);
+            bool v314AuthorityDenied =
+                v314Doc.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v314Doc.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v314Doc.Contains("allows_visible_text=false", StringComparison.Ordinal) &&
+                v314Manifests.All(manifest =>
+                    manifest.AllowsExecution == false &&
+                    manifest.AllowsStateWrite == false &&
+                    manifest.AllowsVisibleText == false);
+            bool v314DeniedMarkers =
+                v314Manifests.All(manifest =>
+                    DataAgentCrossModulePlannerManifestValidator.Validate(manifest).Accepted &&
+                    DataAgentCrossModulePlannerManifestValidator.RequiredDeniedCapabilityMarkers.All(required =>
+                        manifest.DeniedCapabilityMarkers.Contains(required, StringComparer.Ordinal)));
+            bool v314Fallback =
+                v314Doc.Contains("fallback_required=true", StringComparison.Ordinal);
+            bool v314Ready =
+                v314DocExists &&
+                v314ManifestModelReady &&
+                v314PlannerOnly &&
+                v314CrossModuleAdvisory &&
+                v314AuthorityDenied &&
+                v314DeniedMarkers &&
+                v314Fallback;
+            checks.Add(v314Ready
+                ? Pass("GraphHandshakeCrossModulePlannerManifestsPresent", "planner_only=true;cross_module_advisory=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;denied_markers=true;fallback=true")
+                : Fail("GraphHandshakeCrossModulePlannerManifestsPresent", $"doc={LowerBool(v314DocExists)};model={LowerBool(v314ManifestModelReady)};planner_only={LowerBool(v314PlannerOnly)};cross_module_advisory={LowerBool(v314CrossModuleAdvisory)};authority_denied={LowerBool(v314AuthorityDenied)};denied_markers={LowerBool(v314DeniedMarkers)};fallback={LowerBool(v314Fallback)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
