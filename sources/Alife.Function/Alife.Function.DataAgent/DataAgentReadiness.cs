@@ -1684,6 +1684,126 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeRealLangGraphManualShadowProviderPresent", "real_langgraph_manual_shadow_provider=true;langgraph_provider_only=true;manual_shadow_only=true;agent_advisory_contract=v3.24;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeRealLangGraphManualShadowProviderPresent", $"doc={LowerBool(v325DocExists)};doc_markers={LowerBool(v325DocMarkers)};boundary={LowerBool(v325Boundary)};model={LowerBool(v325ModelReady)};packet={LowerBool(v325PacketMarkers)}"));
 
+            string v326DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.26-harness-replay-diff-gate.md");
+            bool v326DocExists = File.Exists(v326DocPath);
+            string v326Doc = v326DocExists ? File.ReadAllText(v326DocPath) : string.Empty;
+            DataAgentGraphHandshakeShadowComparison v326Comparison = new(
+                DataAgentGraphHandshakeShadowComparisonStatus.TimeoutOrTransportFailure,
+                "timeout_or_transport_failure",
+                "sidecar_disabled",
+                "timeout",
+                DataAgentGraphHandshakeStatus.Disabled,
+                DataAgentGraphHandshakeStatus.Timeout,
+                DeterministicFallbackRequired: true,
+                SidecarFallbackRequired: true,
+                DefaultResultChanged: false);
+            DataAgentGraphHandshakeReplayReport v326Report = new(
+                "v3.26-harness-replay-diff-gate",
+                [new DataAgentGraphHandshakeReplayFixtureResult("timeout_fallback", v326Comparison)],
+                new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    ["timeout_or_transport_failure"] = 1
+                },
+                ComparisonCount: 1,
+                DefaultResultChanged: false,
+                Passed: true);
+            DataAgentGraphHandshakeReplayReport v326ChangedReport = v326Report with
+            {
+                DefaultResultChanged = true,
+                Passed = false
+            };
+            DataAgentLangGraphManualShadowResult v326MismatchAdvisory =
+                DataAgentLangGraphManualShadowProvider.Evaluate(
+                    v324Request with
+                    {
+                        FailureCategory = "invalid_schema"
+                    },
+                    v325Payload with
+                    {
+                        Advisory = v324SafeResponse with
+                        {
+                            ReasonCode = "invalid_schema"
+                        }
+                    });
+            DataAgentHarnessReplayDiffGateResult v326Passed =
+                DataAgentHarnessReplayDiffGate.Evaluate(new DataAgentHarnessReplayDiffGateInput(v326Report, v325Accepted));
+            DataAgentHarnessReplayDiffGateResult v326Rejected =
+                DataAgentHarnessReplayDiffGate.Evaluate(new DataAgentHarnessReplayDiffGateInput(v326Report, v325Rejected));
+            DataAgentHarnessReplayDiffGateResult v326Changed =
+                DataAgentHarnessReplayDiffGate.Evaluate(new DataAgentHarnessReplayDiffGateInput(v326ChangedReport, v325Accepted));
+            DataAgentHarnessReplayDiffGateResult v326Mismatch =
+                DataAgentHarnessReplayDiffGate.Evaluate(new DataAgentHarnessReplayDiffGateInput(v326Report, v326MismatchAdvisory));
+            string v326Packet = DataAgentHarnessReplayDiffGateFormatter.Format(v326Passed);
+            bool v326DocMarkers =
+                v326Doc.Contains("harness_replay_diff_gate=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal) &&
+                v326Doc.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("gate_only=true", StringComparison.Ordinal) &&
+                v326Doc.Contains("operator_decides=true", StringComparison.Ordinal);
+            bool v326Boundary =
+                v326Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v326Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v326ModelReady =
+                typeof(DataAgentHarnessReplayDiffGateInput).IsClass &&
+                typeof(DataAgentHarnessReplayDiffGateResult).IsClass &&
+                typeof(DataAgentHarnessReplayDiffGate).IsClass &&
+                typeof(DataAgentHarnessReplayDiffGateFormatter).IsClass &&
+                v326Passed.GatePassed &&
+                string.Equals(v326Passed.ReasonCode, "harness_replay_diff_gate_passed", StringComparison.Ordinal) &&
+                v326Passed.ReplayEvidenceMatched &&
+                v326Passed.AdvisoryReasonMatched &&
+                v326Passed.FallbackRequired == false &&
+                v326Passed.DefaultResultChanged == false &&
+                v326Passed.StartsRuntime == false &&
+                v326Passed.InstallsDependencies == false &&
+                v326Passed.CallsSidecar == false &&
+                v326Passed.StoresSecrets == false &&
+                v326Passed.StoresSql == false &&
+                v326Passed.StoresHiddenContext == false &&
+                v326Rejected.GatePassed == false &&
+                string.Equals(v326Rejected.ReasonCode, "advisory_forbidden_authority_claimed", StringComparison.Ordinal) &&
+                v326Rejected.FallbackRequired &&
+                v326Changed.GatePassed == false &&
+                string.Equals(v326Changed.ReasonCode, "harness_replay_default_result_changed", StringComparison.Ordinal) &&
+                v326Mismatch.GatePassed == false &&
+                string.Equals(v326Mismatch.ReasonCode, "harness_replay_diff_reason_mismatch", StringComparison.Ordinal) &&
+                v326Mismatch.OperatorRequired;
+            bool v326PacketMarkers =
+                v326Packet.Contains("harness_replay_diff_gate=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal) &&
+                v326Packet.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("gate_only=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("operator_decides=true", StringComparison.Ordinal) &&
+                v326Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v326Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v326Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v326Ready =
+                v326DocExists &&
+                v326DocMarkers &&
+                v326Boundary &&
+                v326ModelReady &&
+                v326PacketMarkers;
+            checks.Add(v326Ready
+                ? Pass("GraphHandshakeHarnessReplayDiffGatePresent", "harness_replay_diff_gate=true;agent_advisory_contract=v3.24;real_langgraph_manual_shadow_provider=true;harness_execution_authority=true;csharp_validation_authority=true;agent_advisory_only=true;gate_only=true;operator_decides=true;default_result_changed=false;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeHarnessReplayDiffGatePresent", $"doc={LowerBool(v326DocExists)};doc_markers={LowerBool(v326DocMarkers)};boundary={LowerBool(v326Boundary)};model={LowerBool(v326ModelReady)};packet={LowerBool(v326PacketMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
