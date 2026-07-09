@@ -883,6 +883,96 @@ public static class DataAgentReadiness
                 ? Pass("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractPassDetail)
                 : Fail("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractFailDetail));
 
+            string dataAgentReplayRepoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+            string dataAgentReplayWrapperPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "replay-dataagent-chain.ps1");
+            string dataAgentReplayProjectPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "Alife.Tools.DataAgentReplay.csproj");
+            string dataAgentReplayFixturePath = Path.Combine(dataAgentReplayRepoRoot, "Tests", "Alife.Test.DataAgent", "Fixtures", "DataAgentReplay", "v3.9-owner-readiness-analysis.json");
+            string dataAgentReplayRunnerPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "DataAgentReplayRunner.cs");
+            string dataAgentReplayFormatterPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "DataAgentReplayReportFormatter.cs");
+            string dataAgentReplayTestsPath = Path.Combine(dataAgentReplayRepoRoot, "Tests", "Alife.Test.DataAgent", "DataAgentReplayRunbookTests.cs");
+            string dataAgentReplayWrapperSource = File.Exists(dataAgentReplayWrapperPath)
+                ? File.ReadAllText(dataAgentReplayWrapperPath)
+                : string.Empty;
+            string dataAgentReplayRunnerSource = File.Exists(dataAgentReplayRunnerPath)
+                ? File.ReadAllText(dataAgentReplayRunnerPath)
+                : string.Empty;
+            string dataAgentReplayFormatterSource = File.Exists(dataAgentReplayFormatterPath)
+                ? File.ReadAllText(dataAgentReplayFormatterPath)
+                : string.Empty;
+            bool dataAgentReplayCliReady =
+                File.Exists(dataAgentReplayWrapperPath) &&
+                File.Exists(dataAgentReplayProjectPath) &&
+                File.Exists(dataAgentReplayTestsPath) &&
+                ContractContains(dataAgentReplayWrapperSource, "v3.9-owner-readiness-analysis.json") &&
+                ContractContains(dataAgentReplayWrapperSource, @"C:\Users\hu shu\.dotnet\dotnet.exe") &&
+                ContractContains(dataAgentReplayWrapperSource, "$Format") &&
+                ContractContains(dataAgentReplayWrapperSource, "markdown") &&
+                ContractContains(dataAgentReplayWrapperSource, "json") &&
+                ContractContains(dataAgentReplayWrapperSource, "Unsupported format") &&
+                ContractContains(dataAgentReplayWrapperSource, "--no-restore") &&
+                ContractContains(dataAgentReplayWrapperSource, "Alife.Tools.DataAgentReplay.csproj");
+            bool dataAgentReplayFixtureReady = File.Exists(dataAgentReplayFixturePath);
+            bool dataAgentReplayRealChainReady =
+                ContractContains(dataAgentReplayRunnerSource, "ToolCapabilityRouter.CreateDefault") &&
+                ContractContains(dataAgentReplayRunnerSource, "XmlFunctionExecutionPolicy") &&
+                ContractContains(dataAgentReplayRunnerSource, "XmlPolicyDataAgentToolRouteContextAccessor") &&
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentAnalysisToolHandler") &&
+                ContractContains(dataAgentReplayRunnerSource, "QChatDiagnosticsService") &&
+                ContractContains(dataAgentReplayRunnerSource, "FixedRouteContextAccessor") == false;
+            bool dataAgentReplayMarkdownReady =
+                ContractContains(dataAgentReplayFormatterSource, "FormatMarkdown") &&
+                ContractContains(dataAgentReplayFormatterSource, "# DataAgent Replay:") &&
+                ContractContains(dataAgentReplayFormatterSource, "## Expected Markers");
+            bool dataAgentReplayJsonReady =
+                ContractContains(dataAgentReplayFormatterSource, "FormatJson") &&
+                ContractContains(dataAgentReplayFormatterSource, "JsonSerializer.Serialize");
+            bool dataAgentReplayExpectedMarkersReady =
+                ContractContains(dataAgentReplayRunnerSource, "ExpectedMarkers") &&
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentReplayExpectedMarker") &&
+                ContractContains(dataAgentReplayRunnerSource, "combined.Contains(marker, StringComparison.Ordinal)") &&
+                ContractContains(dataAgentReplayRunnerSource, "All(marker => marker.Passed)");
+            bool dataAgentReplaySidecarAuthorityBoundaryReady =
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentGraphHandshakeOptions.Disabled") &&
+                ContractContains(dataAgentReplayRunnerSource, "DisabledDataAgentGraphSidecarClient.Instance") &&
+                ContractContains(dataAgentReplayRunnerSource, "sidecar_disabled") &&
+                ContractContains(dataAgentReplayRunnerSource, "SidecarAuthority: disabledSidecarObserved == false || liveRuntimeObserved") &&
+                ContractContains(dataAgentReplayRunnerSource, "offlineBoundary.SidecarAuthority == false");
+            bool dataAgentReplayDefaultTestsLiveRuntimeBoundaryReady =
+                ContractContains(dataAgentReplayRunnerSource, "offlineBoundary.DefaultTestsLiveRuntime == false") &&
+                ContractContains(dataAgentReplayRunnerSource, "ContainsLiveRuntimeMarker(replayEvidence)") &&
+                ContractContains(dataAgentReplayRunnerSource, "DefaultTestsLiveRuntime: liveRuntimeObserved") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"http://\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"https://\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"127.0.0.1\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"localhost\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"uvicorn\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"Start-Process\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"DataAgentGraphHandshakeHttpClient\"") &&
+                ContractContains(dataAgentReplayWrapperSource, "dotnet run --no-restore --project") &&
+                ContractContains(dataAgentReplayWrapperSource, "Start-Process") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "Invoke-WebRequest") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "uvicorn") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "127.0.0.1") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "localhost") == false;
+            bool dataAgentReplaySidecarAuthorityObserved = dataAgentReplaySidecarAuthorityBoundaryReady == false;
+            bool dataAgentReplayDefaultTestsLiveRuntimeObserved = dataAgentReplayDefaultTestsLiveRuntimeBoundaryReady == false;
+            bool dataAgentReplayRunbookReady =
+                dataAgentReplayCliReady &&
+                dataAgentReplayFixtureReady &&
+                dataAgentReplayRealChainReady &&
+                dataAgentReplayMarkdownReady &&
+                dataAgentReplayJsonReady &&
+                dataAgentReplayExpectedMarkersReady &&
+                dataAgentReplaySidecarAuthorityObserved == false &&
+                dataAgentReplayDefaultTestsLiveRuntimeObserved == false;
+            const string dataAgentReplayRunbookPassDetail =
+                "cli=true;fixture=true;real_chain=true;markdown=true;json=true;expected_markers=true;sidecar_authority=false;default_tests_live_runtime=false";
+            string dataAgentReplayRunbookFailDetail =
+                $"cli={LowerBool(dataAgentReplayCliReady)};fixture={LowerBool(dataAgentReplayFixtureReady)};real_chain={LowerBool(dataAgentReplayRealChainReady)};markdown={LowerBool(dataAgentReplayMarkdownReady)};json={LowerBool(dataAgentReplayJsonReady)};expected_markers={LowerBool(dataAgentReplayExpectedMarkersReady)};sidecar_authority={LowerBool(dataAgentReplaySidecarAuthorityObserved)};default_tests_live_runtime={LowerBool(dataAgentReplayDefaultTestsLiveRuntimeObserved)}";
+            checks.Add(dataAgentReplayRunbookReady
+                ? Pass("DataAgentReplayRunbookPresent", dataAgentReplayRunbookPassDetail)
+                : Fail("DataAgentReplayRunbookPresent", dataAgentReplayRunbookFailDetail));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =

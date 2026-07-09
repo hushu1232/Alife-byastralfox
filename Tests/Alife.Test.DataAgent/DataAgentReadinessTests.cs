@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(77));
+            Assert.That(checks, Has.Count.EqualTo(78));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -114,6 +114,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("terminal_no_execute=true"));
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("sidecar_authority=false"));
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentReplayRunbookPresent"));
+            DataAgentReadinessCheck replayRunbookCheck = checks.Single(check => check.Name == "DataAgentReplayRunbookPresent");
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("cli=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("fixture=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("real_chain=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("markdown=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("json=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("expected_markers=true"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("sidecar_authority=false"));
+            Assert.That(replayRunbookCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -228,7 +238,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 92 required passed, 0 required missing"
+                "  Summary: 93 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -256,6 +266,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarStreamingTransportPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarObservabilityContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEndToEndChainContractPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentReplayRunbookPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -273,7 +284,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 92"));
+            Assert.That(script, Does.Contain("$expectedRequired = 93"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -621,6 +632,34 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped"));
             Assert.That(declaration, Does.Contain("QChatDiagnosticsService"));
             Assert.That(declaration, Does.Contain("DataAgentEndToEndChainContractPresent"));
+            Assert.That(declaration, Does.Contain("sidecar_authority=false"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+        });
+    }
+
+    [Test]
+    public void StaticReadinessScriptContainsV39ReplayRunbookMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+        string declaration = FindNewCheckDeclaration(script, "DataAgentReplayRunbookPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("tools/replay-dataagent-chain.ps1"));
+            Assert.That(declaration, Does.Contain("--no-restore"));
+            Assert.That(declaration, Does.Contain("tools/dataagent-replay/Alife.Tools.DataAgentReplay.csproj"));
+            Assert.That(declaration, Does.Contain("DataAgentReplayRunner.cs"));
+            Assert.That(declaration, Does.Contain("DataAgentReplayReportFormatter.cs"));
+            Assert.That(declaration, Does.Contain("v3.9-owner-readiness-analysis.json"));
+            Assert.That(declaration, Does.Contain("DataAgentReplayRunbookTests.cs"));
+            Assert.That(declaration, Does.Contain("ToolCapabilityRouter.CreateDefault"));
+            Assert.That(declaration, Does.Contain("XmlPolicyDataAgentToolRouteContextAccessor"));
+            Assert.That(declaration, Does.Contain("QChatDiagnosticsService"));
+            Assert.That(declaration, Does.Contain("DataAgentGraphHandshakeOptions.Disabled"));
+            Assert.That(declaration, Does.Contain("FormatMarkdown"));
+            Assert.That(declaration, Does.Contain("FormatJson"));
             Assert.That(declaration, Does.Contain("sidecar_authority=false"));
             Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
         });
