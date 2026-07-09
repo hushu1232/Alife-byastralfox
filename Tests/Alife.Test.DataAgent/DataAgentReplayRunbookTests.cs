@@ -348,6 +348,15 @@ public sealed class DataAgentReplayRunbookTests
     }
 
     [Test]
+    public void ReplayScriptDisablesImplicitDotnetRestore()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "replay-dataagent-chain.ps1"));
+
+        Assert.That(script, Does.Contain("run --no-restore --project"));
+    }
+
+    [Test]
     public void ReplayTestProcessRunnerDisablesMsBuildNodeReuse()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -381,6 +390,48 @@ public sealed class DataAgentReplayRunbookTests
             Assert.That(result.ExitCode, Is.Not.EqualTo(0));
             Assert.That(result.StandardError + result.StandardOutput, Does.Contain("--fixture"));
         });
+    }
+
+    [Test]
+    public void ReplayProjectUnexpectedFixtureErrorReportsExceptionType()
+    {
+        string fixturePath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"program-missing-planner-{Guid.NewGuid():N}.json");
+        File.WriteAllText(
+            fixturePath,
+            """
+            {
+              "version": "v3.9",
+              "name": "program-missing-planner",
+              "callerId": "owner",
+              "utterance": "DataAgent analyze project readiness",
+              "routeState": {
+                "isOwner": true,
+                "isPrivate": true,
+                "trustedRuntime": true,
+                "activeDataAgentSessionId": "",
+                "activeDataAgentSessionStatus": ""
+              },
+              "expectedMarkers": []
+            }
+            """);
+
+        try
+        {
+            ProcessResult result = RunReplayProject("--fixture", fixturePath, "--format", "markdown");
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+                Assert.That(result.StandardError + result.StandardOutput, Does.Contain(nameof(InvalidOperationException)));
+                Assert.That(result.StandardError + result.StandardOutput, Does.Contain("planner"));
+            });
+        }
+        finally
+        {
+            File.Delete(fixturePath);
+        }
     }
 
     [Test]
@@ -431,6 +482,7 @@ public sealed class DataAgentReplayRunbookTests
 
         List<string> command = [
             "run",
+            "--no-restore",
             "--project",
             projectPath,
             "--"

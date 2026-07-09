@@ -40,5 +40,5 @@ else {
     $dotnet = "dotnet"
 }
 
-& $dotnet run --project (Join-Path $repoRoot "tools\dataagent-replay\Alife.Tools.DataAgentReplay.csproj") -- --fixture $Fixture --format $Format
+& $dotnet run --no-restore --project (Join-Path $repoRoot "tools\dataagent-replay\Alife.Tools.DataAgentReplay.csproj") -- --fixture $Fixture --format $Format
 exit $LASTEXITCODE

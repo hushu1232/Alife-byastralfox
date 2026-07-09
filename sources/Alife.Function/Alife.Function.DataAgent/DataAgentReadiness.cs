@@ -909,6 +909,7 @@ public static class DataAgentReadiness
                 ContractContains(dataAgentReplayWrapperSource, "markdown") &&
                 ContractContains(dataAgentReplayWrapperSource, "json") &&
                 ContractContains(dataAgentReplayWrapperSource, "Unsupported format") &&
+                ContractContains(dataAgentReplayWrapperSource, "--no-restore") &&
                 ContractContains(dataAgentReplayWrapperSource, "Alife.Tools.DataAgentReplay.csproj");
             bool dataAgentReplayFixtureReady = File.Exists(dataAgentReplayFixturePath);
             bool dataAgentReplayRealChainReady =
@@ -947,7 +948,7 @@ public static class DataAgentReadiness
                 ContractContains(dataAgentReplayRunnerSource, "\"uvicorn\"") &&
                 ContractContains(dataAgentReplayRunnerSource, "\"Start-Process\"") &&
                 ContractContains(dataAgentReplayRunnerSource, "\"DataAgentGraphHandshakeHttpClient\"") &&
-                ContractContains(dataAgentReplayWrapperSource, "dotnet run --project") &&
+                ContractContains(dataAgentReplayWrapperSource, "dotnet run --no-restore --project") &&
                 ContractContains(dataAgentReplayWrapperSource, "Start-Process") == false &&
                 ContractContains(dataAgentReplayWrapperSource, "Invoke-WebRequest") == false &&
                 ContractContains(dataAgentReplayWrapperSource, "uvicorn") == false &&

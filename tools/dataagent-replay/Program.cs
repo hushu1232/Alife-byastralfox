@@ -29,7 +29,7 @@ public static class Program
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            Console.Error.WriteLine($"{exception.GetType().Name}: {exception.Message}");
             return 1;
         }
     }

@@ -648,6 +648,7 @@ public sealed class DataAgentReadinessTests
         Assert.Multiple(() =>
         {
             Assert.That(declaration, Does.Contain("tools/replay-dataagent-chain.ps1"));
+            Assert.That(declaration, Does.Contain("--no-restore"));
             Assert.That(declaration, Does.Contain("tools/dataagent-replay/Alife.Tools.DataAgentReplay.csproj"));
             Assert.That(declaration, Does.Contain("DataAgentReplayRunner.cs"));
             Assert.That(declaration, Does.Contain("DataAgentReplayReportFormatter.cs"));
