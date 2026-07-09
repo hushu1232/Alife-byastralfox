@@ -2918,6 +2918,91 @@ public static class DataAgentReadiness
             checks.Add(deterministicSafetyReady
                 ? Pass("DataAgentSafetyCapabilitiesRemainDeterministic", "validator_model=false;compiler_model=false;safety_model=false;execute_model=false")
                 : Fail("DataAgentSafetyCapabilitiesRemainDeterministic", $"validator={LowerBool(validatorScope.AllowsModelCall)};compiler={LowerBool(compilerScope.AllowsModelCall)};safety={LowerBool(safetyScope.AllowsModelCall)};execute={LowerBool(executeScope.AllowsModelCall)}"));
+
+            string v328RepoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+            string v328DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v3.28-final-readiness-freeze.md");
+            bool v328DocExists = File.Exists(v328DocPath);
+            string v328Doc = v328DocExists ? File.ReadAllText(v328DocPath) : string.Empty;
+            DataAgentV3FinalReadinessFreeze v328Freeze =
+                DataAgentV3FinalReadinessFreezeBuilder.Build(checks.ToArray(), frozenRequiredCheckCount: 108, frozenCoreCheckCount: 93);
+            string v328Packet = DataAgentV3FinalReadinessFreezeFormatter.Format(v328Freeze);
+            bool v328DocMarkers =
+                v328Doc.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
+                v328Doc.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_required_check_count=108", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_core_check_count=93", StringComparison.Ordinal) &&
+                v328Doc.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("operator_decides=true", StringComparison.Ordinal);
+            bool v328Boundary =
+                v328Doc.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v328Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v328Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v328ModelReady =
+                typeof(DataAgentV3FinalReadinessFreeze).IsClass &&
+                typeof(DataAgentV3FinalReadinessFreezeBuilder).IsClass &&
+                typeof(DataAgentV3FinalReadinessFreezeFormatter).IsClass &&
+                string.Equals(v328Freeze.FreezeId, "v3.28-final-readiness-freeze", StringComparison.Ordinal) &&
+                string.Equals(v328Freeze.FinalV3Version, "v3.28", StringComparison.Ordinal) &&
+                string.Equals(v328Freeze.SourceVersions, "v3.0-v3.27", StringComparison.Ordinal) &&
+                v328Freeze.FrozenRequiredCheckCount == 108 &&
+                v328Freeze.FrozenCoreCheckCount == 93 &&
+                v328Freeze.AllFrozenChecksPassed &&
+                v328Freeze.OperatorEvidencePackPresent &&
+                v328Freeze.ReadinessGatesFrozen &&
+                v328Freeze.OperatorDecides &&
+                v328Freeze.AgentAdvisoryOnly &&
+                v328Freeze.HarnessExecutionAuthority &&
+                v328Freeze.CSharpValidationAuthority &&
+                v328Freeze.DefaultResultChanged == false &&
+                v328Freeze.ManualOnly &&
+                v328Freeze.StartsRuntime == false &&
+                v328Freeze.InstallsDependencies == false &&
+                v328Freeze.CallsSidecar == false &&
+                v328Freeze.StoresSecrets == false &&
+                v328Freeze.StoresSql == false &&
+                v328Freeze.StoresHiddenContext == false;
+            bool v328PacketMarkers =
+                v328Packet.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
+                v328Packet.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_required_check_count=108", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_core_check_count=93", StringComparison.Ordinal) &&
+                v328Packet.Contains("all_frozen_checks_passed=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("operator_decides=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v328Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v328Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v328Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v328Ready =
+                v328DocExists &&
+                v328DocMarkers &&
+                v328Boundary &&
+                v328ModelReady &&
+                v328PacketMarkers;
+            checks.Add(v328Ready
+                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=108;frozen_core_check_count=93;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)}"));
         }
         catch (Exception ex)
         {
