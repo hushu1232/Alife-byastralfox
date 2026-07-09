@@ -348,6 +348,16 @@ public sealed class DataAgentReplayRunbookTests
     }
 
     [Test]
+    public void ReplayTestProcessRunnerDisablesMsBuildNodeReuse()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(repoRoot, "Tests", "Alife.Test.DataAgent", "DataAgentReplayRunbookTests.cs"));
+        string declaration = FindSourceBlock(source, "static async Task<ProcessResult> RunProcessAsync", "process.Start();");
+
+        Assert.That(declaration, Does.Contain("StartInfo.Environment[\"MSBUILDDISABLENODEREUSE\"]"));
+    }
+
+    [Test]
     public void ReplayProjectUnsupportedFormatFailsWithClearError()
     {
         ProcessResult result = RunReplayProject("--fixture", DefaultFixturePath(), "--format", "xml");
@@ -465,6 +475,9 @@ public sealed class DataAgentReplayRunbookTests
         };
         foreach (string argument in arguments)
             process.StartInfo.ArgumentList.Add(argument);
+        process.StartInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+        process.StartInfo.Environment["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1";
+        process.StartInfo.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
 
         process.Start();
         Task<string> standardOutputTask = process.StandardOutput.ReadToEndAsync();
@@ -513,6 +526,18 @@ public sealed class DataAgentReplayRunbookTests
         }
 
         throw new InvalidOperationException($"Could not find repository root containing Alife.slnx from start directory: {startDirectory}");
+    }
+
+    static string FindSourceBlock(string source, string startMarker, string endMarker)
+    {
+        int start = source.LastIndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+            return string.Empty;
+
+        int end = source.IndexOf(endMarker, start, StringComparison.Ordinal);
+        return end < 0
+            ? source[start..]
+            : source[start..end];
     }
 
     sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError)
