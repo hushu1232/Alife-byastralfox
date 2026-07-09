@@ -109,7 +109,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
-    public void IntegrationRejectsDiffGateDefaultResultOrValidationAuthorityViolation()
+    public void IntegrationRejectsDiffGateDefaultResultViolation()
     {
         DataAgentRealLangGraphManualShadowInput baseline = NewInput();
         DataAgentRealLangGraphManualShadowInput input = baseline with
@@ -117,6 +117,24 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             DiffGateResult = baseline.DiffGateResult! with
             {
                 DefaultResultChanged = true
+            }
+        };
+
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
+
+        AssertBoundaryViolationFallback(result);
+    }
+
+    [Test]
+    public void IntegrationRejectsDiffGateValidationAuthorityViolation()
+    {
+        DataAgentRealLangGraphManualShadowInput baseline = NewInput();
+        DataAgentRealLangGraphManualShadowInput input = baseline with
+        {
+            DiffGateResult = baseline.DiffGateResult! with
+            {
+                CSharpValidationAuthority = false
             }
         };
 
