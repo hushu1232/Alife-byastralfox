@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(87));
+            Assert.That(checks, Has.Count.EqualTo(88));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -213,6 +213,17 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeManualReplayArtifactCheck.Detail, Does.Contain("stores_secrets=false"));
             Assert.That(graphHandshakeManualReplayArtifactCheck.Detail, Does.Contain("stores_sql=false"));
             Assert.That(graphHandshakeManualReplayArtifactCheck.Detail, Does.Contain("stores_hidden_context=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeManualArtifactIndexPresent"));
+            DataAgentReadinessCheck graphHandshakeManualArtifactIndexCheck = checks.Single(check => check.Name == "GraphHandshakeManualArtifactIndexPresent");
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("manual_artifact_index=true"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("manifest_writer=true"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("manual_only=true"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("starts_runtime=false"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("installs_dependencies=false"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("default_result_changed=false"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("stores_secrets=false"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("stores_sql=false"));
+            Assert.That(graphHandshakeManualArtifactIndexCheck.Detail, Does.Contain("stores_hidden_context=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -327,7 +338,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 102 required passed, 0 required missing"
+                "  Summary: 103 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -365,6 +376,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeReplayFixturePackPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeShadowReplayReportPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeManualReplayReportArtifactWriterPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeManualArtifactIndexPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -382,7 +394,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 102"));
+            Assert.That(script, Does.Contain("$expectedRequired = 103"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

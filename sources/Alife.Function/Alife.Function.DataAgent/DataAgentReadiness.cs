@@ -1360,6 +1360,71 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeManualReplayReportArtifactWriterPresent", "manual_replay_report_artifact=true;artifact_writer=true;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeManualReplayReportArtifactWriterPresent", $"doc={LowerBool(v321DocExists)};doc_markers={LowerBool(v321DocMarkers)};boundary={LowerBool(v321Boundary)};model={LowerBool(v321ModelReady)};artifact={LowerBool(v321ArtifactMarkers)}"));
 
+            string v322DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.22-manual-artifact-index.md");
+            bool v322DocExists = File.Exists(v322DocPath);
+            string v322Doc = v322DocExists ? File.ReadAllText(v322DocPath) : string.Empty;
+            string v322IndexPath = Path.Combine(
+                Path.GetDirectoryName(databasePath) ?? Path.GetTempPath(),
+                $"dataagent-v322-readiness-{Guid.NewGuid():N}.md");
+            DataAgentGraphHandshakeReplayReportArtifactIndex? v322Index = null;
+            string v322IndexText = string.Empty;
+            try
+            {
+                v322Index = DataAgentGraphHandshakeReplayReportArtifactIndexWriter.Write(v320SampleReport, v321Artifact!, v322IndexPath);
+                v322IndexText = File.ReadAllText(v322IndexPath);
+            }
+            finally
+            {
+                if (File.Exists(v322IndexPath))
+                    File.Delete(v322IndexPath);
+            }
+
+            bool v322DocMarkers =
+                v322Doc.Contains("manual_artifact_index=true", StringComparison.Ordinal) &&
+                v322Doc.Contains("manifest_writer=true", StringComparison.Ordinal) &&
+                v322Doc.Contains("manual_only=true", StringComparison.Ordinal);
+            bool v322Boundary =
+                v322Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v322Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v322Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v322Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v322Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v322Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v322ModelReady =
+                typeof(DataAgentGraphHandshakeReplayReportArtifactIndex).IsClass &&
+                typeof(DataAgentGraphHandshakeReplayReportArtifactIndexWriter).IsClass &&
+                v322Index is not null &&
+                v322Index.ManualOnly &&
+                v322Index.StartsRuntime == false &&
+                v322Index.InstallsDependencies == false &&
+                v322Index.StoresSecrets == false &&
+                v322Index.StoresSql == false &&
+                v322Index.StoresHiddenContext == false &&
+                v322Index.DefaultResultChanged == false &&
+                v322Index.ComparisonCount == v320SampleReport.ComparisonCount;
+            bool v322IndexMarkers =
+                v322IndexText.Contains("manual_artifact_index=true", StringComparison.Ordinal) &&
+                v322IndexText.Contains("manifest_writer=true", StringComparison.Ordinal) &&
+                v322IndexText.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v322IndexText.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("comparison_count=1", StringComparison.Ordinal) &&
+                v322IndexText.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v322IndexText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v322IndexText.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v322Ready =
+                v322DocExists &&
+                v322DocMarkers &&
+                v322Boundary &&
+                v322ModelReady &&
+                v322IndexMarkers;
+            checks.Add(v322Ready
+                ? Pass("GraphHandshakeManualArtifactIndexPresent", "manual_artifact_index=true;manifest_writer=true;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeManualArtifactIndexPresent", $"doc={LowerBool(v322DocExists)};doc_markers={LowerBool(v322DocMarkers)};boundary={LowerBool(v322Boundary)};model={LowerBool(v322ModelReady)};index={LowerBool(v322IndexMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
