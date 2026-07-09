@@ -1146,6 +1146,49 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeLangGraphManualSmokeHarnessPresent", "manual_smoke=true;operator_only=true;default_result_changed=false;sidecar_write_authority=false;csharp_execution_authority=true;fallback_required=true;manual_only=true;loopback_only=true")
                 : Fail("GraphHandshakeLangGraphManualSmokeHarnessPresent", $"doc={LowerBool(v317DocExists)};script={LowerBool(v317ScriptExists)};operator_only={LowerBool(v317OperatorOnly)};default_unchanged={LowerBool(v317DefaultUnchanged)};authority_boundary={LowerBool(v317AuthorityBoundary)};manual_only={LowerBool(v317ManualOnly)};loopback_only={LowerBool(v317LoopbackOnly)};smoke_markers={LowerBool(v317SmokeMarkers)}"));
 
+            string v318DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.18-smoke-result-artifact.md");
+            string v318ScriptPath = Path.Combine(v311RepoRoot, "tools", "format-dataagent-langgraph-smoke-result.ps1");
+            bool v318DocExists = File.Exists(v318DocPath);
+            bool v318ScriptExists = File.Exists(v318ScriptPath);
+            string v318Doc = v318DocExists ? File.ReadAllText(v318DocPath) : string.Empty;
+            string v318Script = v318ScriptExists ? File.ReadAllText(v318ScriptPath) : string.Empty;
+            bool v318ArtifactFormatter =
+                v318Doc.Contains("smoke_result_artifact=true", StringComparison.Ordinal) &&
+                v318Doc.Contains("artifact_formatter=true", StringComparison.Ordinal) &&
+                v318Script.Contains("artifact_formatter=true", StringComparison.Ordinal);
+            bool v318ManualOnly =
+                v318Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v318Script.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v318Script.Contains("Start-Process", StringComparison.Ordinal) == false &&
+                v318Script.Contains("pip install", StringComparison.Ordinal) == false &&
+                v318Script.Contains("python -m venv", StringComparison.Ordinal) == false &&
+                v318Script.Contains("uvicorn", StringComparison.Ordinal) == false;
+            bool v318StorageBoundary =
+                v318Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v318Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v318Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v318Script.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v318Script.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v318Script.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v318SanitizesUnsafeText =
+                v318Doc.Contains("sanitizes_unsafe_text=true", StringComparison.Ordinal) &&
+                v318Script.Contains("sanitizes_unsafe_text=true", StringComparison.Ordinal) &&
+                v318Script.Contains("unsafe_text_redacted", StringComparison.Ordinal) &&
+                v318Script.Contains("redacted", StringComparison.Ordinal);
+            bool v318DefaultUnchanged =
+                v318Doc.Contains("default_result_changed=false", StringComparison.Ordinal);
+            bool v318Ready =
+                v318DocExists &&
+                v318ScriptExists &&
+                v318ArtifactFormatter &&
+                v318ManualOnly &&
+                v318StorageBoundary &&
+                v318SanitizesUnsafeText &&
+                v318DefaultUnchanged;
+            checks.Add(v318Ready
+                ? Pass("GraphHandshakeSmokeResultArtifactFormatterPresent", "smoke_result_artifact=true;artifact_formatter=true;manual_only=true;stores_secrets=false;stores_sql=false;stores_hidden_context=false;sanitizes_unsafe_text=true;default_result_changed=false")
+                : Fail("GraphHandshakeSmokeResultArtifactFormatterPresent", $"doc={LowerBool(v318DocExists)};script={LowerBool(v318ScriptExists)};artifact_formatter={LowerBool(v318ArtifactFormatter)};manual_only={LowerBool(v318ManualOnly)};storage_boundary={LowerBool(v318StorageBoundary)};sanitizes_unsafe_text={LowerBool(v318SanitizesUnsafeText)};default_result_changed={LowerBool(v318DefaultUnchanged)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
