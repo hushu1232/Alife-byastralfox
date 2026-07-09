@@ -120,6 +120,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("default_result_changed=false"));
             Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("replay_parity_required=true"));
             Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("categories=true"));
+            Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("report=true"));
             Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("no_sql_authority=true"));
             Assert.That(graphHandshakeShadowCheck.Detail, Does.Contain("fallback=true"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));

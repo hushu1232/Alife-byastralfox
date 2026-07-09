@@ -150,6 +150,60 @@ public sealed class DataAgentGraphHandshakeShadowComparisonTests
         });
     }
 
+    [Test]
+    public void ReportSummarizesMultipleComparisonsWithoutChangingDefaultResult()
+    {
+        DataAgentGraphHandshakeShadowComparison acceptedDifference =
+            DataAgentGraphHandshakeShadowComparer.Compare(
+                Outcome(DataAgentGraphHandshakeStatus.Disabled, "sidecar_disabled", fallbackRequired: true),
+                Outcome(DataAgentGraphHandshakeStatus.Accepted, "accepted", fallbackRequired: true));
+        DataAgentGraphHandshakeShadowComparison rejectedAuthority =
+            DataAgentGraphHandshakeShadowComparer.Compare(
+                Outcome(DataAgentGraphHandshakeStatus.Disabled, "sidecar_disabled", fallbackRequired: true),
+                Outcome(DataAgentGraphHandshakeStatus.Rejected, "sql_authority_requested", fallbackRequired: true));
+
+        DataAgentGraphHandshakeShadowComparisonReport report =
+            DataAgentGraphHandshakeShadowComparisonReport.Create(
+                "v3.12-owner-readiness-shadow",
+                [acceptedDifference, rejectedAuthority]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(report.ReplayId, Is.EqualTo("v3.12-owner-readiness-shadow"));
+            Assert.That(report.ComparisonCount, Is.EqualTo(2));
+            Assert.That(report.DefaultResultChanged, Is.False);
+            Assert.That(report.Passed, Is.True);
+            Assert.That(report.StatusCounts["accepted_advisory_difference"], Is.EqualTo(1));
+            Assert.That(report.StatusCounts["rejected_authority_claim"], Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void ReportFormatterEmitsStableMarkdownSummary()
+    {
+        DataAgentGraphHandshakeShadowComparison comparison =
+            DataAgentGraphHandshakeShadowComparer.Compare(
+                Outcome(DataAgentGraphHandshakeStatus.Disabled, "sidecar_disabled", fallbackRequired: true),
+                Outcome(DataAgentGraphHandshakeStatus.Accepted, "accepted", fallbackRequired: true));
+        DataAgentGraphHandshakeShadowComparisonReport report =
+            DataAgentGraphHandshakeShadowComparisonReport.Create("v3.12-owner-readiness-shadow", [comparison]);
+
+        string markdown = DataAgentGraphHandshakeShadowComparisonReportFormatter.FormatMarkdown(report);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(markdown, Does.Contain("# DataAgent Graph Shadow Comparison: v3.12-owner-readiness-shadow"));
+            Assert.That(markdown, Does.Contain("shadow_only=true"));
+            Assert.That(markdown, Does.Contain("default_result_changed=false"));
+            Assert.That(markdown, Does.Contain("replay_parity_required=true"));
+            Assert.That(markdown, Does.Contain("accepted_advisory_difference=1"));
+            Assert.That(markdown, Does.Contain("no_sql_authority=true"));
+            Assert.That(markdown, Does.Contain("fallback_required=true"));
+            Assert.That(markdown, Does.Not.Contain("SELECT"));
+            Assert.That(markdown, Does.Not.Contain("hidden_context"));
+        });
+    }
+
     static DataAgentGraphHandshakeOutcome Outcome(
         DataAgentGraphHandshakeStatus status,
         string reasonCode,
