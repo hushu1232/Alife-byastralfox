@@ -856,6 +856,48 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeReplayParityShadowComparisonPresent", "shadow_only=true;default_result_changed=false;replay_parity_required=true;categories=true;report=true;no_sql_authority=true;fallback=true")
                 : Fail("GraphHandshakeReplayParityShadowComparisonPresent", $"doc={LowerBool(v312DocExists)};comparison_model={LowerBool(v312ComparisonModelReady)};report={LowerBool(v312ReportReady)};categories={LowerBool(v312CategoryReady)};shadow_only={LowerBool(v312ShadowOnly)};replay_parity={LowerBool(v312ReplayParity)};no_authority={LowerBool(v312NoAuthority)}"));
 
+            string v313DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.13-bounded-diagnostics-explanation.md");
+            bool v313DocExists = File.Exists(v313DocPath);
+            string v313Doc = v313DocExists ? File.ReadAllText(v313DocPath) : string.Empty;
+            bool v313ModelReady =
+                typeof(DataAgentGraphHandshakeDiagnosticExplanationResult).IsClass &&
+                typeof(DataAgentGraphHandshakeDiagnosticExplanationValidator).IsClass &&
+                typeof(DataAgentGraphHandshakeDiagnosticExplanationFormatter).IsClass;
+            DataAgentGraphHandshakeDiagnosticExplanationResult v313SafeExplanation =
+                DataAgentGraphHandshakeDiagnosticExplanationValidator.Validate("safe advisory explanation", "accepted_advisory_difference");
+            DataAgentGraphHandshakeDiagnosticExplanationResult v313UnsafeExplanation =
+                DataAgentGraphHandshakeDiagnosticExplanationValidator.Validate("SELECT * FROM hidden_context", "unsafe_case");
+            bool v313BoundedExplanation =
+                v313Doc.Contains("bounded_explanation=true", StringComparison.Ordinal) &&
+                DataAgentGraphHandshakeDiagnosticExplanationValidator.MaxExplanationChars <= 320;
+            bool v313AdvisoryOnly =
+                v313Doc.Contains("advisory_only=true", StringComparison.Ordinal) &&
+                v313SafeExplanation.DefaultResultChanged == false;
+            bool v313AuthorityReady =
+                v313Doc.Contains("csharp_write_authority=true", StringComparison.Ordinal) &&
+                v313Doc.Contains("sidecar_write_authority=false", StringComparison.Ordinal) &&
+                v313Doc.Contains("requests_visible_text=false", StringComparison.Ordinal) &&
+                v313SafeExplanation.CSharpWriteAuthority &&
+                v313SafeExplanation.SidecarWriteAuthority == false &&
+                v313SafeExplanation.RequestsVisibleText == false;
+            bool v313UnsafeRejected =
+                v313Doc.Contains("unsafe_text_rejected=true", StringComparison.Ordinal) &&
+                v313UnsafeExplanation.Accepted == false &&
+                string.Equals(v313UnsafeExplanation.ReasonCode, "diagnostic_explanation_unsafe", StringComparison.Ordinal);
+            bool v313Fallback =
+                v313Doc.Contains("fallback_required=true", StringComparison.Ordinal);
+            bool v313Ready =
+                v313DocExists &&
+                v313ModelReady &&
+                v313BoundedExplanation &&
+                v313AdvisoryOnly &&
+                v313AuthorityReady &&
+                v313UnsafeRejected &&
+                v313Fallback;
+            checks.Add(v313Ready
+                ? Pass("GraphHandshakeBoundedDiagnosticsExplanationPresent", "bounded_explanation=true;advisory_only=true;csharp_write_authority=true;sidecar_write_authority=false;requests_visible_text=false;unsafe_text_rejected=true;fallback=true")
+                : Fail("GraphHandshakeBoundedDiagnosticsExplanationPresent", $"doc={LowerBool(v313DocExists)};model={LowerBool(v313ModelReady)};bounded_explanation={LowerBool(v313BoundedExplanation)};advisory_only={LowerBool(v313AdvisoryOnly)};authority={LowerBool(v313AuthorityReady)};unsafe_text_rejected={LowerBool(v313UnsafeRejected)};fallback={LowerBool(v313Fallback)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
