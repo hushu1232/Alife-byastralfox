@@ -238,6 +238,47 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         Assert.That(text, Does.Contain("reason_codes=redacted"));
     }
 
+    [Test]
+    public void ArtifactWriterWritesSanitizedManualPacketWithoutAbsolutePathInBody()
+    {
+        string outputDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v4-artifacts", Guid.NewGuid().ToString("N"));
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(NewInput());
+
+        DataAgentRealLangGraphManualShadowArtifactWriteResult write =
+            DataAgentRealLangGraphManualShadowArtifactWriter.Write(outputDirectory, result);
+
+        string body = File.ReadAllText(write.FilePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Written, Is.True);
+            Assert.That(write.FileName, Is.EqualTo("dataagent-v4.0-real-langgraph-manual-shadow.txt"));
+            Assert.That(File.Exists(write.FilePath), Is.True);
+            Assert.That(body, Does.Contain("real_langgraph_manual_shadow_integration=true"));
+            Assert.That(body, Does.Contain("artifact_writer=true"));
+            Assert.That(body, Does.Contain("manual_only=true"));
+            Assert.That(body, Does.Not.Contain(outputDirectory));
+            Assert.That(body, Does.Not.Contain("SELECT"));
+            Assert.That(body, Does.Not.Contain("bearer"));
+            Assert.That(body, Does.Not.Contain("SELECT * FROM hidden_context"));
+        });
+    }
+
+    [Test]
+    public void ArtifactWriterRejectsMissingOutputDirectory()
+    {
+        DataAgentRealLangGraphManualShadowArtifactWriteResult write =
+            DataAgentRealLangGraphManualShadowArtifactWriter.Write(string.Empty, DataAgentRealLangGraphManualShadowIntegration.Evaluate(NewInput()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(write.Written, Is.False);
+            Assert.That(write.ReasonCode, Is.EqualTo("artifact_output_directory_missing"));
+            Assert.That(write.FileName, Is.EqualTo("redacted"));
+        });
+    }
+
     static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
     {
         Assert.Multiple(() =>
