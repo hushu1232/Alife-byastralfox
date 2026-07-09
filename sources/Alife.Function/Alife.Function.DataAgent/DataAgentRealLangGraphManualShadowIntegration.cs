@@ -58,13 +58,29 @@ public static class DataAgentRealLangGraphManualShadowIntegration
                 reasonCodes: ["real_langgraph_manual_runtime_unavailable"]);
         }
 
-        if (ContainsUnsafeContext(input.ContextLayers))
+        IReadOnlyList<DataAgentRealLangGraphManualShadowContextLayer>? inputContextLayers = input.ContextLayers;
+        if (inputContextLayers is null)
+        {
+            return Build(
+                accepted: false,
+                reasonCode: "real_langgraph_manual_shadow_context_missing",
+                sourceReplayId: input.SourceReplayId,
+                contextLayerCount: 0,
+                operatorStartedRuntime: input.OperatorStartedRuntime,
+                loopbackOnly: input.LoopbackOnly,
+                fallbackRequired: true,
+                operatorRequired: true,
+                reasonCodes: ["real_langgraph_manual_shadow_context_missing"]);
+        }
+
+        IReadOnlyList<DataAgentRealLangGraphManualShadowContextLayer> contextLayers = inputContextLayers;
+        if (ContainsUnsafeContext(contextLayers))
         {
             return Build(
                 accepted: false,
                 reasonCode: "real_langgraph_manual_shadow_unsafe_context",
                 sourceReplayId: input.SourceReplayId,
-                contextLayerCount: input.ContextLayers.Count,
+                contextLayerCount: contextLayers.Count,
                 operatorStartedRuntime: input.OperatorStartedRuntime,
                 loopbackOnly: input.LoopbackOnly,
                 fallbackRequired: true,
@@ -80,7 +96,7 @@ public static class DataAgentRealLangGraphManualShadowIntegration
                 accepted: false,
                 reasonCode: "real_langgraph_manual_runtime_unavailable",
                 sourceReplayId: input.SourceReplayId,
-                contextLayerCount: input.ContextLayers.Count,
+                contextLayerCount: contextLayers.Count,
                 operatorStartedRuntime: input.OperatorStartedRuntime,
                 loopbackOnly: input.LoopbackOnly,
                 fallbackRequired: true,
@@ -115,12 +131,12 @@ public static class DataAgentRealLangGraphManualShadowIntegration
                 accepted: false,
                 reasonCode: "real_langgraph_manual_shadow_boundary_violation",
                 sourceReplayId: input.SourceReplayId,
-                contextLayerCount: input.ContextLayers.Count,
+                contextLayerCount: contextLayers.Count,
                 operatorStartedRuntime: input.OperatorStartedRuntime,
                 loopbackOnly: input.LoopbackOnly,
                 fallbackRequired: true,
                 operatorRequired: true,
-                reasonCodes: ReasonCodes("real_langgraph_manual_shadow_boundary_violation", input.ManualShadowResult, input.DiffGateResult));
+                reasonCodes: BoundaryReasonCodes("real_langgraph_manual_shadow_boundary_violation", input));
         }
 
         if (input.ManualShadowResult.Accepted == false)
@@ -129,7 +145,7 @@ public static class DataAgentRealLangGraphManualShadowIntegration
                 accepted: false,
                 reasonCode: input.ManualShadowResult.ReasonCode,
                 sourceReplayId: input.SourceReplayId,
-                contextLayerCount: input.ContextLayers.Count,
+                contextLayerCount: contextLayers.Count,
                 operatorStartedRuntime: input.OperatorStartedRuntime,
                 loopbackOnly: input.LoopbackOnly,
                 fallbackRequired: true,
@@ -143,7 +159,7 @@ public static class DataAgentRealLangGraphManualShadowIntegration
                 accepted: false,
                 reasonCode: input.DiffGateResult.ReasonCode,
                 sourceReplayId: input.SourceReplayId,
-                contextLayerCount: input.ContextLayers.Count,
+                contextLayerCount: contextLayers.Count,
                 operatorStartedRuntime: input.OperatorStartedRuntime,
                 loopbackOnly: input.LoopbackOnly,
                 fallbackRequired: true,
@@ -155,7 +171,7 @@ public static class DataAgentRealLangGraphManualShadowIntegration
             accepted: true,
             reasonCode: "real_langgraph_manual_shadow_integration_accepted",
             sourceReplayId: input.SourceReplayId,
-            contextLayerCount: input.ContextLayers.Count,
+            contextLayerCount: contextLayers.Count,
             operatorStartedRuntime: input.OperatorStartedRuntime,
             loopbackOnly: input.LoopbackOnly,
             fallbackRequired: false,
@@ -223,6 +239,70 @@ public static class DataAgentRealLangGraphManualShadowIntegration
         return reasonCodes;
     }
 
+    static IReadOnlyList<string> BoundaryReasonCodes(
+        string primaryReasonCode,
+        DataAgentRealLangGraphManualShadowInput input)
+    {
+        List<string> reasonCodes = new(ReasonCodes(primaryReasonCode, input.ManualShadowResult, input.DiffGateResult));
+
+        if (input.LoopbackOnly == false)
+            AddReasonCode(reasonCodes, "real_langgraph_manual_shadow_loopback_missing");
+        if (input.RuntimeStartedByAlife)
+            AddReasonCode(reasonCodes, "real_langgraph_manual_shadow_runtime_started_by_alife_violation");
+        if (input.DependenciesInstalledByAlife)
+            AddReasonCode(reasonCodes, "real_langgraph_manual_shadow_dependencies_installed_by_alife_violation");
+        if (input.SidecarCalledByAlife)
+            AddReasonCode(reasonCodes, "real_langgraph_manual_shadow_sidecar_called_by_alife_violation");
+
+        DataAgentLangGraphManualShadowResult? manualShadowResult = input.ManualShadowResult;
+        if (manualShadowResult is not null)
+        {
+            if (manualShadowResult.StartsRuntime)
+                AddReasonCode(reasonCodes, "manual_shadow_starts_runtime_violation");
+            if (manualShadowResult.InstallsDependencies)
+                AddReasonCode(reasonCodes, "manual_shadow_installs_dependencies_violation");
+            if (manualShadowResult.CallsSidecar)
+                AddReasonCode(reasonCodes, "manual_shadow_calls_sidecar_violation");
+            if (manualShadowResult.StoresSecrets)
+                AddReasonCode(reasonCodes, "manual_shadow_stores_secrets_violation");
+            if (manualShadowResult.StoresSql)
+                AddReasonCode(reasonCodes, "manual_shadow_stores_sql_violation");
+            if (manualShadowResult.StoresHiddenContext)
+                AddReasonCode(reasonCodes, "manual_shadow_stores_hidden_context_violation");
+            if (manualShadowResult.DefaultResultChanged)
+                AddReasonCode(reasonCodes, "manual_shadow_default_result_changed_violation");
+            if (manualShadowResult.ManualShadowOnly == false)
+                AddReasonCode(reasonCodes, "manual_shadow_only_missing");
+        }
+
+        DataAgentHarnessReplayDiffGateResult? diffGateResult = input.DiffGateResult;
+        if (diffGateResult is not null)
+        {
+            if (diffGateResult.StartsRuntime)
+                AddReasonCode(reasonCodes, "diff_gate_starts_runtime_violation");
+            if (diffGateResult.InstallsDependencies)
+                AddReasonCode(reasonCodes, "diff_gate_installs_dependencies_violation");
+            if (diffGateResult.CallsSidecar)
+                AddReasonCode(reasonCodes, "diff_gate_calls_sidecar_violation");
+            if (diffGateResult.StoresSecrets)
+                AddReasonCode(reasonCodes, "diff_gate_stores_secrets_violation");
+            if (diffGateResult.StoresSql)
+                AddReasonCode(reasonCodes, "diff_gate_stores_sql_violation");
+            if (diffGateResult.StoresHiddenContext)
+                AddReasonCode(reasonCodes, "diff_gate_stores_hidden_context_violation");
+            if (diffGateResult.DefaultResultChanged)
+                AddReasonCode(reasonCodes, "diff_gate_default_result_changed_violation");
+            if (diffGateResult.AgentAdvisoryOnly == false)
+                AddReasonCode(reasonCodes, "diff_gate_agent_advisory_only_missing");
+            if (diffGateResult.HarnessExecutionAuthority == false)
+                AddReasonCode(reasonCodes, "diff_gate_harness_execution_authority_missing");
+            if (diffGateResult.CSharpValidationAuthority == false)
+                AddReasonCode(reasonCodes, "diff_gate_csharp_validation_authority_missing");
+        }
+
+        return reasonCodes;
+    }
+
     static void AddReasonCode(List<string> reasonCodes, string? reasonCode)
     {
         if (string.IsNullOrWhiteSpace(reasonCode) ||
@@ -270,13 +350,13 @@ public static class DataAgentRealLangGraphManualShadowFormatter
 
     static string LowerBool(bool value) => value ? "true" : "false";
 
-    static string SafeReasonCodes(IReadOnlyList<string> reasonCodes)
+    static string SafeReasonCodes(IReadOnlyList<string>? reasonCodes)
     {
-        if (reasonCodes.Count == 0)
+        if (reasonCodes is null || reasonCodes.Count == 0)
             return "redacted";
 
         List<string> safeReasonCodes = [];
-        foreach (string reasonCode in reasonCodes)
+        foreach (string? reasonCode in reasonCodes)
             safeReasonCodes.Add(SafeToken(reasonCode));
 
         return string.Join(",", safeReasonCodes);
@@ -289,7 +369,8 @@ public static class DataAgentRealLangGraphManualShadowFormatter
 
         string trimmed = value.Trim();
         if (trimmed.Length > DataAgentGraphHandshakeLimits.MaxReasonCodeLength ||
-            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(trimmed))
+            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(trimmed) ||
+            ContainsUnsafeTokenFragment(trimmed))
         {
             return "redacted";
         }
@@ -310,5 +391,39 @@ public static class DataAgentRealLangGraphManualShadowFormatter
         }
 
         return trimmed;
+    }
+
+    static bool ContainsUnsafeTokenFragment(string value)
+    {
+        if (value.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("bearer", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("connection_string", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("api_key", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("password", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        string[] tokenParts = value.Split(['_', '-', '.'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (string tokenPart in tokenParts)
+        {
+            if (IsUnsafeSqlCommandToken(tokenPart))
+                return true;
+        }
+
+        return false;
+    }
+
+    static bool IsUnsafeSqlCommandToken(string value)
+    {
+        return string.Equals(value, "select", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "insert", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "update", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "delete", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "drop", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "alter", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "create", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "truncate", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "execute", StringComparison.OrdinalIgnoreCase);
     }
 }

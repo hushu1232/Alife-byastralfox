@@ -63,6 +63,27 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    public void IntegrationFallsBackWhenContextLayersAreMissing()
+    {
+        DataAgentRealLangGraphManualShadowInput input = NewInput() with
+        {
+            ContextLayers = null!
+        };
+
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Accepted, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("real_langgraph_manual_shadow_context_missing"));
+            Assert.That(result.ContextLayerCount, Is.EqualTo(0));
+            Assert.That(result.FallbackRequired, Is.True);
+            Assert.That(result.OperatorRequired, Is.True);
+        });
+    }
+
+    [Test]
     public void IntegrationRejectsUnsafeContextAndPreservesFallback()
     {
         DataAgentRealLangGraphManualShadowInput input = NewInput() with
@@ -106,6 +127,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
 
         AssertBoundaryViolationFallback(result);
+        Assert.That(result.ReasonCodes, Does.Contain("manual_shadow_stores_sql_violation"));
     }
 
     [Test]
@@ -124,6 +146,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
 
         AssertBoundaryViolationFallback(result);
+        Assert.That(result.ReasonCodes, Does.Contain("diff_gate_default_result_changed_violation"));
     }
 
     [Test]
@@ -142,6 +165,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
 
         AssertBoundaryViolationFallback(result);
+        Assert.That(result.ReasonCodes, Does.Contain("diff_gate_csharp_validation_authority_missing"));
     }
 
     [Test]
@@ -175,6 +199,45 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [Test]
+    public void IntegrationFormatterRedactsUnsafeDirectResultTokens()
+    {
+        DataAgentRealLangGraphManualShadowResult result = NewDirectResult(
+            reasonCode: "SELECT_hidden_context_bearer",
+            sourceReplayId: "source\nreplay",
+            reasonCodes:
+            [
+                "SELECT",
+                "bearer",
+                "hidden_context",
+                "bad\ncontrol"
+            ]);
+
+        string text = DataAgentRealLangGraphManualShadowFormatter.Format(result);
+        string reasonCodesLine = LineStartingWith(text, "reason_codes=");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.Contain("reason_code=redacted"));
+            Assert.That(text, Does.Contain("source_replay_id=redacted"));
+            Assert.That(text, Does.Contain("reason_codes=redacted,redacted,redacted,redacted"));
+            Assert.That(text, Does.Not.Contain("SELECT"));
+            Assert.That(text, Does.Not.Contain("bearer"));
+            Assert.That(reasonCodesLine, Does.Not.Contain("hidden_context"));
+            Assert.That(text, Does.Not.Contain("bad\ncontrol"));
+        });
+    }
+
+    [Test]
+    public void IntegrationFormatterRedactsNullReasonCodes()
+    {
+        DataAgentRealLangGraphManualShadowResult result = NewDirectResult(useNullReasonCodes: true);
+
+        string text = DataAgentRealLangGraphManualShadowFormatter.Format(result);
+
+        Assert.That(text, Does.Contain("reason_codes=redacted"));
+    }
+
     static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
     {
         Assert.Multiple(() =>
@@ -185,6 +248,47 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(result.OperatorRequired, Is.True);
             Assert.That(result.DefaultResultChanged, Is.False);
         });
+    }
+
+    static string LineStartingWith(string text, string prefix)
+    {
+        foreach (string line in text.Split(Environment.NewLine))
+        {
+            if (line.StartsWith(prefix, StringComparison.Ordinal))
+                return line;
+        }
+
+        return string.Empty;
+    }
+
+    static DataAgentRealLangGraphManualShadowResult NewDirectResult(
+        string reasonCode = "safe_reason",
+        string sourceReplayId = "safe_replay",
+        IReadOnlyList<string>? reasonCodes = null,
+        bool useNullReasonCodes = false)
+    {
+        return new DataAgentRealLangGraphManualShadowResult(
+            Accepted: false,
+            reasonCode,
+            SourceBaseline: "v3.28",
+            sourceReplayId,
+            ContextLayerCount: 0,
+            ManualOnly: true,
+            OperatorStartedRuntime: true,
+            LoopbackOnly: true,
+            AgentAdvisoryOnly: true,
+            HarnessExecutionAuthority: true,
+            CSharpValidationAuthority: true,
+            DefaultResultChanged: false,
+            FallbackRequired: true,
+            OperatorRequired: true,
+            StartsRuntime: false,
+            InstallsDependencies: false,
+            CallsSidecar: false,
+            StoresSecrets: false,
+            StoresSql: false,
+            StoresHiddenContext: false,
+            useNullReasonCodes ? null! : reasonCodes ?? ["safe_reason"]);
     }
 
     static DataAgentRealLangGraphManualShadowInput NewInput()
