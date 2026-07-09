@@ -1296,6 +1296,70 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeShadowReplayReportPresent", "shadow_replay_report=true;replay_fixture_pack=true;source_fixture_pack=v3.19;shadow_only=true;default_result_changed=false;starts_runtime=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeShadowReplayReportPresent", $"doc={LowerBool(v320DocExists)};doc_markers={LowerBool(v320DocMarkers)};boundary={LowerBool(v320Boundary)};model={LowerBool(v320ModelReady)};formatter={LowerBool(v320FormatterReady)}"));
 
+            string v321DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.21-manual-replay-report-artifact.md");
+            bool v321DocExists = File.Exists(v321DocPath);
+            string v321Doc = v321DocExists ? File.ReadAllText(v321DocPath) : string.Empty;
+            string v321ArtifactPath = Path.Combine(
+                Path.GetDirectoryName(databasePath) ?? Path.GetTempPath(),
+                $"dataagent-v321-readiness-{Guid.NewGuid():N}.md");
+            DataAgentGraphHandshakeReplayReportArtifact? v321Artifact = null;
+            string v321ArtifactText = string.Empty;
+            try
+            {
+                v321Artifact = DataAgentGraphHandshakeReplayReportArtifactWriter.Write(v320SampleReport, v321ArtifactPath);
+                v321ArtifactText = File.ReadAllText(v321ArtifactPath);
+            }
+            finally
+            {
+                if (File.Exists(v321ArtifactPath))
+                    File.Delete(v321ArtifactPath);
+            }
+
+            bool v321DocMarkers =
+                v321Doc.Contains("manual_replay_report_artifact=true", StringComparison.Ordinal) &&
+                v321Doc.Contains("artifact_writer=true", StringComparison.Ordinal) &&
+                v321Doc.Contains("manual_only=true", StringComparison.Ordinal);
+            bool v321Boundary =
+                v321Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v321Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v321Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v321Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v321Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v321Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v321ModelReady =
+                typeof(DataAgentGraphHandshakeReplayReportArtifact).IsClass &&
+                typeof(DataAgentGraphHandshakeReplayReportArtifactWriter).IsClass &&
+                v321Artifact is not null &&
+                v321Artifact.ManualOnly &&
+                v321Artifact.StartsRuntime == false &&
+                v321Artifact.InstallsDependencies == false &&
+                v321Artifact.StoresSecrets == false &&
+                v321Artifact.StoresSql == false &&
+                v321Artifact.StoresHiddenContext == false &&
+                v321Artifact.DefaultResultChanged == false &&
+                v321Artifact.BytesWritten > 0;
+            bool v321ArtifactMarkers =
+                v321ArtifactText.Contains("manual_replay_report_artifact=true", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("artifact_writer=true", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("shadow_replay_report=true", StringComparison.Ordinal) &&
+                v321ArtifactText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v321ArtifactText.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v321Ready =
+                v321DocExists &&
+                v321DocMarkers &&
+                v321Boundary &&
+                v321ModelReady &&
+                v321ArtifactMarkers;
+            checks.Add(v321Ready
+                ? Pass("GraphHandshakeManualReplayReportArtifactWriterPresent", "manual_replay_report_artifact=true;artifact_writer=true;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeManualReplayReportArtifactWriterPresent", $"doc={LowerBool(v321DocExists)};doc_markers={LowerBool(v321DocMarkers)};boundary={LowerBool(v321Boundary)};model={LowerBool(v321ModelReady)};artifact={LowerBool(v321ArtifactMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
