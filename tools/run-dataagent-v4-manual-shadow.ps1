@@ -34,12 +34,44 @@ function Assert-LoopbackBaseUri {
         throw "BaseUri must not include user information."
     }
 
-    $allowedHosts = @("127.0.0.1", "localhost", "::1")
-    if ($allowedHosts -notcontains $uri.Host) {
-        throw "BaseUri must target loopback host 127.0.0.1, localhost, or ::1."
+    if ($uri.Host.Equals("localhost", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $uri
+    }
+
+    $hostForAddress = $uri.Host.Trim('[', ']')
+    $address = $null
+    if ([System.Net.IPAddress]::TryParse($hostForAddress, [ref]$address) -eq $false -or
+        [System.Net.IPAddress]::IsLoopback($address) -eq $false) {
+        throw "BaseUri must target a loopback host."
     }
 
     return $uri
+}
+
+function ConvertTo-ManualShadowFailureReason {
+    param([object]$Value)
+
+    $fallback = "manual_shadow_failed"
+    if ($null -eq $Value) {
+        return $fallback
+    }
+
+    $text = ([string]$Value) -replace "[\r\n\t]+", " "
+    $text = $text.Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return $fallback
+    }
+
+    $dangerousPattern = "(?i)(\bselect\b|\binsert\b|\bupdate\b|\bdelete\b|\bdrop\b|hidden_context|bearer|token|secret|password|api[_-]?key|authorization|connection\s*string|[A-Za-z]:\\|\\Users\\|/Users/|\.ssh|\.env)"
+    if ($text -match $dangerousPattern) {
+        return $fallback
+    }
+
+    if ($text.Length -gt 80) {
+        return $text.Substring(0, 80)
+    }
+
+    return $text
 }
 
 function Join-SidecarUri {
@@ -80,6 +112,37 @@ function Invoke-JsonRequest {
     }
 
     Invoke-WebRequest @parameters
+}
+
+function Write-ManualShadowArtifact {
+    param(
+        [string]$OutputDirectory,
+        [int]$HealthStatusCode,
+        [int]$HandshakeStatusCode
+    )
+
+    if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+        throw "OutputDirectory is required."
+    }
+
+    $artifact = [ordered]@{
+        real_langgraph_manual_shadow_integration = $true
+        manual_only = $true
+        operator_started_runtime = $true
+        loopback_only = $true
+        starts_runtime = $false
+        installs_dependencies = $false
+        default_result_changed = $false
+        health_status_code = [int]$HealthStatusCode
+        handshake_status_code = [int]$HandshakeStatusCode
+    }
+
+    $artifactFileName = "dataagent-v4.0-real-langgraph-manual-shadow.json"
+    New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+    $artifactPath = Join-Path $OutputDirectory $artifactFileName
+    $artifact | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $artifactPath -Encoding UTF8
+    Write-Output "artifact_written=true"
+    Write-Output ("artifact_file={0}" -f $artifactFileName)
 }
 
 function New-V40HandshakeRequest {
@@ -126,29 +189,18 @@ try {
     $healthResponse = Invoke-JsonRequest -Method "GET" -Uri (Join-SidecarUri $base "/health") -TimeoutSeconds $timeoutSeconds
     $handshakeResponse = Invoke-JsonRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake") -Body $request -TimeoutSeconds $timeoutSeconds
 
-    $artifact = [ordered]@{
-        real_langgraph_manual_shadow_integration = $true
-        manual_only = $true
-        operator_started_runtime = $true
-        loopback_only = $true
-        starts_runtime = $false
-        installs_dependencies = $false
-        default_result_changed = $false
-        health_status_code = [int]$healthResponse.StatusCode
-        handshake_status_code = [int]$handshakeResponse.StatusCode
-    }
-
     if ([string]::IsNullOrWhiteSpace($OutputDirectory) -eq $false) {
-        New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-        $artifactPath = Join-Path $OutputDirectory "dataagent-v4.0-manual-langgraph-shadow.json"
-        $artifact | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $artifactPath -Encoding UTF8
-        Write-Output ("artifact={0}" -f $artifactPath)
+        Write-ManualShadowArtifact `
+            -OutputDirectory $OutputDirectory `
+            -HealthStatusCode ([int]$healthResponse.StatusCode) `
+            -HandshakeStatusCode ([int]$handshakeResponse.StatusCode)
     }
 
     Write-Output "PASS manual_shadow"
     exit 0
 }
 catch {
-    Write-Output ("FALLBACK manual_shadow {0}" -f $_.Exception.Message)
+    $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+    Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
     exit 1
 }

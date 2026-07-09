@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Text;
+using System.Text.Json;
 using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
@@ -301,6 +304,159 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [Test]
+    public void ManualHarnessLoopbackValidationAcceptsIpv4LocalhostAndIpv6LoopbackOnly()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string harness = BuildPowerShellFunctionHarness(scriptPath, """
+        $accepted = @(
+            'http://127.0.0.1:8765',
+            'http://localhost:8765',
+            'http://[::1]:8765',
+            'http://[0000:0000:0000:0000:0000:0000:0000:0001]:8765'
+        )
+
+        foreach ($value in $accepted) {
+            $uri = Assert-LoopbackBaseUri $value
+            if ($uri.IsLoopback -ne $true) {
+                throw ("expected loopback for {0}" -f $value)
+            }
+            Write-Output ("ACCEPT {0}" -f $value)
+        }
+
+        $rejected = @(
+            'http://user:pass@127.0.0.1:8765',
+            'http://192.168.1.10:8765',
+            'http://10.0.0.8:8765',
+            'http://example.com:8765'
+        )
+
+        foreach ($value in $rejected) {
+            try {
+                Assert-LoopbackBaseUri $value | Out-Null
+                throw ("accepted unsafe URI {0}" -f $value)
+            }
+            catch {
+                if ($_.Exception.Message.StartsWith('accepted unsafe URI', [System.StringComparison]::Ordinal)) {
+                    throw
+                }
+                Write-Output ("REJECT {0}" -f $value)
+            }
+        }
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+        string combinedOutput = result.StandardOutput + Environment.NewLine + result.StandardError;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), combinedOutput);
+            Assert.That(result.StandardOutput, Does.Contain("ACCEPT http://127.0.0.1:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("ACCEPT http://localhost:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("ACCEPT http://[::1]:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("ACCEPT http://[0000:0000:0000:0000:0000:0000:0000:0001]:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("REJECT http://user:pass@127.0.0.1:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("REJECT http://192.168.1.10:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("REJECT http://10.0.0.8:8765"));
+            Assert.That(result.StandardOutput, Does.Contain("REJECT http://example.com:8765"));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessArtifactOutputDoesNotLeakAbsoluteDirectoryAndJsonUsesMarkerSchema()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string outputDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v40-manual-shadow", Guid.NewGuid().ToString("N"));
+        string escapedOutputDirectory = EscapePowerShellSingleQuotedString(outputDirectory);
+        string harness = BuildPowerShellFunctionHarness(scriptPath, $$"""
+        Write-ManualShadowArtifact -OutputDirectory '{{escapedOutputDirectory}}' -HealthStatusCode 200 -HandshakeStatusCode 202
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+        string artifactPath = Path.Combine(outputDirectory, "dataagent-v4.0-real-langgraph-manual-shadow.json");
+        string artifact = File.ReadAllText(artifactPath);
+
+        using JsonDocument document = JsonDocument.Parse(artifact);
+        string[] propertyNames = document.RootElement.EnumerateObject().Select(property => property.Name).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("artifact_written=true"));
+            Assert.That(result.StandardOutput, Does.Contain("artifact_file=dataagent-v4.0-real-langgraph-manual-shadow.json"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(outputDirectory));
+            Assert.That(File.Exists(artifactPath), Is.True);
+            Assert.That(propertyNames, Does.Not.Contain("source_baseline"));
+            Assert.That(propertyNames, Does.Not.Contain("source_replay_id"));
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                bool validType = property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False ||
+                    property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetInt32(out _);
+                Assert.That(validType, Is.True, $"{property.Name} must be bool or int.");
+            }
+        });
+    }
+
+    [Test]
+    public void ManualHarnessFailureReasonIsBoundedAndSanitized()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string harness = BuildPowerShellFunctionHarness(scriptPath, """
+        $message = "SELECT * FROM hidden_context WHERE bearer_token='abc123'`r`nC:\Users\hu shu\secret.txt"
+        $reason = ConvertTo-ManualShadowFailureReason $message
+        Write-Output ("reason={0}" -f $reason)
+        if ($reason.Length -gt 80) {
+            throw "reason too long"
+        }
+        if ($reason -match "[`r`n]") {
+            throw "reason contains newline"
+        }
+        if ($reason -match "(?i)(SELECT|hidden_context|bearer|secret|token|C:\\|Users)") {
+            throw ("reason leaked unsafe content: {0}" -f $reason)
+        }
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+        string combinedOutput = result.StandardOutput + Environment.NewLine + result.StandardError;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), combinedOutput);
+            Assert.That(result.StandardOutput, Does.Contain("reason=manual_shadow_failed"));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessFallbackOutputUsesSanitizedReason()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            "-BaseUri",
+            "http://user:secret@127.0.0.1:8765",
+            "-TimeoutMs",
+            "1");
+        string fallbackLine = result.StandardOutput
+            .Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.StartsWith("FALLBACK manual_shadow ", StringComparison.Ordinal)) ?? string.Empty;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(fallbackLine, Does.Contain("FALLBACK manual_shadow "));
+            Assert.That(fallbackLine.Length, Is.LessThanOrEqualTo(120));
+            Assert.That(fallbackLine, Does.Not.Contain("secret"));
+            Assert.That(fallbackLine, Does.Not.Contain("user:"));
+            Assert.That(fallbackLine, Does.Not.Contain("\r"));
+            Assert.That(fallbackLine, Does.Not.Contain("\n"));
+        });
+    }
+
     static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
     {
         Assert.Multiple(() =>
@@ -340,6 +496,106 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         }
 
         throw new DirectoryNotFoundException("Could not locate repository root.");
+    }
+
+    static string BuildPowerShellFunctionHarness(string scriptPath, string body)
+    {
+        string escapedScriptPath = EscapePowerShellSingleQuotedString(scriptPath);
+        return $$"""
+        $ErrorActionPreference = "Stop"
+        Set-StrictMode -Version 2.0
+
+        $scriptPath = '{{escapedScriptPath}}'
+        $source = Get-Content -LiteralPath $scriptPath -Raw
+        $tokens = $null
+        $parseErrors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
+        if ($parseErrors -and $parseErrors.Count -gt 0) {
+            throw ("Manual shadow script parse errors: {0}" -f ($parseErrors | ForEach-Object { $_.Message } | Out-String))
+        }
+
+        $functions = $ast.FindAll({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst]
+        }, $true)
+
+        foreach ($function in $functions) {
+            Invoke-Expression $function.Extent.Text
+        }
+
+        {{body}}
+        """;
+    }
+
+    static ScriptResult RunPowerShellCommand(string command)
+    {
+        ProcessStartInfo startInfo = NewPowerShellStartInfo();
+        startInfo.ArgumentList.Add("-Command");
+        startInfo.ArgumentList.Add(command);
+
+        return RunPowerShell(startInfo);
+    }
+
+    static ScriptResult RunPowerShellFile(string scriptPath, params string[] arguments)
+    {
+        ProcessStartInfo startInfo = NewPowerShellStartInfo();
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(scriptPath);
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return RunPowerShell(startInfo);
+    }
+
+    static ProcessStartInfo NewPowerShellStartInfo()
+    {
+        string powerShell = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "WindowsPowerShell",
+            "v1.0",
+            "powershell.exe");
+
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = powerShell,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        startInfo.ArgumentList.Add("-NoLogo");
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+
+        return startInfo;
+    }
+
+    static ScriptResult RunPowerShell(ProcessStartInfo startInfo)
+    {
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to start PowerShell.");
+
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        if (process.WaitForExit(15000) == false)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+            throw new TimeoutException("Manual shadow script harness did not exit within 15 seconds.");
+        }
+
+        return new ScriptResult(process.ExitCode, stdout, stderr);
+    }
+
+    static string EscapePowerShellSingleQuotedString(string value)
+    {
+        return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
     static DataAgentRealLangGraphManualShadowResult NewDirectResult(
@@ -473,4 +729,6 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             SidecarCalledByAlife: false,
             Advisory: response);
     }
+
+    readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
 }
