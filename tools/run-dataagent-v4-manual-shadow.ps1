@@ -8,11 +8,20 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
 # real_langgraph_manual_shadow_integration=true
+# source_baseline=v3.28
 # manual_only=true
 # operator_started_runtime=true
 # loopback_only=true
+# agent_advisory_only=true
+# harness_execution_authority=true
+# csharp_validation_authority=true
+# default_result_changed=false
+# fallback_required=true
 # starts_runtime=false
 # installs_dependencies=false
+# stores_secrets=false
+# stores_sql=false
+# stores_hidden_context=false
 
 function Assert-LoopbackBaseUri {
     param([string]$Value)

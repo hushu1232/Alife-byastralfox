@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(96));
+            Assert.That(checks, Has.Count.EqualTo(97));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -323,6 +323,23 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("stores_secrets=false"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("stores_sql=false"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("stores_hidden_context=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
+            DataAgentReadinessCheck graphHandshakeRealLangGraphManualShadowIntegrationCheck = checks.Single(check => check.Name == "GraphHandshakeRealLangGraphManualShadowIntegrationPresent");
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("real_langgraph_manual_shadow_integration=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("source_baseline=v3.28"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("manual_only=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("operator_started_runtime=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("loopback_only=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("agent_advisory_only=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("harness_execution_authority=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("csharp_validation_authority=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("default_result_changed=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("fallback_required=true"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("starts_runtime=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("installs_dependencies=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_secrets=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_sql=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_hidden_context=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEndToEndChainContractPresent"));
             DataAgentReadinessCheck dataAgentChainContractCheck = checks.Single(check => check.Name == "DataAgentEndToEndChainContractPresent");
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_boundary=true"));
@@ -457,7 +474,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 111 required passed, 0 required missing"
+                "  Summary: 112 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -502,6 +519,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeHarnessReplayDiffGatePresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeOperatorEvidencePackPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEndToEndChainContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentReplayRunbookPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
@@ -521,7 +539,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 111"));
+            Assert.That(script, Does.Contain("$expectedRequired = 112"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

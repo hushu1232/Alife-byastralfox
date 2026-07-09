@@ -3216,6 +3216,133 @@ public static class DataAgentReadiness
             checks.Add(v328Ready
                 ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=110;frozen_core_check_count=95;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)}"));
+
+            string v40DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.0-real-langgraph-manual-shadow-integration.md");
+            string v40HarnessScriptPath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+            string v40TestPath = Path.Combine(v328RepoRoot, "Tests", "Alife.Test.DataAgent", "DataAgentV40RealLangGraphManualShadowIntegrationTests.cs");
+            bool v40DocExists = File.Exists(v40DocPath);
+            bool v40HarnessScriptExists = File.Exists(v40HarnessScriptPath);
+            bool v40TestExists = File.Exists(v40TestPath);
+            string v40Doc = v40DocExists ? File.ReadAllText(v40DocPath) : string.Empty;
+            string v40HarnessScript = v40HarnessScriptExists ? File.ReadAllText(v40HarnessScriptPath) : string.Empty;
+            string v40Tests = v40TestExists ? File.ReadAllText(v40TestPath) : string.Empty;
+            DataAgentRealLangGraphManualShadowInput v40FallbackInput = new(
+                SourceReplayId: "v4.0-readiness-gate",
+                OperatorStartedRuntime: true,
+                LoopbackOnly: true,
+                RuntimeStartedByAlife: false,
+                DependenciesInstalledByAlife: false,
+                SidecarCalledByAlife: false,
+                ContextLayers:
+                [
+                    new DataAgentRealLangGraphManualShadowContextLayer("layer_1_route", "route=allowed;source_baseline=v3.28"),
+                    new DataAgentRealLangGraphManualShadowContextLayer("layer_2_evidence", "reason_code=timeout_or_transport_failure"),
+                    new DataAgentRealLangGraphManualShadowContextLayer("layer_3_excerpt", "bounded_failure_excerpt=timeout_or_transport_failure")
+                ],
+                ManualShadowResult: v325Rejected,
+                DiffGateResult: v326Rejected);
+            DataAgentRealLangGraphManualShadowResult v40Fallback =
+                DataAgentRealLangGraphManualShadowIntegration.Evaluate(v40FallbackInput);
+            string v40Packet = DataAgentRealLangGraphManualShadowFormatter.Format(v40Fallback);
+            bool v40DocMarkers =
+                v40Doc.Contains("real_langgraph_manual_shadow_integration=true", StringComparison.Ordinal) &&
+                v40Doc.Contains("source_baseline=v3.28", StringComparison.Ordinal) &&
+                v40Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v40Doc.Contains("operator_started_runtime=true", StringComparison.Ordinal) &&
+                v40Doc.Contains("loopback_only=true", StringComparison.Ordinal);
+            bool v40Boundary =
+                v40Doc.Contains("manual shadow integration", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("not automatic startup", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("operator manually starts", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("C# validation", StringComparison.Ordinal) &&
+                v40Doc.Contains("advisory only", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("default DataAgent result remains unchanged", StringComparison.Ordinal) &&
+                v40Doc.Contains("fallback", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("No secrets", StringComparison.Ordinal) &&
+                v40Doc.Contains("SQL text", StringComparison.Ordinal) &&
+                v40Doc.Contains("hidden context", StringComparison.Ordinal);
+            bool v40ModelReady =
+                typeof(DataAgentRealLangGraphManualShadowContextLayer).IsClass &&
+                typeof(DataAgentRealLangGraphManualShadowInput).IsClass &&
+                typeof(DataAgentRealLangGraphManualShadowResult).IsClass &&
+                typeof(DataAgentRealLangGraphManualShadowIntegration).IsClass &&
+                typeof(DataAgentRealLangGraphManualShadowFormatter).IsClass &&
+                typeof(DataAgentRealLangGraphManualShadowArtifactWriter).IsClass &&
+                string.Equals(v40Fallback.SourceBaseline, "v3.28", StringComparison.Ordinal) &&
+                v40Fallback.Accepted == false &&
+                v40Fallback.ManualOnly &&
+                v40Fallback.OperatorStartedRuntime &&
+                v40Fallback.LoopbackOnly &&
+                v40Fallback.AgentAdvisoryOnly &&
+                v40Fallback.HarnessExecutionAuthority &&
+                v40Fallback.CSharpValidationAuthority &&
+                v40Fallback.DefaultResultChanged == false &&
+                v40Fallback.FallbackRequired &&
+                v40Fallback.StartsRuntime == false &&
+                v40Fallback.InstallsDependencies == false &&
+                v40Fallback.StoresSecrets == false &&
+                v40Fallback.StoresSql == false &&
+                v40Fallback.StoresHiddenContext == false;
+            bool v40PacketMarkers =
+                v40Packet.Contains("real_langgraph_manual_shadow_integration=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("source_baseline=v3.28", StringComparison.Ordinal) &&
+                v40Packet.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("operator_started_runtime=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("fallback_required=true", StringComparison.Ordinal) &&
+                v40Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v40Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v40HarnessMarkers =
+                v40HarnessScript.Contains("real_langgraph_manual_shadow_integration=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("source_baseline=v3.28", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("operator_started_runtime=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("fallback_required=true", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("Assert-LoopbackBaseUri", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("Invoke-WebRequest", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("Start-Process", StringComparison.Ordinal) == false &&
+                v40HarnessScript.Contains("pip install", StringComparison.Ordinal) == false;
+            bool v40ArtifactWriterReady =
+                string.Equals(DataAgentRealLangGraphManualShadowArtifactWriter.FileName, "dataagent-v4.0-real-langgraph-manual-shadow.txt", StringComparison.Ordinal);
+            bool v40TestsReady =
+                v40Tests.Contains("IntegrationAcceptsManualLangGraphAdvisoryThroughReplayDiffGate", StringComparison.Ordinal) &&
+                v40Tests.Contains("ManualHarnessScriptDeclaresOperatorOnlyLoopbackBoundary", StringComparison.Ordinal) &&
+                v40Tests.Contains("ManualHarnessArtifactOutputDoesNotLeakAbsoluteDirectoryAndJsonUsesMarkerSchema", StringComparison.Ordinal) &&
+                v40Tests.Contains("source_baseline", StringComparison.Ordinal) &&
+                v40Tests.Contains("Does.Not.Contain(\"source_baseline\")", StringComparison.Ordinal);
+            bool v40Ready =
+                v40DocExists &&
+                v40HarnessScriptExists &&
+                v40TestExists &&
+                v40DocMarkers &&
+                v40Boundary &&
+                v40ModelReady &&
+                v40PacketMarkers &&
+                v40HarnessMarkers &&
+                v40ArtifactWriterReady &&
+                v40TestsReady;
+            checks.Add(v40Ready
+                ? Pass("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", "real_langgraph_manual_shadow_integration=true;source_baseline=v3.28;manual_only=true;operator_started_runtime=true;loopback_only=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;fallback_required=true;starts_runtime=false;installs_dependencies=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", $"doc={LowerBool(v40DocExists)};script={LowerBool(v40HarnessScriptExists)};tests={LowerBool(v40TestExists)};doc_markers={LowerBool(v40DocMarkers)};boundary={LowerBool(v40Boundary)};model={LowerBool(v40ModelReady)};packet={LowerBool(v40PacketMarkers)};harness={LowerBool(v40HarnessMarkers)};artifact_writer={LowerBool(v40ArtifactWriterReady)};test_markers={LowerBool(v40TestsReady)}"));
         }
         catch (Exception ex)
         {

@@ -152,7 +152,7 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         Assert.Multiple(() =>
         {
             Assert.That(script, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
-            Assert.That(script, Does.Contain("$expectedRequired = 111"));
+            Assert.That(script, Does.Contain("$expectedRequired = 112"));
             Assert.That(source, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(source, Does.Contain("DataAgentV3FinalReadinessFreezeBuilder.Build"));
             Assert.That(source, Does.Contain("frozen_required_check_count=110"));
