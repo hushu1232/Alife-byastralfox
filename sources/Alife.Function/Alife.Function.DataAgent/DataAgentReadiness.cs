@@ -1425,6 +1425,80 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeManualArtifactIndexPresent", "manual_artifact_index=true;manifest_writer=true;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeManualArtifactIndexPresent", $"doc={LowerBool(v322DocExists)};doc_markers={LowerBool(v322DocMarkers)};boundary={LowerBool(v322Boundary)};model={LowerBool(v322ModelReady)};index={LowerBool(v322IndexMarkers)}"));
 
+            string v323DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.23-manual-audit-bundle.md");
+            bool v323DocExists = File.Exists(v323DocPath);
+            string v323Doc = v323DocExists ? File.ReadAllText(v323DocPath) : string.Empty;
+            string v323BundlePath = Path.Combine(
+                Path.GetDirectoryName(databasePath) ?? Path.GetTempPath(),
+                $"dataagent-v323-readiness-{Guid.NewGuid():N}.md");
+            DataAgentGraphHandshakeManualAuditBundle? v323Bundle = null;
+            string v323BundleText = string.Empty;
+            try
+            {
+                v323Bundle = DataAgentGraphHandshakeManualAuditBundleWriter.Write(v320SampleReport, v321Artifact!, v322Index!, v323BundlePath);
+                v323BundleText = File.ReadAllText(v323BundlePath);
+            }
+            finally
+            {
+                if (File.Exists(v323BundlePath))
+                    File.Delete(v323BundlePath);
+            }
+
+            bool v323DocMarkers =
+                v323Doc.Contains("manual_audit_bundle=true", StringComparison.Ordinal) &&
+                v323Doc.Contains("bundle_writer=true", StringComparison.Ordinal) &&
+                v323Doc.Contains("source_versions=v3.18-v3.22", StringComparison.Ordinal) &&
+                v323Doc.Contains("manual_only=true", StringComparison.Ordinal);
+            bool v323Boundary =
+                v323Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v323Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v323Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v323Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v323Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v323Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v323ModelReady =
+                typeof(DataAgentGraphHandshakeManualAuditBundle).IsClass &&
+                typeof(DataAgentGraphHandshakeManualAuditBundleWriter).IsClass &&
+                v323Bundle is not null &&
+                v323Bundle.ManualOnly &&
+                v323Bundle.StartsRuntime == false &&
+                v323Bundle.InstallsDependencies == false &&
+                v323Bundle.StoresSecrets == false &&
+                v323Bundle.StoresSql == false &&
+                v323Bundle.StoresHiddenContext == false &&
+                v323Bundle.DefaultResultChanged == false &&
+                v323Bundle.ComparisonCount == v320SampleReport.ComparisonCount &&
+                v323Bundle.EvidenceItemCount == 5;
+            bool v323BundleMarkers =
+                v323BundleText.Contains("manual_audit_bundle=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("bundle_writer=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("source_versions=v3.18-v3.22", StringComparison.Ordinal) &&
+                v323BundleText.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v323BundleText.Contains("comparison_count=1", StringComparison.Ordinal) &&
+                v323BundleText.Contains("evidence_item_count=5", StringComparison.Ordinal) &&
+                v323BundleText.Contains("includes_smoke_result_artifact=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("includes_replay_fixture_pack=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("includes_shadow_replay_report=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("includes_manual_replay_report_artifact=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("includes_manual_artifact_index=true", StringComparison.Ordinal) &&
+                v323BundleText.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v323BundleText.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v323Ready =
+                v323DocExists &&
+                v323DocMarkers &&
+                v323Boundary &&
+                v323ModelReady &&
+                v323BundleMarkers;
+            checks.Add(v323Ready
+                ? Pass("GraphHandshakeManualAuditBundlePresent", "manual_audit_bundle=true;bundle_writer=true;source_versions=v3.18-v3.22;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeManualAuditBundlePresent", $"doc={LowerBool(v323DocExists)};doc_markers={LowerBool(v323DocMarkers)};boundary={LowerBool(v323Boundary)};model={LowerBool(v323ModelReady)};bundle={LowerBool(v323BundleMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
