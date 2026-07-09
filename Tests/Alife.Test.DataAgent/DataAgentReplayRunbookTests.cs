@@ -5,6 +5,7 @@ using Alife.Tools.DataAgentReplay;
 namespace Alife.Test.DataAgent;
 
 [TestFixture]
+[NonParallelizable]
 public sealed class DataAgentReplayRunbookTests
 {
     [Test]
@@ -333,6 +334,46 @@ public sealed class DataAgentReplayRunbookTests
     }
 
     [Test]
+    public void ReplayScriptFallbackValidatesDotnetNineSdk()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "replay-dataagent-chain.ps1"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("dotnet --version"));
+            Assert.That(script, Does.Contain("StartsWith(\"9.\""));
+            Assert.That(script, Does.Contain(".NET 9 SDK required for DataAgent replay; found:"));
+        });
+    }
+
+    [Test]
+    public void ReplayProjectUnsupportedFormatFailsWithClearError()
+    {
+        ProcessResult result = RunReplayProject("--fixture", DefaultFixturePath(), "--format", "xml");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(result.StandardError + result.StandardOutput, Does.Contain("Unsupported format"));
+            Assert.That(result.StandardError + result.StandardOutput, Does.Contain("markdown"));
+            Assert.That(result.StandardError + result.StandardOutput, Does.Contain("json"));
+        });
+    }
+
+    [Test]
+    public void ReplayProjectMissingFixtureArgumentFailsWithClearError()
+    {
+        ProcessResult result = RunReplayProject("--format", "markdown");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(result.StandardError + result.StandardOutput, Does.Contain("--fixture"));
+        });
+    }
+
+    [Test]
     public void ReplayImplementationUsesRealRoutePolicyAccessorAndDisabledRuntime()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -367,6 +408,28 @@ public sealed class DataAgentReplayRunbookTests
         return RunScriptAsync(arguments).GetAwaiter().GetResult();
     }
 
+    static ProcessResult RunReplayProject(params string[] arguments)
+    {
+        return RunReplayProjectAsync(arguments).GetAwaiter().GetResult();
+    }
+
+    static async Task<ProcessResult> RunReplayProjectAsync(params string[] arguments)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string projectPath = Path.Combine(repoRoot, "tools", "dataagent-replay", "Alife.Tools.DataAgentReplay.csproj");
+        string dotnetPath = @"C:\Users\hu shu\.dotnet\dotnet.exe";
+
+        List<string> command = [
+            "run",
+            "--project",
+            projectPath,
+            "--"
+        ];
+        command.AddRange(arguments);
+
+        return await RunProcessAsync(dotnetPath, repoRoot, command, "Timed out after 60 seconds while running replay project.");
+    }
+
     static async Task<ProcessResult> RunScriptAsync(params string[] arguments)
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -382,16 +445,25 @@ public sealed class DataAgentReplayRunbookTests
         ];
         command.AddRange(arguments);
 
+        return await RunProcessAsync("powershell", repoRoot, command, "Timed out after 60 seconds while running replay script.");
+    }
+
+    static async Task<ProcessResult> RunProcessAsync(
+        string fileName,
+        string workingDirectory,
+        IReadOnlyList<string> arguments,
+        string timeoutError)
+    {
         using Process process = new();
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = "powershell",
-            WorkingDirectory = repoRoot,
+            FileName = fileName,
+            WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
-        foreach (string argument in command)
+        foreach (string argument in arguments)
             process.StartInfo.ArgumentList.Add(argument);
 
         process.Start();
@@ -416,7 +488,6 @@ public sealed class DataAgentReplayRunbookTests
             string capturedError = standardErrorTask.IsCompletedSuccessfully
                 ? standardErrorTask.Result
                 : string.Empty;
-            string timeoutError = "Timed out after 60 seconds while running replay script.";
             string timeoutStandardError = string.IsNullOrEmpty(capturedError)
                 ? timeoutError
                 : capturedError + Environment.NewLine + timeoutError;
