@@ -238,7 +238,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 93 required passed, 0 required missing"
+                "  Summary: 94 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -267,6 +267,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarObservabilityContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEndToEndChainContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentReplayRunbookPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("LangGraphRuntimeReadinessContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -284,7 +285,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 93"));
+            Assert.That(script, Does.Contain("$expectedRequired = 94"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -661,6 +662,36 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("FormatMarkdown"));
             Assert.That(declaration, Does.Contain("FormatJson"));
             Assert.That(declaration, Does.Contain("sidecar_authority=false"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+        });
+    }
+
+    [Test]
+    public void ReadinessScriptProtectsV310LangGraphRuntimeReadinessContract()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1");
+        string script = File.ReadAllText(scriptPath);
+
+        string declaration = FindNewCheckDeclaration(script, "LangGraphRuntimeReadinessContractPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("docs/dataagent/dataagent-v3.10-langgraph-runtime-readiness-contract.md"));
+            Assert.That(declaration, Does.Contain("V3.10 is not runtime integration"));
+            Assert.That(declaration, Does.Contain("GET /health"));
+            Assert.That(declaration, Does.Contain("POST /handshake"));
+            Assert.That(declaration, Does.Contain("POST /handshake-stream"));
+            Assert.That(declaration, Does.Contain("manual_only=true"));
+            Assert.That(declaration, Does.Contain("advisory_only=true"));
+            Assert.That(declaration, Does.Contain("loopback_only=true"));
+            Assert.That(declaration, Does.Contain("starts_runtime=false"));
+            Assert.That(declaration, Does.Contain("installs_dependencies=false"));
+            Assert.That(declaration, Does.Contain("no_sql_authority=true"));
+            Assert.That(declaration, Does.Contain("no_checkpoint_mutation=true"));
+            Assert.That(declaration, Does.Contain("no_visible_text=true"));
+            Assert.That(declaration, Does.Contain("fallback_required=true"));
+            Assert.That(declaration, Does.Contain("replay_parity_required=true"));
             Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
         });
     }
