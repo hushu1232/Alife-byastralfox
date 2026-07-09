@@ -687,6 +687,9 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("loopback_only=true"));
             Assert.That(declaration, Does.Contain("starts_runtime=false"));
             Assert.That(declaration, Does.Contain("installs_dependencies=false"));
+            Assert.That(declaration, Does.Contain("creates_venv=false"));
+            Assert.That(declaration, Does.Contain("binds_port=false"));
+            Assert.That(declaration, Does.Contain("supervises_process=false"));
             Assert.That(declaration, Does.Contain("no_sql_authority=true"));
             Assert.That(declaration, Does.Contain("no_checkpoint_mutation=true"));
             Assert.That(declaration, Does.Contain("no_visible_text=true"));

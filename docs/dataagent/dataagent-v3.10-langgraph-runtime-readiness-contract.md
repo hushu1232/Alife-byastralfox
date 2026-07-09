@@ -74,6 +74,7 @@ starts_runtime=false
 installs_dependencies=false
 creates_venv=false
 binds_port=false
+supervises_process=false
 default_tests_live_runtime=false
 ```
 
@@ -112,7 +113,7 @@ LangGraphRuntimeReadinessContractPresent
 Expected detail:
 
 ```text
-manual_only=true;advisory_only=true;loopback_only=true;starts_runtime=false;installs_dependencies=false;no_sql_authority=true;no_checkpoint_mutation=true;no_visible_text=true;fallback_required=true;replay_parity_required=true;default_tests_live_runtime=false
+manual_only=true;advisory_only=true;loopback_only=true;starts_runtime=false;installs_dependencies=false;creates_venv=false;binds_port=false;supervises_process=false;no_sql_authority=true;no_checkpoint_mutation=true;no_visible_text=true;fallback_required=true;replay_parity_required=true;default_tests_live_runtime=false
 ```
 
 This marker proves the admission contract is present. It does not prove that a real LangGraph runtime exists.

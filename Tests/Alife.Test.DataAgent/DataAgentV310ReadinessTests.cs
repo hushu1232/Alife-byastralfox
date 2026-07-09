@@ -19,6 +19,9 @@ public sealed class DataAgentV310ReadinessTests
             Assert.That(declaration, Does.Contain("loopback_only=true"));
             Assert.That(declaration, Does.Contain("starts_runtime=false"));
             Assert.That(declaration, Does.Contain("installs_dependencies=false"));
+            Assert.That(declaration, Does.Contain("creates_venv=false"));
+            Assert.That(declaration, Does.Contain("binds_port=false"));
+            Assert.That(declaration, Does.Contain("supervises_process=false"));
             Assert.That(declaration, Does.Contain("no_sql_authority=true"));
             Assert.That(declaration, Does.Contain("no_checkpoint_mutation=true"));
             Assert.That(declaration, Does.Contain("no_visible_text=true"));
@@ -54,6 +57,14 @@ public sealed class DataAgentV310ReadinessTests
             Assert.That(doc, Does.Contain("V4.0"));
             Assert.That(doc, Does.Contain("advisory mode"));
             Assert.That(doc, Does.Contain("C# remains the authority"));
+            Assert.That(doc, Does.Contain("manual_only=true"));
+            Assert.That(doc, Does.Contain("advisory_only=true"));
+            Assert.That(doc, Does.Contain("loopback_only=true"));
+            Assert.That(doc, Does.Contain("no_sql_authority=true"));
+            Assert.That(doc, Does.Contain("no_checkpoint_mutation=true"));
+            Assert.That(doc, Does.Contain("no_visible_text=true"));
+            Assert.That(doc, Does.Contain("fallback_required=true"));
+            Assert.That(doc, Does.Contain("replay_parity_required=true"));
         });
     }
 
@@ -73,6 +84,7 @@ public sealed class DataAgentV310ReadinessTests
             Assert.That(doc, Does.Contain("installs_dependencies=false"));
             Assert.That(doc, Does.Contain("creates_venv=false"));
             Assert.That(doc, Does.Contain("binds_port=false"));
+            Assert.That(doc, Does.Contain("supervises_process=false"));
             Assert.That(doc, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(doc, Does.Contain("SQL execution"));
             Assert.That(doc, Does.Contain("checkpoint mutation"));
