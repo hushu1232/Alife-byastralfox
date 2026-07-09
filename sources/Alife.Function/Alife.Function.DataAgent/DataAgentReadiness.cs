@@ -1,4 +1,4 @@
-using Alife.Function.FunctionCaller;
+﻿using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Framework.Models.StateEstimation;
 using System.Net;
@@ -1885,6 +1885,219 @@ public static class DataAgentReadiness
             checks.Add(v327Ready
                 ? Pass("GraphHandshakeOperatorEvidencePackPresent", "operator_evidence_pack=true;source_versions=v3.18-v3.26;manual_audit_bundle=true;agent_advisory_contract=v3.24;real_langgraph_manual_shadow_provider=true;harness_replay_diff_gate=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeOperatorEvidencePackPresent", $"doc={LowerBool(v327DocExists)};doc_markers={LowerBool(v327DocMarkers)};boundary={LowerBool(v327Boundary)};model={LowerBool(v327ModelReady)};packet={LowerBool(v327PacketMarkers)}"));
+            string dataAgentEndToEndContractPath = Path.Combine(
+                FindRepositoryRoot(AppContext.BaseDirectory),
+                "Tests",
+                "Alife.Test.DataAgent",
+                "DataAgentEndToEndChainContractTests.cs");
+            string dataAgentEndToEndContractSource = File.Exists(dataAgentEndToEndContractPath)
+                ? File.ReadAllText(dataAgentEndToEndContractPath)
+                : string.Empty;
+            string ExtractTestMethodBlock(string methodName)
+            {
+                string signature = $"public void {methodName}(";
+                int methodStart = dataAgentEndToEndContractSource.IndexOf(signature, StringComparison.Ordinal);
+                if (methodStart < 0)
+                    return string.Empty;
+
+                int nextTestStart = dataAgentEndToEndContractSource.IndexOf(
+                    "\n    [Test]",
+                    methodStart + signature.Length,
+                    StringComparison.Ordinal);
+                return nextTestStart < 0
+                    ? dataAgentEndToEndContractSource[methodStart..]
+                    : dataAgentEndToEndContractSource[methodStart..nextTestStart];
+            }
+            bool ContractContains(string source, string marker) =>
+                source.Contains(marker, StringComparison.Ordinal);
+            bool ContractDoesNotContainComposedForbiddenToken(string source, string prefix, string suffix) =>
+                source.Contains(prefix + suffix, StringComparison.Ordinal) == false;
+            int firstTestStart = dataAgentEndToEndContractSource.IndexOf("\n    [Test]", StringComparison.Ordinal);
+            string dataAgentEndToEndClassConstantsSource = firstTestStart < 0
+                ? dataAgentEndToEndContractSource
+                : dataAgentEndToEndContractSource[..firstTestStart];
+            string dataAgentEndToEndRouteBoundarySource = ExtractTestMethodBlock("ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface");
+            string dataAgentEndToEndXmlPolicySource = ExtractTestMethodBlock("XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools");
+            string dataAgentEndToEndAcceptedAnalysisSource = ExtractTestMethodBlock("AcceptedAnalysisPublishesSessionStateAndAllDiagnostics");
+            string dataAgentEndToEndRouteDeniedSource = ExtractTestMethodBlock("RouteDeniedAnalysisDoesNotExecuteSql");
+            string dataAgentEndToEndTerminalActionsSource = ExtractTestMethodBlock("TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped");
+            string dataAgentEndToEndOfflineBoundarySource =
+                dataAgentEndToEndClassConstantsSource +
+                ExtractTestMethodBlock("OfflineBoundaryMarkersLockNoLiveRuntimeAndNoSidecarAuthority");
+            bool dataAgentEndToEndRouteBoundaryReady =
+                typeof(DataAgentAnalysisToolHandler).IsClass &&
+                typeof(DataAgentService).IsClass &&
+                typeof(ToolCapabilityRouter).IsClass &&
+                ContractContains(dataAgentEndToEndRouteBoundarySource, "ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface");
+            bool dataAgentEndToEndXmlPolicyReady =
+                typeof(XmlFunctionExecutionPolicy).IsClass &&
+                ContractContains(dataAgentEndToEndXmlPolicySource, "XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools");
+            bool dataAgentEndToEndSessionStateReady =
+                typeof(DataAgentAnalysisOrchestrator).IsClass &&
+                typeof(DataAgentAnalysisService).IsClass &&
+                typeof(XmlFunctionCaller).IsClass &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "AcceptedAnalysisPublishesSessionStateAndAllDiagnostics") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "UpdateDataAgentAnalysisRouteSessionFromContext");
+            bool dataAgentEndToEndDiagnosticsClosureReady =
+                typeof(DataAgentEvidenceDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentTraceDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentProgressDiagnosticsFormatter).IsClass &&
+                typeof(DataAgentDataQueryGraphTraceFormatter).IsClass &&
+                typeof(DataAgentGraphHandshakeDiagnosticsFormatter).IsClass &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "QChatDiagnosticsService") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "AcceptedAnalysisPublishesSessionStateAndAllDiagnostics");
+            bool dataAgentEndToEndRouteDeniedNoExecuteReady =
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "RouteDeniedAnalysisDoesNotExecuteSql") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.RouteGate") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Reject") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Checkpoint") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "step.ExecutedSql), Is.False") &&
+                (ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount, Is.Zero") ||
+                 ContractContains(dataAgentEndToEndRouteDeniedSource, "QueryCount, Is.EqualTo(0)")) &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "AcceptedAudit, Is.Empty") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "RejectedAudit, Is.Empty") &&
+                ContractContains(dataAgentEndToEndRouteDeniedSource, "owner_private_required");
+            bool dataAgentEndToEndTerminalNoExecuteReady =
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_summarize") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataagent_analysis_end") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summary.Steps.Any(step => step.ExecutedSql), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "end.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "end.Steps.Any(step => step.ExecutedSql), Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "queryCountAfterStart, Is.EqualTo(1)") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "dataStore.QueryCount, Is.EqualTo(1)") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeMissingSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeWrongSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "summarizeMatchingSession.IsAllowed, Is.True") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endMissingSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endWrongSession.IsAllowed, Is.False") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "endMatchingSession.IsAllowed, Is.True") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "tool_route_required") &&
+                ContractContains(dataAgentEndToEndTerminalActionsSource, "tool_session_not_allowed_in_current_route");
+            bool dataAgentEndToEndSidecarAuthorityBoundaryReady =
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "sidecar_authority=false") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "DataAgentGraphHandshakeOptions.Disabled") &&
+                ContractContains(dataAgentEndToEndAcceptedAnalysisSource, "DisabledDataAgentGraphSidecarClient");
+            bool dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady =
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "default_tests_live_runtime=false") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Invoke-\" + \"WebRequest\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Start-\" + \"Process\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"uvi\" + \"corn\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"127.0.0.\" + \"1:8765\")") &&
+                ContractContains(dataAgentEndToEndOfflineBoundarySource, "Does.Not.Contain(\"Event\" + \"Source\")") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Invoke-", "WebRequest") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Start-", "Process") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "uvi", "corn") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "127.0.0.", "1:8765") &&
+                ContractDoesNotContainComposedForbiddenToken(dataAgentEndToEndContractSource, "Event", "Source");
+            bool dataAgentEndToEndChainContractReady =
+                dataAgentEndToEndRouteBoundaryReady &&
+                dataAgentEndToEndXmlPolicyReady &&
+                dataAgentEndToEndSessionStateReady &&
+                dataAgentEndToEndDiagnosticsClosureReady &&
+                dataAgentEndToEndRouteDeniedNoExecuteReady &&
+                dataAgentEndToEndTerminalNoExecuteReady &&
+                dataAgentEndToEndSidecarAuthorityBoundaryReady &&
+                dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady;
+            const string dataAgentEndToEndChainContractPassDetail =
+                "route_boundary=true;xml_policy=true;session_state=true;diagnostics_closure=true;route_denied_no_execute=true;terminal_no_execute=true;sidecar_authority=false;default_tests_live_runtime=false";
+            string dataAgentEndToEndChainContractFailDetail =
+                $"route_boundary={LowerBool(dataAgentEndToEndRouteBoundaryReady)};xml_policy={LowerBool(dataAgentEndToEndXmlPolicyReady)};session_state={LowerBool(dataAgentEndToEndSessionStateReady)};diagnostics_closure={LowerBool(dataAgentEndToEndDiagnosticsClosureReady)};route_denied_no_execute={LowerBool(dataAgentEndToEndRouteDeniedNoExecuteReady)};terminal_no_execute={LowerBool(dataAgentEndToEndTerminalNoExecuteReady)};sidecar_authority={LowerBool(dataAgentEndToEndSidecarAuthorityBoundaryReady == false)};default_tests_live_runtime={LowerBool(dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady == false)}";
+            checks.Add(dataAgentEndToEndChainContractReady
+                ? Pass("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractPassDetail)
+                : Fail("DataAgentEndToEndChainContractPresent", dataAgentEndToEndChainContractFailDetail));
+
+            string dataAgentReplayRepoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
+            string dataAgentReplayWrapperPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "replay-dataagent-chain.ps1");
+            string dataAgentReplayProjectPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "Alife.Tools.DataAgentReplay.csproj");
+            string dataAgentReplayFixturePath = Path.Combine(dataAgentReplayRepoRoot, "Tests", "Alife.Test.DataAgent", "Fixtures", "DataAgentReplay", "v3.9-owner-readiness-analysis.json");
+            string dataAgentReplayRunnerPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "DataAgentReplayRunner.cs");
+            string dataAgentReplayFormatterPath = Path.Combine(dataAgentReplayRepoRoot, "tools", "dataagent-replay", "DataAgentReplayReportFormatter.cs");
+            string dataAgentReplayTestsPath = Path.Combine(dataAgentReplayRepoRoot, "Tests", "Alife.Test.DataAgent", "DataAgentReplayRunbookTests.cs");
+            string dataAgentReplayWrapperSource = File.Exists(dataAgentReplayWrapperPath)
+                ? File.ReadAllText(dataAgentReplayWrapperPath)
+                : string.Empty;
+            string dataAgentReplayRunnerSource = File.Exists(dataAgentReplayRunnerPath)
+                ? File.ReadAllText(dataAgentReplayRunnerPath)
+                : string.Empty;
+            string dataAgentReplayFormatterSource = File.Exists(dataAgentReplayFormatterPath)
+                ? File.ReadAllText(dataAgentReplayFormatterPath)
+                : string.Empty;
+            bool dataAgentReplayCliReady =
+                File.Exists(dataAgentReplayWrapperPath) &&
+                File.Exists(dataAgentReplayProjectPath) &&
+                File.Exists(dataAgentReplayTestsPath) &&
+                ContractContains(dataAgentReplayWrapperSource, "v3.9-owner-readiness-analysis.json") &&
+                ContractContains(dataAgentReplayWrapperSource, @"C:\Users\hu shu\.dotnet\dotnet.exe") &&
+                ContractContains(dataAgentReplayWrapperSource, "$Format") &&
+                ContractContains(dataAgentReplayWrapperSource, "markdown") &&
+                ContractContains(dataAgentReplayWrapperSource, "json") &&
+                ContractContains(dataAgentReplayWrapperSource, "Unsupported format") &&
+                ContractContains(dataAgentReplayWrapperSource, "--no-restore") &&
+                ContractContains(dataAgentReplayWrapperSource, "Alife.Tools.DataAgentReplay.csproj");
+            bool dataAgentReplayFixtureReady = File.Exists(dataAgentReplayFixturePath);
+            bool dataAgentReplayRealChainReady =
+                ContractContains(dataAgentReplayRunnerSource, "ToolCapabilityRouter.CreateDefault") &&
+                ContractContains(dataAgentReplayRunnerSource, "XmlFunctionExecutionPolicy") &&
+                ContractContains(dataAgentReplayRunnerSource, "XmlPolicyDataAgentToolRouteContextAccessor") &&
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentAnalysisToolHandler") &&
+                ContractContains(dataAgentReplayRunnerSource, "QChatDiagnosticsService") &&
+                ContractContains(dataAgentReplayRunnerSource, "FixedRouteContextAccessor") == false;
+            bool dataAgentReplayMarkdownReady =
+                ContractContains(dataAgentReplayFormatterSource, "FormatMarkdown") &&
+                ContractContains(dataAgentReplayFormatterSource, "# DataAgent Replay:") &&
+                ContractContains(dataAgentReplayFormatterSource, "## Expected Markers");
+            bool dataAgentReplayJsonReady =
+                ContractContains(dataAgentReplayFormatterSource, "FormatJson") &&
+                ContractContains(dataAgentReplayFormatterSource, "JsonSerializer.Serialize");
+            bool dataAgentReplayExpectedMarkersReady =
+                ContractContains(dataAgentReplayRunnerSource, "ExpectedMarkers") &&
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentReplayExpectedMarker") &&
+                ContractContains(dataAgentReplayRunnerSource, "combined.Contains(marker, StringComparison.Ordinal)") &&
+                ContractContains(dataAgentReplayRunnerSource, "All(marker => marker.Passed)");
+            bool dataAgentReplaySidecarAuthorityBoundaryReady =
+                ContractContains(dataAgentReplayRunnerSource, "DataAgentGraphHandshakeOptions.Disabled") &&
+                ContractContains(dataAgentReplayRunnerSource, "DisabledDataAgentGraphSidecarClient.Instance") &&
+                ContractContains(dataAgentReplayRunnerSource, "sidecar_disabled") &&
+                ContractContains(dataAgentReplayRunnerSource, "SidecarAuthority: disabledSidecarObserved == false || liveRuntimeObserved") &&
+                ContractContains(dataAgentReplayRunnerSource, "offlineBoundary.SidecarAuthority == false");
+            bool dataAgentReplayDefaultTestsLiveRuntimeBoundaryReady =
+                ContractContains(dataAgentReplayRunnerSource, "offlineBoundary.DefaultTestsLiveRuntime == false") &&
+                ContractContains(dataAgentReplayRunnerSource, "ContainsLiveRuntimeMarker(replayEvidence)") &&
+                ContractContains(dataAgentReplayRunnerSource, "DefaultTestsLiveRuntime: liveRuntimeObserved") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"http://\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"https://\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"127.0.0.1\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"localhost\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"uvicorn\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"Start-Process\"") &&
+                ContractContains(dataAgentReplayRunnerSource, "\"DataAgentGraphHandshakeHttpClient\"") &&
+                ContractContains(dataAgentReplayWrapperSource, "dotnet run --no-restore --project") &&
+                ContractContains(dataAgentReplayWrapperSource, "Start-Process") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "Invoke-WebRequest") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "uvicorn") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "127.0.0.1") == false &&
+                ContractContains(dataAgentReplayWrapperSource, "localhost") == false;
+            bool dataAgentReplaySidecarAuthorityObserved = dataAgentReplaySidecarAuthorityBoundaryReady == false;
+            bool dataAgentReplayDefaultTestsLiveRuntimeObserved = dataAgentReplayDefaultTestsLiveRuntimeBoundaryReady == false;
+            bool dataAgentReplayRunbookReady =
+                dataAgentReplayCliReady &&
+                dataAgentReplayFixtureReady &&
+                dataAgentReplayRealChainReady &&
+                dataAgentReplayMarkdownReady &&
+                dataAgentReplayJsonReady &&
+                dataAgentReplayExpectedMarkersReady &&
+                dataAgentReplaySidecarAuthorityObserved == false &&
+                dataAgentReplayDefaultTestsLiveRuntimeObserved == false;
+            const string dataAgentReplayRunbookPassDetail =
+                "cli=true;fixture=true;real_chain=true;markdown=true;json=true;expected_markers=true;sidecar_authority=false;default_tests_live_runtime=false";
+            string dataAgentReplayRunbookFailDetail =
+                $"cli={LowerBool(dataAgentReplayCliReady)};fixture={LowerBool(dataAgentReplayFixtureReady)};real_chain={LowerBool(dataAgentReplayRealChainReady)};markdown={LowerBool(dataAgentReplayMarkdownReady)};json={LowerBool(dataAgentReplayJsonReady)};expected_markers={LowerBool(dataAgentReplayExpectedMarkersReady)};sidecar_authority={LowerBool(dataAgentReplaySidecarAuthorityObserved)};default_tests_live_runtime={LowerBool(dataAgentReplayDefaultTestsLiveRuntimeObserved)}";
+            checks.Add(dataAgentReplayRunbookReady
+                ? Pass("DataAgentReplayRunbookPresent", dataAgentReplayRunbookPassDetail)
+                : Fail("DataAgentReplayRunbookPresent", dataAgentReplayRunbookFailDetail));
 
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
@@ -2924,14 +3137,14 @@ public static class DataAgentReadiness
             bool v328DocExists = File.Exists(v328DocPath);
             string v328Doc = v328DocExists ? File.ReadAllText(v328DocPath) : string.Empty;
             DataAgentV3FinalReadinessFreeze v328Freeze =
-                DataAgentV3FinalReadinessFreezeBuilder.Build(checks.ToArray(), frozenRequiredCheckCount: 108, frozenCoreCheckCount: 93);
+                DataAgentV3FinalReadinessFreezeBuilder.Build(checks.ToArray(), frozenRequiredCheckCount: 110, frozenCoreCheckCount: 95);
             string v328Packet = DataAgentV3FinalReadinessFreezeFormatter.Format(v328Freeze);
             bool v328DocMarkers =
                 v328Doc.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Doc.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Doc.Contains("frozen_required_check_count=108", StringComparison.Ordinal) &&
-                v328Doc.Contains("frozen_core_check_count=93", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_decides=true", StringComparison.Ordinal);
@@ -2954,8 +3167,8 @@ public static class DataAgentReadiness
                 string.Equals(v328Freeze.FreezeId, "v3.28-final-readiness-freeze", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.FinalV3Version, "v3.28", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.SourceVersions, "v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Freeze.FrozenRequiredCheckCount == 108 &&
-                v328Freeze.FrozenCoreCheckCount == 93 &&
+                v328Freeze.FrozenRequiredCheckCount == 110 &&
+                v328Freeze.FrozenCoreCheckCount == 95 &&
                 v328Freeze.AllFrozenChecksPassed &&
                 v328Freeze.OperatorEvidencePackPresent &&
                 v328Freeze.ReadinessGatesFrozen &&
@@ -2975,8 +3188,8 @@ public static class DataAgentReadiness
                 v328Packet.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Packet.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Packet.Contains("frozen_required_check_count=108", StringComparison.Ordinal) &&
-                v328Packet.Contains("frozen_core_check_count=93", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
                 v328Packet.Contains("all_frozen_checks_passed=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
@@ -3001,7 +3214,7 @@ public static class DataAgentReadiness
                 v328ModelReady &&
                 v328PacketMarkers;
             checks.Add(v328Ready
-                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=108;frozen_core_check_count=93;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=110;frozen_core_check_count=95;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)}"));
         }
         catch (Exception ex)

@@ -1,0 +1,40 @@
+{
+  "version": "v3.9",
+  "name": "owner-readiness-analysis",
+  "callerId": "owner",
+  "utterance": "DataAgent analyze project readiness",
+  "routeState": {
+    "isOwner": true,
+    "isPrivate": true,
+    "trustedRuntime": true,
+    "activeDataAgentSessionId": "",
+    "activeDataAgentSessionStatus": ""
+  },
+  "planner": {
+    "dataset": "document_index",
+    "intent": "find_dataagent_documents",
+    "select": ["path", "title"],
+    "filters": [
+      {
+        "field": "tags",
+        "operator": "contains",
+        "value": "dataagent"
+      }
+    ],
+    "limit": 20
+  },
+  "expectedMarkers": [
+    "route_allowed",
+    "dataagent_analysis_start",
+    "RouteGate:Succeeded",
+    "Execute:Succeeded",
+    "Checkpoint:Succeeded",
+    "sql_status=validated",
+    "DataAgent evidence diagnostics",
+    "DataAgent trace diagnostics",
+    "DataAgent progress diagnostics",
+    "graph_sidecar",
+    "sidecar_authority=false",
+    "default_tests_live_runtime=false"
+  ]
+}

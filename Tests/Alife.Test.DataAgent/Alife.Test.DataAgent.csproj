@@ -21,6 +21,12 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.DataAgent\Alife.Function.DataAgent.csproj" />
+        <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
+        <ProjectReference Include="..\..\tools\dataagent-replay\Alife.Tools.DataAgentReplay.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="Fixtures\DataAgentReplay\*.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

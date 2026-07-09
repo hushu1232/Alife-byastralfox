@@ -1,4 +1,4 @@
-# DataAgent V3.28 Final Readiness Freeze
+﻿# DataAgent V3.28 Final Readiness Freeze
 
 V3.28 is the final V3.X checkpoint. It freezes the V3.0-V3.27 DataAgent graph-handshake and evidence chain as a readiness-gated, operator-reviewed boundary. It does not add runtime agent authority.
 
@@ -17,8 +17,8 @@ Markers:
 v3_final_readiness_freeze=true
 final_v3_version=v3.28
 source_versions=v3.0-v3.27
-frozen_required_check_count=108
-frozen_core_check_count=93
+frozen_required_check_count=110
+frozen_core_check_count=95
 all_frozen_checks_passed=true
 operator_evidence_pack_present=true
 readiness_gates_frozen=true

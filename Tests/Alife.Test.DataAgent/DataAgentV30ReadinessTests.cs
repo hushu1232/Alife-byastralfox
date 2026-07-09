@@ -1,4 +1,4 @@
-using Alife.Function.DataAgent;
+﻿using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
 
@@ -49,7 +49,7 @@ public sealed class DataAgentV30ReadinessTests
             Assert.That(declaration, Does.Contain("secret_marker_safety=true"));
             Assert.That(declaration, Does.Contain("scoped_node_manifest=true"));
             Assert.That(declaration, Does.Contain("fallback=true"));
-            Assert.That(script, Does.Contain("$expectedRequired = 109"));
+            Assert.That(script, Does.Contain("$expectedRequired = 111"));
         });
     }
 

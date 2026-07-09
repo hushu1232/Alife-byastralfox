@@ -1,4 +1,4 @@
-using Alife.Function.DataAgent;
+﻿using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
 
@@ -39,7 +39,7 @@ public sealed class DataAgentV216ReadinessTests
             Assert.That(script, Does.Contain("RecentDataAgentGraphDiagnostics"));
             Assert.That(script, Does.Contain("dataQueryGraphDiagnosticsPublisher"));
             Assert.That(script, Does.Contain("DataAgentDataQueryGraphTraceFormatter.Format"));
-            Assert.That(script, Does.Contain("$expectedRequired = 109"));
+            Assert.That(script, Does.Contain("$expectedRequired = 111"));
         });
     }
 

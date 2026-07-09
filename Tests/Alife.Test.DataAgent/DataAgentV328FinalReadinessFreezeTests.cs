@@ -1,4 +1,4 @@
-using Alife.Function.DataAgent;
+﻿using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
 
@@ -11,16 +11,16 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         DataAgentV3FinalReadinessFreeze freeze =
             DataAgentV3FinalReadinessFreezeBuilder.Build(
                 NewFrozenChecks(),
-                frozenRequiredCheckCount: 108,
-                frozenCoreCheckCount: 93);
+                frozenRequiredCheckCount: 110,
+                frozenCoreCheckCount: 95);
 
         Assert.Multiple(() =>
         {
             Assert.That(freeze.FreezeId, Is.EqualTo("v3.28-final-readiness-freeze"));
             Assert.That(freeze.FinalV3Version, Is.EqualTo("v3.28"));
             Assert.That(freeze.SourceVersions, Is.EqualTo("v3.0-v3.27"));
-            Assert.That(freeze.FrozenRequiredCheckCount, Is.EqualTo(108));
-            Assert.That(freeze.FrozenCoreCheckCount, Is.EqualTo(93));
+            Assert.That(freeze.FrozenRequiredCheckCount, Is.EqualTo(110));
+            Assert.That(freeze.FrozenCoreCheckCount, Is.EqualTo(95));
             Assert.That(freeze.AllFrozenChecksPassed, Is.True);
             Assert.That(freeze.OperatorEvidencePackPresent, Is.True);
             Assert.That(freeze.ReadinessGatesFrozen, Is.True);
@@ -45,13 +45,13 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         DataAgentV3FinalReadinessFreeze missingOperatorPack =
             DataAgentV3FinalReadinessFreezeBuilder.Build(
                 NewFrozenChecks().Where(check => check.Name != "GraphHandshakeOperatorEvidencePackPresent").ToArray(),
-                frozenRequiredCheckCount: 108,
-                frozenCoreCheckCount: 93);
+                frozenRequiredCheckCount: 110,
+                frozenCoreCheckCount: 95);
         DataAgentV3FinalReadinessFreeze failedReadiness =
             DataAgentV3FinalReadinessFreezeBuilder.Build(
                 NewFrozenChecks(failedCheckName: "GraphHandshakeOperatorEvidencePackPresent"),
-                frozenRequiredCheckCount: 108,
-                frozenCoreCheckCount: 93);
+                frozenRequiredCheckCount: 110,
+                frozenCoreCheckCount: 95);
 
         Assert.Multiple(() =>
         {
@@ -76,8 +76,8 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         DataAgentV3FinalReadinessFreeze freeze =
             DataAgentV3FinalReadinessFreezeBuilder.Build(
                 NewFrozenChecks(extraDetail: "unsafe SELECT hidden_context bearer secret"),
-                frozenRequiredCheckCount: 108,
-                frozenCoreCheckCount: 93);
+                frozenRequiredCheckCount: 110,
+                frozenCoreCheckCount: 95);
 
         string text = DataAgentV3FinalReadinessFreezeFormatter.Format(freeze);
 
@@ -86,8 +86,8 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
             Assert.That(text, Does.Contain("v3_final_readiness_freeze=true"));
             Assert.That(text, Does.Contain("final_v3_version=v3.28"));
             Assert.That(text, Does.Contain("source_versions=v3.0-v3.27"));
-            Assert.That(text, Does.Contain("frozen_required_check_count=108"));
-            Assert.That(text, Does.Contain("frozen_core_check_count=93"));
+            Assert.That(text, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(text, Does.Contain("frozen_core_check_count=95"));
             Assert.That(text, Does.Contain("all_frozen_checks_passed=true"));
             Assert.That(text, Does.Contain("operator_evidence_pack_present=true"));
             Assert.That(text, Does.Contain("readiness_gates_frozen=true"));
@@ -120,8 +120,8 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
             Assert.That(doc, Does.Contain("v3_final_readiness_freeze=true"));
             Assert.That(doc, Does.Contain("final_v3_version=v3.28"));
             Assert.That(doc, Does.Contain("source_versions=v3.0-v3.27"));
-            Assert.That(doc, Does.Contain("frozen_required_check_count=108"));
-            Assert.That(doc, Does.Contain("frozen_core_check_count=93"));
+            Assert.That(doc, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(doc, Does.Contain("frozen_core_check_count=95"));
             Assert.That(doc, Does.Contain("operator_decides=true"));
             Assert.That(doc, Does.Contain("agent_advisory_only=true"));
             Assert.That(doc, Does.Contain("harness_execution_authority=true"));
@@ -152,11 +152,11 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         Assert.Multiple(() =>
         {
             Assert.That(script, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
-            Assert.That(script, Does.Contain("$expectedRequired = 109"));
+            Assert.That(script, Does.Contain("$expectedRequired = 111"));
             Assert.That(source, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(source, Does.Contain("DataAgentV3FinalReadinessFreezeBuilder.Build"));
-            Assert.That(source, Does.Contain("frozen_required_check_count=108"));
-            Assert.That(source, Does.Contain("frozen_core_check_count=93"));
+            Assert.That(source, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(source, Does.Contain("frozen_core_check_count=95"));
         });
     }
 

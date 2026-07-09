@@ -1,4 +1,4 @@
-namespace Alife.Function.DataAgent;
+﻿namespace Alife.Function.DataAgent;
 
 public sealed record DataAgentV3FinalReadinessFreeze(
     string FreezeId,
@@ -43,8 +43,8 @@ public static class DataAgentV3FinalReadinessFreezeBuilder
             check.Detail.Contains("operator_evidence_pack=true", StringComparison.Ordinal) &&
             check.Detail.Contains("operator_decides=true", StringComparison.Ordinal));
         bool countsFrozen =
-            frozenRequiredCheckCount == 108 &&
-            frozenCoreCheckCount == 93;
+            frozenRequiredCheckCount == 110 &&
+            frozenCoreCheckCount == 95;
         bool allFrozenChecksPassed =
             frozenChecks.All(check => check.Passed) &&
             operatorEvidencePackPresent &&
