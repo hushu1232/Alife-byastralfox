@@ -91,6 +91,42 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    public void IntegrationRejectsManualShadowResultStorageAuthorityViolation()
+    {
+        DataAgentRealLangGraphManualShadowInput baseline = NewInput();
+        DataAgentRealLangGraphManualShadowInput input = baseline with
+        {
+            ManualShadowResult = baseline.ManualShadowResult! with
+            {
+                StoresSql = true
+            }
+        };
+
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
+
+        AssertBoundaryViolationFallback(result);
+    }
+
+    [Test]
+    public void IntegrationRejectsDiffGateDefaultResultOrValidationAuthorityViolation()
+    {
+        DataAgentRealLangGraphManualShadowInput baseline = NewInput();
+        DataAgentRealLangGraphManualShadowInput input = baseline with
+        {
+            DiffGateResult = baseline.DiffGateResult! with
+            {
+                DefaultResultChanged = true
+            }
+        };
+
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(input);
+
+        AssertBoundaryViolationFallback(result);
+    }
+
+    [Test]
     public void IntegrationFormatterEmitsCompactSafePacket()
     {
         DataAgentRealLangGraphManualShadowResult result =
@@ -118,6 +154,18 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(text, Does.Not.Contain("SELECT"));
             Assert.That(text, Does.Not.Contain("bearer"));
             Assert.That(text, Does.Not.Contain("SELECT * FROM hidden_context"));
+        });
+    }
+
+    static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Accepted, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("real_langgraph_manual_shadow_boundary_violation"));
+            Assert.That(result.FallbackRequired, Is.True);
+            Assert.That(result.OperatorRequired, Is.True);
+            Assert.That(result.DefaultResultChanged, Is.False);
         });
     }
 

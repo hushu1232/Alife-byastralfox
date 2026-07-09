@@ -95,9 +95,21 @@ public static class DataAgentRealLangGraphManualShadowIntegration
             input.ManualShadowResult.StartsRuntime ||
             input.ManualShadowResult.InstallsDependencies ||
             input.ManualShadowResult.CallsSidecar ||
+            input.ManualShadowResult.StoresSecrets ||
+            input.ManualShadowResult.StoresSql ||
+            input.ManualShadowResult.StoresHiddenContext ||
+            input.ManualShadowResult.DefaultResultChanged ||
+            input.ManualShadowResult.ManualShadowOnly == false ||
             input.DiffGateResult.StartsRuntime ||
             input.DiffGateResult.InstallsDependencies ||
-            input.DiffGateResult.CallsSidecar)
+            input.DiffGateResult.CallsSidecar ||
+            input.DiffGateResult.StoresSecrets ||
+            input.DiffGateResult.StoresSql ||
+            input.DiffGateResult.StoresHiddenContext ||
+            input.DiffGateResult.DefaultResultChanged ||
+            input.DiffGateResult.AgentAdvisoryOnly == false ||
+            input.DiffGateResult.HarnessExecutionAuthority == false ||
+            input.DiffGateResult.CSharpValidationAuthority == false)
         {
             return Build(
                 accepted: false,
