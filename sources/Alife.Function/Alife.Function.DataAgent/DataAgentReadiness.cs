@@ -1804,6 +1804,88 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeHarnessReplayDiffGatePresent", "harness_replay_diff_gate=true;agent_advisory_contract=v3.24;real_langgraph_manual_shadow_provider=true;harness_execution_authority=true;csharp_validation_authority=true;agent_advisory_only=true;gate_only=true;operator_decides=true;default_result_changed=false;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeHarnessReplayDiffGatePresent", $"doc={LowerBool(v326DocExists)};doc_markers={LowerBool(v326DocMarkers)};boundary={LowerBool(v326Boundary)};model={LowerBool(v326ModelReady)};packet={LowerBool(v326PacketMarkers)}"));
 
+            string v327DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.27-operator-evidence-pack.md");
+            bool v327DocExists = File.Exists(v327DocPath);
+            string v327Doc = v327DocExists ? File.ReadAllText(v327DocPath) : string.Empty;
+            DataAgentOperatorEvidencePack v327PassedPack =
+                DataAgentOperatorEvidencePackBuilder.Build(v326Report, v321Artifact!, v322Index!, v323Bundle!, v325Accepted, v326Passed);
+            DataAgentOperatorEvidencePack v327FallbackPack =
+                DataAgentOperatorEvidencePackBuilder.Build(v326Report, v321Artifact!, v322Index!, v323Bundle!, v325Rejected, v326Rejected);
+            string v327Packet = DataAgentOperatorEvidencePackFormatter.Format(v327PassedPack);
+            bool v327DocMarkers =
+                v327Doc.Contains("operator_evidence_pack=true", StringComparison.Ordinal) &&
+                v327Doc.Contains("source_versions=v3.18-v3.26", StringComparison.Ordinal) &&
+                v327Doc.Contains("manual_audit_bundle=true", StringComparison.Ordinal) &&
+                v327Doc.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal) &&
+                v327Doc.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v327Doc.Contains("harness_replay_diff_gate=true", StringComparison.Ordinal) &&
+                v327Doc.Contains("operator_decides=true", StringComparison.Ordinal);
+            bool v327Boundary =
+                v327Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v327Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v327Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v327ModelReady =
+                typeof(DataAgentOperatorEvidencePack).IsClass &&
+                typeof(DataAgentOperatorEvidencePackBuilder).IsClass &&
+                typeof(DataAgentOperatorEvidencePackFormatter).IsClass &&
+                string.Equals(v327PassedPack.PackId, "v3.27-operator-evidence-pack", StringComparison.Ordinal) &&
+                v327PassedPack.GatePassed &&
+                v327PassedPack.AdvisoryAccepted &&
+                v327PassedPack.FallbackRequired == false &&
+                v327PassedPack.OperatorRequired == false &&
+                v327PassedPack.ManualOnly &&
+                v327PassedPack.AgentAdvisoryOnly &&
+                v327PassedPack.HarnessExecutionAuthority &&
+                v327PassedPack.CSharpValidationAuthority &&
+                v327PassedPack.OperatorDecides &&
+                v327PassedPack.DefaultResultChanged == false &&
+                v327PassedPack.StartsRuntime == false &&
+                v327PassedPack.InstallsDependencies == false &&
+                v327PassedPack.CallsSidecar == false &&
+                v327PassedPack.StoresSecrets == false &&
+                v327PassedPack.StoresSql == false &&
+                v327PassedPack.StoresHiddenContext == false &&
+                v327FallbackPack.GatePassed == false &&
+                v327FallbackPack.AdvisoryAccepted == false &&
+                v327FallbackPack.FallbackRequired &&
+                v327FallbackPack.OperatorRequired;
+            bool v327PacketMarkers =
+                v327Packet.Contains("operator_evidence_pack=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("source_versions=v3.18-v3.26", StringComparison.Ordinal) &&
+                v327Packet.Contains("manual_audit_bundle=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("agent_advisory_contract=v3.24", StringComparison.Ordinal) &&
+                v327Packet.Contains("real_langgraph_manual_shadow_provider=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("harness_replay_diff_gate=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("operator_decides=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v327Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v327Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v327Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false &&
+                v327Packet.Contains("unsafe SELECT hidden_context bearer secret", StringComparison.OrdinalIgnoreCase) == false;
+            bool v327Ready =
+                v327DocExists &&
+                v327DocMarkers &&
+                v327Boundary &&
+                v327ModelReady &&
+                v327PacketMarkers;
+            checks.Add(v327Ready
+                ? Pass("GraphHandshakeOperatorEvidencePackPresent", "operator_evidence_pack=true;source_versions=v3.18-v3.26;manual_audit_bundle=true;agent_advisory_contract=v3.24;real_langgraph_manual_shadow_provider=true;harness_replay_diff_gate=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeOperatorEvidencePackPresent", $"doc={LowerBool(v327DocExists)};doc_markers={LowerBool(v327DocMarkers)};boundary={LowerBool(v327Boundary)};model={LowerBool(v327ModelReady)};packet={LowerBool(v327PacketMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
