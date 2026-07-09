@@ -21,6 +21,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.DataAgent\Alife.Function.DataAgent.csproj" />
+        <ProjectReference Include="..\..\Sources\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
     </ItemGroup>
 
 </Project>

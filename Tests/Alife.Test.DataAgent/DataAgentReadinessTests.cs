@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(76));
+            Assert.That(checks, Has.Count.EqualTo(77));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -104,6 +104,16 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("sse_deferred=true"));
             Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("qchat_boundary=true"));
             Assert.That(graphHandshakeObservabilityCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEndToEndChainContractPresent"));
+            DataAgentReadinessCheck dataAgentChainContractCheck = checks.Single(check => check.Name == "DataAgentEndToEndChainContractPresent");
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_boundary=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("xml_policy=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("session_state=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("diagnostics_closure=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_denied_no_execute=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("terminal_no_execute=true"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("sidecar_authority=false"));
+            Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("default_tests_live_runtime=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataQueryGraphOwnerDiagnosticsPresent"));
             DataAgentReadinessCheck graphDiagnosticsCheck = checks.Single(check => check.Name == "DataQueryGraphOwnerDiagnosticsPresent");
             Assert.That(graphDiagnosticsCheck.Passed, Is.True, graphDiagnosticsCheck.Detail);
@@ -218,7 +228,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 91 required passed, 0 required missing"
+                "  Summary: 92 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -245,6 +255,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarProgressBridgePresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarStreamingTransportPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeDevSidecarObservabilityContractPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("DataAgentEndToEndChainContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
@@ -262,7 +273,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 91"));
+            Assert.That(script, Does.Contain("$expectedRequired = 92"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
@@ -594,6 +605,28 @@ public sealed class DataAgentReadinessTests
     }
 
     [Test]
+    public void StaticReadinessScriptContainsV38EndToEndChainMarkers()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+        string declaration = FindNewCheckDeclaration(script, "DataAgentEndToEndChainContractPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("DataAgentEndToEndChainContractTests.cs"));
+            Assert.That(declaration, Does.Contain("ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface"));
+            Assert.That(declaration, Does.Contain("XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools"));
+            Assert.That(declaration, Does.Contain("AcceptedAnalysisPublishesSessionStateAndAllDiagnostics"));
+            Assert.That(declaration, Does.Contain("RouteDeniedAnalysisDoesNotExecuteSql"));
+            Assert.That(declaration, Does.Contain("TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped"));
+            Assert.That(declaration, Does.Contain("QChatDiagnosticsService"));
+            Assert.That(declaration, Does.Contain("DataAgentEndToEndChainContractPresent"));
+            Assert.That(declaration, Does.Contain("sidecar_authority=false"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+        });
+    }
+
+    [Test]
     public void DynamicReadinessSourceContainsV37ExactObservabilityReasonCodeChecks()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -619,6 +652,56 @@ public sealed class DataAgentReadinessTests
             Assert.That(declaration, Does.Contain("graph_sidecar_fallback_used"));
             Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_missing"));
             Assert.That(declaration, Does.Contain("graph_sidecar_stream_final_response_rejected"));
+        });
+    }
+
+    [Test]
+    public void DynamicReadinessSourceDerivesV38ChainContractMarkersFromContractTests()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            repoRoot,
+            "sources",
+            "Alife.Function",
+            "Alife.Function.DataAgent",
+            "DataAgentReadiness.cs"));
+        string declaration = FindSourceBlock(
+            source,
+            "string dataAgentEndToEndContractSource",
+            "string dataQueryGraphDisabledDiagnostics");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("File.ReadAllText(dataAgentEndToEndContractPath)"));
+            Assert.That(declaration, Does.Contain("ExtractTestMethodBlock"));
+            Assert.That(declaration, Does.Contain("ContractContains"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndRouteBoundarySource"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndXmlPolicySource"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndAcceptedAnalysisSource"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndRouteDeniedSource"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndTerminalActionsSource"));
+            Assert.That(declaration, Does.Contain("string dataAgentEndToEndOfflineBoundarySource"));
+            Assert.That(declaration, Does.Contain("ToolBrokerRoutesDataAgentToolsOnlyForTrustedOwnerPrivateSurface"));
+            Assert.That(declaration, Does.Contain("XmlExecutionPolicyEnforcesRouteAndSessionScopeForDataAgentTools"));
+            Assert.That(declaration, Does.Contain("AcceptedAnalysisPublishesSessionStateAndAllDiagnostics"));
+            Assert.That(declaration, Does.Contain("UpdateDataAgentAnalysisRouteSessionFromContext"));
+            Assert.That(declaration, Does.Contain("QChatDiagnosticsService"));
+            Assert.That(declaration, Does.Contain("RouteDeniedAnalysisDoesNotExecuteSql"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndRouteDeniedSource, \"DataAgentOrchestrationNodeKind.Execute), Is.False\")"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndRouteDeniedSource, \"step.ExecutedSql), Is.False\")"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndRouteDeniedSource, \"QueryCount, Is.Zero\")"));
+            Assert.That(declaration, Does.Not.Contain("ContractContains(\"DataAgentOrchestrationNodeKind.RouteGate\")"));
+            Assert.That(declaration, Does.Contain("TerminalAnalysisActionsDoNotExecuteSqlAndRemainSessionScoped"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndTerminalActionsSource, \"summary.Steps.Any(step => step.Node == DataAgentOrchestrationNodeKind.Execute), Is.False\")"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndTerminalActionsSource, \"end.Steps.Any(step => step.ExecutedSql), Is.False\")"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndTerminalActionsSource, \"summarizeMissingSession.IsAllowed, Is.False\")"));
+            Assert.That(declaration, Does.Contain("ContractContains(dataAgentEndToEndTerminalActionsSource, \"summarizeMatchingSession.IsAllowed, Is.True\")"));
+            Assert.That(declaration, Does.Not.Contain("ContractContains(\"dataagent_analysis_summarize\")"));
+            Assert.That(declaration, Does.Contain("sidecar_authority=false"));
+            Assert.That(declaration, Does.Contain("default_tests_live_runtime=false"));
+            Assert.That(declaration, Does.Contain("ContractDoesNotContainComposedForbiddenToken"));
+            Assert.That(declaration, Does.Contain("dataAgentEndToEndSidecarAuthorityBoundaryReady == false"));
+            Assert.That(declaration, Does.Contain("dataAgentEndToEndDefaultTestsLiveRuntimeBoundaryReady == false"));
         });
     }
 
