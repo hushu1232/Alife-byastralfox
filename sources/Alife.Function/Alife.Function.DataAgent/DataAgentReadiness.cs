@@ -759,6 +759,60 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeDevSidecarObservabilityContractPresent", "default_enabled=false;observability_model=true;reason_codes=true;fallback_reason=true;unsafe_diagnostics_redacted=true;sse_deferred=true;qchat_boundary=true;default_tests_live_runtime=false")
                 : Fail("GraphHandshakeDevSidecarObservabilityContractPresent", $"default_enabled={LowerBool(graphHandshakeDefaultOptions.Enabled)};observability_model={LowerBool(graphHandshakeObservabilityModelReady)};reason_codes={LowerBool(graphHandshakeObservabilityReasonCodesReady)};fallback_reason={LowerBool(graphHandshakeObservabilityFallbackReasonReady)};unsafe_diagnostics_redacted={LowerBool(graphHandshakeUnsafeDiagnosticsRedacted)};sse_deferred={LowerBool(graphHandshakeStreamSseDeferred)};qchat_boundary={LowerBool(graphHandshakeObservabilityQChatBoundary)};default_tests_live_runtime={LowerBool(graphHandshakeObservabilityDefaultTestsLiveRuntime)}"));
 
+            string v311RepoRoot = FindRepositoryRoot();
+            string v311DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.11-real-langgraph-sidecar-skeleton.md");
+            string v311SidecarPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "server.py");
+            string v311ReadmePath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "README.md");
+            bool v311DocExists = File.Exists(v311DocPath);
+            bool v311SidecarExists = File.Exists(v311SidecarPath);
+            bool v311ReadmeExists = File.Exists(v311ReadmePath);
+            string v311Doc = v311DocExists ? File.ReadAllText(v311DocPath) : string.Empty;
+            string v311Sidecar = v311SidecarExists ? File.ReadAllText(v311SidecarPath) : string.Empty;
+            string v311Readme = v311ReadmeExists ? File.ReadAllText(v311ReadmePath) : string.Empty;
+            bool v311ManualOnly =
+                v311Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
+                v311Readme.Contains("manual-only", StringComparison.OrdinalIgnoreCase);
+            bool v311LoopbackOnly =
+                v311Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("Only loopback hosts are allowed.", StringComparison.Ordinal);
+            bool v311DefaultDisabled =
+                graphHandshakeDefaultOptions.Enabled == false &&
+                v311Doc.Contains("default_enabled=false", StringComparison.Ordinal);
+            bool v311RuntimeStarted =
+                graphHandshakeDefaultHttpOptions.RuntimeStarted ||
+                graphHandshakeDefaultStreamOptions.RuntimeStarted ||
+                v311Doc.Contains("starts_runtime=true", StringComparison.Ordinal) ||
+                v311Sidecar.Contains("Process.Start", StringComparison.Ordinal) ||
+                v311Sidecar.Contains("subprocess", StringComparison.Ordinal);
+            bool v311DefaultTestsLiveRuntime =
+                v311Doc.Contains("default_tests_live_runtime=false", StringComparison.Ordinal) &&
+                v311RuntimeStarted == false;
+            bool v311NoSqlAuthority =
+                v311Doc.Contains("no_sql_authority=true", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("\"NoSqlAuthority\": True", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("\"RequestedToolNames\": []", StringComparison.Ordinal);
+            bool v311LangGraphHook =
+                v311Sidecar.Contains("from langgraph.graph import END, StateGraph", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("StateGraph(dict)", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("workflow.compile()", StringComparison.Ordinal);
+            bool v311Fallback =
+                v311Doc.Contains("fallback_required=true", StringComparison.Ordinal) &&
+                v311Sidecar.Contains("\"FallbackRequired\": True", StringComparison.Ordinal);
+            bool v311SkeletonReady =
+                v311DocExists &&
+                v311SidecarExists &&
+                v311ReadmeExists &&
+                v311ManualOnly &&
+                v311LoopbackOnly &&
+                v311DefaultDisabled &&
+                v311DefaultTestsLiveRuntime &&
+                v311NoSqlAuthority &&
+                v311LangGraphHook &&
+                v311Fallback;
+            checks.Add(v311SkeletonReady
+                ? Pass("GraphHandshakeRealLangGraphSidecarSkeletonPresent", "manual_only=true;loopback_only=true;default_enabled=false;runtime_started=false;default_tests_live_runtime=false;no_sql_authority=true;langgraph_hook=true;fallback=true")
+                : Fail("GraphHandshakeRealLangGraphSidecarSkeletonPresent", $"doc={LowerBool(v311DocExists)};sidecar={LowerBool(v311SidecarExists)};readme={LowerBool(v311ReadmeExists)};manual_only={LowerBool(v311ManualOnly)};loopback_only={LowerBool(v311LoopbackOnly)};default_enabled={LowerBool(v311DefaultDisabled)};runtime_started={LowerBool(v311RuntimeStarted)};default_tests_live_runtime={LowerBool(v311DefaultTestsLiveRuntime)};no_sql_authority={LowerBool(v311NoSqlAuthority)};langgraph_hook={LowerBool(v311LangGraphHook)};fallback={LowerBool(v311Fallback)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
@@ -1805,6 +1859,27 @@ public static class DataAgentReadiness
     static DataAgentReadinessCheck Fail(string name, string detail) => new(name, false, detail);
 
     static string LowerBool(bool value) => value ? "true" : "false";
+
+    static string FindRepositoryRoot()
+    {
+        foreach (string start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
+        {
+            DirectoryInfo? directory = new(start);
+            while (directory != null)
+            {
+                if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) &&
+                    Directory.Exists(Path.Combine(directory.FullName, "docs")) &&
+                    Directory.Exists(Path.Combine(directory.FullName, "tools")))
+                {
+                    return directory.FullName;
+                }
+
+                directory = directory.Parent;
+            }
+        }
+
+        return Environment.CurrentDirectory;
+    }
 
     static bool ContainsBroadGraphHandshakeAuthorityToken(string? toolName)
     {
