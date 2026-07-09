@@ -38,6 +38,28 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    public void ManualHarnessScriptDeclaresOperatorOnlyLoopbackBoundary()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("real_langgraph_manual_shadow_integration=true"));
+            Assert.That(script, Does.Contain("manual_only=true"));
+            Assert.That(script, Does.Contain("operator_started_runtime=true"));
+            Assert.That(script, Does.Contain("loopback_only=true"));
+            Assert.That(script, Does.Contain("starts_runtime=false"));
+            Assert.That(script, Does.Contain("installs_dependencies=false"));
+            Assert.That(script, Does.Contain("Assert-LoopbackBaseUri"));
+            Assert.That(script, Does.Contain("Invoke-WebRequest"));
+            Assert.That(script, Does.Not.Contain("Start-Process"));
+            Assert.That(script, Does.Not.Contain("pip install"));
+            Assert.That(script, Does.Not.Contain("python -m venv"));
+        });
+    }
+
+    [Test]
     public void IntegrationFallsBackWhenManualRuntimeIsUnavailable()
     {
         DataAgentRealLangGraphManualShadowInput input = NewInput() with
@@ -300,6 +322,24 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         }
 
         return string.Empty;
+    }
+
+    static string FindRepoRoot(string startDirectory)
+    {
+        DirectoryInfo? directory = new(startDirectory);
+        while (directory != null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "Alife.slnx")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "docs")) &&
+                Directory.Exists(Path.Combine(directory.FullName, "tools")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate repository root.");
     }
 
     static DataAgentRealLangGraphManualShadowResult NewDirectResult(
