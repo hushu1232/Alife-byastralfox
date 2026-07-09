@@ -1499,6 +1499,108 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeManualAuditBundlePresent", "manual_audit_bundle=true;bundle_writer=true;source_versions=v3.18-v3.22;manual_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeManualAuditBundlePresent", $"doc={LowerBool(v323DocExists)};doc_markers={LowerBool(v323DocMarkers)};boundary={LowerBool(v323Boundary)};model={LowerBool(v323ModelReady)};bundle={LowerBool(v323BundleMarkers)}"));
 
+            string v324DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.24-agent-advisory-contract.md");
+            bool v324DocExists = File.Exists(v324DocPath);
+            string v324Doc = v324DocExists ? File.ReadAllText(v324DocPath) : string.Empty;
+            string v324BoundaryPath = Path.Combine(v311RepoRoot, "docs", "engineering", "agent-harness-boundary.md");
+            bool v324BoundaryDocExists = File.Exists(v324BoundaryPath);
+            string v324BoundaryDoc = v324BoundaryDocExists ? File.ReadAllText(v324BoundaryPath) : string.Empty;
+            DataAgentAgentAdvisoryRequest v324Request = new(
+                ContractVersion: "v3.24",
+                RunId: "v3.24-readiness",
+                Task: "explain classified harness failure",
+                CurrentState: "manual shadow run failed after loopback check",
+                AllowedAdvisoryActions: ["explain_failure", "propose_manual_check", "summarize_artifact", "suggest_fixture", "compare_replay_diff"],
+                ForbiddenAuthorities: ["start_runtime", "execute_sql", "write_state", "write_secret", "publish_visible_answer", "decide_tool_permission", "override_readiness"],
+                LastSuccessfulStep: "loopback_check",
+                FailureCategory: "timeout_or_transport_failure",
+                EvidenceRefs: ["artifact_index:v3.23-manual-audit-bundle"],
+                ArtifactIndexToken: "v3.23-manual-audit-bundle",
+                ExpectedResponseSchema: "advisory_id,summary,reason_code,confidence,evidence_refs,proposed_next_steps,forbidden_authority_claims,requires_operator_action",
+                AgentAdvisoryOnly: true,
+                HarnessExecutionAuthority: true,
+                CSharpValidationAuthority: true,
+                DefaultResultChanged: false);
+            DataAgentAgentAdvisoryResponse v324SafeResponse = new(
+                AdvisoryId: "adv-1",
+                Summary: "classified timeout can be retried manually after checking loopback health",
+                ReasonCode: "timeout_or_transport_failure",
+                Confidence: 0.8,
+                EvidenceRefs: ["artifact_index:v3.23-manual-audit-bundle"],
+                ProposedNextSteps: ["inspect_loopback"],
+                ForbiddenAuthorityClaims: [],
+                RequiresOperatorAction: true,
+                RequestsExecution: false,
+                RequestsStateWrite: false,
+                RequestsVisibleText: false,
+                DefaultResultChanged: false);
+            DataAgentAgentAdvisoryValidationResult v324RequestValidation =
+                DataAgentAgentAdvisoryContract.ValidateRequest(v324Request);
+            DataAgentAgentAdvisoryValidationResult v324ResponseValidation =
+                DataAgentAgentAdvisoryContract.ValidateResponse(v324Request, v324SafeResponse);
+            DataAgentAgentAdvisoryValidationResult v324ForbiddenValidation =
+                DataAgentAgentAdvisoryContract.ValidateResponse(
+                    v324Request,
+                    v324SafeResponse with
+                    {
+                        ForbiddenAuthorityClaims = ["execute_sql"],
+                        RequestsExecution = true
+                    });
+            string v324Packet = DataAgentAgentAdvisoryFormatter.Format(v324Request, v324SafeResponse);
+            bool v324DocMarkers =
+                v324Doc.Contains("agent_advisory_contract=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("contract_version=v3.24", StringComparison.Ordinal) &&
+                v324Doc.Contains("token_budget_context_layers=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("evidence_first_response=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("langgraph_provider_only=true", StringComparison.Ordinal);
+            bool v324Boundary =
+                v324Doc.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v324Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v324Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v324Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v324Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v324Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v324Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v324EngineeringBoundary =
+                v324BoundaryDoc.Contains("agent_harness_boundary=true", StringComparison.Ordinal) &&
+                v324BoundaryDoc.Contains("loop_harness_reuse_required=true", StringComparison.Ordinal) &&
+                v324BoundaryDoc.Contains("dataagent_is_testbed_not_destination=true", StringComparison.Ordinal);
+            bool v324ModelReady =
+                typeof(DataAgentAgentAdvisoryRequest).IsClass &&
+                typeof(DataAgentAgentAdvisoryResponse).IsClass &&
+                typeof(DataAgentAgentAdvisoryContract).IsClass &&
+                typeof(DataAgentAgentAdvisoryFormatter).IsClass &&
+                v324RequestValidation.Accepted &&
+                v324ResponseValidation.Accepted &&
+                v324ForbiddenValidation.Accepted == false &&
+                string.Equals(v324ForbiddenValidation.ReasonCode, "advisory_forbidden_authority_claimed", StringComparison.Ordinal);
+            bool v324PacketMarkers =
+                v324Packet.Contains("agent_advisory_contract=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("contract_version=v3.24", StringComparison.Ordinal) &&
+                v324Packet.Contains("token_budget_context_layers=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("evidence_first_response=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v324Packet.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v324Packet.Contains("reason_code=timeout_or_transport_failure", StringComparison.Ordinal) &&
+                v324Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v324Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false &&
+                v324Packet.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) == false;
+            bool v324Ready =
+                v324DocExists &&
+                v324BoundaryDocExists &&
+                v324DocMarkers &&
+                v324Boundary &&
+                v324EngineeringBoundary &&
+                v324ModelReady &&
+                v324PacketMarkers;
+            checks.Add(v324Ready
+                ? Pass("GraphHandshakeAgentAdvisoryContractPresent", "agent_advisory_contract=true;contract_version=v3.24;token_budget_context_layers=true;evidence_first_response=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;langgraph_provider_only=true;starts_runtime=false;installs_dependencies=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeAgentAdvisoryContractPresent", $"doc={LowerBool(v324DocExists)};engineering_doc={LowerBool(v324BoundaryDocExists)};doc_markers={LowerBool(v324DocMarkers)};boundary={LowerBool(v324Boundary)};engineering_boundary={LowerBool(v324EngineeringBoundary)};model={LowerBool(v324ModelReady)};packet={LowerBool(v324PacketMarkers)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
