@@ -950,6 +950,104 @@ public static class DataAgentReadiness
                 ? Pass("GraphHandshakeCrossModulePlannerManifestsPresent", "planner_only=true;cross_module_advisory=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;denied_markers=true;fallback=true")
                 : Fail("GraphHandshakeCrossModulePlannerManifestsPresent", $"doc={LowerBool(v314DocExists)};model={LowerBool(v314ManifestModelReady)};planner_only={LowerBool(v314PlannerOnly)};cross_module_advisory={LowerBool(v314CrossModuleAdvisory)};authority_denied={LowerBool(v314AuthorityDenied)};denied_markers={LowerBool(v314DeniedMarkers)};fallback={LowerBool(v314Fallback)}"));
 
+            string v315DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.15-authority-fallback-regression.md");
+            bool v315DocExists = File.Exists(v315DocPath);
+            string v315Doc = v315DocExists ? File.ReadAllText(v315DocPath) : string.Empty;
+            DataAgentGraphSidecarPolicy v315Policy = DataAgentGraphSidecarPolicy.CreateDefault();
+            DataAgentGraphSidecarAuthority[] v315ForbiddenAuthorities =
+            [
+                DataAgentGraphSidecarAuthority.AuthorizeDataset,
+                DataAgentGraphSidecarAuthority.AuthorizeField,
+                DataAgentGraphSidecarAuthority.AuthorizeOperator,
+                DataAgentGraphSidecarAuthority.AuthorizeLimit,
+                DataAgentGraphSidecarAuthority.ProvideExecutableSql,
+                DataAgentGraphSidecarAuthority.ExecuteSql,
+                DataAgentGraphSidecarAuthority.DecideToolRoute,
+                DataAgentGraphSidecarAuthority.MutateCheckpoint,
+                DataAgentGraphSidecarAuthority.WriteEvidence,
+                DataAgentGraphSidecarAuthority.WriteAudit,
+                DataAgentGraphSidecarAuthority.WriteProgress,
+                DataAgentGraphSidecarAuthority.WriteDiagnostics,
+                DataAgentGraphSidecarAuthority.SendVisibleQChatText,
+                DataAgentGraphSidecarAuthority.OwnQqIngress
+            ];
+            bool v315AuthorityRegression =
+                v315Doc.Contains("authority_regression=true", StringComparison.Ordinal) &&
+                v315ForbiddenAuthorities.All(authority => v315Policy.Forbids(authority));
+            bool v315ForbiddenAuthoritiesRejected =
+                v315Doc.Contains("forbidden_authorities_rejected=true", StringComparison.Ordinal) &&
+                v315ForbiddenAuthorities.All(authority =>
+                    DataAgentGraphSidecarContract.IsResponseSafe(
+                        new DataAgentGraphSidecarResponse(
+                            WorkflowId: "readiness-workflow",
+                            Accepted: true,
+                            ReasonCode: "authority_claimed",
+                            Message: "advisory response",
+                            ProposedNodeKind: DataAgentGraphSidecarNodeKind.QueryPlanner,
+                            RequestedCapabilityName: null,
+                            RequiresCSharpSafetyService: false,
+                            Trace: ["QueryPlanner:AdvisoryOnly"],
+                            ClaimedAuthorities: [authority]),
+                        v315Policy) == false);
+            DataAgentGraphHandshakeRequest v315Request = new(
+                "readiness-request",
+                "readiness-session",
+                "turn-1",
+                "owner",
+                "Which gates failed?",
+                "scenario_context=ready",
+                "route_present=true",
+                "status=Active",
+                DataAgentGraphHandshakeManifestFactory.CreateDefault(),
+                NoSqlAuthority: true,
+                ReadOnly: true,
+                FallbackAvailable: true,
+                TraceBudgetChars: 128,
+                ProgressBudget: 2);
+            DataAgentGraphHandshakeResponse v315SafeResponse = new(
+                RequestId: v315Request.RequestId,
+                Accepted: true,
+                ReasonCode: "handshake_accepted",
+                SelectedNodes: [DataAgentWorkflowNodeNames.QueryPlanner],
+                NodeProgress:
+                [
+                    new DataAgentGraphHandshakeProgress(
+                        DataAgentWorkflowNodeNames.QueryPlanner,
+                        DataAgentGraphHandshakeProgressStatus.Completed,
+                        "planner_suggested")
+                ],
+                TraceSummary: "QueryPlanner:Completed",
+                ContextContribution: "graph_handshake=accepted",
+                FallbackRequired: false,
+                NoSqlAuthority: true,
+                ReadOnly: true,
+                RequestedToolNames: [DataAgentGraphHandshakeToolNames.ProposeQueryPlan],
+                RequestsCheckpointMutation: false,
+                RequestsVisibleText: false);
+            bool v315HandshakeRegression =
+                DataAgentGraphHandshakeValidator.Validate(v315Request, v315SafeResponse with { NoSqlAuthority = false }).ReasonCode == "sql_authority_requested" &&
+                DataAgentGraphHandshakeValidator.Validate(v315Request, v315SafeResponse with { ReadOnly = false }).ReasonCode == "sql_authority_requested" &&
+                DataAgentGraphHandshakeValidator.Validate(v315Request, v315SafeResponse with { RequestsCheckpointMutation = true }).ReasonCode == "checkpoint_mutation_requested" &&
+                DataAgentGraphHandshakeValidator.Validate(v315Request, v315SafeResponse with { RequestsVisibleText = true }).ReasonCode == "visible_text_requested";
+            bool v315Fallback =
+                v315Doc.Contains("fallback_required=true", StringComparison.Ordinal) &&
+                v315Doc.Contains("default_result_changed=false", StringComparison.Ordinal);
+            bool v315NoAuthority =
+                v315Doc.Contains("no_sql_authority=true", StringComparison.Ordinal) &&
+                v315Doc.Contains("no_visible_text=true", StringComparison.Ordinal) &&
+                v315Policy.NoSqlAuthority &&
+                v315Policy.NoVisibleTextAuthority;
+            bool v315Ready =
+                v315DocExists &&
+                v315AuthorityRegression &&
+                v315ForbiddenAuthoritiesRejected &&
+                v315HandshakeRegression &&
+                v315Fallback &&
+                v315NoAuthority;
+            checks.Add(v315Ready
+                ? Pass("GraphHandshakeAuthorityFallbackRegressionPresent", "authority_regression=true;forbidden_authorities_rejected=true;fallback_required=true;default_result_changed=false;no_sql_authority=true;no_visible_text=true")
+                : Fail("GraphHandshakeAuthorityFallbackRegressionPresent", $"doc={LowerBool(v315DocExists)};authority_regression={LowerBool(v315AuthorityRegression)};forbidden_authorities_rejected={LowerBool(v315ForbiddenAuthoritiesRejected)};handshake_regression={LowerBool(v315HandshakeRegression)};fallback_required={LowerBool(v315Fallback)};no_authority={LowerBool(v315NoAuthority)}"));
+
             string dataQueryGraphDisabledDiagnostics = DataAgentDataQueryGraphTraceFormatter.Format(
                 DataAgentDataQueryGraphPilot.DryRun(CreateReadinessDataQueryGraphAcceptedResult(), DataAgentDataQueryGraphOptions.Disabled));
             bool dataQueryGraphHandlerPublisherReady =
