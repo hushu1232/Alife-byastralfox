@@ -19,6 +19,7 @@ $ErrorActionPreference = "Stop"
 # fallback_required=true
 # starts_runtime=false
 # installs_dependencies=false
+# calls_sidecar=false
 # stores_secrets=false
 # stores_sql=false
 # stores_hidden_context=false
@@ -141,6 +142,7 @@ function Write-ManualShadowArtifact {
         loopback_only = $true
         starts_runtime = $false
         installs_dependencies = $false
+        calls_sidecar = $false
         default_result_changed = $false
         health_status_code = [int]$HealthStatusCode
         handshake_status_code = [int]$HandshakeStatusCode

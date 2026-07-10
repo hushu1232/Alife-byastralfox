@@ -32,6 +32,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(result.OperatorRequired, Is.False);
             Assert.That(result.StartsRuntime, Is.False);
             Assert.That(result.InstallsDependencies, Is.False);
+            Assert.That(result.CallsSidecar, Is.False);
             Assert.That(result.StoresSecrets, Is.False);
             Assert.That(result.StoresSql, Is.False);
             Assert.That(result.StoresHiddenContext, Is.False);
@@ -54,6 +55,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(script, Does.Contain("loopback_only=true"));
             Assert.That(script, Does.Contain("starts_runtime=false"));
             Assert.That(script, Does.Contain("installs_dependencies=false"));
+            Assert.That(script, Does.Contain("calls_sidecar=false"));
             Assert.That(script, Does.Contain("Assert-LoopbackBaseUri"));
             Assert.That(script, Does.Contain("Invoke-WebRequest"));
             Assert.That(script, Does.Not.Contain("Start-Process"));
@@ -215,6 +217,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(text, Does.Contain("fallback_required=false"));
             Assert.That(text, Does.Contain("starts_runtime=false"));
             Assert.That(text, Does.Contain("installs_dependencies=false"));
+            Assert.That(text, Does.Contain("calls_sidecar=false"));
             Assert.That(text, Does.Contain("stores_secrets=false"));
             Assert.That(text, Does.Contain("stores_sql=false"));
             Assert.That(text, Does.Contain("stores_hidden_context=false"));
@@ -283,6 +286,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(body, Does.Contain("real_langgraph_manual_shadow_integration=true"));
             Assert.That(body, Does.Contain("artifact_writer=true"));
             Assert.That(body, Does.Contain("manual_only=true"));
+            Assert.That(body, Does.Contain("calls_sidecar=false"));
             Assert.That(body, Does.Not.Contain(outputDirectory));
             Assert.That(body, Does.Not.Contain("SELECT"));
             Assert.That(body, Does.Not.Contain("bearer"));

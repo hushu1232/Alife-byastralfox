@@ -3249,11 +3249,14 @@ public static class DataAgentReadiness
                 v40Doc.Contains("source_baseline=v3.28", StringComparison.Ordinal) &&
                 v40Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
                 v40Doc.Contains("operator_started_runtime=true", StringComparison.Ordinal) &&
-                v40Doc.Contains("loopback_only=true", StringComparison.Ordinal);
+                v40Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v40Doc.Contains("calls_sidecar=false", StringComparison.Ordinal);
             bool v40Boundary =
                 v40Doc.Contains("manual shadow integration", StringComparison.OrdinalIgnoreCase) &&
                 v40Doc.Contains("not automatic startup", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("not a C# sidecar call path", StringComparison.OrdinalIgnoreCase) &&
                 v40Doc.Contains("operator manually starts", StringComparison.OrdinalIgnoreCase) &&
+                v40Doc.Contains("manual harness shadow request", StringComparison.OrdinalIgnoreCase) &&
                 v40Doc.Contains("C# validation", StringComparison.Ordinal) &&
                 v40Doc.Contains("advisory only", StringComparison.OrdinalIgnoreCase) &&
                 v40Doc.Contains("default DataAgent result remains unchanged", StringComparison.Ordinal) &&
@@ -3280,6 +3283,7 @@ public static class DataAgentReadiness
                 v40Fallback.FallbackRequired &&
                 v40Fallback.StartsRuntime == false &&
                 v40Fallback.InstallsDependencies == false &&
+                v40Fallback.CallsSidecar == false &&
                 v40Fallback.StoresSecrets == false &&
                 v40Fallback.StoresSql == false &&
                 v40Fallback.StoresHiddenContext == false;
@@ -3296,6 +3300,7 @@ public static class DataAgentReadiness
                 v40Packet.Contains("fallback_required=true", StringComparison.Ordinal) &&
                 v40Packet.Contains("starts_runtime=false", StringComparison.Ordinal) &&
                 v40Packet.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v40Packet.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
                 v40Packet.Contains("stores_secrets=false", StringComparison.Ordinal) &&
                 v40Packet.Contains("stores_sql=false", StringComparison.Ordinal) &&
                 v40Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
@@ -3314,6 +3319,7 @@ public static class DataAgentReadiness
                 v40HarnessScript.Contains("fallback_required=true", StringComparison.Ordinal) &&
                 v40HarnessScript.Contains("starts_runtime=false", StringComparison.Ordinal) &&
                 v40HarnessScript.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v40HarnessScript.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
                 v40HarnessScript.Contains("stores_secrets=false", StringComparison.Ordinal) &&
                 v40HarnessScript.Contains("stores_sql=false", StringComparison.Ordinal) &&
                 v40HarnessScript.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
@@ -3327,6 +3333,8 @@ public static class DataAgentReadiness
                 v40Tests.Contains("IntegrationAcceptsManualLangGraphAdvisoryThroughReplayDiffGate", StringComparison.Ordinal) &&
                 v40Tests.Contains("ManualHarnessScriptDeclaresOperatorOnlyLoopbackBoundary", StringComparison.Ordinal) &&
                 v40Tests.Contains("ManualHarnessArtifactOutputDoesNotLeakAbsoluteDirectoryAndJsonUsesMarkerSchema", StringComparison.Ordinal) &&
+                v40Tests.Contains("CallsSidecar", StringComparison.Ordinal) &&
+                v40Tests.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
                 v40Tests.Contains("source_baseline", StringComparison.Ordinal) &&
                 v40Tests.Contains("Does.Not.Contain(\"source_baseline\")", StringComparison.Ordinal);
             bool v40Ready =
@@ -3341,7 +3349,7 @@ public static class DataAgentReadiness
                 v40ArtifactWriterReady &&
                 v40TestsReady;
             checks.Add(v40Ready
-                ? Pass("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", "real_langgraph_manual_shadow_integration=true;source_baseline=v3.28;manual_only=true;operator_started_runtime=true;loopback_only=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;fallback_required=true;starts_runtime=false;installs_dependencies=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                ? Pass("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", "real_langgraph_manual_shadow_integration=true;source_baseline=v3.28;manual_only=true;operator_started_runtime=true;loopback_only=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;fallback_required=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", $"doc={LowerBool(v40DocExists)};script={LowerBool(v40HarnessScriptExists)};tests={LowerBool(v40TestExists)};doc_markers={LowerBool(v40DocMarkers)};boundary={LowerBool(v40Boundary)};model={LowerBool(v40ModelReady)};packet={LowerBool(v40PacketMarkers)};harness={LowerBool(v40HarnessMarkers)};artifact_writer={LowerBool(v40ArtifactWriterReady)};test_markers={LowerBool(v40TestsReady)}"));
         }
         catch (Exception ex)

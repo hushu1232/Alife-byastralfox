@@ -337,6 +337,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("fallback_required=true"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("starts_runtime=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("installs_dependencies=false"));
+            Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("calls_sidecar=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_secrets=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_sql=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_hidden_context=false"));

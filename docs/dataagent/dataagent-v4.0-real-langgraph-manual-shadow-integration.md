@@ -13,12 +13,13 @@ default_result_changed=false
 fallback_required=true
 starts_runtime=false
 installs_dependencies=false
+calls_sidecar=false
 stores_secrets=false
 stores_sql=false
 stores_hidden_context=false
 ```
 
-V4.0 manual shadow integration connects a real LangGraph runtime only when an operator has already started it on a loopback endpoint. It is not automatic startup, not dependency installation, and not a production switch to real LangGraph. The V3.28 deterministic chain remains the source baseline and the default DataAgent result remains unchanged.
+V4.0 manual shadow integration connects a real LangGraph runtime only when an operator has already started it on a loopback endpoint. It is not automatic startup, not dependency installation, not a C# sidecar call path, and not a production switch to real LangGraph. The V3.28 deterministic chain remains the source baseline and the default DataAgent result remains unchanged.
 
 ## Boundary
 
@@ -26,6 +27,8 @@ The integration is a manual shadow lane:
 
 - The operator manually starts the LangGraph runtime before the harness runs.
 - The runtime must be reachable only on loopback.
+- C# must not automatically call or start the sidecar; `calls_sidecar=false` is part of the readiness boundary.
+- Only the operator-started loopback runtime is contacted, and only by the manual harness shadow request.
 - C# validation and the manual harness remain authoritative.
 - LangGraph, sidecar code, and agent output are advisory only.
 - The harness records fallback when the manual runtime is unavailable, times out, returns invalid schema, asks for forbidden authority, or fails the replay diff gate.
