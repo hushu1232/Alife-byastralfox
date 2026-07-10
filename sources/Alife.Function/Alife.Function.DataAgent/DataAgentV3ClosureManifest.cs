@@ -68,6 +68,8 @@ public static class DataAgentV3ClosureManifest
 
     public const int ExpectedFrozenStaticRequiredCount = 111;
     public const int ExpectedFrozenCoreCount = 95;
+    public const int MaxParseErrors = 32;
+    public const string ParseErrorsTruncatedSentinel = "ledger_parse_errors_truncated";
 
     public static IReadOnlyList<string> ExpectedVersions { get; } =
         Enumerable.Range(0, 29).Select(index => $"v3.{index}").ToArray();
@@ -113,13 +115,14 @@ public static class DataAgentV3ClosureManifest
 
     public static DataAgentV3LedgerParseResult ParseLedger(string ledger)
     {
+        ParseErrorAccumulator errors = new();
         if (ledger is null)
         {
-            return new([], [], ["Ledger document is missing."]);
+            errors.Add("Ledger document is missing.");
+            return new([], [], errors.ToArray());
         }
 
         string[] lines = ledger.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
-        List<string> errors = [];
         List<string> milestones = [];
         List<DataAgentV3LedgerEntry> entries = [];
 
@@ -206,7 +209,7 @@ public static class DataAgentV3ClosureManifest
         .Select(item => item.index)
         .ToArray();
 
-    static DataAgentV3LedgerEntry? ParseEvidenceRow(string line, int lineNumber, List<string> errors)
+    static DataAgentV3LedgerEntry? ParseEvidenceRow(string line, int lineNumber, ParseErrorAccumulator errors)
     {
         string[] columns = line.Split('|');
         if (columns.Length != 9 || columns[0].Length != 0 || columns[^1].Length != 0)
@@ -255,7 +258,7 @@ public static class DataAgentV3ClosureManifest
         return value[1..^1];
     }
 
-    static void ValidateVersionInventory(IReadOnlyList<string> versions, string source, List<string> errors)
+    static void ValidateVersionInventory(IReadOnlyList<string> versions, string source, ParseErrorAccumulator errors)
     {
         string[] missing = ExpectedVersions.Except(versions, StringComparer.Ordinal).ToArray();
         string[] unexpected = versions.Except(ExpectedVersions, StringComparer.Ordinal).Distinct(StringComparer.Ordinal).ToArray();
@@ -264,6 +267,24 @@ public static class DataAgentV3ClosureManifest
         if (unexpected.Length != 0) errors.Add($"The {source} contains unexpected milestone versions.");
         if (duplicates.Length != 0) errors.Add($"The {source} contains duplicate milestone versions.");
         if (!versions.SequenceEqual(ExpectedVersions, StringComparer.Ordinal)) errors.Add($"The {source} is not in exact V3.0-V3.28 order.");
+    }
+
+    sealed class ParseErrorAccumulator
+    {
+        readonly List<string> errors = [];
+
+        public void Add(string error)
+        {
+            if (errors.Count < MaxParseErrors)
+            {
+                errors.Add(error);
+                return;
+            }
+
+            errors[^1] = ParseErrorsTruncatedSentinel;
+        }
+
+        public string[] ToArray() => errors.ToArray();
     }
 }
 

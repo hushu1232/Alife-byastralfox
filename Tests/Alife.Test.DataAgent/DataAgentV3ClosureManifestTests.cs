@@ -264,6 +264,46 @@ public sealed partial class DataAgentV3ClosureManifestTests
         Assert.That(DataAgentV3ClosureManifest.ParseLedger(ledger).Errors, Is.Not.Empty);
 
     [Test]
+    public void ParseLedgerBoundsMalformedDocumentErrorsAndValidatorRejectsIt()
+    {
+        string ledger = ReadRealLedger();
+        string malformedInventory = string.Join('\n', Enumerable.Range(0, DataAgentV3ClosureManifest.MaxParseErrors * 2)
+            .Select(index => $"malformed-inventory-secret-{index}"));
+        string malformedRows = string.Join('\n', Enumerable.Range(0, DataAgentV3ClosureManifest.MaxParseErrors * 2)
+            .Select(index => $"| malformed-table-secret-{index} |"));
+        string mutatedLedger = ledger
+            .Replace("[v3_closure_milestones]\n", $"[v3_closure_milestones]\n{malformedInventory}\n", StringComparison.Ordinal)
+            .Replace("|---|---|---|---|---|---|---|\n", $"|---|---|---|---|---|---|---|\n{malformedRows}\n", StringComparison.Ordinal);
+
+        DataAgentV3LedgerParseResult parsed = DataAgentV3ClosureManifest.ParseLedger(mutatedLedger);
+        DataAgentV3ClosureResult closure = ValidateFixture(CompleteFixture() with { Ledger = parsed });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsed.Errors, Has.Count.EqualTo(DataAgentV3ClosureManifest.MaxParseErrors));
+            Assert.That(parsed.Errors[^1], Is.EqualTo(DataAgentV3ClosureManifest.ParseErrorsTruncatedSentinel));
+            Assert.That(parsed.Errors.Count(error => error == DataAgentV3ClosureManifest.ParseErrorsTruncatedSentinel), Is.EqualTo(1));
+            Assert.That(parsed.Errors, Has.None.Contains("malformed-inventory-secret"));
+            Assert.That(parsed.Errors, Has.None.Contains("malformed-table-secret"));
+            Assert.That(closure.Accepted, Is.False);
+            Assert.That(closure.LedgerParseErrors, Is.EqualTo(parsed.Errors));
+        });
+    }
+
+    [Test]
+    public void ParseLedgerPreservesEveryDiagnosticWhenTheirCountEqualsTheCap()
+    {
+        string outsideInventoryMarkers = string.Join('\n', Enumerable.Repeat("milestone=v3.0", DataAgentV3ClosureManifest.MaxParseErrors));
+        DataAgentV3LedgerParseResult parsed = DataAgentV3ClosureManifest.ParseLedger($"{ReadRealLedger()}\n\n{outsideInventoryMarkers}");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsed.Errors, Has.Count.EqualTo(DataAgentV3ClosureManifest.MaxParseErrors));
+            Assert.That(parsed.Errors, Has.None.EqualTo(DataAgentV3ClosureManifest.ParseErrorsTruncatedSentinel));
+        });
+    }
+
+    [Test]
     public void ValidatorAcceptsCompleteEvidenceWithoutV4Checks()
     {
         Fixture fixture = CompleteFixture();
@@ -336,6 +376,10 @@ public sealed partial class DataAgentV3ClosureManifestTests
             Assert.That(failedResult.FailedRequiredCheckNames, Does.Contain(required));
             Assert.That(duplicateResult.DuplicateRequiredCheckNames, Does.Contain(required));
             Assert.That(duplicateStatic.DuplicateRequiredCheckNames, Does.Contain(fixture.StaticNames[0]));
+            Assert.That(missingResult.Accepted, Is.False);
+            Assert.That(failedResult.Accepted, Is.False);
+            Assert.That(duplicateResult.Accepted, Is.False);
+            Assert.That(duplicateStatic.Accepted, Is.False);
             Assert.That(operatorResult.OperatorEvidencePackPresent, Is.False);
             Assert.That(operatorResult.Accepted, Is.False);
         });
@@ -357,6 +401,9 @@ public sealed partial class DataAgentV3ClosureManifestTests
             Assert.That(staticDrift.StaticRequiredCheckCount, Is.EqualTo(110));
             Assert.That(coreDrift.CoreCountMatches, Is.False);
             Assert.That(coreDrift.FrozenCoreCheckCount, Is.EqualTo(94));
+            Assert.That(evidence.Accepted, Is.False);
+            Assert.That(staticDrift.Accepted, Is.False);
+            Assert.That(coreDrift.Accepted, Is.False);
         });
     }
 
