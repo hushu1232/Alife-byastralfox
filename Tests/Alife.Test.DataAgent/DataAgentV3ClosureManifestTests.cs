@@ -494,6 +494,22 @@ public sealed partial class DataAgentV3ClosureManifestTests
     }
 
     [Test]
+    public void ParseStaticCheckNamesReadsTheCheckedInReadinessInventory()
+    {
+        IReadOnlyList<string> names = DataAgentV3ClosureManifest.ParseStaticCheckNames(ReadReadinessScript());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(names, Has.Count.EqualTo(114));
+            Assert.That(names, Does.Contain("GraphHandshakeDevSidecarLiveSmokeHarnessPresent"));
+            Assert.That(names, Does.Contain("LangGraphRuntimeReadinessContractPresent"));
+            Assert.That(names, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
+            Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
+            Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"));
+        });
+    }
+
+    [Test]
     public void FrozenReadinessSnapshotRequiresCompleteUniqueV3Inventories()
     {
         DataAgentV3FrozenReadinessSnapshot snapshot = DataAgentV3ClosureManifest.CanonicalReadinessSnapshot;
@@ -644,6 +660,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
 
     static DataAgentV3LedgerParseResult ParseRealLedgerWithProductionParser() => DataAgentV3ClosureManifest.ParseLedger(ReadRealLedger());
     static string ReadRealLedger() => File.ReadAllText(Path.Combine(FindRepoRoot(), "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
+    static string ReadReadinessScript() => File.ReadAllText(Path.Combine(FindRepoRoot(), "tools", "check-dataagent-readiness.ps1"));
     static DataAgentV3LedgerEntry ToLedgerEntry(DataAgentV3MilestoneEvidence entry) => new(
         entry.Version, entry.EvidenceKind, entry.Purpose, entry.EvidencePath, entry.RequiredGateLabel, entry.ChangesDefaultRuntime, entry.GrantsSidecarAuthority);
 

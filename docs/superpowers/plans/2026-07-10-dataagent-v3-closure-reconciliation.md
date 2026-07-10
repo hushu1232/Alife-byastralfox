@@ -1504,7 +1504,7 @@ IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
 // Task 5 wires this only from the controlled frozen identity source, never
 // from the actual static/dynamic inventories collected below.
 DataAgentV3FrozenReadinessSnapshot v3Snapshot =
-    DataAgentV3ClosureReadinessSnapshotSource.LoadControlledV3Snapshot();
+    DataAgentV3ClosureManifest.CanonicalReadinessSnapshot;
 
 DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
     v3Snapshot,

@@ -427,6 +427,17 @@ public static class DataAgentV3ClosureManifest
         GateOnly("v3.28", DataAgentV3EvidenceKind.FinalFreeze, "Final freeze", "docs/dataagent/dataagent-v3.28-final-readiness-freeze.md", "final freeze output")
     ];
 
+    public static IReadOnlyList<string> ParseStaticCheckNames(string readinessScript)
+    {
+        ArgumentNullException.ThrowIfNull(readinessScript);
+
+        return Regex.Matches(
+                readinessScript,
+                "(?m)^\\s*New-Check\\s+-Group\\s+\"[^\"]+\"\\s+-Name\\s+\"(?<name>[^\"]+)\"")
+            .Select(match => match.Groups["name"].Value)
+            .ToArray();
+    }
+
     public static DataAgentV3LedgerParseResult ParseLedger(string ledger)
     {
         ArgumentNullException.ThrowIfNull(ledger);

@@ -17,7 +17,7 @@ Markers:
 v3_final_readiness_freeze=true
 final_v3_version=v3.28
 source_versions=v3.0-v3.27
-frozen_required_check_count=110
+frozen_required_check_count=111
 frozen_core_check_count=95
 all_frozen_checks_passed=true
 operator_evidence_pack_present=true
@@ -34,7 +34,16 @@ calls_sidecar=false
 stores_secrets=false
 stores_sql=false
 stores_hidden_context=false
+missing_milestone_count=0
+missing_evidence_path_count=0
+missing_required_check_count=0
+failed_required_check_count=0
+duplicate_required_check_count=0
+unexpected_check_count=0
 ```
+
+The frozen totals are identity-bound: a matching count cannot hide a missing,
+failed, duplicated, or unexpected V3 readiness identity.
 
 Non-goals:
 
