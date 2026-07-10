@@ -468,7 +468,8 @@ milestone=v3.28
 Use these evidence kinds in the human-readable rows:
 
 ```text
-v3.0-v3.4   DynamicReadiness
+v3.0-v3.3   DynamicReadiness
+v3.4        StaticReadiness
 v3.5        RegressionHardening
 v3.6        DynamicReadiness
 v3.7        RegressionHardening
@@ -491,7 +492,7 @@ v3.0  | Graph handshake boundary                 | docs/dataagent/dataagent-v3.0
 v3.1  | Dev sidecar adapter                      | docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md                      | GraphHandshakeDevSidecarAdapterPresent
 v3.2  | Progress bridge                          | docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md                  | GraphHandshakeDevSidecarProgressBridgePresent
 v3.3  | NDJSON streaming                         | docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md               | GraphHandshakeDevSidecarStreamingTransportPresent
-v3.4  | Manual live smoke                        | docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md           | GraphHandshakeDevSidecarLiveSmokeHarnessPresent
+v3.4  | StaticReadiness | Manual live smoke                        | docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md           | GraphHandshakeDevSidecarLiveSmokeHarnessPresent
 v3.5  | Smoke contract regression                | Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs | inherited V3.4/V3.6 gates
 v3.6  | Sidecar observability                     | sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs | GraphHandshakeDevSidecarObservabilityContractPresent
 v3.7  | Reason-code hardening                    | docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md | inherited V3.6 gate
@@ -792,7 +793,7 @@ public static class DataAgentV3ClosureManifest
         M("v3.1", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md", dynamicCheck: "GraphHandshakeDevSidecarAdapterPresent"),
         M("v3.2", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md", dynamicCheck: "GraphHandshakeDevSidecarProgressBridgePresent"),
         M("v3.3", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md", dynamicCheck: "GraphHandshakeDevSidecarStreamingTransportPresent"),
-        M("v3.4", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md", dynamicCheck: "GraphHandshakeDevSidecarLiveSmokeHarnessPresent"),
+        M("v3.4", DataAgentV3EvidenceKind.StaticReadiness, "docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md", staticCheck: "GraphHandshakeDevSidecarLiveSmokeHarnessPresent"),
         M("v3.5", DataAgentV3EvidenceKind.RegressionHardening, "Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs"),
         M("v3.6", DataAgentV3EvidenceKind.DynamicReadiness, "sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs", dynamicCheck: "GraphHandshakeDevSidecarObservabilityContractPresent"),
         M("v3.7", DataAgentV3EvidenceKind.RegressionHardening, "docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md"),

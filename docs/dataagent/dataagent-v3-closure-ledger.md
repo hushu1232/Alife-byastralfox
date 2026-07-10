@@ -1,10 +1,11 @@
 # DataAgent Continuous V3 Closure Ledger
 
-This ledger is the authoritative closure evidence for DataAgent V3.0-V3.28. It records the evidence and required check or gate for every V3 milestone, but it does not grant runtime authority, change the default runtime, or authorize a sidecar to execute work.
+This ledger is the authoritative human-readable closure inventory for DataAgent V3.0-V3.28. The executable manifest must be parity-checked against it. It records the evidence and required check or gate for every V3 milestone, but it does not grant runtime authority, change the default runtime, or authorize a sidecar to execute work.
 
 ## Machine-readable milestone inventory
 
 ```text
+[v3_closure_milestones]
 milestone=v3.0
 milestone=v3.1
 milestone=v3.2
@@ -34,6 +35,7 @@ milestone=v3.25
 milestone=v3.26
 milestone=v3.27
 milestone=v3.28
+[/v3_closure_milestones]
 ```
 
 ## Closure evidence
@@ -44,7 +46,7 @@ milestone=v3.28
 | v3.1 | DynamicReadiness | Dev sidecar adapter | `docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md` | `GraphHandshakeDevSidecarAdapterPresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
 | v3.2 | DynamicReadiness | Progress bridge | `docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md` | `GraphHandshakeDevSidecarProgressBridgePresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
 | v3.3 | DynamicReadiness | NDJSON streaming | `docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md` | `GraphHandshakeDevSidecarStreamingTransportPresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
-| v3.4 | DynamicReadiness | Manual live smoke | `docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md` | `GraphHandshakeDevSidecarLiveSmokeHarnessPresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
+| v3.4 | StaticReadiness | Manual live smoke | `docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md` | `GraphHandshakeDevSidecarLiveSmokeHarnessPresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
 | v3.5 | RegressionHardening | Smoke contract regression | `Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs` | inherited V3.4/V3.6 gates | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
 | v3.6 | DynamicReadiness | Sidecar observability | `sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs` | `GraphHandshakeDevSidecarObservabilityContractPresent` | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
 | v3.7 | RegressionHardening | Reason-code hardening | `docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md` | inherited V3.6 gate | `changes_default_runtime=false` | `grants_sidecar_authority=false` |
