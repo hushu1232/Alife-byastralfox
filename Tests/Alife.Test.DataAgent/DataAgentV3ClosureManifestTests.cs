@@ -497,6 +497,11 @@ public sealed partial class DataAgentV3ClosureManifestTests
     public void ParseStaticCheckNamesReadsTheCheckedInReadinessInventory()
     {
         IReadOnlyList<string> names = DataAgentV3ClosureManifest.ParseStaticCheckNames(ReadReadinessScript());
+        IReadOnlyList<string> v3Names = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(names);
+        IReadOnlyList<string> unknown = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames([.. names, "UnknownStaticCheck"]);
+        IReadOnlyList<string> replacement = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(
+            [.. names.Where(name => name != "GraphHandshakeFinalV3ReadinessFreezePresent"), "UnknownStaticCheck"]);
+        IReadOnlyList<string> duplicate = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames([.. names, names[0]]);
 
         Assert.Multiple(() =>
         {
@@ -506,6 +511,10 @@ public sealed partial class DataAgentV3ClosureManifestTests
             Assert.That(names, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"));
+            Assert.That(v3Names, Has.Count.EqualTo(111));
+            Assert.That(unknown, Is.Empty);
+            Assert.That(replacement, Is.Empty);
+            Assert.That(duplicate, Is.Empty);
         });
     }
 
@@ -631,6 +640,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
         {
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ParseLedger(null!));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ParseStaticCheckNames(null!));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(null!));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(null!, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, null!, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, null!, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));

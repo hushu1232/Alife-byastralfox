@@ -174,6 +174,13 @@ public static class DataAgentV3ClosureManifest
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
+    public static FrozenSet<string> PostV3StaticCheckNames { get; } = new[]
+    {
+        "GraphHandshakeFinalV3ReadinessFreezePresent",
+        "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
+        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
+    }.ToFrozenSet(StringComparer.Ordinal);
+
     // These exact inventories are derived from the authoritative current V3 readiness
     // sources: DataAgentReadiness.CheckCore (excluding V3.28/V4) and the static
     // readiness ledger (excluding the same three post-V3 identities).
@@ -436,6 +443,22 @@ public static class DataAgentV3ClosureManifest
                 "(?m)^\\s*New-Check\\s+-Group\\s+\"[^\"]+\"\\s+-Name\\s+\"(?<name>[^\"]+)\"")
             .Select(match => match.Groups["name"].Value)
             .ToArray();
+    }
+
+    public static IReadOnlyList<string> ProjectValidatedV3StaticCheckNames(IEnumerable<string> staticCheckNames)
+    {
+        ArgumentNullException.ThrowIfNull(staticCheckNames);
+
+        string[] names = staticCheckNames.ToArray();
+        FrozenSet<string> actual = names.ToFrozenSet(StringComparer.Ordinal);
+        FrozenSet<string> expected = CanonicalReadinessSnapshot.ExpectedStaticCheckNames
+            .Concat(PostV3StaticCheckNames)
+            .ToFrozenSet(StringComparer.Ordinal);
+
+        if (names.Length != expected.Count || actual.Count != names.Length || !actual.SetEquals(expected))
+            return [];
+
+        return names.Where(CanonicalReadinessSnapshot.ExpectedStaticCheckNames.Contains).ToArray();
     }
 
     public static DataAgentV3LedgerParseResult ParseLedger(string ledger)

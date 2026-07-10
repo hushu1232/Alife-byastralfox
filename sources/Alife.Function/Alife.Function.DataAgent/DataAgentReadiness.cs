@@ -3147,9 +3147,8 @@ public static class DataAgentReadiness
                 .Select(entry => entry.EvidencePath)
                 .Where(path => File.Exists(Path.Combine(v328RepoRoot, path.Replace('/', Path.DirectorySeparatorChar))) )
                 .ToHashSet(StringComparer.Ordinal);
-            IReadOnlyList<string> v3StaticCheckNames = DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript)
-                .Where(v3Snapshot.ExpectedStaticCheckNames.Contains)
-                .ToArray();
+            IReadOnlyList<string> v3StaticCheckNames = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(
+                DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript));
             DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
                 v3Snapshot, v3Manifest, checks, parsedV3Ledger, v3StaticCheckNames, existingV3EvidencePaths);
             DataAgentV3FinalReadinessFreeze v328Freeze =
