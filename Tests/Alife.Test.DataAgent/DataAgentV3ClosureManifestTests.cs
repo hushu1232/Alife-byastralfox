@@ -630,6 +630,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
         Assert.Multiple(() =>
         {
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ParseLedger(null!));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ParseStaticCheckNames(null!));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(null!, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, null!, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
             Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, null!, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
