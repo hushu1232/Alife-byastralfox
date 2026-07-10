@@ -121,3 +121,54 @@ public static class DataAgentRealLangGraphManualShadowContextBudgetBuilder
                value.Contains("hidden_context", StringComparison.OrdinalIgnoreCase);
     }
 }
+
+public static class DataAgentRealLangGraphManualShadowContextBudgetFormatter
+{
+    public static string Format(DataAgentRealLangGraphManualShadowContextEnvelope envelope)
+    {
+        string[] lines =
+        [
+            "[dataagent_v4_1_context_budget]",
+            "manual_shadow_context_budget=true",
+            $"accepted={LowerBool(envelope.Accepted)}",
+            $"reason_code={SafeToken(envelope.ReasonCode)}",
+            $"max_envelope_chars={envelope.MaxEnvelopeChars}",
+            $"max_layer_chars={envelope.MaxLayerChars}",
+            $"total_included_chars={envelope.TotalIncludedChars}",
+            $"layer_count={envelope.LayerCount}",
+            $"default_result_changed={LowerBool(envelope.DefaultResultChanged)}",
+            $"stores_secrets={LowerBool(envelope.StoresSecrets)}",
+            $"stores_sql={LowerBool(envelope.StoresSql)}",
+            $"stores_hidden_context={LowerBool(envelope.StoresHiddenContext)}",
+            $"reason_codes={FormatReasonCodes(envelope.ReasonCodes)}",
+            "[/dataagent_v4_1_context_budget]"
+        ];
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    static string FormatReasonCodes(IReadOnlyList<string>? reasonCodes)
+    {
+        if (reasonCodes is null || reasonCodes.Count == 0)
+            return "redacted";
+
+        return string.Join(",", reasonCodes.Select(SafeToken));
+    }
+
+    static string SafeToken(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "redacted";
+
+        string trimmed = value.Trim();
+        if (trimmed.Contains("hidden_context", StringComparison.OrdinalIgnoreCase) ||
+            DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(trimmed))
+        {
+            return "redacted";
+        }
+
+        return trimmed;
+    }
+
+    static string LowerBool(bool value) => value ? "true" : "false";
+}
