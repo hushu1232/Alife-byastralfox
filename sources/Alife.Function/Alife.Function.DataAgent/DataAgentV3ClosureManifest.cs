@@ -105,52 +105,45 @@ public sealed class DataAgentV3FrozenReadinessSnapshot
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
-    public DataAgentV3FrozenReadinessSnapshot(
-        IEnumerable<string> expectedStaticCheckNames,
-        IEnumerable<string> expectedCoreCheckNames)
+    DataAgentV3FrozenReadinessSnapshot(FrozenSet<string> expectedStaticCheckNames, FrozenSet<string> expectedCoreCheckNames)
     {
-        ExpectedStaticCheckNames = FreezeAndValidate(
-            expectedStaticCheckNames,
-            DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount,
-            RequiredStaticV3Names,
-            excludedNames: null,
-            nameof(expectedStaticCheckNames));
-        ExpectedCoreCheckNames = FreezeAndValidate(
-            expectedCoreCheckNames,
-            DataAgentV3ClosureManifest.ExpectedFrozenCoreCount,
-            RequiredCoreV3Names,
-            V4OnlyNames,
-            nameof(expectedCoreCheckNames));
+        ExpectedStaticCheckNames = expectedStaticCheckNames;
+        ExpectedCoreCheckNames = expectedCoreCheckNames;
     }
 
     public FrozenSet<string> ExpectedStaticCheckNames { get; }
     public FrozenSet<string> ExpectedCoreCheckNames { get; }
 
+    internal static DataAgentV3FrozenReadinessSnapshot CreateCanonical(
+        IEnumerable<string> expectedStaticCheckNames,
+        IEnumerable<string> expectedCoreCheckNames) =>
+        new(
+            FreezeAndValidate(expectedStaticCheckNames, DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount, RequiredStaticV3Names, V4OnlyNames, nameof(expectedStaticCheckNames)),
+            FreezeAndValidate(expectedCoreCheckNames, DataAgentV3ClosureManifest.ExpectedFrozenCoreCount, RequiredCoreV3Names, V4OnlyNames, nameof(expectedCoreCheckNames)));
+
     static FrozenSet<string> FreezeAndValidate(
         IEnumerable<string> names,
         int expectedCount,
         FrozenSet<string> requiredNames,
-        FrozenSet<string>? excludedNames,
+        FrozenSet<string> excludedNames,
         string parameterName)
     {
         ArgumentNullException.ThrowIfNull(names);
         string[] values = names.ToArray();
         if (values.Length != expectedCount || values.Any(string.IsNullOrWhiteSpace))
         {
-            throw new ArgumentException("The frozen readiness inventory has an invalid size or blank identity.", parameterName);
+            throw new ArgumentException("The canonical frozen readiness inventory has an invalid size or blank identity.", parameterName);
         }
 
         FrozenSet<string> frozen = values.ToFrozenSet(StringComparer.Ordinal);
-        if (frozen.Count != values.Length || !requiredNames.IsSubsetOf(frozen) ||
-            (excludedNames is not null && frozen.Overlaps(excludedNames)))
+        if (frozen.Count != values.Length || !requiredNames.IsSubsetOf(frozen) || frozen.Overlaps(excludedNames))
         {
-            throw new ArgumentException("The frozen readiness inventory is not the required unique V3 identity set.", parameterName);
+            throw new ArgumentException("The canonical frozen readiness inventory is not the required unique V3 identity set.", parameterName);
         }
 
         return frozen;
     }
 }
-
 public static class DataAgentV3ClosureManifest
 {
     const string InventoryStart = "[v3_closure_milestones]";
@@ -180,6 +173,226 @@ public static class DataAgentV3ClosureManifest
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
+
+    // These exact inventories are derived from the authoritative current V3 readiness
+    // sources: DataAgentReadiness.CheckCore (excluding V3.28/V4) and the static
+    // readiness ledger (excluding the same three post-V3 identities).
+    static readonly string[] CanonicalStaticCheckNames =
+    [
+        "DataAgentModulePresent",
+        "SqliteSchemaInitializes",
+        "FixtureDataImports",
+        "SchemaSnapshotAvailable",
+        "CatalogMatchesSqliteSchema",
+        "DangerousSqlRejected",
+        "QueryPlanFixturesPass",
+        "ReadOnlyQueryExecutes",
+        "ContextContributionStable",
+        "PlannerInterfacePresent",
+        "DeterministicPlannerPassesFixtures",
+        "PlannerExplanationInContext",
+        "ServiceUsesInjectedPlanner",
+        "LlmPlannerInterfacePresent",
+        "LlmPlannerPromptUsesSchemaSnapshot",
+        "LlmPlannerStrictJsonParser",
+        "LlmPlannerRejectsInvalidOutput",
+        "LlmPlannerFallbackPreservesSafety",
+        "ClarificationRequestSupported",
+        "NaturalLanguageResultExplanationPresent",
+        "UnsafePlannerOutputRejected",
+        "ToolHandlerReturnsDataAgentContext",
+        "ToolCapabilityManifestPresent",
+        "ToolCapabilityRouterPresent",
+        "ToolExecutionGatePresent",
+        "ToolBrokerDynamicExposurePresent",
+        "ToolRouteRuntimeWiringPresent",
+        "QChatToolRouteStateScopePresent",
+        "ToolBrokerRuntimeTestsPresent",
+        "ToolBrokerRouteDecisionReasonCodesPresent",
+        "ToolBrokerExecutionAuditPresent",
+        "ToolBrokerAuditLogPresent",
+        "CapabilityBoundaryPresent",
+        "CapabilityProvidersPresent",
+        "SharedToolManifestPresent",
+        "DataAgentStoreBoundaryPresent",
+        "SqliteStoreCompatibilityPresent",
+        "PostgresStoreProviderPresent",
+        "PostgresLiveTestsEnvironmentGated",
+        "PostgresCheckpointPersistencePresent",
+        "GraphSidecarContractPresent",
+        "DataQueryGraphPilotPresent",
+        "GraphHandshakeBoundaryPresent",
+        "GraphHandshakeDevSidecarAdapterPresent",
+        "GraphHandshakeDevSidecarProgressBridgePresent",
+        "GraphHandshakeDevSidecarStreamingTransportPresent",
+        "GraphHandshakeDevSidecarLiveSmokeHarnessPresent",
+        "GraphHandshakeDevSidecarObservabilityContractPresent",
+        "GraphHandshakeRealLangGraphSidecarSkeletonPresent",
+        "GraphHandshakeReplayParityShadowComparisonPresent",
+        "GraphHandshakeBoundedDiagnosticsExplanationPresent",
+        "GraphHandshakeCrossModulePlannerManifestsPresent",
+        "GraphHandshakeAuthorityFallbackRegressionPresent",
+        "GraphHandshakeLangGraphLiveSmokeReadinessPresent",
+        "GraphHandshakeLangGraphManualSmokeHarnessPresent",
+        "GraphHandshakeSmokeResultArtifactFormatterPresent",
+        "GraphHandshakeReplayFixturePackPresent",
+        "GraphHandshakeShadowReplayReportPresent",
+        "GraphHandshakeManualReplayReportArtifactWriterPresent",
+        "GraphHandshakeManualArtifactIndexPresent",
+        "GraphHandshakeManualAuditBundlePresent",
+        "GraphHandshakeAgentAdvisoryContractPresent",
+        "GraphHandshakeRealLangGraphManualShadowProviderPresent",
+        "GraphHandshakeHarnessReplayDiffGatePresent",
+        "GraphHandshakeOperatorEvidencePackPresent",
+        "DataAgentEndToEndChainContractPresent",
+        "DataAgentReplayRunbookPresent",
+        "LangGraphRuntimeReadinessContractPresent",
+        "DataQueryGraphOwnerDiagnosticsPresent",
+        "DataAgentServiceUsesStoreBoundary",
+        "DataAgentScenarioKnowledgePackPresent",
+        "DataAgentScenarioContextIntegrated",
+        "DataAgentRuntimeScenarioContextActivationPresent",
+        "DataAgentNodeToolScopePolicyPresent",
+        "DataAgentSafetyCapabilitiesRemainDeterministic",
+        "AnalysisSessionServicePresent",
+        "AnalysisSessionStorePresent",
+        "AnalysisSessionStateMachineTransitions",
+        "AnalysisFollowUpInterpreterPresent",
+        "AnalysisSessionContextProviderPresent",
+        "AnalysisSummaryWindowPresent",
+        "AnalysisSessionHasNoSqliteBinding",
+        "DataAgentOrchestratorPresent",
+        "OrchestratorNodeBoundaryPresent",
+        "OrchestratorCheckpointPresent",
+        "OrchestratorRouteGateFailClosed",
+        "OrchestratorTerminalNodesDoNotQuery",
+        "OrchestratorStateMachineTransitions",
+        "AnalysisToolHandlerUsesOrchestrator",
+        "OrchestratorTraceContextPresent",
+        "OrchestratorCheckpointContextPresent",
+        "OrchestratorRuntimeStartPathCovered",
+        "OrchestratorRuntimeContinuePathCovered",
+        "OrchestratorRuntimeTerminalPathCovered",
+        "OrchestratorRuntimeRouteDeniedFailClosed",
+        "AnalysisHandlerConsumesToolRouteContext",
+        "OrchestrationRequestUsesRuntimeRouteDecision",
+        "RouteMissingRequestFailsClosed",
+        "RouteEvidenceContextPresent",
+        "RouteSessionScopePreserved",
+        "TerminalRouteDoesNotQuery",
+        "DataAgentEvidencePackPresent",
+        "SemanticStateEstimatorCorePresent",
+        "DataAgentAnalysisStateEstimatorPresent",
+        "DataAgentEvidenceDiagnosticsPresent",
+        "DataAgentEvidenceRecentDiagnosticsBridgePresent",
+        "DataAgentTraceTimelinePresent",
+        "DataAgentProgressStreamingPresent",
+        "AnalysisToolHandlerPresent",
+        "AnalysisToolsRegisteredInModule",
+        "AnalysisTerminalToolsDoNotQuery",
+    ];
+
+    static readonly string[] CanonicalCoreCheckNames =
+    [
+        "DataAgentModulePresent",
+        "SqliteSchemaInitializes",
+        "FixtureDataImports",
+        "SchemaSnapshotAvailable",
+        "CatalogMatchesSqliteSchema",
+        "QueryPlanFixturesPass",
+        "DangerousSqlRejected",
+        "ReadOnlyQueryExecutes",
+        "DataAgentStoreBoundaryPresent",
+        "SqliteStoreCompatibilityPresent",
+        "PostgresStoreProviderPresent",
+        "PostgresLiveTestsEnvironmentGated",
+        "PostgresCheckpointPersistencePresent",
+        "GraphSidecarContractPresent",
+        "DataQueryGraphPilotPresent",
+        "GraphHandshakeBoundaryPresent",
+        "GraphHandshakeDevSidecarAdapterPresent",
+        "GraphHandshakeDevSidecarProgressBridgePresent",
+        "GraphHandshakeDevSidecarStreamingTransportPresent",
+        "GraphHandshakeDevSidecarObservabilityContractPresent",
+        "GraphHandshakeRealLangGraphSidecarSkeletonPresent",
+        "GraphHandshakeReplayParityShadowComparisonPresent",
+        "GraphHandshakeBoundedDiagnosticsExplanationPresent",
+        "GraphHandshakeCrossModulePlannerManifestsPresent",
+        "GraphHandshakeAuthorityFallbackRegressionPresent",
+        "GraphHandshakeLangGraphLiveSmokeReadinessPresent",
+        "GraphHandshakeLangGraphManualSmokeHarnessPresent",
+        "GraphHandshakeSmokeResultArtifactFormatterPresent",
+        "GraphHandshakeReplayFixturePackPresent",
+        "GraphHandshakeShadowReplayReportPresent",
+        "GraphHandshakeManualReplayReportArtifactWriterPresent",
+        "GraphHandshakeManualArtifactIndexPresent",
+        "GraphHandshakeManualAuditBundlePresent",
+        "GraphHandshakeAgentAdvisoryContractPresent",
+        "GraphHandshakeRealLangGraphManualShadowProviderPresent",
+        "GraphHandshakeHarnessReplayDiffGatePresent",
+        "GraphHandshakeOperatorEvidencePackPresent",
+        "DataAgentEndToEndChainContractPresent",
+        "DataAgentReplayRunbookPresent",
+        "DataQueryGraphOwnerDiagnosticsPresent",
+        "DataAgentServiceUsesStoreBoundary",
+        "ToolBrokerAuditLogPresent",
+        "CapabilityBoundaryPresent",
+        "ContextContributionStable",
+        "PlannerExplanationInContext",
+        "NaturalLanguageResultExplanationPresent",
+        "LlmPlannerInterfacePresent",
+        "LlmPlannerPromptUsesSchemaSnapshot",
+        "LlmPlannerStrictJsonParser",
+        "LlmPlannerRejectsInvalidOutput",
+        "LlmPlannerFallbackPreservesSafety",
+        "ClarificationRequestSupported",
+        "PlannerInterfacePresent",
+        "DeterministicPlannerPassesFixtures",
+        "ServiceUsesInjectedPlanner",
+        "UnsafePlannerOutputRejected",
+        "ToolHandlerReturnsDataAgentContext",
+        "AnalysisSessionServicePresent",
+        "AnalysisSessionStorePresent",
+        "AnalysisSessionStateMachineTransitions",
+        "AnalysisFollowUpInterpreterPresent",
+        "AnalysisSessionContextProviderPresent",
+        "AnalysisSummaryWindowPresent",
+        "AnalysisSessionHasNoSqliteBinding",
+        "DataAgentOrchestratorPresent",
+        "OrchestratorNodeBoundaryPresent",
+        "OrchestratorCheckpointPresent",
+        "OrchestratorRouteGateFailClosed",
+        "OrchestratorTerminalNodesDoNotQuery",
+        "OrchestratorStateMachineTransitions",
+        "AnalysisToolHandlerUsesOrchestrator",
+        "OrchestratorTraceContextPresent",
+        "OrchestratorCheckpointContextPresent",
+        "OrchestratorRuntimeStartPathCovered",
+        "OrchestratorRuntimeContinuePathCovered",
+        "OrchestratorRuntimeTerminalPathCovered",
+        "OrchestratorRuntimeRouteDeniedFailClosed",
+        "AnalysisHandlerConsumesToolRouteContext",
+        "OrchestrationRequestUsesRuntimeRouteDecision",
+        "RouteMissingRequestFailsClosed",
+        "RouteEvidenceContextPresent",
+        "RouteSessionScopePreserved",
+        "TerminalRouteDoesNotQuery",
+        "DataAgentEvidencePackPresent",
+        "SemanticStateEstimatorCorePresent",
+        "DataAgentAnalysisStateEstimatorPresent",
+        "DataAgentEvidenceDiagnosticsPresent",
+        "DataAgentEvidenceRecentDiagnosticsBridgePresent",
+        "DataAgentTraceTimelinePresent",
+        "DataAgentProgressStreamingPresent",
+        "DataAgentScenarioKnowledgePackPresent",
+        "DataAgentScenarioContextIntegrated",
+        "DataAgentRuntimeScenarioContextActivationPresent",
+        "DataAgentNodeToolScopePolicyPresent",
+        "DataAgentSafetyCapabilitiesRemainDeterministic",
+    ];
+
+    public static DataAgentV3FrozenReadinessSnapshot CanonicalReadinessSnapshot { get; } =
+        DataAgentV3FrozenReadinessSnapshot.CreateCanonical(CanonicalStaticCheckNames, CanonicalCoreCheckNames);
 
     public static IReadOnlyList<DataAgentV3MilestoneEvidence> CreateDefault() =>
     [
