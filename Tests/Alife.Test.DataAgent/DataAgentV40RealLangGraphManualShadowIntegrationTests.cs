@@ -675,6 +675,36 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [Test]
+    public void ManualHarnessRequestCarriesBudgetedContextWithoutRawAuthorityData()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string harness = BuildPowerShellFunctionHarness(scriptPath, """
+        $request = New-V40HandshakeRequest
+        $json = $request | ConvertTo-Json -Depth 16 -Compress
+        Write-Output $json
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("\"ContextBudget\""));
+            Assert.That(result.StandardOutput, Does.Contain("\"MaxEnvelopeChars\":1200"));
+            Assert.That(result.StandardOutput, Does.Contain("\"MaxLayerChars\":400"));
+            Assert.That(result.StandardOutput, Does.Contain("\"ContextLayers\""));
+            Assert.That(result.StandardOutput, Does.Contain("layer_1_route"));
+            Assert.That(result.StandardOutput, Does.Contain("layer_2_evidence"));
+            Assert.That(result.StandardOutput, Does.Contain("layer_3_excerpt"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("SELECT"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("hidden_context"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("bearer"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("password"));
+        });
+    }
+
     static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
     {
         Assert.Multiple(() =>

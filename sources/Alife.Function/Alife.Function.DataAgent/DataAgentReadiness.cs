@@ -3351,6 +3351,59 @@ public static class DataAgentReadiness
             checks.Add(v40Ready
                 ? Pass("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", "real_langgraph_manual_shadow_integration=true;source_baseline=v3.28;manual_only=true;operator_started_runtime=true;loopback_only=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;fallback_required=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", $"doc={LowerBool(v40DocExists)};script={LowerBool(v40HarnessScriptExists)};tests={LowerBool(v40TestExists)};doc_markers={LowerBool(v40DocMarkers)};boundary={LowerBool(v40Boundary)};model={LowerBool(v40ModelReady)};packet={LowerBool(v40PacketMarkers)};harness={LowerBool(v40HarnessMarkers)};artifact_writer={LowerBool(v40ArtifactWriterReady)};test_markers={LowerBool(v40TestsReady)}"));
+
+            string v41DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.1-token-budgeted-manual-shadow-context.md");
+            bool v41DocExists = File.Exists(v41DocPath);
+            string v41Doc = v41DocExists ? File.ReadAllText(v41DocPath) : string.Empty;
+            DataAgentRealLangGraphManualShadowContextEnvelope v41Envelope =
+                DataAgentRealLangGraphManualShadowContextBudgetBuilder.Build(
+                    [
+                        new DataAgentRealLangGraphManualShadowContextLayer("layer_1_route", "fixture=v4.1-manual-shadow;route=allowed;node=manual_shadow"),
+                        new DataAgentRealLangGraphManualShadowContextLayer("layer_2_evidence", "reason_code=manual_shadow_review;evidence_ref=v3.28-final-readiness-freeze"),
+                        new DataAgentRealLangGraphManualShadowContextLayer("layer_3_excerpt", "bounded_failure_excerpt=operator_review_required")
+                    ],
+                    new DataAgentRealLangGraphManualShadowContextBudgetOptions(
+                        MaxEnvelopeChars: 1200,
+                        MaxLayerChars: 400,
+                        RequiredLayerNames:
+                        [
+                            "layer_1_route",
+                            "layer_2_evidence",
+                            "layer_3_excerpt"
+                        ]));
+            string v41Packet = DataAgentRealLangGraphManualShadowContextBudgetFormatter.Format(v41Envelope);
+            bool v41Markers =
+                v41Doc.Contains("manual_shadow_context_budget=true", StringComparison.Ordinal) &&
+                v41Doc.Contains("source_baseline=v4.0", StringComparison.Ordinal) &&
+                v41Doc.Contains("max_envelope_chars=1200", StringComparison.Ordinal) &&
+                v41Doc.Contains("max_layer_chars=400", StringComparison.Ordinal) &&
+                v41Doc.Contains("required_layer_count=3", StringComparison.Ordinal) &&
+                v41Doc.Contains("agent_advisory_only=true", StringComparison.Ordinal) &&
+                v41Doc.Contains("harness_execution_authority=true", StringComparison.Ordinal) &&
+                v41Doc.Contains("csharp_validation_authority=true", StringComparison.Ordinal) &&
+                v41Doc.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("starts_runtime=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("installs_dependencies=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v41Doc.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v41Packet.Contains("manual_shadow_context_budget=true", StringComparison.Ordinal) &&
+                v41Packet.Contains("accepted=true", StringComparison.Ordinal) &&
+                v41Packet.Contains("layer_count=3", StringComparison.Ordinal) &&
+                v41Packet.Contains("stores_hidden_context=false", StringComparison.Ordinal) &&
+                v41Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
+                v41Packet.Contains("FROM hidden_context", StringComparison.OrdinalIgnoreCase) == false &&
+                v41Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
+            bool v41Ready =
+                v41DocExists &&
+                v41Envelope.Accepted &&
+                v41Envelope.TotalIncludedChars <= 1200 &&
+                v41Envelope.Layers.All(layer => layer.IncludedChars <= 400) &&
+                v41Markers;
+            checks.Add(v41Ready
+                ? Pass("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", "manual_shadow_context_budget=true;source_baseline=v4.0;max_envelope_chars=1200;max_layer_chars=400;required_layer_count=3;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", $"doc={LowerBool(v41DocExists)};envelope={LowerBool(v41Envelope.Accepted)};markers={LowerBool(v41Markers)}"));
         }
         catch (Exception ex)
         {
