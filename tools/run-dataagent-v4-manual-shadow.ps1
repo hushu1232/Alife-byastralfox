@@ -185,27 +185,38 @@ function Assert-ManualShadowBooleanMarker {
 function Assert-ManualShadowForbiddenAuthorityClaims {
     param([pscustomobject]$JsonObject)
 
-    $property = Get-ManualShadowJsonProperty `
+    $properties = @(Get-ManualShadowJsonProperties `
         -JsonObject $JsonObject `
-        -Names @("forbidden_authority_claims", "ForbiddenAuthorityClaims")
+        -Names @("forbidden_authority_claims", "ForbiddenAuthorityClaims"))
 
-    if ($null -eq $property) {
-        return
+    if ($properties.Count -eq 0) {
+        throw "manual_shadow_response_rejected"
     }
 
-    if ($null -eq $property.Value) {
-        return
-    }
-
-    if ($property.Value -is [array]) {
-        if ($property.Value.Count -gt 0) {
+    foreach ($property in $properties) {
+        if ($null -eq $property.Value) {
             throw "manual_shadow_response_rejected"
         }
 
-        return
-    }
+        if ($property.Value -is [string] -or
+            $property.Value -is [pscustomobject] -or
+            $property.Value -is [System.Collections.IDictionary] -or
+            ($property.Value -is [System.Collections.IEnumerable]) -eq $false) {
+            throw "manual_shadow_response_rejected"
+        }
 
-    throw "manual_shadow_response_rejected"
+        $enumerator = ([System.Collections.IEnumerable]$property.Value).GetEnumerator()
+        try {
+            if ($enumerator.MoveNext()) {
+                throw "manual_shadow_response_rejected"
+            }
+        }
+        finally {
+            if ($enumerator -is [System.IDisposable]) {
+                $enumerator.Dispose()
+            }
+        }
+    }
 }
 
 function Assert-ManualShadowHandshakeResponse {
@@ -215,7 +226,16 @@ function Assert-ManualShadowHandshakeResponse {
         throw "manual_shadow_response_rejected"
     }
 
-    $content = [string]$Response.Content
+    $contentProperties = @($Response.PSObject.Properties | Where-Object { $_.Name -ceq "Content" })
+    if ($contentProperties.Count -ne 1) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    if (($contentProperties[0].Value -is [string]) -eq $false) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    $content = $contentProperties[0].Value
     if ([string]::IsNullOrWhiteSpace($content)) {
         throw "manual_shadow_response_rejected"
     }

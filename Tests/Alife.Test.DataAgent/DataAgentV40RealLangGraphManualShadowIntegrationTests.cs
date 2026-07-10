@@ -502,6 +502,77 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [Test]
+    public void ManualHarnessRejectsHandshakeResponseWithoutContentPropertyUsingSanitizedFallback()
+    {
+        ScriptResult result = RunManualHarnessResponseValidation("""
+        $response = [pscustomobject]@{
+            StatusCode = 200
+        }
+        """);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("property 'Content'"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("cannot be found"));
+        });
+    }
+
+    [TestCase("$null")]
+    [TestCase("123")]
+    [TestCase("@{ accepted = $true }")]
+    [TestCase("''")]
+    public void ManualHarnessRejectsNullWrongTypeOrEmptyHandshakeContent(string contentExpression)
+    {
+        ScriptResult result = RunManualHarnessResponseValidation($$"""
+        $response = [pscustomobject]@{
+            StatusCode = 200
+            Content = {{contentExpression}}
+        }
+        """);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("property 'Content'"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("cannot be found"));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessRejectsMissingForbiddenAuthorityClaims()
+    {
+        string handshakeBody = NewSafeManualHandshakeResponseJsonWithoutForbiddenAuthorityClaims();
+        ScriptResult result = RunManualHarnessHandshakeValidation(handshakeBody);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(handshakeBody));
+        });
+    }
+
+    [TestCaseSource(nameof(RejectedForbiddenAuthorityClaimsCases))]
+    public void ManualHarnessRejectsNonEmptyOrMalformedForbiddenAuthorityClaims(string handshakeBody)
+    {
+        ScriptResult result = RunManualHarnessHandshakeValidation(handshakeBody);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(handshakeBody));
+        });
+    }
+
     [TestCase("requests_visible_text", true)]
     [TestCase("RequestsVisibleText", true)]
     [TestCase("requests_checkpoint_write", true)]
@@ -694,6 +765,42 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return RunPowerShell(startInfo);
     }
 
+    static ScriptResult RunManualHarnessHandshakeValidation(string handshakeBody)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string escapedHandshakeBody = EscapePowerShellSingleQuotedString(handshakeBody);
+
+        return RunManualHarnessResponseValidation($$"""
+        $response = [pscustomobject]@{
+            StatusCode = 200
+            Content = '{{escapedHandshakeBody}}'
+        }
+        """, scriptPath);
+    }
+
+    static ScriptResult RunManualHarnessResponseValidation(string responseSetup, string? scriptPath = null)
+    {
+        string resolvedScriptPath = scriptPath ??
+            Path.Combine(FindRepoRoot(TestContext.CurrentContext.TestDirectory), "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string harness = BuildPowerShellFunctionHarness(resolvedScriptPath, $$"""
+        {{responseSetup}}
+
+        try {
+            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Write-Output "PASS manual_shadow"
+            exit 0
+        }
+        catch {
+            $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+            Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
+            exit 1
+        }
+        """);
+
+        return RunPowerShellCommand(harness);
+    }
+
     static ProcessStartInfo NewPowerShellStartInfo()
     {
         string powerShell = Path.Combine(
@@ -745,6 +852,18 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
     static string NewSafeManualHandshakeResponseJson(params (string Name, object Value)[] overrides)
     {
+        return NewSafeManualHandshakeResponseJson(includeForbiddenAuthorityClaims: true, overrides);
+    }
+
+    static string NewSafeManualHandshakeResponseJsonWithoutForbiddenAuthorityClaims(params (string Name, object Value)[] overrides)
+    {
+        return NewSafeManualHandshakeResponseJson(includeForbiddenAuthorityClaims: false, overrides);
+    }
+
+    static string NewSafeManualHandshakeResponseJson(
+        bool includeForbiddenAuthorityClaims,
+        params (string Name, object Value)[] overrides)
+    {
         Dictionary<string, object> response = new(StringComparer.Ordinal)
         {
             ["accepted"] = true,
@@ -768,12 +887,29 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             ["no_sql_authority"] = true
         };
 
+        if (includeForbiddenAuthorityClaims)
+            response["forbidden_authority_claims"] = Array.Empty<string>();
+
         foreach ((string name, object value) in overrides)
         {
             response[name] = value;
         }
 
         return JsonSerializer.Serialize(response);
+    }
+
+    static IEnumerable<TestCaseData> RejectedForbiddenAuthorityClaimsCases()
+    {
+        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", null!)))
+            .SetName("ManualHarnessRejectsNullSnakeCaseForbiddenAuthorityClaims");
+        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("ForbiddenAuthorityClaims", null!)))
+            .SetName("ManualHarnessRejectsNullPascalCaseForbiddenAuthorityClaims");
+        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", "execute_sql")))
+            .SetName("ManualHarnessRejectsScalarForbiddenAuthorityClaims");
+        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", new { authority = "execute_sql" })))
+            .SetName("ManualHarnessRejectsObjectForbiddenAuthorityClaims");
+        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", new[] { "execute_sql" })))
+            .SetName("ManualHarnessRejectsNonEmptyArrayForbiddenAuthorityClaims");
     }
 
     static DataAgentRealLangGraphManualShadowResult NewDirectResult(
