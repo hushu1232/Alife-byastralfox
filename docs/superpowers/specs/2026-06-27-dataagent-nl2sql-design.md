@@ -336,10 +336,10 @@ The first harness should prove at least these questions:
 
 ```text
 当前还有哪些 required gate 没通过？
-哪些 readiness check 和 QChat 视图/TTS 有关？
+哪些 readiness check 与 QChat、视觉或 TTS 有关？
 哪些测试证明 runtime readiness 是 required？
-最近一次测试通过、失败、跳过数量是多少？
-哪些文档和 DataAgent/NL2SQL 计划有关？
+最近一次测试通过、失败和跳过的数量是多少？
+哪些文档与 DataAgent/NL2SQL 计划有关？
 ```
 
 Each question should have a fixture-backed expected QueryPlan and expected result shape.
@@ -467,13 +467,9 @@ current scope, does not block V3 closure, and has no committed future version.
 The current roadmap authority is
 `docs/dataagent/dataagent-roadmap-reconciliation.md`.
 
-Current operator-facing questions are:
-
-- 当前还有哪些 required gate 没通过？
-- 哪些 readiness check 与 QChat、视觉或 TTS 有关？
-- 哪些测试证明 runtime readiness 是 required？
-- 最近一次测试通过、失败和跳过的数量是多少？
-- 哪些文档与 DataAgent/NL2SQL 计划有关？
+The canonical five operator-facing questions remain in the Required V1
+Questions section above; their wording is authoritative for this historical
+document.
 
 Current V3 closure freezes 111 static and 95 core identities. The present
 114 static and 98 dynamic readiness totals include the V3.28/V4.0/V4.1

@@ -513,10 +513,10 @@ Tests must cover:
 
 ```text
 当前还有哪些 required gate 没通过？
-哪些 readiness check 和 QChat 视图/TTS 有关？
+哪些 readiness check 与 QChat、视觉或 TTS 有关？
 哪些测试证明 runtime readiness 是 required？
-最近一次测试通过、失败、跳过数量是多少？
-哪些文档和 DataAgent/NL2SQL 计划有关？
+最近一次测试通过、失败和跳过的数量是多少？
+哪些文档与 DataAgent/NL2SQL 计划有关？
 ```
 
 For V1, use deterministic question-to-QueryPlan fixtures rather than live LLM calls.
@@ -864,13 +864,8 @@ is a deferred-work note, not current scope or a future commitment. ChatBI
 Console is not required and does not block V3 closure. The current roadmap
 authority is `docs/dataagent/dataagent-roadmap-reconciliation.md`.
 
-Use these current-readable questions when reviewing the historical plan:
-
-- 当前还有哪些 required gate 没通过？
-- 哪些 readiness check 与 QChat、视觉或 TTS 有关？
-- 哪些测试证明 runtime readiness 是 required？
-- 最近一次测试通过、失败和跳过的数量是多少？
-- 哪些文档与 DataAgent/NL2SQL 计划有关？
+The canonical five current-readable questions remain in the earlier required
+V1 question block; their wording is authoritative for this historical plan.
 
 V3 closure is identity-bound at 111 static and 95 core checks. Static 114 and
 dynamic 98 include the V3.28/V4.0/V4.1 identities that remain outside the V3
