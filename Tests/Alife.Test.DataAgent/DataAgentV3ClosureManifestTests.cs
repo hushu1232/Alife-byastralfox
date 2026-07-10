@@ -11,6 +11,8 @@ public sealed partial class DataAgentV3ClosureManifestTests
     const string MilestonePattern = @"^milestone=v3\.(0|[1-9]|1[0-9]|2[0-8])$";
     const string RuntimeBoundary = "changes_default_runtime=false";
     const string AuthorityBoundary = "grants_sidecar_authority=false";
+    const string EvidenceTableHeader = "| Version | Evidence kind | Purpose | Exact evidence path | Required check / gate | Runtime boundary | Sidecar authority boundary |";
+    const string EvidenceTableSeparator = "|---|---|---|---|---|---|---|";
 
     static readonly ClosureEvidenceRow[] ExpectedRows =
     [
@@ -74,6 +76,31 @@ public sealed partial class DataAgentV3ClosureManifestTests
         });
     }
 
+    [Test]
+    public void EvidenceTableParserDoesNotIgnoreCompactWhitespaceDuplicateRow()
+    {
+        string repoRoot = FindRepoRoot();
+        string ledger = File.ReadAllText(Path.Combine(repoRoot, "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
+        string standardRow = SplitLines(ledger).Single(line => line.StartsWith("| v3.4 |", StringComparison.Ordinal));
+        string compactRow = standardRow
+            .Replace(" | ", "|", StringComparison.Ordinal)
+            .Replace("| ", "|", StringComparison.Ordinal)
+            .Replace(" |", "|", StringComparison.Ordinal);
+        string mutatedLedger = ledger.Replace(
+            standardRow,
+            $"{standardRow}{Environment.NewLine}{compactRow}",
+            StringComparison.Ordinal);
+
+        ClosureEvidenceRow[] rows = ParseEvidenceRows(mutatedLedger);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(rows, Has.Length.EqualTo(30));
+            Assert.That(rows.Select(row => row.Version).Count(version => version == "v3.4"), Is.EqualTo(2));
+            Assert.That(rows, Is.Not.EqualTo(ExpectedRows));
+        });
+    }
+
     static string[] ParseMilestoneVersions(string ledger)
     {
         string[] lines = SplitLines(ledger);
@@ -90,14 +117,26 @@ public sealed partial class DataAgentV3ClosureManifestTests
         return inventoryLines.Select(line => line["milestone=".Length..]).ToArray();
     }
 
-    static ClosureEvidenceRow[] ParseEvidenceRows(string ledger) =>
-        SplitLines(ledger)
-            .Where(line => line.StartsWith("| v3.", StringComparison.Ordinal))
-            .Select(ParseEvidenceRow)
-            .ToArray();
+    static ClosureEvidenceRow[] ParseEvidenceRows(string ledger)
+    {
+        string[] lines = SplitLines(ledger);
+        int header = FindSingleDelimiter(lines, EvidenceTableHeader);
+        Assert.That(header + 1, Is.LessThan(lines.Length), "The closure table must include a separator row.");
+        Assert.That(lines[header + 1], Is.EqualTo(EvidenceTableSeparator), "The closure table separator row is malformed.");
+
+        List<ClosureEvidenceRow> rows = [];
+        for (int index = header + 2; index < lines.Length; index++)
+        {
+            string line = lines[index].Trim();
+            if (line.Length == 0) break;
+            rows.Add(ParseEvidenceRow(line));
+        }
+        return rows.ToArray();
+    }
 
     static ClosureEvidenceRow ParseEvidenceRow(string line)
     {
+        line = line.Trim();
         string[] columns = line.Split('|');
         Assert.Multiple(() =>
         {

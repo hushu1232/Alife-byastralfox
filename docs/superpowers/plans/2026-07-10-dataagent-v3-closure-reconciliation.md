@@ -384,6 +384,7 @@ git commit -m "docs(dataagent): restore v3.10 runtime admission contract"
 Create the test file with document-only tests first:
 
 ```csharp
+using System.Text.RegularExpressions;
 using Alife.Function.DataAgent;
 
 namespace Alife.Test.DataAgent;
@@ -391,26 +392,44 @@ namespace Alife.Test.DataAgent;
 [TestFixture]
 public sealed partial class DataAgentV3ClosureManifestTests
 {
+    const string InventoryStart = "[v3_closure_milestones]";
+    const string InventoryEnd = "[/v3_closure_milestones]";
+    const string MilestonePattern = @"^milestone=v3\.(0|[1-9]|1[0-9]|2[0-8])$";
+
     [Test]
     public void ClosureLedgerContainsEveryV3MilestoneExactlyOnce()
     {
         string ledger = File.ReadAllText(Path.Combine(FindRepoRoot(), "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
-        string[] versions = ledger.Split('\n')
-            .Select(line => line.Trim())
-            .Where(line => line.StartsWith("milestone=v3.", StringComparison.Ordinal))
-            .Select(line => line["milestone=".Length..])
-            .ToArray();
+        string[] versions = ParseMilestoneVersions(ledger);
         string[] expected = Enumerable.Range(0, 29).Select(index => $"v3.{index}").ToArray();
 
         Assert.Multiple(() =>
         {
-            Assert.That(versions, Is.EquivalentTo(expected));
+            Assert.That(versions, Is.EqualTo(expected));
             Assert.That(versions, Is.Unique);
-            Assert.That(ledger, Does.Contain("v3.5 | RegressionHardening"));
-            Assert.That(ledger, Does.Contain("v3.7 | RegressionHardening"));
-            Assert.That(ledger, Does.Contain("v3.10 | StaticReadiness"));
-            Assert.That(ledger, Does.Contain("v3.28 | FinalFreeze"));
         });
+    }
+
+    static string[] ParseMilestoneVersions(string ledger)
+    {
+        string[] lines = ledger.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        int[] starts = lines.Select((line, index) => (line, index))
+            .Where(item => item.line == InventoryStart).Select(item => item.index).ToArray();
+        int[] ends = lines.Select((line, index) => (line, index))
+            .Where(item => item.line == InventoryEnd).Select(item => item.index).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(starts, Has.Exactly(1).Items);
+            Assert.That(ends, Has.Exactly(1).Items);
+        });
+        Assert.That(ends.Single(), Is.GreaterThan(starts.Single()));
+
+        string[] inventoryLines = lines[(starts.Single() + 1)..ends.Single()];
+        foreach (string line in inventoryLines)
+            Assert.That(Regex.IsMatch(line, MilestonePattern, RegexOptions.CultureInvariant), Is.True, line);
+
+        return inventoryLines.Select(line => line["milestone=".Length..]).ToArray();
     }
 
     static string FindRepoRoot()
@@ -434,6 +453,7 @@ Expected: FAIL with `FileNotFoundException` for
 Create a Markdown table with one row per version and this exact machine block:
 
 ```text
+[v3_closure_milestones]
 milestone=v3.0
 milestone=v3.1
 milestone=v3.2
@@ -463,6 +483,7 @@ milestone=v3.25
 milestone=v3.26
 milestone=v3.27
 milestone=v3.28
+[/v3_closure_milestones]
 ```
 
 Use these evidence kinds in the human-readable rows:
@@ -492,7 +513,7 @@ v3.0  | Graph handshake boundary                 | docs/dataagent/dataagent-v3.0
 v3.1  | Dev sidecar adapter                      | docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md                      | GraphHandshakeDevSidecarAdapterPresent
 v3.2  | Progress bridge                          | docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md                  | GraphHandshakeDevSidecarProgressBridgePresent
 v3.3  | NDJSON streaming                         | docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md               | GraphHandshakeDevSidecarStreamingTransportPresent
-v3.4  | StaticReadiness | Manual live smoke                        | docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md           | GraphHandshakeDevSidecarLiveSmokeHarnessPresent
+v3.4  | Manual live smoke                        | docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md           | GraphHandshakeDevSidecarLiveSmokeHarnessPresent
 v3.5  | Smoke contract regression                | Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs | inherited V3.4/V3.6 gates
 v3.6  | Sidecar observability                     | sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs | GraphHandshakeDevSidecarObservabilityContractPresent
 v3.7  | Reason-code hardening                    | docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md | inherited V3.6 gate
@@ -552,10 +573,70 @@ public void DefaultManifestCoversV30ThroughV328ExactlyOnce()
 
     Assert.Multiple(() =>
     {
-        Assert.That(manifest.Select(item => item.Version), Is.EquivalentTo(expected));
+        Assert.That(manifest.Select(item => item.Version), Is.EqualTo(expected));
         Assert.That(manifest.Select(item => item.Version), Is.Unique);
         Assert.That(manifest.All(item => !item.ChangesDefaultRuntime), Is.True);
         Assert.That(manifest.All(item => !item.GrantsSidecarAuthority), Is.True);
+        Assert.That(manifest.Single(item => item.Version == "v3.5").RequiredGateLabel, Is.EqualTo("inherited V3.4/V3.6 gates"));
+        Assert.That(manifest.Single(item => item.Version == "v3.7").RequiredGateLabel, Is.EqualTo("inherited V3.6 gate"));
+        Assert.That(manifest.Single(item => item.Version == "v3.28").RequiredGateLabel, Is.EqualTo("final freeze output"));
+    });
+}
+
+[Test]
+public void LedgerParserRejectsMissingOrDuplicateDelimitersAndOutOfBlockMarker()
+{
+    string ledger = ReadLedger();
+    DataAgentV3LedgerParseResult missingStart = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace("[v3_closure_milestones]", string.Empty, StringComparison.Ordinal));
+    DataAgentV3LedgerParseResult missingEnd = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace("[/v3_closure_milestones]", string.Empty, StringComparison.Ordinal));
+    DataAgentV3LedgerParseResult duplicateStart = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace(
+            "[v3_closure_milestones]",
+            $"[v3_closure_milestones]{Environment.NewLine}[v3_closure_milestones]",
+            StringComparison.Ordinal));
+    DataAgentV3LedgerParseResult duplicateEnd = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace(
+            "[/v3_closure_milestones]",
+            $"[/v3_closure_milestones]{Environment.NewLine}[/v3_closure_milestones]",
+            StringComparison.Ordinal));
+    DataAgentV3LedgerParseResult outOfBlock = DataAgentV3ClosureManifest.ParseLedger(
+        $"{ledger}{Environment.NewLine}milestone=v3.4");
+
+    Assert.Multiple(() =>
+    {
+        Assert.That(missingStart.Errors, Is.Not.Empty);
+        Assert.That(missingEnd.Errors, Is.Not.Empty);
+        Assert.That(duplicateStart.Errors, Is.Not.Empty);
+        Assert.That(duplicateEnd.Errors, Is.Not.Empty);
+        Assert.That(outOfBlock.Errors, Does.Contain("out_of_block_milestone:milestone=v3.4"));
+    });
+}
+
+[Test]
+public void LedgerParserRejectsMalformedOutOfRangeWrongOrderAndCompactDuplicateRows()
+{
+    string ledger = ReadLedger();
+    DataAgentV3LedgerParseResult malformed = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace("milestone=v3.28", "milestone=v3.028", StringComparison.Ordinal));
+    DataAgentV3LedgerParseResult outOfRange = DataAgentV3ClosureManifest.ParseLedger(
+        ledger.Replace("milestone=v3.28", "milestone=v3.29", StringComparison.Ordinal));
+    string wrongOrderText = ledger
+        .Replace("milestone=v3.0", "milestone=temporary", StringComparison.Ordinal)
+        .Replace("milestone=v3.1", "milestone=v3.0", StringComparison.Ordinal)
+        .Replace("milestone=temporary", "milestone=v3.1", StringComparison.Ordinal);
+    DataAgentV3LedgerParseResult wrongOrder = DataAgentV3ClosureManifest.ParseLedger(wrongOrderText);
+    DataAgentV3LedgerParseResult compactDuplicate = DataAgentV3ClosureManifest.ParseLedger(
+        AddCompactV34Duplicate(ledger));
+
+    Assert.Multiple(() =>
+    {
+        Assert.That(malformed.Errors, Is.Not.Empty);
+        Assert.That(outOfRange.Errors, Is.Not.Empty);
+        Assert.That(wrongOrder.Errors, Does.Contain("milestone_order_or_membership_invalid"));
+        Assert.That(compactDuplicate.Errors, Does.Contain("duplicate_closure_table_version"));
+        Assert.That(compactDuplicate.Entries, Has.Count.EqualTo(30));
     });
 }
 
@@ -575,12 +656,51 @@ public void ValidatorAcceptsCompleteEvidenceWithoutV4Checks()
 }
 
 [Test]
+public void ValidatorRejectsLedgerManifestFieldParityDrift()
+{
+    ClosureFixture fixture = CompleteFixture();
+    DataAgentV3LedgerEntry[] driftedEntries = fixture.Ledger.Entries.Select(item => item.Version switch
+    {
+        "v3.0" => item with { EvidenceKind = DataAgentV3EvidenceKind.StaticReadiness },
+        "v3.1" => item with { Purpose = "drifted purpose" },
+        "v3.2" => item with { EvidencePath = "docs/dataagent/drifted.md" },
+        "v3.3" => item with { ChangesDefaultRuntime = true },
+        "v3.4" => item with { GrantsSidecarAuthority = true },
+        "v3.5" => item with { RequiredGateLabel = "drifted inherited gate" },
+        "v3.7" => item with { RequiredGateLabel = "drifted inherited gate" },
+        "v3.28" => item with { RequiredGateLabel = "drifted final label" },
+        _ => item
+    }).ToArray();
+
+    DataAgentV3ClosureResult result = Validate(
+        fixture,
+        ledger: fixture.Ledger with { Entries = driftedEntries });
+
+    Assert.Multiple(() =>
+    {
+        Assert.That(result.Accepted, Is.False);
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.0:EvidenceKind"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.1:Purpose"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.2:EvidencePath"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.3:ChangesDefaultRuntime"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.4:GrantsSidecarAuthority"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.5:RequiredGateLabel"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.7:RequiredGateLabel"));
+        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.28:RequiredGateLabel"));
+    });
+}
+
+[Test]
 public void ValidatorRejectsMissingV310MilestoneOrStaticContract()
 {
     ClosureFixture missingMilestone = CompleteFixture();
     DataAgentV3ClosureResult missingMilestoneResult = Validate(
         missingMilestone,
-        ledgerVersions: missingMilestone.LedgerVersions.Where(version => version != "v3.10").ToArray());
+        ledger: missingMilestone.Ledger with
+        {
+            MilestoneVersions = missingMilestone.Ledger.MilestoneVersions
+                .Where(version => version != "v3.10").ToArray()
+        });
     ClosureFixture missingStatic = CompleteFixture();
     DataAgentV3ClosureResult missingStaticResult = Validate(missingStatic, staticCheckNames: []);
 
@@ -674,9 +794,27 @@ public void ValidatorRejectsV4SubstitutionAndAuthorityExpansion()
 Use this common fixture builder in the test class:
 
 ```csharp
+static string ReadLedger() => File.ReadAllText(
+    Path.Combine(FindRepoRoot(), "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
+
+static string AddCompactV34Duplicate(string ledger)
+{
+    string standardRow = ledger.Split('\n').Select(line => line.TrimEnd('\r'))
+        .Single(line => line.StartsWith("| v3.4 |", StringComparison.Ordinal));
+    string compactRow = standardRow
+        .Replace(" | ", "|", StringComparison.Ordinal)
+        .Replace("| ", "|", StringComparison.Ordinal)
+        .Replace(" |", "|", StringComparison.Ordinal);
+    return ledger.Replace(
+        standardRow,
+        $"{standardRow}{Environment.NewLine}{compactRow}",
+        StringComparison.Ordinal);
+}
+
 static ClosureFixture CompleteFixture()
 {
     IReadOnlyList<DataAgentV3MilestoneEvidence> manifest = DataAgentV3ClosureManifest.CreateDefault();
+    DataAgentV3LedgerParseResult ledger = DataAgentV3ClosureManifest.ParseLedger(ReadLedger());
     List<DataAgentReadinessCheck> checks = manifest
         .SelectMany(item => item.RequiredDynamicCheckNames)
         .Distinct(StringComparer.Ordinal)
@@ -694,7 +832,7 @@ static ClosureFixture CompleteFixture()
     return new ClosureFixture(
         manifest,
         checks,
-        Enumerable.Range(0, 29).Select(index => $"v3.{index}").ToArray(),
+        ledger,
         manifest.SelectMany(item => item.RequiredStaticCheckNames).ToArray(),
         manifest.SelectMany(item => item.RequiredEvidencePaths).ToHashSet(StringComparer.Ordinal),
         DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount);
@@ -703,7 +841,7 @@ static ClosureFixture CompleteFixture()
 sealed record ClosureFixture(
     IReadOnlyList<DataAgentV3MilestoneEvidence> Manifest,
     List<DataAgentReadinessCheck> Checks,
-    IReadOnlyList<string> LedgerVersions,
+    DataAgentV3LedgerParseResult Ledger,
     IReadOnlyList<string> StaticCheckNames,
     IReadOnlySet<string> ExistingEvidencePaths,
     int StaticRequiredCount);
@@ -711,14 +849,14 @@ sealed record ClosureFixture(
 static DataAgentV3ClosureResult Validate(
     ClosureFixture fixture,
     IReadOnlyCollection<DataAgentV3MilestoneEvidence>? manifest = null,
-    IReadOnlyCollection<string>? ledgerVersions = null,
+    DataAgentV3LedgerParseResult? ledger = null,
     IReadOnlyCollection<string>? staticCheckNames = null,
     IReadOnlySet<string>? existingEvidencePaths = null,
     int? staticRequiredCount = null) =>
     DataAgentV3ClosureValidator.Validate(
         manifest ?? fixture.Manifest,
         fixture.Checks,
-        ledgerVersions ?? fixture.LedgerVersions,
+        ledger ?? fixture.Ledger,
         staticCheckNames ?? fixture.StaticCheckNames,
         existingEvidencePaths ?? fixture.ExistingEvidencePaths,
         staticRequiredCount ?? fixture.StaticRequiredCount);
@@ -734,6 +872,8 @@ milestone types do not exist.
 Create `DataAgentV3ClosureManifest.cs` with these public types and constants:
 
 ```csharp
+using System.Text.RegularExpressions;
+
 namespace Alife.Function.DataAgent;
 
 public enum DataAgentV3EvidenceKind
@@ -749,11 +889,28 @@ public enum DataAgentV3EvidenceKind
 public sealed record DataAgentV3MilestoneEvidence(
     string Version,
     DataAgentV3EvidenceKind EvidenceKind,
+    string Purpose,
+    string EvidencePath,
+    string RequiredGateLabel,
     IReadOnlyList<string> RequiredEvidencePaths,
     IReadOnlyList<string> RequiredDynamicCheckNames,
     IReadOnlyList<string> RequiredStaticCheckNames,
     bool ChangesDefaultRuntime,
     bool GrantsSidecarAuthority);
+
+public sealed record DataAgentV3LedgerEntry(
+    string Version,
+    DataAgentV3EvidenceKind EvidenceKind,
+    string Purpose,
+    string EvidencePath,
+    string RequiredGateLabel,
+    bool ChangesDefaultRuntime,
+    bool GrantsSidecarAuthority);
+
+public sealed record DataAgentV3LedgerParseResult(
+    IReadOnlyList<string> MilestoneVersions,
+    IReadOnlyList<DataAgentV3LedgerEntry> Entries,
+    IReadOnlyList<string> Errors);
 
 public sealed record DataAgentV3ClosureResult(
     bool Accepted,
@@ -762,6 +919,8 @@ public sealed record DataAgentV3ClosureResult(
     IReadOnlyList<string> MissingMilestoneVersions,
     IReadOnlyList<string> DuplicateMilestoneVersions,
     IReadOnlyList<string> UnexpectedMilestoneVersions,
+    IReadOnlyList<string> LedgerParseErrors,
+    IReadOnlyList<string> LedgerManifestParityMismatches,
     IReadOnlyList<string> MissingEvidencePaths,
     IReadOnlyList<string> MissingRequiredCheckNames,
     IReadOnlyList<string> FailedRequiredCheckNames,
@@ -789,43 +948,159 @@ public static class DataAgentV3ClosureManifest
 
     public static IReadOnlyList<DataAgentV3MilestoneEvidence> CreateDefault() =>
     [
-        M("v3.0", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.0-graph-handshake-boundary.md", dynamicCheck: "GraphHandshakeBoundaryPresent"),
-        M("v3.1", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md", dynamicCheck: "GraphHandshakeDevSidecarAdapterPresent"),
-        M("v3.2", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md", dynamicCheck: "GraphHandshakeDevSidecarProgressBridgePresent"),
-        M("v3.3", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md", dynamicCheck: "GraphHandshakeDevSidecarStreamingTransportPresent"),
-        M("v3.4", DataAgentV3EvidenceKind.StaticReadiness, "docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md", staticCheck: "GraphHandshakeDevSidecarLiveSmokeHarnessPresent"),
-        M("v3.5", DataAgentV3EvidenceKind.RegressionHardening, "Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs"),
-        M("v3.6", DataAgentV3EvidenceKind.DynamicReadiness, "sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs", dynamicCheck: "GraphHandshakeDevSidecarObservabilityContractPresent"),
-        M("v3.7", DataAgentV3EvidenceKind.RegressionHardening, "docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md"),
-        M("v3.8", DataAgentV3EvidenceKind.DynamicReadiness, "Tests/Alife.Test.DataAgent/DataAgentEndToEndChainContractTests.cs", dynamicCheck: "DataAgentEndToEndChainContractPresent"),
-        M("v3.9", DataAgentV3EvidenceKind.DynamicReadiness, "Tests/Alife.Test.DataAgent/DataAgentReplayRunbookTests.cs", dynamicCheck: "DataAgentReplayRunbookPresent"),
-        M("v3.10", DataAgentV3EvidenceKind.StaticReadiness, "docs/dataagent/dataagent-v3.10-langgraph-runtime-readiness-contract.md", staticCheck: "LangGraphRuntimeReadinessContractPresent"),
-        M("v3.11", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.11-real-langgraph-sidecar-skeleton.md", dynamicCheck: "GraphHandshakeRealLangGraphSidecarSkeletonPresent"),
-        M("v3.12", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.12-replay-parity-shadow-comparison.md", dynamicCheck: "GraphHandshakeReplayParityShadowComparisonPresent"),
-        M("v3.13", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.13-bounded-diagnostics-explanation.md", dynamicCheck: "GraphHandshakeBoundedDiagnosticsExplanationPresent"),
-        M("v3.14", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.14-cross-module-planner-manifests.md", dynamicCheck: "GraphHandshakeCrossModulePlannerManifestsPresent"),
-        M("v3.15", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.15-authority-fallback-regression.md", dynamicCheck: "GraphHandshakeAuthorityFallbackRegressionPresent"),
-        M("v3.16", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.16-langgraph-live-smoke-readiness.md", dynamicCheck: "GraphHandshakeLangGraphLiveSmokeReadinessPresent"),
-        M("v3.17", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.17-langgraph-manual-smoke.md", dynamicCheck: "GraphHandshakeLangGraphManualSmokeHarnessPresent"),
-        M("v3.18", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.18-smoke-result-artifact.md", dynamicCheck: "GraphHandshakeSmokeResultArtifactFormatterPresent"),
-        M("v3.19", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.19-replay-fixture-pack.md", dynamicCheck: "GraphHandshakeReplayFixturePackPresent"),
-        M("v3.20", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.20-shadow-replay-report.md", dynamicCheck: "GraphHandshakeShadowReplayReportPresent"),
-        M("v3.21", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.21-manual-replay-report-artifact.md", dynamicCheck: "GraphHandshakeManualReplayReportArtifactWriterPresent"),
-        M("v3.22", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.22-manual-artifact-index.md", dynamicCheck: "GraphHandshakeManualArtifactIndexPresent"),
-        M("v3.23", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.23-manual-audit-bundle.md", dynamicCheck: "GraphHandshakeManualAuditBundlePresent"),
-        M("v3.24", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.24-agent-advisory-contract.md", dynamicCheck: "GraphHandshakeAgentAdvisoryContractPresent"),
-        M("v3.25", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.25-real-langgraph-manual-shadow-provider.md", dynamicCheck: "GraphHandshakeRealLangGraphManualShadowProviderPresent"),
-        M("v3.26", DataAgentV3EvidenceKind.DynamicReadiness, "docs/dataagent/dataagent-v3.26-harness-replay-diff-gate.md", dynamicCheck: "GraphHandshakeHarnessReplayDiffGatePresent"),
-        M("v3.27", DataAgentV3EvidenceKind.OperatorArtifact, "docs/dataagent/dataagent-v3.27-operator-evidence-pack.md", dynamicCheck: "GraphHandshakeOperatorEvidencePackPresent"),
-        M("v3.28", DataAgentV3EvidenceKind.FinalFreeze, "docs/dataagent/dataagent-v3.28-final-readiness-freeze.md")
+        M("v3.0", DataAgentV3EvidenceKind.DynamicReadiness, "Graph handshake boundary", "docs/dataagent/dataagent-v3.0-graph-handshake-boundary.md", "GraphHandshakeBoundaryPresent", dynamicCheck: "GraphHandshakeBoundaryPresent"),
+        M("v3.1", DataAgentV3EvidenceKind.DynamicReadiness, "Dev sidecar adapter", "docs/dataagent/dataagent-v3.1-dev-sidecar-adapter.md", "GraphHandshakeDevSidecarAdapterPresent", dynamicCheck: "GraphHandshakeDevSidecarAdapterPresent"),
+        M("v3.2", DataAgentV3EvidenceKind.DynamicReadiness, "Progress bridge", "docs/dataagent/dataagent-v3.2-sidecar-progress-bridge.md", "GraphHandshakeDevSidecarProgressBridgePresent", dynamicCheck: "GraphHandshakeDevSidecarProgressBridgePresent"),
+        M("v3.3", DataAgentV3EvidenceKind.DynamicReadiness, "NDJSON streaming", "docs/dataagent/dataagent-v3.3-ndjson-streaming-transport.md", "GraphHandshakeDevSidecarStreamingTransportPresent", dynamicCheck: "GraphHandshakeDevSidecarStreamingTransportPresent"),
+        M("v3.4", DataAgentV3EvidenceKind.StaticReadiness, "Manual live smoke", "docs/dataagent/dataagent-v3.4-dev-sidecar-live-smoke-harness.md", "GraphHandshakeDevSidecarLiveSmokeHarnessPresent", staticCheck: "GraphHandshakeDevSidecarLiveSmokeHarnessPresent"),
+        M("v3.5", DataAgentV3EvidenceKind.RegressionHardening, "Smoke contract regression", "Tests/Alife.Test.DataAgent/DataAgentGraphSidecarSmokeScriptContractTests.cs", "inherited V3.4/V3.6 gates"),
+        M("v3.6", DataAgentV3EvidenceKind.DynamicReadiness, "Sidecar observability", "sources/Alife.Function/Alife.Function.DataAgent/DataAgentGraphHandshakeModels.cs", "GraphHandshakeDevSidecarObservabilityContractPresent", dynamicCheck: "GraphHandshakeDevSidecarObservabilityContractPresent"),
+        M("v3.7", DataAgentV3EvidenceKind.RegressionHardening, "Reason-code hardening", "docs/superpowers/specs/2026-07-08-dataagent-v3.7-reason-code-stability-design.md", "inherited V3.6 gate"),
+        M("v3.8", DataAgentV3EvidenceKind.DynamicReadiness, "End-to-end chain", "Tests/Alife.Test.DataAgent/DataAgentEndToEndChainContractTests.cs", "DataAgentEndToEndChainContractPresent", dynamicCheck: "DataAgentEndToEndChainContractPresent"),
+        M("v3.9", DataAgentV3EvidenceKind.DynamicReadiness, "Replay runbook", "Tests/Alife.Test.DataAgent/DataAgentReplayRunbookTests.cs", "DataAgentReplayRunbookPresent", dynamicCheck: "DataAgentReplayRunbookPresent"),
+        M("v3.10", DataAgentV3EvidenceKind.StaticReadiness, "Runtime admission contract", "docs/dataagent/dataagent-v3.10-langgraph-runtime-readiness-contract.md", "LangGraphRuntimeReadinessContractPresent", staticCheck: "LangGraphRuntimeReadinessContractPresent"),
+        M("v3.11", DataAgentV3EvidenceKind.DynamicReadiness, "Real LangGraph skeleton", "docs/dataagent/dataagent-v3.11-real-langgraph-sidecar-skeleton.md", "GraphHandshakeRealLangGraphSidecarSkeletonPresent", dynamicCheck: "GraphHandshakeRealLangGraphSidecarSkeletonPresent"),
+        M("v3.12", DataAgentV3EvidenceKind.DynamicReadiness, "Replay parity", "docs/dataagent/dataagent-v3.12-replay-parity-shadow-comparison.md", "GraphHandshakeReplayParityShadowComparisonPresent", dynamicCheck: "GraphHandshakeReplayParityShadowComparisonPresent"),
+        M("v3.13", DataAgentV3EvidenceKind.DynamicReadiness, "Bounded diagnostics", "docs/dataagent/dataagent-v3.13-bounded-diagnostics-explanation.md", "GraphHandshakeBoundedDiagnosticsExplanationPresent", dynamicCheck: "GraphHandshakeBoundedDiagnosticsExplanationPresent"),
+        M("v3.14", DataAgentV3EvidenceKind.DynamicReadiness, "Cross-module manifests", "docs/dataagent/dataagent-v3.14-cross-module-planner-manifests.md", "GraphHandshakeCrossModulePlannerManifestsPresent", dynamicCheck: "GraphHandshakeCrossModulePlannerManifestsPresent"),
+        M("v3.15", DataAgentV3EvidenceKind.DynamicReadiness, "Authority fallback regression", "docs/dataagent/dataagent-v3.15-authority-fallback-regression.md", "GraphHandshakeAuthorityFallbackRegressionPresent", dynamicCheck: "GraphHandshakeAuthorityFallbackRegressionPresent"),
+        M("v3.16", DataAgentV3EvidenceKind.DynamicReadiness, "Live smoke readiness", "docs/dataagent/dataagent-v3.16-langgraph-live-smoke-readiness.md", "GraphHandshakeLangGraphLiveSmokeReadinessPresent", dynamicCheck: "GraphHandshakeLangGraphLiveSmokeReadinessPresent"),
+        M("v3.17", DataAgentV3EvidenceKind.DynamicReadiness, "Manual smoke harness", "docs/dataagent/dataagent-v3.17-langgraph-manual-smoke.md", "GraphHandshakeLangGraphManualSmokeHarnessPresent", dynamicCheck: "GraphHandshakeLangGraphManualSmokeHarnessPresent"),
+        M("v3.18", DataAgentV3EvidenceKind.OperatorArtifact, "Smoke artifact", "docs/dataagent/dataagent-v3.18-smoke-result-artifact.md", "GraphHandshakeSmokeResultArtifactFormatterPresent", dynamicCheck: "GraphHandshakeSmokeResultArtifactFormatterPresent"),
+        M("v3.19", DataAgentV3EvidenceKind.OperatorArtifact, "Replay fixtures", "docs/dataagent/dataagent-v3.19-replay-fixture-pack.md", "GraphHandshakeReplayFixturePackPresent", dynamicCheck: "GraphHandshakeReplayFixturePackPresent"),
+        M("v3.20", DataAgentV3EvidenceKind.OperatorArtifact, "Shadow replay report", "docs/dataagent/dataagent-v3.20-shadow-replay-report.md", "GraphHandshakeShadowReplayReportPresent", dynamicCheck: "GraphHandshakeShadowReplayReportPresent"),
+        M("v3.21", DataAgentV3EvidenceKind.OperatorArtifact, "Replay report artifact", "docs/dataagent/dataagent-v3.21-manual-replay-report-artifact.md", "GraphHandshakeManualReplayReportArtifactWriterPresent", dynamicCheck: "GraphHandshakeManualReplayReportArtifactWriterPresent"),
+        M("v3.22", DataAgentV3EvidenceKind.OperatorArtifact, "Artifact index", "docs/dataagent/dataagent-v3.22-manual-artifact-index.md", "GraphHandshakeManualArtifactIndexPresent", dynamicCheck: "GraphHandshakeManualArtifactIndexPresent"),
+        M("v3.23", DataAgentV3EvidenceKind.OperatorArtifact, "Audit bundle", "docs/dataagent/dataagent-v3.23-manual-audit-bundle.md", "GraphHandshakeManualAuditBundlePresent", dynamicCheck: "GraphHandshakeManualAuditBundlePresent"),
+        M("v3.24", DataAgentV3EvidenceKind.DynamicReadiness, "Agent advisory contract", "docs/dataagent/dataagent-v3.24-agent-advisory-contract.md", "GraphHandshakeAgentAdvisoryContractPresent", dynamicCheck: "GraphHandshakeAgentAdvisoryContractPresent"),
+        M("v3.25", DataAgentV3EvidenceKind.DynamicReadiness, "Manual shadow provider", "docs/dataagent/dataagent-v3.25-real-langgraph-manual-shadow-provider.md", "GraphHandshakeRealLangGraphManualShadowProviderPresent", dynamicCheck: "GraphHandshakeRealLangGraphManualShadowProviderPresent"),
+        M("v3.26", DataAgentV3EvidenceKind.DynamicReadiness, "Replay diff gate", "docs/dataagent/dataagent-v3.26-harness-replay-diff-gate.md", "GraphHandshakeHarnessReplayDiffGatePresent", dynamicCheck: "GraphHandshakeHarnessReplayDiffGatePresent"),
+        M("v3.27", DataAgentV3EvidenceKind.OperatorArtifact, "Operator evidence pack", "docs/dataagent/dataagent-v3.27-operator-evidence-pack.md", "GraphHandshakeOperatorEvidencePackPresent", dynamicCheck: "GraphHandshakeOperatorEvidencePackPresent"),
+        M("v3.28", DataAgentV3EvidenceKind.FinalFreeze, "Final freeze", "docs/dataagent/dataagent-v3.28-final-readiness-freeze.md", "final freeze output")
     ];
 
-    public static IReadOnlyList<string> ParseLedgerVersions(string text) =>
-        (text ?? string.Empty).Split('\n')
-            .Select(line => line.Trim())
-            .Where(line => line.StartsWith("milestone=v3.", StringComparison.Ordinal))
-            .Select(line => line["milestone=".Length..])
+    public static DataAgentV3LedgerParseResult ParseLedger(string? text)
+    {
+        const string inventoryStart = "[v3_closure_milestones]";
+        const string inventoryEnd = "[/v3_closure_milestones]";
+        const string milestonePattern = @"^milestone=(v3\.(0|[1-9]|1[0-9]|2[0-8]))$";
+        const string tableHeader = "| Version | Evidence kind | Purpose | Exact evidence path | Required check / gate | Runtime boundary | Sidecar authority boundary |";
+        const string tableSeparator = "|---|---|---|---|---|---|---|";
+
+        string[] lines = (text ?? string.Empty).Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        List<string> errors = [];
+        List<string> versions = [];
+        List<DataAgentV3LedgerEntry> entries = [];
+        int[] starts = FindLineIndexes(lines, inventoryStart);
+        int[] ends = FindLineIndexes(lines, inventoryEnd);
+
+        if (starts.Length != 1) errors.Add($"inventory_start_count={starts.Length}");
+        if (ends.Length != 1) errors.Add($"inventory_end_count={ends.Length}");
+        if (starts.Length == 1 && ends.Length == 1)
+        {
+            if (ends[0] <= starts[0])
+            {
+                errors.Add("inventory_delimiter_order_invalid");
+            }
+            else
+            {
+                for (int index = starts[0] + 1; index < ends[0]; index++)
+                {
+                    Match match = Regex.Match(lines[index], milestonePattern, RegexOptions.CultureInvariant);
+                    if (!match.Success) errors.Add($"invalid_milestone_line:{lines[index]}");
+                    else versions.Add(match.Groups[1].Value);
+                }
+
+                for (int index = 0; index < lines.Length; index++)
+                {
+                    bool outsideInventory = index <= starts[0] || index >= ends[0];
+                    if (outsideInventory && Regex.IsMatch(lines[index], milestonePattern, RegexOptions.CultureInvariant))
+                        errors.Add($"out_of_block_milestone:{lines[index]}");
+                }
+            }
+        }
+
+        if (!versions.SequenceEqual(ExpectedVersions, StringComparer.Ordinal))
+            errors.Add("milestone_order_or_membership_invalid");
+        if (versions.GroupBy(version => version, StringComparer.Ordinal).Any(group => group.Count() != 1))
+            errors.Add("duplicate_milestone_version");
+
+        int[] headers = FindLineIndexes(lines, tableHeader);
+        if (headers.Length != 1)
+        {
+            errors.Add($"closure_table_header_count={headers.Length}");
+        }
+        else if (headers[0] + 1 >= lines.Length || lines[headers[0] + 1] != tableSeparator)
+        {
+            errors.Add("closure_table_separator_invalid");
+        }
+        else
+        {
+            for (int index = headers[0] + 2; index < lines.Length; index++)
+            {
+                string row = lines[index].Trim();
+                if (row.Length == 0) break;
+                string[] columns = row.Split('|');
+                if (columns.Length != 9 || columns[0].Length != 0 || columns[^1].Length != 0)
+                {
+                    errors.Add($"closure_table_column_count_invalid:{index}");
+                    continue;
+                }
+
+                string[] values = columns[1..^1].Select(value => value.Trim()).ToArray();
+                string kindText = UnwrapCodeSpan(values[1], errors, $"kind:{index}");
+                if (!Enum.GetNames<DataAgentV3EvidenceKind>().Contains(kindText, StringComparer.Ordinal))
+                {
+                    errors.Add($"evidence_kind_invalid:{kindText}");
+                    continue;
+                }
+
+                entries.Add(new DataAgentV3LedgerEntry(
+                    values[0],
+                    Enum.Parse<DataAgentV3EvidenceKind>(kindText),
+                    values[2],
+                    UnwrapCodeSpan(values[3], errors, $"path:{index}"),
+                    UnwrapCodeSpan(values[4], errors, $"gate:{index}"),
+                    ParseBoundary(values[5], "changes_default_runtime", errors, index),
+                    ParseBoundary(values[6], "grants_sidecar_authority", errors, index)));
+            }
+        }
+
+        string[] entryVersions = entries.Select(entry => entry.Version).ToArray();
+        if (!entryVersions.SequenceEqual(ExpectedVersions, StringComparer.Ordinal))
+            errors.Add("closure_table_order_or_membership_invalid");
+        if (entryVersions.GroupBy(version => version, StringComparer.Ordinal).Any(group => group.Count() != 1))
+            errors.Add("duplicate_closure_table_version");
+
+        return new DataAgentV3LedgerParseResult(versions, entries, errors.Distinct(StringComparer.Ordinal).ToArray());
+    }
+
+    static int[] FindLineIndexes(string[] lines, string expected) =>
+        lines.Select((line, index) => (line, index))
+            .Where(item => item.line == expected)
+            .Select(item => item.index)
             .ToArray();
+
+    static string UnwrapCodeSpan(string value, List<string> errors, string field)
+    {
+        bool starts = value.StartsWith('`');
+        bool ends = value.EndsWith('`');
+        if (starts != ends || (starts && value.Length < 2))
+        {
+            errors.Add($"malformed_code_span:{field}");
+            return string.Empty;
+        }
+        return starts ? value[1..^1] : value;
+    }
+
+    static bool ParseBoundary(string value, string name, List<string> errors, int row)
+    {
+        string unwrapped = UnwrapCodeSpan(value, errors, $"{name}:{row}");
+        if (unwrapped == $"{name}=false") return false;
+        if (unwrapped == $"{name}=true") return true;
+        errors.Add($"boundary_invalid:{name}:{row}");
+        return true;
+    }
 
     public static IReadOnlyList<string> ParseStaticCheckNames(string script)
     {
@@ -846,12 +1121,17 @@ public static class DataAgentV3ClosureManifest
     static DataAgentV3MilestoneEvidence M(
         string version,
         DataAgentV3EvidenceKind kind,
+        string purpose,
         string evidencePath,
+        string requiredGateLabel,
         string? dynamicCheck = null,
         string? staticCheck = null) =>
         new(
             version,
             kind,
+            purpose,
+            evidencePath,
+            requiredGateLabel,
             [evidencePath],
             dynamicCheck == null ? [] : [dynamicCheck],
             staticCheck == null ? [] : [staticCheck],
@@ -871,27 +1151,55 @@ public static class DataAgentV3ClosureValidator
     public static DataAgentV3ClosureResult Validate(
         IReadOnlyCollection<DataAgentV3MilestoneEvidence> manifest,
         IReadOnlyCollection<DataAgentReadinessCheck> dynamicChecks,
-        IReadOnlyCollection<string> ledgerVersions,
+        DataAgentV3LedgerParseResult ledger,
         IReadOnlyCollection<string> staticCheckNames,
         IReadOnlySet<string> existingEvidencePaths,
         int staticRequiredCheckCount)
     {
         ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(dynamicChecks);
-        ArgumentNullException.ThrowIfNull(ledgerVersions);
+        ArgumentNullException.ThrowIfNull(ledger);
         ArgumentNullException.ThrowIfNull(staticCheckNames);
         ArgumentNullException.ThrowIfNull(existingEvidencePaths);
 
-        string[] declaredVersions = manifest.Select(item => item.Version).Concat(ledgerVersions).ToArray();
-        string[] missingVersions = DataAgentV3ClosureManifest.ExpectedVersions
-            .Where(version => manifest.Count(item => item.Version == version) != 1 || ledgerVersions.Count(item => item == version) != 1)
+        string[] declaredVersions = manifest.Select(item => item.Version)
+            .Concat(ledger.MilestoneVersions)
+            .Concat(ledger.Entries.Select(item => item.Version))
             .ToArray();
-        string[] duplicateVersions = declaredVersions.GroupBy(value => value, StringComparer.Ordinal)
-            .Where(group => group.Count() > 2)
-            .Select(group => group.Key).ToArray();
+        string[] missingVersions = DataAgentV3ClosureManifest.ExpectedVersions
+            .Where(version =>
+                manifest.Count(item => item.Version == version) != 1 ||
+                ledger.MilestoneVersions.Count(item => item == version) != 1 ||
+                ledger.Entries.Count(item => item.Version == version) != 1)
+            .ToArray();
+        string[] duplicateVersions = manifest.Select(item => item.Version).GroupBy(value => value, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1).Select(group => group.Key)
+            .Concat(ledger.MilestoneVersions.GroupBy(value => value, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1).Select(group => group.Key))
+            .Concat(ledger.Entries.Select(item => item.Version).GroupBy(value => value, StringComparer.Ordinal)
+                .Where(group => group.Count() > 1).Select(group => group.Key))
+            .Distinct(StringComparer.Ordinal).ToArray();
         string[] unexpectedVersions = declaredVersions
             .Where(version => !DataAgentV3ClosureManifest.ExpectedVersions.Contains(version, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal).ToArray();
+
+        List<string> parityMismatches = [];
+        foreach (string version in DataAgentV3ClosureManifest.ExpectedVersions)
+        {
+            DataAgentV3MilestoneEvidence[] manifestMatches = manifest.Where(item => item.Version == version).ToArray();
+            DataAgentV3LedgerEntry[] ledgerMatches = ledger.Entries.Where(item => item.Version == version).ToArray();
+            if (manifestMatches.Length != 1 || ledgerMatches.Length != 1) continue;
+            DataAgentV3MilestoneEvidence manifestItem = manifestMatches[0];
+            DataAgentV3LedgerEntry ledgerItem = ledgerMatches[0];
+
+            if (manifestItem.Version != ledgerItem.Version) parityMismatches.Add($"{version}:Version");
+            if (manifestItem.EvidenceKind != ledgerItem.EvidenceKind) parityMismatches.Add($"{version}:EvidenceKind");
+            if (manifestItem.Purpose != ledgerItem.Purpose) parityMismatches.Add($"{version}:Purpose");
+            if (manifestItem.EvidencePath != ledgerItem.EvidencePath) parityMismatches.Add($"{version}:EvidencePath");
+            if (manifestItem.RequiredGateLabel != ledgerItem.RequiredGateLabel) parityMismatches.Add($"{version}:RequiredGateLabel");
+            if (manifestItem.ChangesDefaultRuntime != ledgerItem.ChangesDefaultRuntime) parityMismatches.Add($"{version}:ChangesDefaultRuntime");
+            if (manifestItem.GrantsSidecarAuthority != ledgerItem.GrantsSidecarAuthority) parityMismatches.Add($"{version}:GrantsSidecarAuthority");
+        }
 
         string[] requiredPaths = manifest.SelectMany(item => item.RequiredEvidencePaths).Distinct(StringComparer.Ordinal).ToArray();
         string[] missingPaths = requiredPaths.Where(path => !existingEvidencePaths.Contains(path)).ToArray();
@@ -919,6 +1227,7 @@ public static class DataAgentV3ClosureValidator
 
         bool accepted =
             missingVersions.Length == 0 && duplicateVersions.Length == 0 && unexpectedVersions.Length == 0 &&
+            ledger.Errors.Count == 0 && parityMismatches.Count == 0 &&
             missingPaths.Length == 0 && missingChecks.Length == 0 && failedChecks.Length == 0 &&
             duplicateChecks.Length == 0 && unexpectedV4.Length == 0 && authorityExpansionCount == 0 &&
             operatorPack && staticCountMatches && coreCountMatches;
@@ -930,6 +1239,8 @@ public static class DataAgentV3ClosureValidator
             missingVersions,
             duplicateVersions,
             unexpectedVersions,
+            ledger.Errors,
+            parityMismatches,
             missingPaths,
             missingChecks,
             failedChecks,
@@ -943,9 +1254,10 @@ public static class DataAgentV3ClosureValidator
 }
 ```
 
-The `duplicateVersions` threshold is `> 2` because each valid version appears
-once in the manifest and once in the ledger. Tests must catch a duplicate in
-either input.
+Duplicate detection is per source: the manifest, milestone inventory, and
+structured ledger table must each contain every expected version exactly once.
+Acceptance also requires zero ledger parse errors and zero field-level parity
+mismatches across all 29 manifest/table pairs.
 
 - [ ] **Step 5: Run manifest tests and verify GREEN**
 
@@ -981,6 +1293,8 @@ static DataAgentV3ClosureResult AcceptedClosure() => new(
     MissingMilestoneVersions: [],
     DuplicateMilestoneVersions: [],
     UnexpectedMilestoneVersions: [],
+    LedgerParseErrors: [],
+    LedgerManifestParityMismatches: [],
     MissingEvidencePaths: [],
     MissingRequiredCheckNames: [],
     FailedRequiredCheckNames: [],
@@ -1034,6 +1348,8 @@ public static DataAgentV3FinalReadinessFreeze Build(DataAgentV3ClosureResult clo
     int unexpectedCount =
         closure.UnexpectedMilestoneVersions.Count +
         closure.UnexpectedV4CheckNames.Count +
+        closure.LedgerParseErrors.Count +
+        closure.LedgerManifestParityMismatches.Count +
         closure.AuthorityExpansionCount;
 
     return new DataAgentV3FinalReadinessFreeze(
@@ -1162,6 +1478,7 @@ string v3Ledger = File.Exists(v3LedgerPath) ? File.ReadAllText(v3LedgerPath) : s
 string readinessScript = File.Exists(readinessScriptPath) ? File.ReadAllText(readinessScriptPath) : string.Empty;
 
 IReadOnlyList<DataAgentV3MilestoneEvidence> v3Manifest = DataAgentV3ClosureManifest.CreateDefault();
+DataAgentV3LedgerParseResult parsedV3Ledger = DataAgentV3ClosureManifest.ParseLedger(v3Ledger);
 IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
     .SelectMany(item => item.RequiredEvidencePaths)
     .Where(path => File.Exists(Path.Combine(v328RepoRoot, path.Replace('/', Path.DirectorySeparatorChar))))
@@ -1170,7 +1487,7 @@ IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
 DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
     v3Manifest,
     checks.ToArray(),
-    DataAgentV3ClosureManifest.ParseLedgerVersions(v3Ledger),
+    parsedV3Ledger,
     DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript),
     existingV3EvidencePaths,
     DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount);
@@ -1218,6 +1535,9 @@ LangGraphRuntimeReadinessContractPresent
 GraphHandshakeOperatorEvidencePackPresent
 GraphHandshakeRealLangGraphManualShadowIntegrationPresent
 GraphHandshakeRealLangGraphManualShadowContextBudgetPresent
+DataAgentV3LedgerParseResult
+ParseLedger
+LedgerManifestParityMismatches
 ```
 
 Update V3.28 static markers from `110` to `111` and add the six failure-count
@@ -1496,9 +1816,10 @@ verified, and all acceptance checks above remain green.
 - **Count consistency:** V3 pre-freeze is `111/95`; V3.28 makes `112/96`; V4.0
   makes `113/97`; V4.1 makes `114/98`.
 - **Type consistency:** `DataAgentV3ClosureManifest.CreateDefault`,
+  `DataAgentV3ClosureManifest.ParseLedger`, `DataAgentV3LedgerParseResult`,
   `DataAgentV3ClosureValidator.Validate`, `DataAgentV3ClosureResult`, and
   `DataAgentV3FinalReadinessFreezeBuilder.Build(DataAgentV3ClosureResult)` use
-  the same signatures throughout the plan.
+  the same structured signatures throughout Tasks 3-5.
 - **No hidden future commitment:** ChatBI has no assigned future version.
 - **No incomplete markers:** Every implementation task names exact files, tests,
   commands, expected failures, minimal implementation, and commit boundary.
