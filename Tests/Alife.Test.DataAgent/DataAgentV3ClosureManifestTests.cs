@@ -263,6 +263,21 @@ public sealed partial class DataAgentV3ClosureManifestTests
     public void ParseLedgerRejectsMalformedDocument(string ledger) =>
         Assert.That(DataAgentV3ClosureManifest.ParseLedger(ledger).Errors, Is.Not.Empty);
 
+    [TestCase("milestone=v3.29")]
+    [TestCase("milestone=v3.04")]
+    public void ParseLedgerRejectsAnyMilestoneShapedMarkerOutsideInventoryAndValidatorFailsClosed(string marker)
+    {
+        DataAgentV3LedgerParseResult parsed = DataAgentV3ClosureManifest.ParseLedger($"{ReadRealLedger()}\n{marker}");
+        DataAgentV3ClosureResult closure = ValidateFixture(CompleteFixture() with { Ledger = parsed });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsed.Errors, Is.Not.Empty);
+            Assert.That(parsed.Errors, Has.None.Contains(marker));
+            Assert.That(closure.Accepted, Is.False);
+        });
+    }
+
     [Test]
     public void ParseLedgerBoundsMalformedDocumentErrorsAndValidatorRejectsIt()
     {
@@ -382,6 +397,24 @@ public sealed partial class DataAgentV3ClosureManifestTests
             Assert.That(duplicateStatic.Accepted, Is.False);
             Assert.That(operatorResult.OperatorEvidencePackPresent, Is.False);
             Assert.That(operatorResult.Accepted, Is.False);
+        });
+    }
+
+    [Test]
+    public void ValidatorRejectsFailedSnapshotOnlyCoreCheck()
+    {
+        Fixture fixture = CompleteFixture();
+        int baselineIndex = fixture.DynamicChecks.FindIndex(check => check.Name.StartsWith("BaselineCheck", StringComparison.Ordinal));
+        string baselineName = fixture.DynamicChecks[baselineIndex].Name;
+        List<DataAgentReadinessCheck> failed = [.. fixture.DynamicChecks];
+        failed[baselineIndex] = failed[baselineIndex] with { Passed = false };
+
+        DataAgentV3ClosureResult result = ValidateFixture(fixture with { DynamicChecks = failed });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.FailedCoreCheckNames, Does.Contain(baselineName));
+            Assert.That(result.Accepted, Is.False);
         });
     }
 

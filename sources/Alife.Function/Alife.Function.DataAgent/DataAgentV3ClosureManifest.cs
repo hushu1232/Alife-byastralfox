@@ -49,6 +49,7 @@ public sealed record DataAgentV3ClosureResult(
     IReadOnlyList<string> MissingEvidencePaths,
     IReadOnlyList<string> MissingRequiredCheckNames,
     IReadOnlyList<string> FailedRequiredCheckNames,
+    IReadOnlyList<string> FailedCoreCheckNames,
     IReadOnlyList<string> DuplicateRequiredCheckNames,
     IReadOnlyList<string> UnexpectedV4CheckNames,
     IReadOnlyList<string> LedgerParseErrors,
@@ -266,7 +267,7 @@ public static class DataAgentV3ClosureManifest
                 for (int index = 0; index < lines.Length; index++)
                 {
                     if (errors.IsTruncated) break;
-                    if ((index < start || index > end) && Regex.IsMatch(lines[index], MilestonePattern, RegexOptions.CultureInvariant))
+                    if ((index < start || index > end) && lines[index].TrimStart().StartsWith("milestone=", StringComparison.Ordinal))
                     {
                         errors.Add($"Milestone marker at line {index + 1} is outside the inventory.");
                     }
@@ -456,6 +457,8 @@ public static class DataAgentV3ClosureValidator
         string[] failedRequired = requiredDynamic.Where(name =>
                 dynamicEntries.Where(check => check.Name == name).Any(check => !check.Passed))
             .Distinct(StringComparer.Ordinal).ToArray();
+        string[] failedCore = dynamicEntries.Where(check => !check.Passed)
+            .Select(check => check.Name).Distinct(StringComparer.Ordinal).ToArray();
         string[] duplicateRequired = DuplicateNames(dynamicNames)
             .Concat(DuplicateNames(staticNames)).Distinct(StringComparer.Ordinal).ToArray();
         string[] unexpectedV4 = dynamicNames.Concat(staticNames)
@@ -483,7 +486,7 @@ public static class DataAgentV3ClosureValidator
         bool coreCountMatches = MatchesFrozenInventory(dynamicNames, snapshot.ExpectedCoreCheckNames);
 
         bool accepted = missingMilestones.Length == 0 && duplicateMilestones.Length == 0 && unexpectedMilestones.Length == 0 &&
-            missingPaths.Length == 0 && missingRequired.Length == 0 && failedRequired.Length == 0 && duplicateRequired.Length == 0 &&
+            missingPaths.Length == 0 && missingRequired.Length == 0 && failedRequired.Length == 0 && failedCore.Length == 0 && duplicateRequired.Length == 0 &&
             unexpectedV4.Length == 0 && ledger.Errors.Count == 0 && parityMismatches.Count == 0 && authorityExpansionCount == 0 &&
             operatorPackPresent && staticCountMatches && coreCountMatches;
 
@@ -497,6 +500,7 @@ public static class DataAgentV3ClosureValidator
             missingPaths,
             missingRequired,
             failedRequired,
+            failedCore,
             duplicateRequired,
             unexpectedV4,
             ledger.Errors.ToArray(),
