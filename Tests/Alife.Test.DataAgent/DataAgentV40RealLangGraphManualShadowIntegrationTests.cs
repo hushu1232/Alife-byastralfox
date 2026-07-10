@@ -660,6 +660,8 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(result.StandardOutput, Does.Contain("handshake_validated=true"));
             Assert.That(result.StandardOutput, Does.Not.Contain("accepted"));
             Assert.That(result.StandardOutput, Does.Not.Contain(outputDirectory));
+            Assert.That(server.HandshakeRequestContentLength, Is.GreaterThan(0));
+            Assert.That(server.HandshakeRequestBodyBytesDrained, Is.EqualTo(server.HandshakeRequestContentLength));
             Assert.That(File.Exists(artifactPath), Is.True);
             Assert.That(propertyNames, Does.Contain("handshake_validated"));
             Assert.That(propertyNames, Does.Not.Contain("source_baseline"));
@@ -1049,6 +1051,8 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         readonly TcpListener listener;
         readonly string handshakeBody;
         readonly Task serverTask;
+        int handshakeRequestContentLength;
+        int handshakeRequestBodyBytesDrained;
         bool disposed;
 
         public ManualShadowLoopbackServer(string handshakeBody)
@@ -1062,6 +1066,12 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         }
 
         public string BaseUri { get; }
+
+        public int HandshakeRequestContentLength =>
+            System.Threading.Volatile.Read(ref handshakeRequestContentLength);
+
+        public int HandshakeRequestBodyBytesDrained =>
+            System.Threading.Volatile.Read(ref handshakeRequestBodyBytesDrained);
 
         public void Dispose()
         {
@@ -1102,8 +1112,19 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
                     using (client)
                     using (NetworkStream stream = client.GetStream())
                     {
-                        string request = await ReadHeadersAsync(stream);
-                        string body = request.Contains(" /handshake ", StringComparison.Ordinal)
+                        RequestInfo request = await ReadRequestAsync(stream);
+                        bool isHandshakeRequest = request.Headers.Contains(" /handshake ", StringComparison.Ordinal);
+                        if (isHandshakeRequest)
+                        {
+                            System.Threading.Volatile.Write(
+                                ref handshakeRequestContentLength,
+                                request.ContentLength);
+                            System.Threading.Volatile.Write(
+                                ref handshakeRequestBodyBytesDrained,
+                                request.BodyBytesDrained);
+                        }
+
+                        string body = isHandshakeRequest
                             ? handshakeBody
                             : """{"healthy":true}""";
 
@@ -1122,21 +1143,78 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             }
         }
 
-        static async Task<string> ReadHeadersAsync(NetworkStream stream)
+        static async Task<RequestInfo> ReadRequestAsync(NetworkStream stream)
         {
             byte[] buffer = new byte[4096];
-            StringBuilder builder = new();
-            while (builder.ToString().Contains("\r\n\r\n", StringComparison.Ordinal) == false)
+            List<byte> requestBytes = [];
+            int headerEndIndex = -1;
+            while (headerEndIndex < 0)
             {
                 int read = await stream.ReadAsync(buffer);
                 if (read <= 0)
                     break;
 
-                builder.Append(Encoding.ASCII.GetString(buffer, 0, read));
+                for (int index = 0; index < read; index++)
+                    requestBytes.Add(buffer[index]);
+
+                headerEndIndex = IndexOfHeaderTerminator(requestBytes);
             }
 
-            return builder.ToString();
+            if (headerEndIndex < 0)
+                return new RequestInfo(Encoding.ASCII.GetString(requestBytes.ToArray()), 0, 0);
+
+            int headerByteCount = headerEndIndex + 4;
+            string headers = Encoding.ASCII.GetString(requestBytes.GetRange(0, headerByteCount).ToArray());
+            int contentLength = ParseContentLength(headers);
+            int bodyBytesAlreadyRead = Math.Min(contentLength, Math.Max(0, requestBytes.Count - headerByteCount));
+            int bodyBytesDrained = bodyBytesAlreadyRead;
+
+            while (bodyBytesDrained < contentLength)
+            {
+                int remaining = contentLength - bodyBytesDrained;
+                int read = await stream.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, remaining)));
+                if (read <= 0)
+                    break;
+
+                bodyBytesDrained += read;
+            }
+
+            return new RequestInfo(headers, contentLength, bodyBytesDrained);
         }
+
+        static int IndexOfHeaderTerminator(IReadOnlyList<byte> bytes)
+        {
+            for (int index = 0; index <= bytes.Count - 4; index++)
+            {
+                if (bytes[index] == '\r' &&
+                    bytes[index + 1] == '\n' &&
+                    bytes[index + 2] == '\r' &&
+                    bytes[index + 3] == '\n')
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        static int ParseContentLength(string headers)
+        {
+            foreach (string line in headers.Split("\r\n", StringSplitOptions.None))
+            {
+                const string prefix = "Content-Length:";
+                if (line.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                    int.TryParse(line[prefix.Length..].Trim(), out int contentLength) &&
+                    contentLength > 0)
+                {
+                    return contentLength;
+                }
+            }
+
+            return 0;
+        }
+
+        readonly record struct RequestInfo(string Headers, int ContentLength, int BodyBytesDrained);
     }
 
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
