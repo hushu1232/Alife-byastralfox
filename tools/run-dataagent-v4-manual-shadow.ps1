@@ -124,11 +124,145 @@ function Invoke-JsonRequest {
     Invoke-WebRequest @parameters
 }
 
+function Get-ManualShadowJsonProperty {
+    param(
+        [pscustomobject]$JsonObject,
+        [string[]]$Names
+    )
+
+    foreach ($name in $Names) {
+        $property = @($JsonObject.PSObject.Properties | Where-Object { $_.Name -ceq $name })
+        if ($property.Count -gt 0) {
+            return $property[0]
+        }
+    }
+
+    return $null
+}
+
+function Get-ManualShadowJsonProperties {
+    param(
+        [pscustomobject]$JsonObject,
+        [string[]]$Names
+    )
+
+    $matches = @()
+    foreach ($name in $Names) {
+        $matches += @($JsonObject.PSObject.Properties | Where-Object { $_.Name -ceq $name })
+    }
+
+    return $matches
+}
+
+function Assert-ManualShadowBooleanMarker {
+    param(
+        [pscustomobject]$JsonObject,
+        [string[]]$Names,
+        [bool]$Expected,
+        [bool]$Required = $true
+    )
+
+    $properties = @(Get-ManualShadowJsonProperties -JsonObject $JsonObject -Names $Names)
+    if ($properties.Count -eq 0) {
+        if ($Required) {
+            throw "manual_shadow_response_rejected"
+        }
+
+        return
+    }
+
+    foreach ($property in $properties) {
+        if (($property.Value -is [bool]) -eq $false) {
+            throw "manual_shadow_response_rejected"
+        }
+
+        if ([bool]$property.Value -ne $Expected) {
+            throw "manual_shadow_response_rejected"
+        }
+    }
+}
+
+function Assert-ManualShadowForbiddenAuthorityClaims {
+    param([pscustomobject]$JsonObject)
+
+    $property = Get-ManualShadowJsonProperty `
+        -JsonObject $JsonObject `
+        -Names @("forbidden_authority_claims", "ForbiddenAuthorityClaims")
+
+    if ($null -eq $property) {
+        return
+    }
+
+    if ($null -eq $property.Value) {
+        return
+    }
+
+    if ($property.Value -is [array]) {
+        if ($property.Value.Count -gt 0) {
+            throw "manual_shadow_response_rejected"
+        }
+
+        return
+    }
+
+    throw "manual_shadow_response_rejected"
+}
+
+function Assert-ManualShadowHandshakeResponse {
+    param([object]$Response)
+
+    if ($null -eq $Response) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    $content = [string]$Response.Content
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    try {
+        $json = $content | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "manual_shadow_response_rejected"
+    }
+
+    if ($null -eq $json -or $json -is [array] -or ($json -is [pscustomobject]) -eq $false) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("accepted", "Accepted") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("agent_advisory_only", "AgentAdvisoryOnly") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("harness_execution_authority", "HarnessExecutionAuthority") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("csharp_validation_authority", "CSharpValidationAuthority") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("default_result_changed", "DefaultResultChanged") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("fallback_required", "FallbackRequired") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("starts_runtime", "StartsRuntime") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("installs_dependencies", "InstallsDependencies") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("calls_sidecar", "CallsSidecar") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("stores_secrets", "StoresSecrets") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("stores_sql", "StoresSql") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("stores_hidden_context", "StoresHiddenContext") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("replay_diff_gate_passed", "ReplayDiffGatePassed") -Expected $true
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("forbidden_authority_claimed", "ForbiddenAuthorityClaimed") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("requests_visible_text", "RequestsVisibleText") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("requests_checkpoint_write", "RequestsCheckpointWrite") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("requests_sql_authority", "RequestsSqlAuthority") -Expected $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("requests_state_write", "RequestsStateWrite") -Expected $false
+
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("no_sql_authority", "NoSqlAuthority") -Expected $true -Required $false
+    Assert-ManualShadowBooleanMarker -JsonObject $json -Names @("requests_execution", "RequestsExecution") -Expected $false -Required $false
+    Assert-ManualShadowForbiddenAuthorityClaims -JsonObject $json
+
+    return $true
+}
+
 function Write-ManualShadowArtifact {
     param(
         [string]$OutputDirectory,
         [int]$HealthStatusCode,
-        [int]$HandshakeStatusCode
+        [int]$HandshakeStatusCode,
+        [bool]$HandshakeValidated = $false
     )
 
     if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
@@ -144,6 +278,7 @@ function Write-ManualShadowArtifact {
         installs_dependencies = $false
         calls_sidecar = $false
         default_result_changed = $false
+        handshake_validated = $HandshakeValidated
         health_status_code = [int]$HealthStatusCode
         handshake_status_code = [int]$HandshakeStatusCode
     }
@@ -199,14 +334,17 @@ try {
 
     $healthResponse = Invoke-JsonRequest -Method "GET" -Uri (Join-SidecarUri $base "/health") -TimeoutSeconds $timeoutSeconds
     $handshakeResponse = Invoke-JsonRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake") -Body $request -TimeoutSeconds $timeoutSeconds
+    $handshakeValidated = Assert-ManualShadowHandshakeResponse $handshakeResponse
 
     if ([string]::IsNullOrWhiteSpace($OutputDirectory) -eq $false) {
         Write-ManualShadowArtifact `
             -OutputDirectory $OutputDirectory `
             -HealthStatusCode ([int]$healthResponse.StatusCode) `
-            -HandshakeStatusCode ([int]$handshakeResponse.StatusCode)
+            -HandshakeStatusCode ([int]$handshakeResponse.StatusCode) `
+            -HandshakeValidated $handshakeValidated
     }
 
+    Write-Output "handshake_validated=true"
     Write-Output "PASS manual_shadow"
     exit 0
 }

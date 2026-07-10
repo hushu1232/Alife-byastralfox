@@ -59,6 +59,8 @@ powershell -ExecutionPolicy Bypass -File tools\run-dataagent-v4-manual-shadow.ps
 
 The optional JSON artifact intentionally uses a minimal marker schema and does not include `source_baseline` or replay identifiers. The C# formatter and readiness detail carry `source_baseline=v3.28`; the optional harness artifact stays small and avoids storing hidden context or local paths.
 
+The manual harness does not execute the replay diff itself. It fails closed unless the operator-started runtime response includes `replay_diff_gate_passed=true` as explicit manual gate evidence, together with the safe advisory and authority markers. Missing or unsafe markers preserve fallback and do not imply any automatic production switch.
+
 ## When To Run Real LangGraph
 
 Run the real LangGraph manual shadow only when all of these are true:

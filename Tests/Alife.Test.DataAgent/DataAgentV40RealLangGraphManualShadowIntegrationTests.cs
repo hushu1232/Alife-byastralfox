@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Alife.Function.DataAgent;
@@ -461,6 +463,145 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [TestCase("")]
+    [TestCase("{not-json")]
+    [TestCase("[]")]
+    [TestCase("""{"accepted":true}""")]
+    public void ManualHarnessRejectsInvalidHandshakeJsonOrSchema(string handshakeBody)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string escapedHandshakeBody = EscapePowerShellSingleQuotedString(handshakeBody);
+        string harness = BuildPowerShellFunctionHarness(scriptPath, $$"""
+        $response = [pscustomobject]@{
+            StatusCode = 200
+            Content = '{{escapedHandshakeBody}}'
+        }
+
+        try {
+            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Write-Output "PASS manual_shadow"
+            exit 0
+        }
+        catch {
+            $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+            Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
+            exit 1
+        }
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            if (string.IsNullOrEmpty(handshakeBody) == false)
+                Assert.That(result.StandardOutput, Does.Not.Contain(handshakeBody));
+        });
+    }
+
+    [TestCase("requests_visible_text", true)]
+    [TestCase("RequestsVisibleText", true)]
+    [TestCase("requests_checkpoint_write", true)]
+    [TestCase("RequestsCheckpointWrite", true)]
+    [TestCase("requests_sql_authority", true)]
+    [TestCase("RequestsSqlAuthority", true)]
+    [TestCase("requests_state_write", true)]
+    [TestCase("RequestsStateWrite", true)]
+    [TestCase("calls_sidecar", true)]
+    [TestCase("CallsSidecar", true)]
+    [TestCase("default_result_changed", true)]
+    [TestCase("DefaultResultChanged", true)]
+    [TestCase("stores_secrets", true)]
+    [TestCase("StoresSecrets", true)]
+    [TestCase("stores_sql", true)]
+    [TestCase("StoresSql", true)]
+    [TestCase("stores_hidden_context", true)]
+    [TestCase("StoresHiddenContext", true)]
+    [TestCase("no_sql_authority", false)]
+    [TestCase("NoSqlAuthority", false)]
+    public void ManualHarnessRejectsForbiddenAuthorityClaims(string propertyName, bool value)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string handshakeBody = NewSafeManualHandshakeResponseJson((propertyName, value));
+        string escapedHandshakeBody = EscapePowerShellSingleQuotedString(handshakeBody);
+        string harness = BuildPowerShellFunctionHarness(scriptPath, $$"""
+        $response = [pscustomobject]@{
+            StatusCode = 200
+            Content = '{{escapedHandshakeBody}}'
+        }
+
+        try {
+            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Write-Output "PASS manual_shadow"
+            exit 0
+        }
+        catch {
+            $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+            Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
+            exit 1
+        }
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(propertyName));
+            Assert.That(result.StandardOutput, Does.Not.Contain(handshakeBody));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessPassesOnlyAfterHandshakeResponseIsValidated()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string outputDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v40-manual-shadow", Guid.NewGuid().ToString("N"));
+
+        using ManualShadowLoopbackServer server = new(NewSafeManualHandshakeResponseJson());
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            "-BaseUri",
+            server.BaseUri,
+            "-OutputDirectory",
+            outputDirectory,
+            "-TimeoutMs",
+            "5000");
+
+        string artifactPath = Path.Combine(outputDirectory, "dataagent-v4.0-real-langgraph-manual-shadow.json");
+        Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardOutput + result.StandardError);
+        Assert.That(File.Exists(artifactPath), Is.True, result.StandardOutput + result.StandardError);
+
+        string artifact = File.ReadAllText(artifactPath);
+        using JsonDocument document = JsonDocument.Parse(artifact);
+        string[] propertyNames = document.RootElement.EnumerateObject().Select(property => property.Name).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.StandardOutput, Does.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Contain("handshake_validated=true"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("accepted"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(outputDirectory));
+            Assert.That(File.Exists(artifactPath), Is.True);
+            Assert.That(propertyNames, Does.Contain("handshake_validated"));
+            Assert.That(propertyNames, Does.Not.Contain("source_baseline"));
+            Assert.That(propertyNames, Does.Not.Contain("source_replay_id"));
+            foreach (JsonProperty property in document.RootElement.EnumerateObject())
+            {
+                bool validType = property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False ||
+                    property.Value.ValueKind == JsonValueKind.Number && property.Value.TryGetInt32(out _);
+                Assert.That(validType, Is.True, $"{property.Name} must be bool or int.");
+            }
+        });
+    }
+
     static void AssertBoundaryViolationFallback(DataAgentRealLangGraphManualShadowResult result)
     {
         Assert.Multiple(() =>
@@ -602,6 +743,39 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
+    static string NewSafeManualHandshakeResponseJson(params (string Name, object Value)[] overrides)
+    {
+        Dictionary<string, object> response = new(StringComparer.Ordinal)
+        {
+            ["accepted"] = true,
+            ["agent_advisory_only"] = true,
+            ["harness_execution_authority"] = true,
+            ["csharp_validation_authority"] = true,
+            ["default_result_changed"] = false,
+            ["fallback_required"] = true,
+            ["starts_runtime"] = false,
+            ["installs_dependencies"] = false,
+            ["calls_sidecar"] = false,
+            ["stores_secrets"] = false,
+            ["stores_sql"] = false,
+            ["stores_hidden_context"] = false,
+            ["replay_diff_gate_passed"] = true,
+            ["forbidden_authority_claimed"] = false,
+            ["requests_visible_text"] = false,
+            ["requests_checkpoint_write"] = false,
+            ["requests_sql_authority"] = false,
+            ["requests_state_write"] = false,
+            ["no_sql_authority"] = true
+        };
+
+        foreach ((string name, object value) in overrides)
+        {
+            response[name] = value;
+        }
+
+        return JsonSerializer.Serialize(response);
+    }
+
     static DataAgentRealLangGraphManualShadowResult NewDirectResult(
         string reasonCode = "safe_reason",
         string sourceReplayId = "safe_replay",
@@ -732,6 +906,101 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             DependenciesInstalledByAlife: false,
             SidecarCalledByAlife: false,
             Advisory: response);
+    }
+
+    sealed class ManualShadowLoopbackServer : IDisposable
+    {
+        readonly TcpListener listener;
+        readonly string handshakeBody;
+        readonly Task serverTask;
+        bool disposed;
+
+        public ManualShadowLoopbackServer(string handshakeBody)
+        {
+            this.handshakeBody = handshakeBody;
+            listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            BaseUri = $"http://127.0.0.1:{port}";
+            serverTask = Task.Run(ServeAsync);
+        }
+
+        public string BaseUri { get; }
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            disposed = true;
+            listener.Stop();
+            try
+            {
+                serverTask.Wait(TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+            }
+        }
+
+        async Task ServeAsync()
+        {
+            while (disposed == false)
+            {
+                TcpClient client;
+                try
+                {
+                    client = await listener.AcceptTcpClientAsync();
+                }
+                catch (SocketException) when (disposed)
+                {
+                    return;
+                }
+                catch (ObjectDisposedException) when (disposed)
+                {
+                    return;
+                }
+
+                _ = Task.Run(async () =>
+                {
+                    using (client)
+                    using (NetworkStream stream = client.GetStream())
+                    {
+                        string request = await ReadHeadersAsync(stream);
+                        string body = request.Contains(" /handshake ", StringComparison.Ordinal)
+                            ? handshakeBody
+                            : """{"healthy":true}""";
+
+                        byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+                        byte[] headerBytes = Encoding.ASCII.GetBytes(
+                            "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/json\r\n" +
+                            $"Content-Length: {bodyBytes.Length}\r\n" +
+                            "Connection: close\r\n" +
+                            "\r\n");
+
+                        await stream.WriteAsync(headerBytes);
+                        await stream.WriteAsync(bodyBytes);
+                    }
+                });
+            }
+        }
+
+        static async Task<string> ReadHeadersAsync(NetworkStream stream)
+        {
+            byte[] buffer = new byte[4096];
+            StringBuilder builder = new();
+            while (builder.ToString().Contains("\r\n\r\n", StringComparison.Ordinal) == false)
+            {
+                int read = await stream.ReadAsync(buffer);
+                if (read <= 0)
+                    break;
+
+                builder.Append(Encoding.ASCII.GetString(buffer, 0, read));
+            }
+
+            return builder.ToString();
+        }
     }
 
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
