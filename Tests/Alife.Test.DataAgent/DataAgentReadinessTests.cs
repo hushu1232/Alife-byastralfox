@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(97));
+            Assert.That(checks, Has.Count.EqualTo(98));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -341,6 +341,24 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_secrets=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_sql=false"));
             Assert.That(graphHandshakeRealLangGraphManualShadowIntegrationCheck.Detail, Does.Contain("stores_hidden_context=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"));
+            DataAgentReadinessCheck graphHandshakeV41ContextBudgetCheck =
+                checks.Single(check => check.Name == "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent");
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("manual_shadow_context_budget=true"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("source_baseline=v4.0"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("max_envelope_chars=1200"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("max_layer_chars=400"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("required_layer_count=3"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("agent_advisory_only=true"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("harness_execution_authority=true"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("csharp_validation_authority=true"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("default_result_changed=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("starts_runtime=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("installs_dependencies=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("calls_sidecar=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("stores_secrets=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("stores_sql=false"));
+            Assert.That(graphHandshakeV41ContextBudgetCheck.Detail, Does.Contain("stores_hidden_context=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEndToEndChainContractPresent"));
             DataAgentReadinessCheck dataAgentChainContractCheck = checks.Single(check => check.Name == "DataAgentEndToEndChainContractPresent");
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_boundary=true"));
@@ -475,7 +493,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 112 required passed, 0 required missing"
+                "  Summary: 113 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -540,7 +558,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 112"));
+            Assert.That(script, Does.Contain("$expectedRequired = 113"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));
