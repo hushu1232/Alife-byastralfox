@@ -679,14 +679,14 @@ public void ValidatorRejectsLedgerManifestFieldParityDrift()
     Assert.Multiple(() =>
     {
         Assert.That(result.Accepted, Is.False);
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.0:EvidenceKind"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.1:Purpose"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.2:EvidencePath"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.3:ChangesDefaultRuntime"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.4:GrantsSidecarAuthority"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.5:RequiredGateLabel"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.7:RequiredGateLabel"));
-        Assert.That(result.LedgerManifestParityMismatches, Does.Contain("v3.28:RequiredGateLabel"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.0:EvidenceKind"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.1:Purpose"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.2:EvidencePath"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.3:ChangesDefaultRuntime"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.4:GrantsSidecarAuthority"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.5:RequiredGateLabel"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.7:RequiredGateLabel"));
+        Assert.That(result.LedgerParityMismatches, Does.Contain("v3.28:RequiredGateLabel"));
     });
 }
 
@@ -755,7 +755,10 @@ public void ValidatorRejectsMissingEvidencePathAndCountDrift()
     int baselineIndex = coreDrift.Checks.FindLastIndex(check => check.Name.StartsWith("BaselineCheck", StringComparison.Ordinal));
     coreDrift.Checks.RemoveAt(baselineIndex);
     DataAgentV3ClosureResult coreDriftResult = Validate(coreDrift);
-    DataAgentV3ClosureResult staticDriftResult = Validate(CompleteFixture(), staticRequiredCount: 110);
+    ClosureFixture staticDrift = CompleteFixture();
+    DataAgentV3ClosureResult staticDriftResult = Validate(
+        staticDrift,
+        staticCheckNames: staticDrift.StaticCheckNames.Take(110).ToArray());
 
     Assert.Multiple(() =>
     {
@@ -815,9 +818,8 @@ static ClosureFixture CompleteFixture()
 {
     IReadOnlyList<DataAgentV3MilestoneEvidence> manifest = DataAgentV3ClosureManifest.CreateDefault();
     DataAgentV3LedgerParseResult ledger = DataAgentV3ClosureManifest.ParseLedger(ReadLedger());
-    List<DataAgentReadinessCheck> checks = manifest
-        .SelectMany(item => item.RequiredDynamicCheckNames)
-        .Distinct(StringComparer.Ordinal)
+    DataAgentV3FrozenReadinessSnapshot snapshot = CreateExplicitV3Snapshot();
+    List<DataAgentReadinessCheck> checks = ExpectedCoreCheckNames()
         .Select(name => new DataAgentReadinessCheck(
             name,
             true,
@@ -826,41 +828,54 @@ static ClosureFixture CompleteFixture()
                 : "ready=true"))
         .ToList();
 
-    for (int index = checks.Count; index < DataAgentV3ClosureManifest.ExpectedFrozenCoreCount; index++)
-        checks.Add(new DataAgentReadinessCheck($"BaselineCheck{index:D3}", true, "ready=true"));
-
     return new ClosureFixture(
+        snapshot,
         manifest,
         checks,
         ledger,
-        manifest.SelectMany(item => item.RequiredStaticCheckNames).ToArray(),
-        manifest.SelectMany(item => item.RequiredEvidencePaths).ToHashSet(StringComparer.Ordinal),
-        DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount);
+        ExpectedStaticCheckNames(),
+        manifest.SelectMany(item => item.RequiredEvidencePaths).ToHashSet(StringComparer.Ordinal));
 }
 
 sealed record ClosureFixture(
+    DataAgentV3FrozenReadinessSnapshot Snapshot,
     IReadOnlyList<DataAgentV3MilestoneEvidence> Manifest,
     List<DataAgentReadinessCheck> Checks,
     DataAgentV3LedgerParseResult Ledger,
     IReadOnlyList<string> StaticCheckNames,
-    IReadOnlySet<string> ExistingEvidencePaths,
-    int StaticRequiredCount);
+    IReadOnlySet<string> ExistingEvidencePaths);
 
 static DataAgentV3ClosureResult Validate(
     ClosureFixture fixture,
     IReadOnlyCollection<DataAgentV3MilestoneEvidence>? manifest = null,
     DataAgentV3LedgerParseResult? ledger = null,
     IReadOnlyCollection<string>? staticCheckNames = null,
-    IReadOnlySet<string>? existingEvidencePaths = null,
-    int? staticRequiredCount = null) =>
+    IReadOnlySet<string>? existingEvidencePaths = null) =>
     DataAgentV3ClosureValidator.Validate(
+        fixture.Snapshot,
         manifest ?? fixture.Manifest,
         fixture.Checks,
         ledger ?? fixture.Ledger,
         staticCheckNames ?? fixture.StaticCheckNames,
-        existingEvidencePaths ?? fixture.ExistingEvidencePaths,
-        staticRequiredCount ?? fixture.StaticRequiredCount);
+        existingEvidencePaths ?? fixture.ExistingEvidencePaths);
 ```
+
+The fixture's `CreateExplicitV3Snapshot` must declare separate, concrete 111-name
+static and 95-name core inventories (including named baseline entries), then
+construct `DataAgentV3FrozenReadinessSnapshot` from those expected identities.
+Do not derive that snapshot from the actual inputs passed to `Validate`. Add
+construction tests for exact counts, blank/duplicate identities, both required
+static names, all required V3 core names, and exclusion of both V4-only names.
+Mutate actual static/core inputs with unknown substitutions, a V4 replacement,
+and duplicates; each must yield `Accepted=false` even when a count remains 111/95.
+Also assert `ExpectedVersions` and `V4OnlyCheckNames` cannot be downcast to an
+array or `HashSet<string>`.
+
+Bound `ParseLedger` for this fixed 29-entry local ledger with documented
+`MaxLedgerChars`, `MaxLedgerLines`, and `MaxLedgerRowChars`; test oversize text,
+too many lines, and an oversized row. Diagnostics must remain capped and never
+echo the supplied ledger. Test `ArgumentNullException` contracts for every
+public `ParseLedger` and `Validate` input.
 
 - [ ] **Step 2: Run tests and verify RED**
 
@@ -920,7 +935,7 @@ public sealed record DataAgentV3ClosureResult(
     IReadOnlyList<string> DuplicateMilestoneVersions,
     IReadOnlyList<string> UnexpectedMilestoneVersions,
     IReadOnlyList<string> LedgerParseErrors,
-    IReadOnlyList<string> LedgerManifestParityMismatches,
+    IReadOnlyList<string> LedgerParityMismatches,
     IReadOnlyList<string> MissingEvidencePaths,
     IReadOnlyList<string> MissingRequiredCheckNames,
     IReadOnlyList<string> FailedRequiredCheckNames,
@@ -1294,7 +1309,7 @@ static DataAgentV3ClosureResult AcceptedClosure() => new(
     DuplicateMilestoneVersions: [],
     UnexpectedMilestoneVersions: [],
     LedgerParseErrors: [],
-    LedgerManifestParityMismatches: [],
+    LedgerParityMismatches: [],
     MissingEvidencePaths: [],
     MissingRequiredCheckNames: [],
     FailedRequiredCheckNames: [],
@@ -1349,7 +1364,7 @@ public static DataAgentV3FinalReadinessFreeze Build(DataAgentV3ClosureResult clo
         closure.UnexpectedMilestoneVersions.Count +
         closure.UnexpectedV4CheckNames.Count +
         closure.LedgerParseErrors.Count +
-        closure.LedgerManifestParityMismatches.Count +
+        closure.LedgerParityMismatches.Count +
         closure.AuthorityExpansionCount;
 
     return new DataAgentV3FinalReadinessFreeze(
@@ -1484,13 +1499,18 @@ IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
     .Where(path => File.Exists(Path.Combine(v328RepoRoot, path.Replace('/', Path.DirectorySeparatorChar))))
     .ToHashSet(StringComparer.Ordinal);
 
+// Task 5 wires this only from the controlled frozen identity source, never
+// from the actual static/dynamic inventories collected below.
+DataAgentV3FrozenReadinessSnapshot v3Snapshot =
+    DataAgentV3ClosureReadinessSnapshotSource.LoadControlledV3Snapshot();
+
 DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
+    v3Snapshot,
     v3Manifest,
     checks.ToArray(),
     parsedV3Ledger,
     DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript),
-    existingV3EvidencePaths,
-    DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount);
+    existingV3EvidencePaths);
 
 DataAgentV3FinalReadinessFreeze v328Freeze =
     DataAgentV3FinalReadinessFreezeBuilder.Build(v3Closure);
@@ -1537,7 +1557,7 @@ GraphHandshakeRealLangGraphManualShadowIntegrationPresent
 GraphHandshakeRealLangGraphManualShadowContextBudgetPresent
 DataAgentV3LedgerParseResult
 ParseLedger
-LedgerManifestParityMismatches
+LedgerParityMismatches
 ```
 
 Update V3.28 static markers from `110` to `111` and add the six failure-count

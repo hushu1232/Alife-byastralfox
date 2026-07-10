@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+using System.Collections.Immutable;
 using System.Text.RegularExpressions;
 
 namespace Alife.Function.DataAgent;
@@ -56,6 +58,98 @@ public sealed record DataAgentV3ClosureResult(
     bool StaticCountMatches,
     bool CoreCountMatches);
 
+/// <summary>
+/// Frozen V3 readiness identities. This is intentionally constructed by a controlled
+/// caller and is never inferred from the inventories being validated.
+/// </summary>
+public sealed class DataAgentV3FrozenReadinessSnapshot
+{
+    static readonly FrozenSet<string> RequiredStaticV3Names = new[]
+    {
+        "GraphHandshakeDevSidecarLiveSmokeHarnessPresent",
+        "LangGraphRuntimeReadinessContractPresent"
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    static readonly FrozenSet<string> RequiredCoreV3Names = new[]
+    {
+        "GraphHandshakeBoundaryPresent",
+        "GraphHandshakeDevSidecarAdapterPresent",
+        "GraphHandshakeDevSidecarProgressBridgePresent",
+        "GraphHandshakeDevSidecarStreamingTransportPresent",
+        "GraphHandshakeDevSidecarObservabilityContractPresent",
+        "DataAgentEndToEndChainContractPresent",
+        "DataAgentReplayRunbookPresent",
+        "GraphHandshakeRealLangGraphSidecarSkeletonPresent",
+        "GraphHandshakeReplayParityShadowComparisonPresent",
+        "GraphHandshakeBoundedDiagnosticsExplanationPresent",
+        "GraphHandshakeCrossModulePlannerManifestsPresent",
+        "GraphHandshakeAuthorityFallbackRegressionPresent",
+        "GraphHandshakeLangGraphLiveSmokeReadinessPresent",
+        "GraphHandshakeLangGraphManualSmokeHarnessPresent",
+        "GraphHandshakeSmokeResultArtifactFormatterPresent",
+        "GraphHandshakeReplayFixturePackPresent",
+        "GraphHandshakeShadowReplayReportPresent",
+        "GraphHandshakeManualReplayReportArtifactWriterPresent",
+        "GraphHandshakeManualArtifactIndexPresent",
+        "GraphHandshakeManualAuditBundlePresent",
+        "GraphHandshakeAgentAdvisoryContractPresent",
+        "GraphHandshakeRealLangGraphManualShadowProviderPresent",
+        "GraphHandshakeHarnessReplayDiffGatePresent",
+        "GraphHandshakeOperatorEvidencePackPresent"
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    static readonly FrozenSet<string> V4OnlyNames = new[]
+    {
+        "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
+        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public DataAgentV3FrozenReadinessSnapshot(
+        IEnumerable<string> expectedStaticCheckNames,
+        IEnumerable<string> expectedCoreCheckNames)
+    {
+        ExpectedStaticCheckNames = FreezeAndValidate(
+            expectedStaticCheckNames,
+            DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount,
+            RequiredStaticV3Names,
+            excludedNames: null,
+            nameof(expectedStaticCheckNames));
+        ExpectedCoreCheckNames = FreezeAndValidate(
+            expectedCoreCheckNames,
+            DataAgentV3ClosureManifest.ExpectedFrozenCoreCount,
+            RequiredCoreV3Names,
+            V4OnlyNames,
+            nameof(expectedCoreCheckNames));
+    }
+
+    public FrozenSet<string> ExpectedStaticCheckNames { get; }
+    public FrozenSet<string> ExpectedCoreCheckNames { get; }
+
+    static FrozenSet<string> FreezeAndValidate(
+        IEnumerable<string> names,
+        int expectedCount,
+        FrozenSet<string> requiredNames,
+        FrozenSet<string>? excludedNames,
+        string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(names);
+        string[] values = names.ToArray();
+        if (values.Length != expectedCount || values.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("The frozen readiness inventory has an invalid size or blank identity.", parameterName);
+        }
+
+        FrozenSet<string> frozen = values.ToFrozenSet(StringComparer.Ordinal);
+        if (frozen.Count != values.Length || !requiredNames.IsSubsetOf(frozen) ||
+            (excludedNames is not null && frozen.Overlaps(excludedNames)))
+        {
+            throw new ArgumentException("The frozen readiness inventory is not the required unique V3 identity set.", parameterName);
+        }
+
+        return frozen;
+    }
+}
+
 public static class DataAgentV3ClosureManifest
 {
     const string InventoryStart = "[v3_closure_milestones]";
@@ -69,16 +163,22 @@ public static class DataAgentV3ClosureManifest
     public const int ExpectedFrozenStaticRequiredCount = 111;
     public const int ExpectedFrozenCoreCount = 95;
     public const int MaxParseErrors = 32;
+    /// <summary>Maximum ledger document size for the fixed 29-entry V3 closure ledger.</summary>
+    public const int MaxLedgerChars = 32768;
+    /// <summary>Maximum physical lines accepted for the fixed 29-entry V3 closure ledger.</summary>
+    public const int MaxLedgerLines = 512;
+    /// <summary>Maximum characters in one ledger line before structured parsing.</summary>
+    public const int MaxLedgerRowChars = 4096;
     public const string ParseErrorsTruncatedSentinel = "ledger_parse_errors_truncated";
 
-    public static IReadOnlyList<string> ExpectedVersions { get; } =
-        Enumerable.Range(0, 29).Select(index => $"v3.{index}").ToArray();
+    public static ImmutableArray<string> ExpectedVersions { get; } =
+        ImmutableArray.CreateRange(Enumerable.Range(0, 29).Select(index => $"v3.{index}"));
 
-    public static IReadOnlySet<string> V4OnlyCheckNames { get; } = new HashSet<string>(StringComparer.Ordinal)
+    public static FrozenSet<string> V4OnlyCheckNames { get; } = new[]
     {
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
-    };
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     public static IReadOnlyList<DataAgentV3MilestoneEvidence> CreateDefault() =>
     [
@@ -115,14 +215,25 @@ public static class DataAgentV3ClosureManifest
 
     public static DataAgentV3LedgerParseResult ParseLedger(string ledger)
     {
+        ArgumentNullException.ThrowIfNull(ledger);
         ParseErrorAccumulator errors = new();
-        if (ledger is null)
+        if (ledger.Length > MaxLedgerChars)
         {
-            errors.Add("Ledger document is missing.");
+            errors.Add("The ledger document exceeds the allowed size.");
             return new([], [], errors.ToArray());
         }
 
         string[] lines = ledger.Split('\n').Select(line => line.TrimEnd('\r')).ToArray();
+        if (lines.Length > MaxLedgerLines)
+        {
+            errors.Add("The ledger document has too many lines.");
+            return new([], [], errors.ToArray());
+        }
+        if (lines.Any(line => line.Length > MaxLedgerRowChars))
+        {
+            errors.Add("The ledger document contains an oversized row.");
+            return new([], [], errors.ToArray());
+        }
         List<string> milestones = [];
         List<DataAgentV3LedgerEntry> entries = [];
 
@@ -143,6 +254,7 @@ public static class DataAgentV3ClosureManifest
             {
                 for (int index = start + 1; index < end; index++)
                 {
+                    if (errors.IsTruncated) break;
                     if (!Regex.IsMatch(lines[index], MilestonePattern, RegexOptions.CultureInvariant))
                     {
                         errors.Add($"Milestone inventory line {index + 1} is malformed.");
@@ -153,6 +265,7 @@ public static class DataAgentV3ClosureManifest
 
                 for (int index = 0; index < lines.Length; index++)
                 {
+                    if (errors.IsTruncated) break;
                     if ((index < start || index > end) && Regex.IsMatch(lines[index], MilestonePattern, RegexOptions.CultureInvariant))
                     {
                         errors.Add($"Milestone marker at line {index + 1} is outside the inventory.");
@@ -162,6 +275,7 @@ public static class DataAgentV3ClosureManifest
         }
 
         ValidateVersionInventory(milestones, "milestone inventory", errors);
+        if (errors.IsTruncated) return new(milestones.ToArray(), entries.ToArray(), errors.ToArray());
 
         int[] headers = FindLines(lines, EvidenceTableHeader);
         if (headers.Length != 1)
@@ -179,6 +293,7 @@ public static class DataAgentV3ClosureManifest
             {
                 for (int index = header + 2; index < lines.Length; index++)
                 {
+                    if (errors.IsTruncated) break;
                     string line = lines[index].Trim();
                     if (line.Length == 0) break;
                     DataAgentV3LedgerEntry? entry = ParseEvidenceRow(line, index + 1, errors);
@@ -273,6 +388,8 @@ public static class DataAgentV3ClosureManifest
     {
         readonly List<string> errors = [];
 
+        public bool IsTruncated => errors.Count == MaxParseErrors && errors[^1] == ParseErrorsTruncatedSentinel;
+
         public void Add(string error)
         {
             if (errors.Count < MaxParseErrors)
@@ -293,13 +410,20 @@ public static class DataAgentV3ClosureValidator
     const string OperatorCheckName = "GraphHandshakeOperatorEvidencePackPresent";
 
     public static DataAgentV3ClosureResult Validate(
+        DataAgentV3FrozenReadinessSnapshot snapshot,
         IEnumerable<DataAgentV3MilestoneEvidence> manifest,
         IEnumerable<DataAgentReadinessCheck> dynamicChecks,
         DataAgentV3LedgerParseResult ledger,
         IEnumerable<string> staticCheckNames,
-        IReadOnlySet<string> existingEvidencePaths,
-        int staticRequiredCount)
+        IReadOnlySet<string> existingEvidencePaths)
     {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(dynamicChecks);
+        ArgumentNullException.ThrowIfNull(ledger);
+        ArgumentNullException.ThrowIfNull(staticCheckNames);
+        ArgumentNullException.ThrowIfNull(existingEvidencePaths);
+
         DataAgentV3MilestoneEvidence[] manifestEntries = manifest.ToArray();
         DataAgentReadinessCheck[] dynamicEntries = dynamicChecks.ToArray();
         string[] staticNames = staticCheckNames.ToArray();
@@ -332,8 +456,8 @@ public static class DataAgentV3ClosureValidator
         string[] failedRequired = requiredDynamic.Where(name =>
                 dynamicEntries.Where(check => check.Name == name).Any(check => !check.Passed))
             .Distinct(StringComparer.Ordinal).ToArray();
-        string[] duplicateRequired = DuplicateRequiredNames(dynamicNames, requiredDynamic)
-            .Concat(DuplicateRequiredNames(staticNames, requiredStatic)).Distinct(StringComparer.Ordinal).ToArray();
+        string[] duplicateRequired = DuplicateNames(dynamicNames)
+            .Concat(DuplicateNames(staticNames)).Distinct(StringComparer.Ordinal).ToArray();
         string[] unexpectedV4 = dynamicNames.Concat(staticNames)
             .Where(DataAgentV3ClosureManifest.V4OnlyCheckNames.Contains).Distinct(StringComparer.Ordinal).ToArray();
 
@@ -355,8 +479,8 @@ public static class DataAgentV3ClosureValidator
         bool operatorPackPresent = operatorChecks.Length == 1 && operatorChecks[0].Passed &&
             operatorChecks[0].Detail.Contains("operator_evidence_pack=true", StringComparison.Ordinal) &&
             operatorChecks[0].Detail.Contains("operator_decides=true", StringComparison.Ordinal);
-        bool staticCountMatches = staticRequiredCount == DataAgentV3ClosureManifest.ExpectedFrozenStaticRequiredCount;
-        bool coreCountMatches = dynamicEntries.Length == DataAgentV3ClosureManifest.ExpectedFrozenCoreCount;
+        bool staticCountMatches = MatchesFrozenInventory(staticNames, snapshot.ExpectedStaticCheckNames);
+        bool coreCountMatches = MatchesFrozenInventory(dynamicNames, snapshot.ExpectedCoreCheckNames);
 
         bool accepted = missingMilestones.Length == 0 && duplicateMilestones.Length == 0 && unexpectedMilestones.Length == 0 &&
             missingPaths.Length == 0 && missingRequired.Length == 0 && failedRequired.Length == 0 && duplicateRequired.Length == 0 &&
@@ -365,7 +489,7 @@ public static class DataAgentV3ClosureValidator
 
         return new(
             accepted,
-            staticRequiredCount,
+            staticNames.Length,
             dynamicEntries.Length,
             missingMilestones,
             duplicateMilestones,
@@ -383,10 +507,18 @@ public static class DataAgentV3ClosureValidator
             coreCountMatches);
     }
 
-    static IEnumerable<string> DuplicateRequiredNames(IEnumerable<string> actualNames, IReadOnlyCollection<string> requiredNames) =>
+    static IEnumerable<string> DuplicateNames(IEnumerable<string> actualNames) =>
         actualNames.GroupBy(name => name, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1 && requiredNames.Contains(group.Key, StringComparer.Ordinal))
+            .Where(group => group.Count() > 1)
             .Select(group => group.Key);
+
+    static bool MatchesFrozenInventory(IEnumerable<string> actualNames, FrozenSet<string> expectedNames)
+    {
+        string[] actual = actualNames.ToArray();
+        return actual.Length == expectedNames.Count &&
+            actual.All(name => !string.IsNullOrWhiteSpace(name) && expectedNames.Contains(name)) &&
+            actual.Distinct(StringComparer.Ordinal).Count() == actual.Length;
+    }
 
     static void AddParityMismatches(DataAgentV3MilestoneEvidence manifest, DataAgentV3LedgerEntry ledger, List<string> mismatches)
     {

@@ -391,7 +391,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
         Fixture fixture = CompleteFixture();
         string path = fixture.Manifest[0].EvidencePath;
         DataAgentV3ClosureResult evidence = ValidateFixture(fixture with { EvidencePaths = fixture.EvidencePaths.Where(value => value != path).ToHashSet(StringComparer.Ordinal) });
-        DataAgentV3ClosureResult staticDrift = ValidateFixture(fixture with { StaticCount = 110 });
+        DataAgentV3ClosureResult staticDrift = ValidateFixture(fixture with { StaticNames = fixture.StaticNames.Take(110).ToArray() });
         DataAgentV3ClosureResult coreDrift = ValidateFixture(fixture with { DynamicChecks = fixture.DynamicChecks.Skip(1).ToList() });
 
         Assert.Multiple(() =>
@@ -460,24 +460,171 @@ public sealed partial class DataAgentV3ClosureManifestTests
         });
     }
 
+    [Test]
+    public void FrozenReadinessSnapshotRequiresCompleteUniqueV3Inventories()
+    {
+        string[] staticNames = ExpectedStaticCheckNames();
+        string[] coreNames = ExpectedCoreCheckNames();
+
+        DataAgentV3FrozenReadinessSnapshot snapshot = new(staticNames, coreNames);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(snapshot.ExpectedStaticCheckNames, Is.EquivalentTo(staticNames));
+            Assert.That(snapshot.ExpectedCoreCheckNames, Is.EquivalentTo(coreNames));
+            Assert.Throws<ArgumentException>(() => new DataAgentV3FrozenReadinessSnapshot(staticNames[..^1], coreNames));
+            Assert.Throws<ArgumentException>(() => new DataAgentV3FrozenReadinessSnapshot([.. staticNames.Take(110), staticNames[0]], coreNames));
+            Assert.Throws<ArgumentException>(() => new DataAgentV3FrozenReadinessSnapshot(staticNames, [.. coreNames.Take(94), coreNames[0]]));
+            Assert.Throws<ArgumentException>(() => new DataAgentV3FrozenReadinessSnapshot(
+                ["GraphHandshakeDevSidecarLiveSmokeHarnessPresent", .. Enumerable.Range(1, 110).Select(index => $"StaticBaselineCheck{index:000}")],
+                coreNames));
+            Assert.Throws<ArgumentException>(() => new DataAgentV3FrozenReadinessSnapshot(
+                staticNames,
+                ["GraphHandshakeRealLangGraphManualShadowIntegrationPresent", .. coreNames.Skip(1)]));
+        });
+    }
+
+    [Test]
+    public void ValidatorRequiresActualInventoriesToExactlyMatchFrozenSnapshot()
+    {
+        Fixture fixture = CompleteFixture();
+        string[] twoRequiredStaticNames =
+        [
+            "GraphHandshakeDevSidecarLiveSmokeHarnessPresent",
+            "LangGraphRuntimeReadinessContractPresent"
+        ];
+        string[] staticUnknown = [.. fixture.StaticNames];
+        string[] coreUnknown = fixture.DynamicChecks.Select(check => check.Name).ToArray();
+        List<DataAgentReadinessCheck> v4Replacement = [.. fixture.DynamicChecks];
+        List<DataAgentReadinessCheck> duplicateCore = [.. fixture.DynamicChecks];
+        staticUnknown[^1] = "UnknownStaticCheck";
+        coreUnknown[^1] = "UnknownCoreCheck";
+        v4Replacement[^1] = new("GraphHandshakeRealLangGraphManualShadowIntegrationPresent", true, "v4=true");
+        duplicateCore[^1] = duplicateCore[^2];
+
+        DataAgentV3ClosureResult accepted = ValidateFixture(fixture);
+        DataAgentV3ClosureResult twoStatic = ValidateFixture(fixture with { StaticNames = twoRequiredStaticNames });
+        DataAgentV3ClosureResult unknownStatic = ValidateFixture(fixture with { StaticNames = staticUnknown });
+        DataAgentV3ClosureResult unknownCore = ValidateFixture(fixture with
+        {
+            DynamicChecks = fixture.DynamicChecks.Select((check, index) => check with { Name = coreUnknown[index] }).ToList()
+        });
+        DataAgentV3ClosureResult v4 = ValidateFixture(fixture with { DynamicChecks = v4Replacement });
+        DataAgentV3ClosureResult duplicate = ValidateFixture(fixture with { DynamicChecks = duplicateCore });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(accepted.Accepted, Is.True);
+            Assert.That(twoStatic.Accepted, Is.False);
+            Assert.That(unknownStatic.Accepted, Is.False);
+            Assert.That(unknownCore.Accepted, Is.False);
+            Assert.That(v4.Accepted, Is.False);
+            Assert.That(duplicate.Accepted, Is.False);
+        });
+    }
+
+    [Test]
+    public void ExposedVersionAndV4ConfigurationCannotBeDowncastToMutableCollections()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(DataAgentV3ClosureManifest.ExpectedVersions, Is.Not.InstanceOf<Array>());
+            Assert.That(DataAgentV3ClosureManifest.ExpectedVersions, Is.Not.InstanceOf<HashSet<string>>());
+            Assert.That(DataAgentV3ClosureManifest.V4OnlyCheckNames, Is.Not.InstanceOf<Array>());
+            Assert.That(DataAgentV3ClosureManifest.V4OnlyCheckNames, Is.Not.InstanceOf<HashSet<string>>());
+        });
+    }
+
+    [TestCaseSource(nameof(OversizedLedgers))]
+    public void ParseLedgerRejectsResourceLimitViolationsWithoutEchoingInput(string ledger, string secret)
+    {
+        DataAgentV3LedgerParseResult parsed = DataAgentV3ClosureManifest.ParseLedger(ledger);
+        DataAgentV3ClosureResult closure = ValidateFixture(CompleteFixture() with { Ledger = parsed });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(parsed.Errors, Is.Not.Empty);
+            Assert.That(parsed.Errors, Has.Count.LessThanOrEqualTo(DataAgentV3ClosureManifest.MaxParseErrors));
+            Assert.That(parsed.Errors, Has.None.Contains(secret));
+            Assert.That(closure.Accepted, Is.False);
+        });
+    }
+
+    static IEnumerable<TestCaseData> OversizedLedgers()
+    {
+        yield return new TestCaseData(
+            $"oversized-chars-secret-{new string('x', DataAgentV3ClosureManifest.MaxLedgerChars)}",
+            "oversized-chars-secret") { TestName = "ParseLedgerRejectsOversizedCharacterInput" };
+        yield return new TestCaseData(
+            string.Join('\n', Enumerable.Repeat("too-many-lines-secret", DataAgentV3ClosureManifest.MaxLedgerLines + 1)),
+            "too-many-lines-secret") { TestName = "ParseLedgerRejectsTooManyLines" };
+        yield return new TestCaseData(
+            $"too-long-row-secret-{new string('x', DataAgentV3ClosureManifest.MaxLedgerRowChars)}",
+            "too-long-row-secret") { TestName = "ParseLedgerRejectsTooLongRow" };
+    }
+
+    [Test]
+    public void PublicValidationEntrypointsRejectNullArguments()
+    {
+        Fixture fixture = CompleteFixture();
+
+        Assert.Multiple(() =>
+        {
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureManifest.ParseLedger(null!));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(null!, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, null!, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, null!, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, fixture.DynamicChecks, null!, fixture.StaticNames, fixture.EvidencePaths));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, null!, fixture.EvidencePaths));
+            Assert.Throws<ArgumentNullException>(() => DataAgentV3ClosureValidator.Validate(fixture.Snapshot, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, null!));
+        });
+    }
+
     static Fixture CompleteFixture()
     {
         IReadOnlyList<DataAgentV3MilestoneEvidence> manifest = DataAgentV3ClosureManifest.CreateDefault();
-        List<DataAgentReadinessCheck> checks = manifest.SelectMany(entry => entry.RequiredDynamicCheckNames)
+        DataAgentV3FrozenReadinessSnapshot snapshot = CreateExplicitSnapshot();
+        List<DataAgentReadinessCheck> checks = ExpectedCoreCheckNames()
             .Select(name => new DataAgentReadinessCheck(name, true, name == "GraphHandshakeOperatorEvidencePackPresent" ? "operator_evidence_pack=true;operator_decides=true" : "required=true"))
             .ToList();
-        for (int index = checks.Count; index < 95; index++) checks.Add(new($"BaselineCheck{index:000}", true, "baseline=true"));
         return new(
+            snapshot,
             manifest,
             checks,
-            manifest.SelectMany(entry => entry.RequiredStaticCheckNames).ToArray(),
+            ExpectedStaticCheckNames(),
             manifest.Select(entry => entry.EvidencePath).ToHashSet(StringComparer.Ordinal),
-            ParseRealLedgerWithProductionParser(),
-            111);
+            ParseRealLedgerWithProductionParser());
     }
 
     static DataAgentV3ClosureResult ValidateFixture(Fixture fixture) => DataAgentV3ClosureValidator.Validate(
-        fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths, fixture.StaticCount);
+        fixture.Snapshot, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths);
+
+    static DataAgentV3FrozenReadinessSnapshot CreateExplicitSnapshot() =>
+        new(ExpectedStaticCheckNames(), ExpectedCoreCheckNames());
+
+    static string[] ExpectedStaticCheckNames() =>
+    [
+        "GraphHandshakeDevSidecarLiveSmokeHarnessPresent",
+        "LangGraphRuntimeReadinessContractPresent",
+        .. Enumerable.Range(1, 109).Select(index => $"StaticBaselineCheck{index:000}")
+    ];
+
+    static string[] ExpectedCoreCheckNames() =>
+    [
+        "GraphHandshakeBoundaryPresent", "GraphHandshakeDevSidecarAdapterPresent",
+        "GraphHandshakeDevSidecarProgressBridgePresent", "GraphHandshakeDevSidecarStreamingTransportPresent",
+        "GraphHandshakeDevSidecarObservabilityContractPresent", "DataAgentEndToEndChainContractPresent",
+        "DataAgentReplayRunbookPresent", "GraphHandshakeRealLangGraphSidecarSkeletonPresent",
+        "GraphHandshakeReplayParityShadowComparisonPresent", "GraphHandshakeBoundedDiagnosticsExplanationPresent",
+        "GraphHandshakeCrossModulePlannerManifestsPresent", "GraphHandshakeAuthorityFallbackRegressionPresent",
+        "GraphHandshakeLangGraphLiveSmokeReadinessPresent", "GraphHandshakeLangGraphManualSmokeHarnessPresent",
+        "GraphHandshakeSmokeResultArtifactFormatterPresent", "GraphHandshakeReplayFixturePackPresent",
+        "GraphHandshakeShadowReplayReportPresent", "GraphHandshakeManualReplayReportArtifactWriterPresent",
+        "GraphHandshakeManualArtifactIndexPresent", "GraphHandshakeManualAuditBundlePresent",
+        "GraphHandshakeAgentAdvisoryContractPresent", "GraphHandshakeRealLangGraphManualShadowProviderPresent",
+        "GraphHandshakeHarnessReplayDiffGatePresent", "GraphHandshakeOperatorEvidencePackPresent",
+        .. Enumerable.Range(1, 71).Select(index => $"BaselineCheck{index:000}")
+    ];
 
     static DataAgentV3LedgerParseResult ParseRealLedgerWithProductionParser() => DataAgentV3ClosureManifest.ParseLedger(ReadRealLedger());
     static string ReadRealLedger() => File.ReadAllText(Path.Combine(FindRepoRoot(), "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
@@ -497,10 +644,10 @@ public sealed partial class DataAgentV3ClosureManifestTests
     }
 
     sealed record Fixture(
+        DataAgentV3FrozenReadinessSnapshot Snapshot,
         IReadOnlyList<DataAgentV3MilestoneEvidence> Manifest,
         List<DataAgentReadinessCheck> DynamicChecks,
         string[] StaticNames,
         HashSet<string> EvidencePaths,
-        DataAgentV3LedgerParseResult Ledger,
-        int StaticCount);
+        DataAgentV3LedgerParseResult Ledger);
 }
