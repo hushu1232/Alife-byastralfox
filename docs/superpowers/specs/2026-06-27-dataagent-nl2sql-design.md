@@ -458,3 +458,24 @@ These are not V1 requirements:
 - Long-term personal memory.
 - Automatic file mutation.
 - Internet data crawling.
+
+## 2026-07-10 Historical Reconciliation
+
+This document records early NL2SQL design intent. Its deferred Vue/ChatBI
+references are historical only: ChatBI Console is not required, is not in the
+current scope, does not block V3 closure, and has no committed future version.
+The current roadmap authority is
+`docs/dataagent/dataagent-roadmap-reconciliation.md`.
+
+Current operator-facing questions are:
+
+- 当前还有哪些 required gate 没通过？
+- 哪些 readiness check 与 QChat、视觉或 TTS 有关？
+- 哪些测试证明 runtime readiness 是 required？
+- 最近一次测试通过、失败和跳过的数量是多少？
+- 哪些文档与 DataAgent/NL2SQL 计划有关？
+
+Current V3 closure freezes 111 static and 95 core identities. The present
+114 static and 98 dynamic readiness totals include the V3.28/V4.0/V4.1
+identities that are intentionally outside that frozen V3 set. This does not
+start a runtime or grant sidecar authority.
