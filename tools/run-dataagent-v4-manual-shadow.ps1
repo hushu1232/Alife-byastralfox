@@ -336,6 +336,29 @@ function New-V40HandshakeRequest {
         NoSqlAuthority = $true
         ReadOnly = $true
         FallbackAvailable = $true
+        ContextBudget = [ordered]@{
+            MaxEnvelopeChars = 1200
+            MaxLayerChars = 400
+            RequiredLayerNames = @(
+                "layer_1_route",
+                "layer_2_evidence",
+                "layer_3_excerpt"
+            )
+        }
+        ContextLayers = @(
+            [ordered]@{
+                Name = "layer_1_route"
+                Text = "fixture=v4.1-manual-shadow;route=allowed;node=manual_shadow"
+            },
+            [ordered]@{
+                Name = "layer_2_evidence"
+                Text = "reason_code=manual_shadow_review;evidence_ref=v3.28-final-readiness-freeze"
+            },
+            [ordered]@{
+                Name = "layer_3_excerpt"
+                Text = "bounded_failure_excerpt=operator_review_required"
+            }
+        )
         TraceBudgetChars = 1200
         ProgressBudget = 8
     }
