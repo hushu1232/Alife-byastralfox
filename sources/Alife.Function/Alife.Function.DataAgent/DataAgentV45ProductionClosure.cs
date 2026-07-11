@@ -224,3 +224,91 @@ public static class DataAgentV45ProductionClosureEvaluator
             ReasonCodes: [reasonCode]);
     }
 }
+
+public static class DataAgentV45ProductionClosureFormatter
+{
+    static readonly Regex SafeTokenPattern = new(
+        "^[a-z0-9][a-z0-9_.-]{0,127}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    public static string Format(DataAgentV45ProductionClosureResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        DataAgentV45ProductionObservationSnapshot? snapshot = result.ObservationSnapshot;
+        DataAgentV45ProductionFaultDrillResult? drills = result.FaultDrillResult;
+
+        return string.Join(
+            Environment.NewLine,
+            "production_closure=v4.5",
+            $"source_baseline={SafeToken(result.SourceBaseline)}",
+            $"accepted={LowerBool(result.Accepted)}",
+            $"reason_code={SafeToken(result.ReasonCode)}",
+            $"value_score={result.ValueScore}",
+            $"value_status={ValueStatus(result.ValueStatus)}",
+            $"observation_capacity={snapshot?.Capacity ?? 0}",
+            $"observation_window_minutes={snapshot?.WindowMinutes ?? 0}",
+            $"observation_count={snapshot?.ObservationCount ?? 0}",
+            $"accepted_count={snapshot?.AcceptedCount ?? 0}",
+            $"rejected_count={snapshot?.RejectedCount ?? 0}",
+            $"fallback_count={snapshot?.FallbackCount ?? 0}",
+            $"timeout_count={snapshot?.TimeoutCount ?? 0}",
+            $"unavailable_count={snapshot?.UnavailableCount ?? 0}",
+            $"busy_count={snapshot?.BusyCount ?? 0}",
+            $"circuit_open_count={snapshot?.CircuitOpenCount ?? 0}",
+            $"network_attempt_count={snapshot?.NetworkAttemptCount ?? 0}",
+            $"average_latency_ms={snapshot?.AverageLatencyMs ?? 0}",
+            $"p95_latency_ms={snapshot?.P95LatencyMs ?? 0}",
+            $"fallback_ratio_basis_points={snapshot?.FallbackRatioBasisPoints ?? 0}",
+            $"max_observations_per_minute={snapshot?.MaxObservationsPerMinute ?? 0}",
+            $"retry_storm_detected={LowerBool(snapshot?.RetryStormDetected == true)}",
+            $"runtime_restart_count={result.RuntimeRestartCount}",
+            $"fault_drill_count={drills?.Drills.Count ?? 0}",
+            $"drill_runtime_unavailable={DrillPassed(drills, DataAgentV45FaultDrillKind.RuntimeUnavailable)}",
+            $"drill_timeout={DrillPassed(drills, DataAgentV45FaultDrillKind.Timeout)}",
+            $"drill_invalid_schema={DrillPassed(drills, DataAgentV45FaultDrillKind.InvalidSchema)}",
+            $"drill_unsafe_authority={DrillPassed(drills, DataAgentV45FaultDrillKind.UnsafeAuthority)}",
+            $"drill_concurrency_saturation={DrillPassed(drills, DataAgentV45FaultDrillKind.ConcurrencySaturation)}",
+            $"drill_circuit_open_recovery={DrillPassed(drills, DataAgentV45FaultDrillKind.CircuitOpenRecovery)}",
+            $"drill_live_kill_switch={DrillPassed(drills, DataAgentV45FaultDrillKind.LiveKillSwitch)}",
+            $"agent_advisory_only={LowerBool(result.AgentAdvisoryOnly)}",
+            $"csharp_validation_authority={LowerBool(result.CSharpValidationAuthority)}",
+            $"allows_execution={LowerBool(result.AllowsExecution)}",
+            $"allows_state_write={LowerBool(result.AllowsStateWrite)}",
+            $"allows_visible_text={LowerBool(result.AllowsVisibleText)}",
+            $"default_result_changed={LowerBool(result.DefaultResultChanged)}",
+            $"stores_secrets={LowerBool(result.StoresSecrets)}",
+            $"stores_sql={LowerBool(result.StoresSql)}",
+            $"stores_hidden_context={LowerBool(result.StoresHiddenContext)}",
+            $"reason_codes={SafeReasonCodes(result.ReasonCodes)}");
+    }
+
+    static string DrillPassed(
+        DataAgentV45ProductionFaultDrillResult? result,
+        DataAgentV45FaultDrillKind kind) =>
+        LowerBool(result?.Drills.SingleOrDefault(drill => drill.Kind == kind)?.Passed == true);
+
+    static string SafeReasonCodes(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+            return "none";
+        string[] safe = values.Select(SafeToken).ToArray();
+        return safe.All(value => value != "redacted") ? string.Join(',', safe) : "redacted";
+    }
+
+    static string SafeToken(string? value) =>
+        string.IsNullOrWhiteSpace(value) == false &&
+        SafeTokenPattern.IsMatch(value) &&
+        DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(value) == false
+            ? value
+            : "redacted";
+
+    static string ValueStatus(DataAgentV43ValueStatus status) => status switch
+    {
+        DataAgentV43ValueStatus.ProvenUseful => "proven_useful",
+        DataAgentV43ValueStatus.Promising => "promising",
+        DataAgentV43ValueStatus.Unproven => "unproven",
+        _ => "rejected"
+    };
+
+    static string LowerBool(bool value) => value ? "true" : "false";
+}

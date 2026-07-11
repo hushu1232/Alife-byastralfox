@@ -3535,6 +3535,63 @@ public static class DataAgentReadiness
             checks.Add(v44Ready
                 ? Pass("GraphHandshakeV44ProductionShadowClientPresent", "production_shadow_client=v4.4;source_baseline=v4.3;default_enabled=false;kill_switch_default=true;loopback_only=true;value_gate_score=80;value_gate_status=proven_useful;bounded_concurrency=true;circuit_breaker=true;no_retry=true;starts_runtime=false;installs_dependencies=false;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false")
                 : Fail("GraphHandshakeV44ProductionShadowClientPresent", $"doc={LowerBool(v44DocExists)};defaults={LowerBool(v44Defaults.Enabled == false && v44Defaults.KillSwitchActive)};ready={LowerBool(v44ReadyOptions.Ready)};markers={LowerBool(v44Markers)}"));
+
+            string v45DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.5-production-closure.md");
+            bool v45DocExists = File.Exists(v45DocPath);
+            string v45Doc = v45DocExists ? File.ReadAllText(v45DocPath) : string.Empty;
+            DataAgentV45ProductionFaultDrillResult v45Drills = DataAgentV45ProductionFaultDrillEvaluator.Evaluate(
+            [
+                new(DataAgentV45FaultDrillKind.RuntimeUnavailable, true, "production_shadow_unavailable", true),
+                new(DataAgentV45FaultDrillKind.Timeout, true, "production_shadow_timeout", true),
+                new(DataAgentV45FaultDrillKind.InvalidSchema, true, "request_id_mismatch", true),
+                new(DataAgentV45FaultDrillKind.UnsafeAuthority, true, "sql_authority_requested", true),
+                new(DataAgentV45FaultDrillKind.ConcurrencySaturation, true, "production_shadow_busy", false),
+                new(DataAgentV45FaultDrillKind.CircuitOpenRecovery, true, "production_shadow_circuit_open", false),
+                new(DataAgentV45FaultDrillKind.LiveKillSwitch, true, "production_shadow_kill_switch_active", false)
+            ]);
+            DataAgentV45ProductionObservationSnapshot v45Snapshot = new(
+                Capacity: 256,
+                WindowMinutes: 15,
+                ObservationCount: 20,
+                AcceptedCount: 18,
+                RejectedCount: 1,
+                FallbackCount: 0,
+                TimeoutCount: 1,
+                UnavailableCount: 0,
+                BusyCount: 0,
+                CircuitOpenCount: 0,
+                NetworkAttemptCount: 20,
+                AverageLatencyMs: 400,
+                P95LatencyMs: 900,
+                FallbackRatioBasisPoints: 500,
+                MaxObservationsPerMinute: 4,
+                RetryStormDetected: false,
+                StoresSensitiveData: false);
+            DataAgentV45ProductionClosureResult v45Closure = DataAgentV45ProductionClosureEvaluator.Evaluate(
+                new DataAgentV45ProductionClosureInput(v43Value, v45Snapshot, v45Drills, RuntimeRestartCount: 1));
+            string v45Formatted = DataAgentV45ProductionClosureFormatter.Format(v45Closure);
+            bool v45Markers =
+                v45Doc.Contains("production_closure=v4.5", StringComparison.Ordinal) &&
+                v45Doc.Contains("source_baseline=v4.4", StringComparison.Ordinal) &&
+                v45Doc.Contains("observation_capacity=256", StringComparison.Ordinal) &&
+                v45Doc.Contains("observation_window_minutes=15", StringComparison.Ordinal) &&
+                v45Doc.Contains("minimum_observations=20", StringComparison.Ordinal) &&
+                v45Doc.Contains("fallback_ratio_basis_points_max=2500", StringComparison.Ordinal) &&
+                v45Doc.Contains("p95_latency_ms_max=2000", StringComparison.Ordinal) &&
+                v45Doc.Contains("fault_drill_count=7", StringComparison.Ordinal) &&
+                v45Doc.Contains("live_kill_switch=true", StringComparison.Ordinal) &&
+                v45Formatted.Contains("accepted=true", StringComparison.Ordinal) &&
+                v45Formatted.Contains("fault_drill_count=7", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_visible_text=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v45Ready = v45DocExists && v45Closure.Accepted && v45Drills.Accepted && v45Markers;
+            checks.Add(v45Ready
+                ? Pass("GraphHandshakeV45ProductionClosurePresent", "production_closure=v4.5;source_baseline=v4.4;observation_capacity=256;observation_window_minutes=15;minimum_observations=20;fallback_ratio_basis_points_max=2500;p95_latency_ms_max=2000;retry_storm_threshold_per_minute=60;runtime_restart_count_max=1;fault_drill_count=7;live_kill_switch=true;loopback_only=true;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false;starts_runtime=false;installs_dependencies=false")
+                : Fail("GraphHandshakeV45ProductionClosurePresent", $"doc={LowerBool(v45DocExists)};closure={LowerBool(v45Closure.Accepted)};drills={LowerBool(v45Drills.Accepted)};markers={LowerBool(v45Markers)}"));
         }
         catch (Exception ex)
         {

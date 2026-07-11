@@ -292,6 +292,99 @@ public sealed class DataAgentV45ProductionClosureTests
         Assert.That(result.ReasonCode, Is.EqualTo(expectedReason));
     }
 
+    [Test]
+    public void FormatterEmitsOnlyFixedSafeAggregateAndSevenDrillFields()
+    {
+        DataAgentV45ProductionClosureResult result = DataAgentV45ProductionClosureEvaluator.Evaluate(
+            new DataAgentV45ProductionClosureInput(ProvenValue(), HealthySnapshot(), PassedDrills(), 1));
+
+        string formatted = DataAgentV45ProductionClosureFormatter.Format(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("production_closure=v4.5"));
+            Assert.That(formatted, Does.Contain("source_baseline=v4.4"));
+            Assert.That(formatted, Does.Contain("observation_capacity=256"));
+            Assert.That(formatted, Does.Contain("observation_window_minutes=15"));
+            Assert.That(formatted, Does.Contain("observation_count=20"));
+            Assert.That(formatted, Does.Contain("fallback_ratio_basis_points=500"));
+            Assert.That(formatted, Does.Contain("p95_latency_ms=900"));
+            Assert.That(formatted, Does.Contain("fault_drill_count=7"));
+            Assert.That(formatted, Does.Contain("drill_live_kill_switch=true"));
+            Assert.That(formatted, Does.Contain("allows_execution=false"));
+            Assert.That(formatted, Does.Contain("allows_state_write=false"));
+            Assert.That(formatted, Does.Contain("allows_visible_text=false"));
+            Assert.That(formatted, Does.Contain("stores_secrets=false"));
+            Assert.That(formatted, Does.Contain("stores_sql=false"));
+            Assert.That(formatted, Does.Contain("stores_hidden_context=false"));
+            Assert.That(formatted, Does.Not.Contain("127.0.0.1"));
+            Assert.That(formatted, Does.Not.Contain("SELECT"));
+            Assert.That(formatted, Does.Not.Contain("Bearer"));
+            Assert.That(formatted, Does.Not.Contain("request-1"));
+        });
+    }
+
+    [Test]
+    public void FormatterRedactsForgedUnsafeReasonWithoutEchoingText()
+    {
+        const string unsafeReason = "Bearer secret SELECT path C:\\private";
+        DataAgentV45ProductionClosureResult result = DataAgentV45ProductionClosureEvaluator.Evaluate(
+            new DataAgentV45ProductionClosureInput(ProvenValue(), HealthySnapshot(), PassedDrills(), 1)) with
+        {
+            ReasonCode = unsafeReason,
+            ReasonCodes = [unsafeReason]
+        };
+
+        string formatted = DataAgentV45ProductionClosureFormatter.Format(result);
+
+        Assert.That(formatted, Does.Contain("reason_code=redacted"));
+        Assert.That(formatted, Does.Not.Contain(unsafeReason));
+        Assert.That(formatted, Does.Not.Contain("private"));
+    }
+
+    [Test]
+    public void ArtifactWriterPersistsOnlyFormattedProductionClosure()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), $"dataagent-v45-{Guid.NewGuid():N}");
+        try
+        {
+            DataAgentV45ProductionClosureResult result = DataAgentV45ProductionClosureEvaluator.Evaluate(
+                new DataAgentV45ProductionClosureInput(ProvenValue(), HealthySnapshot(), PassedDrills(), 1));
+
+            DataAgentV45ProductionClosureArtifactWriteResult written =
+                DataAgentV45ProductionClosureArtifactWriter.Write(directory, result);
+            string body = File.ReadAllText(written.FilePath);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(written.Written, Is.True);
+                Assert.That(written.FileName, Is.EqualTo("dataagent-v4.5-production-closure.txt"));
+                Assert.That(body, Is.EqualTo(DataAgentV45ProductionClosureFormatter.Format(result)));
+                Assert.That(body, Does.Not.Contain(directory));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+                Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Test]
+    public void ArtifactWriterRejectsMissingInputsWithoutPathDisclosure()
+    {
+        DataAgentV45ProductionClosureArtifactWriteResult missingDirectory =
+            DataAgentV45ProductionClosureArtifactWriter.Write("", null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(missingDirectory.Written, Is.False);
+            Assert.That(missingDirectory.ReasonCode, Is.EqualTo("v4_5_artifact_output_directory_missing"));
+            Assert.That(missingDirectory.FileName, Is.EqualTo("redacted"));
+            Assert.That(missingDirectory.FilePath, Is.Empty);
+        });
+    }
+
     static DataAgentGraphHandshakeOutcome Outcome(
         DataAgentGraphHandshakeStatus status,
         string reasonCode = "handshake_accepted",
