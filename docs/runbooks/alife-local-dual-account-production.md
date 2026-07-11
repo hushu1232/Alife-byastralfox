@@ -7,6 +7,7 @@ This Windows-only supervisor keeps `account-a` and `account-b` isolated. It expo
 1. Copy `config/local-production/accounts.example.json` to ignored `accounts.local.json` and verify distinct loopback ports and absolute roots.
    Discover the installed NapCat account slots without starting them using `powershell.exe -NoProfile -File tools/local-production/Start-NapCatDualAccount.ps1 -NapCatRoot D:\NapCat`; it must report exactly two ports and `started=false`.
 2. Set `ALIFE_LOCAL_PRODUCTION_PLAN` to that local file.
+   Preview OneBot Token state with `Initialize-NapCatDualAccountTokens.ps1 -NapCatRoot D:\NapCat`; after explicit authorization, add `-Apply` to generate distinct random Tokens, update both NapCat configs atomically, and set the two user environment variables. The command never prints Token values.
 3. Validate without launch: `powershell.exe -NoProfile -File tools/local-production/Start-AlifeLocalSupervisor.ps1 -PlanPath config/local-production/accounts.local.json -Once -DryRun`.
 4. Run mocked tests: `powershell.exe -NoProfile -File tools/local-production/Test-AlifeLocalSupervisor.ps1` and `Test-InstallAlifeLocalSupervisorTask.ps1`.
 5. Install only after dry-run review: `Install-AlifeLocalSupervisorTask.ps1 -Install -PlanPath <local-plan>`.
