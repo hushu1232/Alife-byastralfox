@@ -1,0 +1,21 @@
+# Alife local dual-account production
+
+This Windows-only supervisor keeps `account-a` and `account-b` isolated. It exposes no listener and stores only safe health/reason state. Never place tokens in JSON; configure `ALIFE_ACCOUNT_A_ONEBOT_TOKEN` and `ALIFE_ACCOUNT_B_ONEBOT_TOKEN` as user environment variables.
+
+## Bootstrap
+
+1. Copy `config/local-production/accounts.example.json` to ignored `accounts.local.json` and verify distinct loopback ports and absolute roots.
+2. Set `ALIFE_LOCAL_PRODUCTION_PLAN` to that local file.
+3. Validate without launch: `powershell.exe -NoProfile -File tools/local-production/Start-AlifeLocalSupervisor.ps1 -PlanPath config/local-production/accounts.local.json -Once -DryRun`.
+4. Run mocked tests: `powershell.exe -NoProfile -File tools/local-production/Test-AlifeLocalSupervisor.ps1` and `Test-InstallAlifeLocalSupervisorTask.ps1`.
+5. Install only after dry-run review: `Install-AlifeLocalSupervisorTask.ps1 -Install -PlanPath <local-plan>`.
+
+## Operations
+
+Read safe status with `Get-AlifeLocalProductionStatus.ps1 -StatusPath <status-file>`. Output is restricted to slot id, pid, health, failure/restart/drain/active counters and safe reason codes. `DependencyUnavailable`, `ConfigurationRejected`, `HealthProbeFailed`, `DeadlineExceeded`, `Busy`, and `RestartRecoveryRequired` never include secrets, chat/model text, SQL, stack traces, or absolute paths.
+
+For an A-only incident, mark A draining, stop accepting A work, wait for active work to reach zero or its deadline, and restart only A. B must remain healthy and its SQLite queue must never be queried or migrated by A recovery.
+
+## Acceptance drills
+
+Record only safe before/after status and PASS/FAIL for: A+B baseline; disconnect A OneBot; A threshold restart; restart during finite A work; concurrent same-capability work; unavailable/start-timeout/health-fail adapters; supervisor restart recovery; and the observation window. Any cross-talk, unsafe output, restart storm, or failed row means not production ready.
