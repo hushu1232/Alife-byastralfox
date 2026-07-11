@@ -22,4 +22,13 @@ function Read-LocalProductionPlan {
     return $plan
 }
 
-Export-ModuleMember -Function Get-OverallStatus,Read-LocalProductionPlan
+function Invoke-AccountRecovery {
+    param($Slot,[int]$ActiveWorkCount,[DateTimeOffset]$Now)
+    if ($ActiveWorkCount -gt 0) {
+        $seconds = if ($Slot.drainTimeoutSeconds) { [int]$Slot.drainTimeoutSeconds } else { 90 }
+        return [pscustomobject]@{ Action='drain'; Reason='None'; DeadlineUtc=$Now.AddSeconds($seconds) }
+    }
+    return [pscustomobject]@{ Action='restart-worker'; Reason='RestartRecoveryRequired'; DeadlineUtc=$Now }
+}
+
+Export-ModuleMember -Function Get-OverallStatus,Read-LocalProductionPlan,Invoke-AccountRecovery
