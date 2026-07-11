@@ -59,6 +59,7 @@
     <Project Path="Tests/Alife.Test.DeskPet/Alife.Test.DeskPet.csproj" />
     <Project Path="Tests/Alife.Test.Framework/Alife.Test.Framework.csproj" />
     <Project Path="Tests/Alife.Test.Interpreter/Alife.Test.Interpreter.csproj" />
+    <Project Path="Tests/Alife.Test.LocalRuntime/Alife.Test.LocalRuntime.csproj" />
     <Project Path="Tests/Alife.Test.Python/Alife.Test.Python.csproj" />
     <Project Path="Tests/Alife.Test.PythonPipe/Alife.Test.PythonPipe.csproj" />
     <Project Path="Tests/Alife.Test.QChat/Alife.Test.QChat.csproj" />
@@ -68,5 +69,6 @@
   <Folder Name="/Sources/Alife.Function/" />
   <Folder Name="/Sources/Alife.Function/Data/">
     <Project Path="Sources/Alife.Function/Alife.Function.DataAgent/Alife.Function.DataAgent.csproj" />
+    <Project Path="Sources/Alife.Function/Alife.Function.LocalRuntime/Alife.Function.LocalRuntime.csproj" />
   </Folder>
 </Solution>
