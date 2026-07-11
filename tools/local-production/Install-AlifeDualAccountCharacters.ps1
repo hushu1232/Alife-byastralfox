@@ -54,13 +54,20 @@ function New-InstallEntry(
 }
 
 function Test-InstallEntry($Entry, [string]$SourceRoot) {
+    $script:safeStage = 'validate_' + $Entry.Label + '_source_path'
     Assert-ChildPath $SourceRoot $Entry.Source
+    $script:safeStage = 'validate_' + $Entry.Label + '_destination_paths'
     Assert-ChildPath $Entry.DestinationRoot $Entry.CharacterRoot
     Assert-ChildPath $Entry.DestinationRoot $Entry.Destination
+    $expectedSource = Join-Path $SourceRoot ('Character\' + $Entry.Name)
+    $sourceMapped = $Entry.Source -ceq $expectedSource
+    $script:safeStage = 'validate_' + $Entry.Label + '_source_directory_mapped_' + ([string]$sourceMapped).ToLowerInvariant()
     if (-not (Test-Path -LiteralPath $Entry.Source -PathType Container)) {
         throw 'character source missing'
     }
+    $script:safeStage = 'validate_' + $Entry.Label + '_index'
     Read-CharacterIndex $Entry.Source $Entry.Name
+    $script:safeStage = 'validate_' + $Entry.Label + '_opposite_absent'
     if (Test-Path -LiteralPath $Entry.OppositeDestination) {
         throw 'opposite character exists in assigned account'
     }
@@ -94,6 +101,7 @@ function Install-Entry($Entry) {
     }
 }
 
+$safeStage = 'resolve_roots'
 try {
     $sourceRoot = Resolve-FullPath $SourceStorageRoot
     $accountARoot = Resolve-FullPath $AccountAStorageRoot
@@ -102,11 +110,15 @@ try {
         throw 'account storage roots must be distinct'
     }
 
+    $safeStage = 'create_entries'
+    $mioName = [string][char]0x771F + [string][char]0x592E
+    $xiaYuName = [string][char]0x590F + [string][char]0x7FBD
     $entries = @(
-        (New-InstallEntry 'account-a' '真央' '夏羽' $sourceRoot $accountARoot),
-        (New-InstallEntry 'account-b' '夏羽' '真央' $sourceRoot $accountBRoot)
+        (New-InstallEntry 'account-a' $mioName $xiaYuName $sourceRoot $accountARoot),
+        (New-InstallEntry 'account-b' $xiaYuName $mioName $sourceRoot $accountBRoot)
     )
     foreach ($entry in $entries) {
+        $safeStage = 'validate_' + $entry.Label
         Test-InstallEntry $entry $sourceRoot
     }
 
@@ -119,6 +131,7 @@ try {
 
     try {
         foreach ($entry in $entries) {
+            $safeStage = 'install_' + $entry.Label
             Install-Entry $entry
             Write-Output ($entry.Label + ' validated=true installed=true')
         }
@@ -132,6 +145,6 @@ try {
     }
 }
 catch {
-    Write-Output 'character_install=FAIL reason=validation_or_install_failed'
+    Write-Output ('character_install=FAIL reason=validation_or_install_failed stage=' + $safeStage)
     exit 1
 }

@@ -39,11 +39,15 @@ $testRoot = Join-Path $repositoryRoot ('.tmp\character-installer-tests\' + [guid
 $source = Join-Path $testRoot 'source'
 $accountA = Join-Path $testRoot 'account-a'
 $accountB = Join-Path $testRoot 'account-b'
+$mioName = [string][char]0x771F + [string][char]0x592E
+$xiaYuName = [string][char]0x590F + [string][char]0x7FBD
 
 try {
     Assert-True (Test-Path -LiteralPath $installer -PathType Leaf) 'installer script is missing'
-    New-FakeCharacter $source '真央' 'mio-memory-sentinel'
-    New-FakeCharacter $source '夏羽' 'xiayu-memory-sentinel'
+    $installerText = Get-Content -LiteralPath $installer -Raw -Encoding UTF8
+    Assert-False ($installerText.IndexOf('D:\\Alife', [StringComparison]::Ordinal) -ge 0) 'default paths contain doubled separators'
+    New-FakeCharacter $source $mioName 'mio-memory-sentinel'
+    New-FakeCharacter $source $xiaYuName 'xiayu-memory-sentinel'
 
     $allOutput = [System.Collections.Generic.List[string]]::new()
     $dryOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer `
@@ -58,30 +62,33 @@ try {
     Assert-Equal '0' ([string]$LASTEXITCODE) 'install failed'
     foreach ($line in $installOutput) { $allOutput.Add([string]$line) }
 
-    Assert-True (Test-Path -LiteralPath (Join-Path $accountA 'Character\真央\index.json')) 'account-a instance missing'
-    Assert-True (Test-Path -LiteralPath (Join-Path $accountB 'Character\夏羽\index.json')) 'account-b instance missing'
-    Assert-False (Test-Path -LiteralPath (Join-Path $accountA 'Character\夏羽')) 'account-a contains cross-instance'
-    Assert-False (Test-Path -LiteralPath (Join-Path $accountB 'Character\真央')) 'account-b contains cross-instance'
-    Assert-Equal 'mio-memory-sentinel' (Get-Content -LiteralPath (Join-Path $accountA 'Character\真央\Memory\sentinel.txt') -Raw) 'account-a content mismatch'
-    Assert-Equal 'xiayu-memory-sentinel' (Get-Content -LiteralPath (Join-Path $accountB 'Character\夏羽\Memory\sentinel.txt') -Raw) 'account-b content mismatch'
+    $aInstance = Join-Path $accountA ('Character\' + $mioName)
+    $bInstance = Join-Path $accountB ('Character\' + $xiaYuName)
+    Assert-True (Test-Path -LiteralPath (Join-Path $aInstance 'index.json')) 'account-a instance missing'
+    Assert-True (Test-Path -LiteralPath (Join-Path $bInstance 'index.json')) 'account-b instance missing'
+    Assert-False (Test-Path -LiteralPath (Join-Path $accountA ('Character\' + $xiaYuName))) 'account-a contains cross-instance'
+    Assert-False (Test-Path -LiteralPath (Join-Path $accountB ('Character\' + $mioName))) 'account-b contains cross-instance'
+    Assert-Equal 'mio-memory-sentinel' (Get-Content -LiteralPath (Join-Path $aInstance 'Memory\sentinel.txt') -Raw) 'account-a content mismatch'
+    Assert-Equal 'xiayu-memory-sentinel' (Get-Content -LiteralPath (Join-Path $bInstance 'Memory\sentinel.txt') -Raw) 'account-b content mismatch'
 
-    Set-Content -LiteralPath (Join-Path $source 'Character\真央\Memory\sentinel.txt') -Value 'mio-memory-updated' -NoNewline -Encoding UTF8
+    $mioSource = Join-Path $source ('Character\' + $mioName)
+    Set-Content -LiteralPath (Join-Path $mioSource 'Memory\sentinel.txt') -Value 'mio-memory-updated' -NoNewline -Encoding UTF8
     $secondOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer `
         -SourceStorageRoot $source -AccountAStorageRoot $accountA -AccountBStorageRoot $accountB -Install 2>&1)
     Assert-Equal '0' ([string]$LASTEXITCODE) 'second install failed'
     foreach ($line in $secondOutput) { $allOutput.Add([string]$line) }
-    Assert-Equal 'mio-memory-updated' (Get-Content -LiteralPath (Join-Path $accountA 'Character\真央\Memory\sentinel.txt') -Raw) 'replacement content mismatch'
+    Assert-Equal 'mio-memory-updated' (Get-Content -LiteralPath (Join-Path $aInstance 'Memory\sentinel.txt') -Raw) 'replacement content mismatch'
     $backupIndexes = @(Get-ChildItem -LiteralPath (Join-Path $accountA 'CharacterBackups') -Filter 'index.json' -File -Recurse)
     Assert-True ($backupIndexes.Count -ge 1) 'account-a backup missing'
 
-    $beforeFailure = Get-FileHash -LiteralPath (Join-Path $accountA 'Character\真央\index.json') -Algorithm SHA256
+    $beforeFailure = Get-FileHash -LiteralPath (Join-Path $aInstance 'index.json') -Algorithm SHA256
     $badIndex = [pscustomobject]@{ Name = 'wrong-name'; AutoActivate = $true; Modules = @() } | ConvertTo-Json
-    Set-Content -LiteralPath (Join-Path $source 'Character\真央\index.json') -Value $badIndex -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $mioSource 'index.json') -Value $badIndex -Encoding UTF8
     $failureOutput = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer `
         -SourceStorageRoot $source -AccountAStorageRoot $accountA -AccountBStorageRoot $accountB -Install 2>&1)
     Assert-False ($LASTEXITCODE -eq 0) 'invalid metadata was accepted'
     foreach ($line in $failureOutput) { $allOutput.Add([string]$line) }
-    $afterFailure = Get-FileHash -LiteralPath (Join-Path $accountA 'Character\真央\index.json') -Algorithm SHA256
+    $afterFailure = Get-FileHash -LiteralPath (Join-Path $aInstance 'index.json') -Algorithm SHA256
     Assert-Equal $beforeFailure.Hash $afterFailure.Hash 'failed validation changed destination'
 
     $outputText = $allOutput -join [Environment]::NewLine
