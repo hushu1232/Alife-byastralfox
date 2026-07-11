@@ -19,7 +19,8 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
 
     internal static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClient(
         DataAgentGraphHandshakeOptions graphOptions,
-        DataAgentGraphHandshakeHttpOptions httpOptions)
+        DataAgentGraphHandshakeHttpOptions httpOptions,
+        DataAgentV44ProductionShadowOptions productionShadowOptions)
     {
         if (graphOptions.Enabled == false ||
             httpOptions.Configured == false ||
@@ -28,7 +29,11 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             return DisabledDataAgentGraphSidecarClient.Instance;
         }
 
-        return new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
+        IDataAgentGraphSidecarClient httpClient =
+            new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
+        return productionShadowOptions.Enabled
+            ? new DataAgentV44ProductionShadowClient(httpClient, productionShadowOptions)
+            : httpClient;
     }
 
     internal static IDataAgentGraphHandshakeStreamClient? CreateGraphHandshakeStreamClient(
@@ -78,11 +83,18 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             DataAgentGraphHandshakeHttpOptions.FromEnvironment();
         DataAgentGraphHandshakeStreamOptions graphHandshakeStreamOptions =
             DataAgentGraphHandshakeStreamOptions.FromEnvironment();
+        DataAgentV44ProductionShadowOptions productionShadowOptions =
+            DataAgentV44ProductionShadowOptions.FromEnvironment();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
-            CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions),
+            CreateGraphHandshakeSidecarClient(
+                graphHandshakeOptions,
+                graphHandshakeHttpOptions,
+                productionShadowOptions),
             new DataAgentGraphSidecarProgressBridge(progressSink),
-            CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions),
+            productionShadowOptions.Enabled
+                ? null
+                : CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions),
             new DataAgentGraphSidecarObservabilityContext(
                 graphHandshakeHttpOptions.Configured || graphHandshakeStreamOptions.Configured,
                 graphHandshakeHttpOptions.RuntimeStarted || graphHandshakeStreamOptions.RuntimeStarted));

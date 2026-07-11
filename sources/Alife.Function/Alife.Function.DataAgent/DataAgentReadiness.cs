@@ -3507,6 +3507,34 @@ public static class DataAgentReadiness
             checks.Add(v43Ready
                 ? Pass("GraphHandshakeV43CrossModuleValueScorePresent", "cross_module_value_score=v4.3;source_baseline=v4.2;capability_count=6;score_range=0-100;eligibility_score=80;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;calls_sidecar=false")
                 : Fail("GraphHandshakeV43CrossModuleValueScorePresent", $"doc={LowerBool(v43DocExists)};value={LowerBool(v43Value.Accepted)};eligible={LowerBool(v43Value.ProductionShadowEligible)};markers={LowerBool(v43Markers)}"));
+
+            string v44DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.4-production-shadow-client.md");
+            bool v44DocExists = File.Exists(v44DocPath);
+            string v44Doc = v44DocExists ? File.ReadAllText(v44DocPath) : string.Empty;
+            DataAgentV44ProductionShadowOptions v44Defaults =
+                DataAgentV44ProductionShadowOptions.FromValues(null, null, null, null, null, null, null);
+            DataAgentV44ProductionShadowOptions v44ReadyOptions =
+                DataAgentV44ProductionShadowOptions.FromValues("true", "false", "80", "proven_useful", "2", "3", "30000");
+            bool v44Markers =
+                v44Doc.Contains("production_shadow_client=v4.4", StringComparison.Ordinal) &&
+                v44Doc.Contains("source_baseline=v4.3", StringComparison.Ordinal) &&
+                v44Doc.Contains("default_enabled=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("kill_switch_default=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("no_retry=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_visible_text=false", StringComparison.Ordinal);
+            bool v44Ready =
+                v44DocExists &&
+                v44Defaults.Enabled == false &&
+                v44Defaults.KillSwitchActive &&
+                v44ReadyOptions.Ready &&
+                typeof(IDataAgentGraphSidecarClient).IsAssignableFrom(typeof(DataAgentV44ProductionShadowClient)) &&
+                v44Markers;
+            checks.Add(v44Ready
+                ? Pass("GraphHandshakeV44ProductionShadowClientPresent", "production_shadow_client=v4.4;source_baseline=v4.3;default_enabled=false;kill_switch_default=true;loopback_only=true;value_gate_score=80;value_gate_status=proven_useful;bounded_concurrency=true;circuit_breaker=true;no_retry=true;starts_runtime=false;installs_dependencies=false;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false")
+                : Fail("GraphHandshakeV44ProductionShadowClientPresent", $"doc={LowerBool(v44DocExists)};defaults={LowerBool(v44Defaults.Enabled == false && v44Defaults.KillSwitchActive)};ready={LowerBool(v44ReadyOptions.Ready)};markers={LowerBool(v44Markers)}"));
         }
         catch (Exception ex)
         {

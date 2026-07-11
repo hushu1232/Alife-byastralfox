@@ -104,7 +104,8 @@ public sealed class DataAgentV3FrozenReadinessSnapshot
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
         "GraphHandshakeV42OperatorEvidencePacketPresent",
-        "GraphHandshakeV43CrossModuleValueScorePresent"
+        "GraphHandshakeV43CrossModuleValueScorePresent",
+        "GraphHandshakeV44ProductionShadowClientPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     DataAgentV3FrozenReadinessSnapshot(FrozenSet<string> expectedStaticCheckNames, FrozenSet<string> expectedCoreCheckNames)
@@ -173,7 +174,8 @@ public static class DataAgentV3ClosureManifest
     public static FrozenSet<string> V4OnlyCheckNames { get; } = new[]
     {
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
-        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
+        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
+        "GraphHandshakeV44ProductionShadowClientPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     public static FrozenSet<string> PostV3StaticCheckNames { get; } = new[]
@@ -182,7 +184,8 @@ public static class DataAgentV3ClosureManifest
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
         "GraphHandshakeV42OperatorEvidencePacketPresent",
-        "GraphHandshakeV43CrossModuleValueScorePresent"
+        "GraphHandshakeV43CrossModuleValueScorePresent",
+        "GraphHandshakeV44ProductionShadowClientPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     // These exact inventories are derived from the authoritative current V3 readiness

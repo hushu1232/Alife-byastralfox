@@ -177,7 +177,7 @@ public sealed class DataAgentModuleServiceTests
 
         object client = method.Invoke(
             null,
-            [DataAgentGraphHandshakeOptions.Disabled, DataAgentGraphHandshakeHttpOptions.Disabled])!;
+            [DataAgentGraphHandshakeOptions.Disabled, DataAgentGraphHandshakeHttpOptions.Disabled, DisabledProductionShadowOptions()])!;
 
         Assert.That(client, Is.SameAs(DisabledDataAgentGraphSidecarClient.Instance));
     }
@@ -191,9 +191,48 @@ public sealed class DataAgentModuleServiceTests
         DataAgentGraphHandshakeHttpOptions options =
             DataAgentGraphHandshakeHttpOptions.FromValues("http://127.0.0.1:8765/handshake", "800");
 
-        object client = method.Invoke(null, [new DataAgentGraphHandshakeOptions(true), options])!;
+        object client = method.Invoke(null, [new DataAgentGraphHandshakeOptions(true), options, DisabledProductionShadowOptions()])!;
 
         Assert.That(client, Is.TypeOf<DataAgentGraphHandshakeHttpClient>());
+    }
+
+    [Test]
+    public void GraphHandshakeSidecarFactoryDecoratesOnlyExplicitlyEnabledProductionShadow()
+    {
+        MethodInfo method = typeof(DataAgentModuleService).GetMethod(
+            "CreateGraphHandshakeSidecarClient",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+        DataAgentGraphHandshakeHttpOptions httpOptions =
+            DataAgentGraphHandshakeHttpOptions.FromValues("http://127.0.0.1:8765/handshake", "800");
+        DataAgentV44ProductionShadowOptions ready = DataAgentV44ProductionShadowOptions.FromValues(
+            "true", "false", "80", "proven_useful", "2", "3", "30000");
+
+        object client = method.Invoke(
+            null,
+            [new DataAgentGraphHandshakeOptions(true), httpOptions, ready])!;
+
+        Assert.That(client, Is.TypeOf<DataAgentV44ProductionShadowClient>());
+    }
+
+    [Test]
+    public void EnabledProductionShadowWithKillSwitchFailsClosedBeforeHttpCall()
+    {
+        MethodInfo method = typeof(DataAgentModuleService).GetMethod(
+            "CreateGraphHandshakeSidecarClient",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!;
+        DataAgentGraphHandshakeHttpOptions httpOptions =
+            DataAgentGraphHandshakeHttpOptions.FromValues("http://127.0.0.1:8765/handshake", "800");
+        DataAgentV44ProductionShadowOptions killed = DataAgentV44ProductionShadowOptions.FromValues(
+            "true", "true", "80", "proven_useful", "2", "3", "30000");
+        IDataAgentGraphSidecarClient client = (IDataAgentGraphSidecarClient)method.Invoke(
+            null,
+            [new DataAgentGraphHandshakeOptions(true), httpOptions, killed])!;
+
+        DataAgentV44ProductionShadowException error = Assert.Throws<DataAgentV44ProductionShadowException>(
+            () => client.TryHandshake(MinimalRequest()))!;
+
+        Assert.That(error.ReasonCode, Is.EqualTo("production_shadow_kill_switch_active"));
+        Assert.That(error.NetworkAttempted, Is.False);
     }
 
     [Test]
@@ -266,4 +305,23 @@ public sealed class DataAgentModuleServiceTests
         Assert.That(method, Is.Not.Null);
         return method!;
     }
+
+    static DataAgentV44ProductionShadowOptions DisabledProductionShadowOptions() =>
+        DataAgentV44ProductionShadowOptions.FromValues(null, null, null, null, null, null, null);
+
+    static DataAgentGraphHandshakeRequest MinimalRequest() => new(
+        "request-1",
+        "session-1",
+        "turn-1",
+        "owner",
+        "review",
+        "scenario_context=deterministic_csharp",
+        "route_present=true",
+        "status=Active",
+        DataAgentGraphHandshakeManifestFactory.CreateDefault(),
+        true,
+        true,
+        true,
+        DataAgentGraphHandshakeLimits.MaxTraceSummaryChars,
+        DataAgentGraphHandshakeLimits.MaxProgressEvents);
 }

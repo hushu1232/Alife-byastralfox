@@ -89,6 +89,18 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 validation,
                 networkAttempted: true);
         }
+        catch (DataAgentV44ProductionShadowException exception)
+        {
+            DataAgentGraphHandshakeStatus status = exception.ReasonCode == "production_shadow_timeout"
+                ? DataAgentGraphHandshakeStatus.Timeout
+                : DataAgentGraphHandshakeStatus.Unavailable;
+            return Outcome(
+                status,
+                exception.ReasonCode,
+                fallbackRequired: true,
+                request,
+                networkAttempted: exception.NetworkAttempted);
+        }
         catch (DataAgentGraphSidecarInvalidResponseException)
         {
             return Outcome(

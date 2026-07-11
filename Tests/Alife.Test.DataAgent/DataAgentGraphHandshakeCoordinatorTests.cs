@@ -302,6 +302,35 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
         });
     }
 
+    [TestCase("production_shadow_timeout", true, DataAgentGraphHandshakeStatus.Timeout)]
+    [TestCase("production_shadow_unavailable", true, DataAgentGraphHandshakeStatus.Unavailable)]
+    [TestCase("production_shadow_circuit_open", false, DataAgentGraphHandshakeStatus.Unavailable)]
+    [TestCase("production_shadow_busy", false, DataAgentGraphHandshakeStatus.Unavailable)]
+    public void EnabledCoordinatorPreservesSafeProductionShadowFailure(
+        string reasonCode,
+        bool networkAttempted,
+        DataAgentGraphHandshakeStatus expectedStatus)
+    {
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new DataAgentV44ProductionShadowException(reasonCode, networkAttempted)),
+            observabilityContext: new DataAgentGraphSidecarObservabilityContext(true, false));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(expectedStatus));
+            Assert.That(outcome.ReasonCode, Is.EqualTo(reasonCode));
+            Assert.That(outcome.FallbackRequired, Is.True);
+            Assert.That(outcome.Response, Is.Null);
+            Assert.That(outcome.Observability!.NetworkAttempted, Is.EqualTo(networkAttempted));
+        });
+    }
+
     [Test]
     public void EnabledCoordinatorMapsInvalidSidecarResponseExceptionToInvalidFallback()
     {
