@@ -3,8 +3,8 @@ $ErrorActionPreference='Stop'
 function Assert-Equal($Actual,$Expected){if($Actual-ne$Expected){throw "Expected '$Expected', got '$Actual'."}}
 $root=Join-Path ([IO.Path]::GetTempPath()) ('napcat-dual-'+[Guid]::NewGuid().ToString('N'))
 try {
-  $config=Join-Path $root 'config';$boot=Join-Path $root 'bootmain';[IO.Directory]::CreateDirectory($config)|Out-Null;[IO.Directory]::CreateDirectory($boot)|Out-Null
-  New-Item -ItemType File -Path (Join-Path $boot 'NapCatWinBootMain.exe')|Out-Null
+  $config=Join-Path $root 'config';$boot=Join-Path $root 'resources\app\napcat';[IO.Directory]::CreateDirectory($config)|Out-Null;[IO.Directory]::CreateDirectory($boot)|Out-Null
+  New-Item -ItemType File -Path (Join-Path $boot 'launcher-user.bat')|Out-Null
   '{"network":{"websocketServers":[{"host":"127.0.0.1","port":3001}]}}'|Set-Content -LiteralPath (Join-Path $config 'onebot11_11111.json')
   '{"network":{"websocketServers":[{"host":"127.0.0.1","port":3002}]}}'|Set-Content -LiteralPath (Join-Path $config 'onebot11_22222.json')
   $plan=Get-NapCatDualAccountPlan -NapCatRoot $root
