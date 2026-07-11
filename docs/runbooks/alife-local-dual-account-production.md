@@ -19,3 +19,7 @@ For an A-only incident, mark A draining, stop accepting A work, wait for active 
 ## Acceptance drills
 
 Record only safe before/after status and PASS/FAIL for: A+B baseline; disconnect A OneBot; A threshold restart; restart during finite A work; concurrent same-capability work; unavailable/start-timeout/health-fail adapters; supervisor restart recovery; and the observation window. Any cross-talk, unsafe output, restart storm, or failed row means not production ready.
+
+## Current acceptance result (2026-07-11)
+
+**NOT PRODUCTION READY.** Offline build and focused simulations pass, but live-drill prerequisites are absent on this machine: the ignored local two-account plan is not present, neither account Token environment variable is configured, and no NapCat/Alife process is running. No live process was started and no credential value was read. Prepare the two local accounts and repeat all eight drills; production readiness cannot be declared until every row passes and the observation window shows no restart storm, cross-talk, or unsafe notice.
