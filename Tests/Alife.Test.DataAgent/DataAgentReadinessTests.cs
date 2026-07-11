@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(99));
+            Assert.That(checks, Has.Count.EqualTo(100));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -380,6 +380,18 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeV42EvidenceCheck.Detail, Does.Contain("stores_secrets=false"));
             Assert.That(graphHandshakeV42EvidenceCheck.Detail, Does.Contain("stores_sql=false"));
             Assert.That(graphHandshakeV42EvidenceCheck.Detail, Does.Contain("stores_hidden_context=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeV43CrossModuleValueScorePresent"));
+            DataAgentReadinessCheck graphHandshakeV43ValueCheck =
+                checks.Single(check => check.Name == "GraphHandshakeV43CrossModuleValueScorePresent");
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("cross_module_value_score=v4.3"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("source_baseline=v4.2"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("capability_count=6"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("score_range=0-100"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("eligibility_score=80"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("allows_execution=false"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("allows_state_write=false"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("allows_visible_text=false"));
+            Assert.That(graphHandshakeV43ValueCheck.Detail, Does.Contain("calls_sidecar=false"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEndToEndChainContractPresent"));
             DataAgentReadinessCheck dataAgentChainContractCheck = checks.Single(check => check.Name == "DataAgentEndToEndChainContractPresent");
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_boundary=true"));
@@ -514,7 +526,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 115 required passed, 0 required missing"
+                "  Summary: 116 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -579,7 +591,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 115"));
+            Assert.That(script, Does.Contain("$expectedRequired = 116"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

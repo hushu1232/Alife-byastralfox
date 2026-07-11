@@ -103,7 +103,8 @@ public sealed class DataAgentV3FrozenReadinessSnapshot
     {
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
-        "GraphHandshakeV42OperatorEvidencePacketPresent"
+        "GraphHandshakeV42OperatorEvidencePacketPresent",
+        "GraphHandshakeV43CrossModuleValueScorePresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     DataAgentV3FrozenReadinessSnapshot(FrozenSet<string> expectedStaticCheckNames, FrozenSet<string> expectedCoreCheckNames)
@@ -180,7 +181,8 @@ public static class DataAgentV3ClosureManifest
         "GraphHandshakeFinalV3ReadinessFreezePresent",
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
         "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
-        "GraphHandshakeV42OperatorEvidencePacketPresent"
+        "GraphHandshakeV42OperatorEvidencePacketPresent",
+        "GraphHandshakeV43CrossModuleValueScorePresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     // These exact inventories are derived from the authoritative current V3 readiness

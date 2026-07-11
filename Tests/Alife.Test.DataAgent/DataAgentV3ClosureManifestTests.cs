@@ -505,13 +505,14 @@ public sealed partial class DataAgentV3ClosureManifestTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(names, Has.Count.EqualTo(115));
+            Assert.That(names, Has.Count.EqualTo(116));
             Assert.That(names, Does.Contain("GraphHandshakeDevSidecarLiveSmokeHarnessPresent"));
             Assert.That(names, Does.Contain("LangGraphRuntimeReadinessContractPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeV42OperatorEvidencePacketPresent"));
+            Assert.That(names, Does.Contain("GraphHandshakeV43CrossModuleValueScorePresent"));
             Assert.That(v3Names, Has.Count.EqualTo(111));
             Assert.That(unknown, Is.Empty);
             Assert.That(replacement, Is.Empty);

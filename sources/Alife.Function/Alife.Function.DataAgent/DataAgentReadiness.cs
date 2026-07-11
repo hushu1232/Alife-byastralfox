@@ -3478,6 +3478,35 @@ public static class DataAgentReadiness
             checks.Add(v42Ready
                 ? Pass("GraphHandshakeV42OperatorEvidencePacketPresent", "operator_evidence_packet=v4.2;source_baseline=v4.1;statuses=accepted,rejected,fallback;max_summary_chars=320;max_evidence_refs=8;agent_advisory_only=true;csharp_validation_authority=true;default_result_changed=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeV42OperatorEvidencePacketPresent", $"doc={LowerBool(v42DocExists)};packet={LowerBool(v42Packet.Accepted)};markers={LowerBool(v42Markers)}"));
+
+            string v43DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.3-cross-module-value-score.md");
+            bool v43DocExists = File.Exists(v43DocPath);
+            string v43Doc = v43DocExists ? File.ReadAllText(v43DocPath) : string.Empty;
+            DataAgentV43CrossModuleValueResult v43Value = DataAgentV43CrossModuleValueEvaluator.Evaluate(
+                new DataAgentV43CrossModuleValueInput(
+                    v42Packet,
+                    ["qchat.intent_hint", "memory.candidate_summary"],
+                    DataAgentV43OperatorDisposition.Adopted,
+                    ReviewBeforeMs: 1000,
+                    ReviewAfterMs: 0));
+            string v43Formatted = DataAgentV43CrossModuleValueFormatter.Format(v43Value);
+            bool v43Markers =
+                v43Doc.Contains("cross_module_value_score=v4.3", StringComparison.Ordinal) &&
+                v43Doc.Contains("source_baseline=v4.2", StringComparison.Ordinal) &&
+                v43Doc.Contains("capability_count=6", StringComparison.Ordinal) &&
+                v43Doc.Contains("score_range=0-100", StringComparison.Ordinal) &&
+                v43Doc.Contains("eligibility_score=80", StringComparison.Ordinal) &&
+                v43Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("status=proven_useful", StringComparison.Ordinal) &&
+                v43Formatted.Contains("total_score=100", StringComparison.Ordinal) &&
+                v43Formatted.Contains("production_shadow_eligible=true", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_visible_text=false", StringComparison.Ordinal);
+            bool v43Ready = v43DocExists && v43Value.Accepted && v43Value.ProductionShadowEligible && v43Markers;
+            checks.Add(v43Ready
+                ? Pass("GraphHandshakeV43CrossModuleValueScorePresent", "cross_module_value_score=v4.3;source_baseline=v4.2;capability_count=6;score_range=0-100;eligibility_score=80;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;calls_sidecar=false")
+                : Fail("GraphHandshakeV43CrossModuleValueScorePresent", $"doc={LowerBool(v43DocExists)};value={LowerBool(v43Value.Accepted)};eligible={LowerBool(v43Value.ProductionShadowEligible)};markers={LowerBool(v43Markers)}"));
         }
         catch (Exception ex)
         {
