@@ -245,6 +245,8 @@ public sealed class DataAgentModuleServiceTests
             Assert.That(source, Does.Contain("optionsProvider: DataAgentV44ProductionShadowOptions.FromEnvironment"));
             Assert.That(source, Does.Contain("DataAgentV45ProductionObservationRecorder"));
             Assert.That(source, Does.Contain("observationRecorder:"));
+            Assert.That(source, Does.Contain("GetProductionShadowObservationSnapshot"));
+            Assert.That(source, Does.Not.Contain("public DataAgentV45ProductionObservationRecorder"));
         });
     }
 

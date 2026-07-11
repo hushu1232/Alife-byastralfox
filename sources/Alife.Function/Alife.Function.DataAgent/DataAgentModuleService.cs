@@ -10,8 +10,14 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
     : InteractiveModule<DataAgentModuleService>
 {
+    readonly DataAgentV45ProductionObservationRecorder productionObservationRecorder = new();
+
     public IReadOnlyList<string> RegisteredCapabilityProviderNames { get; private set; } = [];
     public IReadOnlyList<string> RegisteredCapabilityToolNames { get; private set; } = [];
+
+    public DataAgentV45ProductionObservationSnapshot GetProductionShadowObservationSnapshot(
+        DateTimeOffset? now = null) =>
+        productionObservationRecorder.GetSnapshot(now ?? DateTimeOffset.UtcNow);
 
     internal static IDataAgentAnalysisSessionStore CreateAnalysisSessionStore(
         DataAgentAnalysisSessionStoreOptions options) =>
@@ -101,7 +107,6 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             DataAgentGraphHandshakeStreamOptions.FromEnvironment();
         DataAgentV44ProductionShadowOptions productionShadowOptions =
             DataAgentV44ProductionShadowOptions.FromEnvironment();
-        DataAgentV45ProductionObservationRecorder productionObservationRecorder = new();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
             CreateGraphHandshakeSidecarClientWithProvider(
