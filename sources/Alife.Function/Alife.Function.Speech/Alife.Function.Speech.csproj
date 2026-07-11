@@ -8,6 +8,7 @@
     <ProjectReference Include="..\Alife.Function.FunctionCaller\Alife.Function.FunctionCaller.csproj" />
     <ProjectReference Include="..\..\Alife\Alife.Framework\Alife.Framework.csproj" />
     <ProjectReference Include="..\Alife.Function.SpeechModel\Alife.Function.SpeechModel.csproj" />
+    <ProjectReference Include="..\Alife.Function.LocalRuntime\Alife.Function.LocalRuntime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

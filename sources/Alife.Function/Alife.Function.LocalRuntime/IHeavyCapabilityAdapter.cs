@@ -1,10 +1,14 @@
 namespace Alife.Function.LocalRuntime;
 
-public enum AdapterReadiness { Ready, Unavailable, TimedOut }
+public sealed record AdapterReadiness(bool IsReady, SafeReasonCode Reason)
+{
+    public static AdapterReadiness Ready { get; } = new(true, SafeReasonCode.None);
+}
 public enum AdapterHealth { Healthy, Unhealthy }
 public sealed record HeavyCapabilityRequest(string AccountId, CapabilityKind Capability, DateTimeOffset Deadline);
 public sealed record AdapterExecutionResult(SafeReasonCode Reason);
 public sealed record SafeCapabilityStatus(string State, SafeReasonCode Reason);
+public interface ILocalCapabilityProcessHost { Task StartAsync(CancellationToken cancellationToken); }
 public interface IHeavyCapabilityAdapter
 {
     CapabilityKind Kind { get; }

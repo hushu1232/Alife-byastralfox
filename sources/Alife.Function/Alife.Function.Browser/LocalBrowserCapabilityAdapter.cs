@@ -1,0 +1,22 @@
+using Alife.Function.LocalRuntime;
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Alife.Function.Browser;
+
+public sealed class LocalBrowserCapabilityAdapter(Uri endpoint, ILocalCapabilityProcessHost process) : IHeavyCapabilityAdapter
+{
+    public CapabilityKind Kind => CapabilityKind.Browser;
+    public async Task<AdapterReadiness> EnsureReadyAsync(DateTimeOffset deadline, CancellationToken cancellationToken)
+    {
+        if (!endpoint.IsLoopback) return new(false, SafeReasonCode.ConfigurationRejected);
+        if (DateTimeOffset.UtcNow >= deadline) return new(false, SafeReasonCode.DeadlineExceeded);
+        await process.StartAsync(cancellationToken); return AdapterReadiness.Ready;
+    }
+    public Task<AdapterHealth> GetHealthAsync(CancellationToken cancellationToken) => Task.FromResult(AdapterHealth.Healthy);
+    public Task<AdapterExecutionResult> ExecuteAsync(HeavyCapabilityRequest request, CancellationToken cancellationToken) => Task.FromResult(new AdapterExecutionResult(SafeReasonCode.None));
+    public Task DrainAsync(DateTimeOffset deadline, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopIfIdleAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public SafeCapabilityStatus GetSafeStatus() => new("ready", SafeReasonCode.None);
+}

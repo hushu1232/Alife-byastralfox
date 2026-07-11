@@ -6,7 +6,8 @@ public sealed class HeavyCapabilityExecutor(CapabilityLeaseCoordinator leases)
     {
         if (request.Capability != adapter.Kind) return new AdapterExecutionResult(SafeReasonCode.ConfigurationRejected);
         await using IAsyncDisposable lease = await leases.AcquireAsync(request.AccountId, request.Capability, request.Deadline, cancellationToken);
-        if (await adapter.EnsureReadyAsync(request.Deadline, cancellationToken) != AdapterReadiness.Ready) return new AdapterExecutionResult(SafeReasonCode.DependencyUnavailable);
+        AdapterReadiness readiness = await adapter.EnsureReadyAsync(request.Deadline, cancellationToken);
+        if (!readiness.IsReady) return new AdapterExecutionResult(readiness.Reason);
         if (await adapter.GetHealthAsync(cancellationToken) != AdapterHealth.Healthy) return new AdapterExecutionResult(SafeReasonCode.HealthProbeFailed);
         return await adapter.ExecuteAsync(request, cancellationToken);
     }
