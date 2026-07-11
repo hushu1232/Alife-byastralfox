@@ -2,6 +2,11 @@ using System.IO;
 
 namespace Alife.Platform;
 
+public sealed record AlifeLocalPaths(
+    string RuntimeFolderPath,
+    string StorageFolderPath,
+    string TempFolderPath);
+
 public static class AlifePath
 {
     public static string RootFolderPath { get; private set; }
@@ -9,6 +14,14 @@ public static class AlifePath
     public static string StorageFolderPath { get; private set; }
     public static string RuntimeFolderPath { get; private set; }
     public static string TempFolderPath { get; }
+
+    public static AlifeLocalPaths ResolveLocalProductionPaths(string? runtime, string? storage, string? temp)
+    {
+        return new AlifeLocalPaths(
+            ResolvePathOverride(runtime, Path.Combine(RootFolderPath, "Runtime"), nameof(runtime)),
+            ResolvePathOverride(storage, Path.Combine(RootFolderPath, "Storage"), nameof(storage)),
+            ResolvePathOverride(temp, Path.Combine(RootFolderPath, ".tmp", "Alife.Client"), nameof(temp)));
+    }
 
     public static void SetStorageFolderPath(string path, bool persist = true)
     {
@@ -51,18 +64,31 @@ public static class AlifePath
             File.WriteAllText(Path.Combine(RuntimeFolderPath, "storage_path.txt"), newPath);
     }
 
+    private static string ResolvePathOverride(string? value, string fallback, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        if (!Path.IsPathFullyQualified(value))
+            throw new ArgumentException("Local production path overrides must be absolute.", parameterName);
+        return Path.GetFullPath(value);
+    }
+
     static AlifePath()
     {
         //默认地址
         OutputsFolderPath = Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar))!;
         RootFolderPath = Path.GetDirectoryName(OutputsFolderPath)!;
-        StorageFolderPath = Path.Combine(RootFolderPath, "Storage");
-        RuntimeFolderPath = Path.Combine(RootFolderPath, "Runtime");
-        TempFolderPath = Path.Combine(RootFolderPath, ".tmp", "Alife.Client");
+        string? storageOverride = Environment.GetEnvironmentVariable("ALIFE_STORAGE_PATH");
+        AlifeLocalPaths paths = ResolveLocalProductionPaths(
+            Environment.GetEnvironmentVariable("ALIFE_RUNTIME_PATH"),
+            storageOverride,
+            Environment.GetEnvironmentVariable("ALIFE_TEMP_PATH"));
+        StorageFolderPath = paths.StorageFolderPath;
+        RuntimeFolderPath = paths.RuntimeFolderPath;
+        TempFolderPath = paths.TempFolderPath;
 
         //后处理
         string configPath = Path.Combine(RuntimeFolderPath, "storage_path.txt");
-        if (File.Exists(configPath))
+        if (string.IsNullOrWhiteSpace(storageOverride) && File.Exists(configPath))
             StorageFolderPath = File.ReadAllText(configPath).Trim();
         //保障
         Directory.CreateDirectory(StorageFolderPath);
