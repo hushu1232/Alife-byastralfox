@@ -1,4 +1,4 @@
-param([string]$NapCatRoot='D:\NapCat',[switch]$Start,[switch]$Interactive,[switch]$RestartLaunchers)
+param([string]$NapCatRoot='D:\NapCat',[ValidateSet(0,3001,3002)][int]$AccountPort=0,[switch]$Start,[switch]$Interactive,[switch]$RestartLaunchers)
 $ErrorActionPreference='Stop'
 
 function Get-NapCatDualAccountPlan {
@@ -24,6 +24,7 @@ function Get-NapCatDualAccountPlan {
 
 if($MyInvocation.InvocationName-ne'.'){
   $slots=Get-NapCatDualAccountPlan -NapCatRoot $NapCatRoot
+  if($AccountPort-ne0){$slots=@($slots|Where-Object Port -eq $AccountPort);if($slots.Count-ne1){throw 'Requested account port was not found.'}}
   if($RestartLaunchers){if(-not$Start){throw '-RestartLaunchers requires -Start.'};$bootMainPath=$slots[0].BootMain;Get-Process NapCatWinBootMain -ErrorAction SilentlyContinue|Where-Object{$_.Path-eq$bootMainPath}|Stop-Process -Force}
   if($Start){foreach($slot in $slots){$arguments=@('-q',$slot.AccountId);if($Interactive){Start-Process -FilePath $slot.Launcher -ArgumentList $arguments -WorkingDirectory $slot.WorkingDirectory}else{Start-Process -FilePath $slot.Launcher -ArgumentList $arguments -WorkingDirectory $slot.WorkingDirectory -WindowStyle Hidden}}}
   [pscustomobject]@{accountCount=$slots.Count;ports=@($slots.Port|Sort-Object);started=[bool]$Start;interactive=[bool]$Interactive}|ConvertTo-Json -Depth 3
