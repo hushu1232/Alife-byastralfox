@@ -33,6 +33,7 @@ public sealed class DataAgentV44ProductionShadowClient : IDataAgentGraphSidecarC
 
     readonly IDataAgentGraphSidecarClient innerClient;
     readonly DataAgentV44ProductionShadowOptions options;
+    readonly Func<DataAgentV44ProductionShadowOptions> optionsProvider;
     readonly Func<DateTimeOffset> clock;
     readonly SemaphoreSlim concurrency;
     readonly object stateLock = new();
@@ -45,18 +46,20 @@ public sealed class DataAgentV44ProductionShadowClient : IDataAgentGraphSidecarC
     public DataAgentV44ProductionShadowClient(
         IDataAgentGraphSidecarClient innerClient,
         DataAgentV44ProductionShadowOptions options,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        Func<DataAgentV44ProductionShadowOptions>? optionsProvider = null)
     {
         this.innerClient = innerClient ?? throw new ArgumentNullException(nameof(innerClient));
         this.options = options ?? throw new ArgumentNullException(nameof(options));
         this.clock = clock ?? (() => DateTimeOffset.UtcNow);
+        this.optionsProvider = optionsProvider ?? (() => this.options);
         concurrency = new SemaphoreSlim(options.MaxConcurrency, options.MaxConcurrency);
     }
 
     public DataAgentGraphHandshakeResponse TryHandshake(DataAgentGraphHandshakeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ThrowIfNotReady();
+        ThrowIfNotReady(CurrentOptions());
         ThrowIfCircuitOpen();
 
         if (concurrency.Wait(0) == false)
@@ -120,13 +123,29 @@ public sealed class DataAgentV44ProductionShadowClient : IDataAgentGraphSidecarC
         disposed = true;
     }
 
-    void ThrowIfNotReady()
+    DataAgentV44ProductionShadowOptions CurrentOptions()
     {
-        if (options.Enabled == false)
+        try
+        {
+            return optionsProvider() ?? throw new InvalidOperationException();
+        }
+        catch (DataAgentV44ProductionShadowException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw Failure(UnavailableReason, networkAttempted: false, recordReason: true);
+        }
+    }
+
+    void ThrowIfNotReady(DataAgentV44ProductionShadowOptions current)
+    {
+        if (current.Enabled == false)
             throw Failure(DisabledReason, networkAttempted: false, recordReason: true);
-        if (options.KillSwitchActive)
+        if (current.KillSwitchActive)
             throw Failure(KillSwitchReason, networkAttempted: false, recordReason: true);
-        if (options.ValueGatePassed == false)
+        if (current.ValueGatePassed == false)
             throw Failure(ValueGateReason, networkAttempted: false, recordReason: true);
     }
 

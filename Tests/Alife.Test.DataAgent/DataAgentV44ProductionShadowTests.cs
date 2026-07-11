@@ -206,6 +206,34 @@ public sealed class DataAgentV44ProductionShadowTests
         Assert.That(client.GetSnapshot().ActiveCalls, Is.Zero);
     }
 
+    [Test]
+    public void LiveKillSwitchRejectsNextCallBeforeNetworkWithoutRebuildingClient()
+    {
+        int calls = 0;
+        DataAgentV44ProductionShadowOptions current = ReadyOptions();
+        DataAgentV44ProductionShadowClient client = new(
+            new FakeClient(_ =>
+            {
+                calls++;
+                return Response();
+            }),
+            ReadyOptions(),
+            optionsProvider: () => current);
+
+        Assert.That(client.TryHandshake(Request()).Accepted, Is.True);
+        current = current with { KillSwitchActive = true };
+
+        DataAgentV44ProductionShadowException error = Assert.Throws<DataAgentV44ProductionShadowException>(
+            () => client.TryHandshake(Request()))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(error.ReasonCode, Is.EqualTo("production_shadow_kill_switch_active"));
+            Assert.That(error.NetworkAttempted, Is.False);
+            Assert.That(calls, Is.EqualTo(1));
+        });
+    }
+
     static DataAgentV44ProductionShadowOptions ReadyOptions()
     {
         return DataAgentV44ProductionShadowOptions.FromValues(

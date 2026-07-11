@@ -40,7 +40,12 @@ public sealed record DataAgentV45ProductionObservationSnapshot(
     bool RetryStormDetected,
     bool StoresSensitiveData);
 
-public sealed class DataAgentV45ProductionObservationRecorder
+public interface IDataAgentV45ProductionObservationSink
+{
+    void Record(DataAgentGraphHandshakeOutcome outcome, TimeSpan elapsed, DateTimeOffset recordedAt);
+}
+
+public sealed class DataAgentV45ProductionObservationRecorder : IDataAgentV45ProductionObservationSink
 {
     const int MaxCapacity = 4096;
     const int MaxLatencyMs = 300_000;

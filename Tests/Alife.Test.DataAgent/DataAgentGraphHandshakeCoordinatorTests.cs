@@ -332,6 +332,77 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [Test]
+    public void CoordinatorRecordsExactlyOneFinalV45ObservationForEachOutcome()
+    {
+        DateTimeOffset now = new(2026, 7, 12, 8, 0, 0, TimeSpan.Zero);
+        DateTimeOffset Clock()
+        {
+            DateTimeOffset value = now;
+            now = now.AddMilliseconds(100);
+            return value;
+        }
+
+        DataAgentV45ProductionObservationRecorder recorder = new();
+        DataAgentGraphSidecarObservabilityContext configured = new(true, false);
+        DataAgentGraphHandshakeCoordinator accepted = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new RecordingSidecarClient(NewAcceptedResponse),
+            observabilityContext: configured,
+            observationRecorder: recorder,
+            observationClock: Clock);
+        DataAgentGraphHandshakeCoordinator rejected = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new RecordingSidecarClient(request => NewAcceptedResponse(request) with { NoSqlAuthority = false }),
+            observabilityContext: configured,
+            observationRecorder: recorder,
+            observationClock: Clock);
+        DataAgentGraphHandshakeCoordinator timeout = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new DataAgentV44ProductionShadowException("production_shadow_timeout", true)),
+            observabilityContext: configured,
+            observationRecorder: recorder,
+            observationClock: Clock);
+        DataAgentGraphHandshakeCoordinator busy = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new ThrowingSidecarClient(new DataAgentV44ProductionShadowException("production_shadow_busy", false)),
+            observabilityContext: configured,
+            observationRecorder: recorder,
+            observationClock: Clock);
+
+        accepted.TryHandshake("owner", "review", AcceptedResult());
+        rejected.TryHandshake("owner", "review", AcceptedResult());
+        timeout.TryHandshake("owner", "review", AcceptedResult());
+        busy.TryHandshake("owner", "review", AcceptedResult());
+        DataAgentV45ProductionObservationSnapshot snapshot = recorder.GetSnapshot(now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(snapshot.ObservationCount, Is.EqualTo(4));
+            Assert.That(snapshot.AcceptedCount, Is.EqualTo(1));
+            Assert.That(snapshot.RejectedCount, Is.EqualTo(1));
+            Assert.That(snapshot.TimeoutCount, Is.EqualTo(1));
+            Assert.That(snapshot.BusyCount, Is.EqualTo(1));
+            Assert.That(snapshot.AverageLatencyMs, Is.EqualTo(100));
+        });
+    }
+
+    [Test]
+    public void ObservationFailureNeverChangesAcceptedCoordinatorOutcome()
+    {
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            new RecordingSidecarClient(NewAcceptedResponse),
+            observationRecorder: new ThrowingObservationSink());
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "review",
+            AcceptedResult());
+
+        Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Accepted));
+    }
+
+    [Test]
     public void EnabledCoordinatorMapsInvalidSidecarResponseExceptionToInvalidFallback()
     {
         DataAgentGraphSidecarObservabilityContext configured = new(EndpointConfigured: true, RuntimeStartedByAlife: false);
@@ -819,6 +890,17 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
         public void Publish(DataAgentProgressEvent? progressEvent)
         {
             throw new InvalidOperationException("progress sink unavailable");
+        }
+    }
+
+    sealed class ThrowingObservationSink : IDataAgentV45ProductionObservationSink
+    {
+        public void Record(
+            DataAgentGraphHandshakeOutcome outcome,
+            TimeSpan elapsed,
+            DateTimeOffset recordedAt)
+        {
+            throw new InvalidOperationException("observation unavailable");
         }
     }
 }

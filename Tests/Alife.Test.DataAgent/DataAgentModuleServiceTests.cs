@@ -236,6 +236,19 @@ public sealed class DataAgentModuleServiceTests
     }
 
     [Test]
+    public void AwakeUsesLiveProductionShadowOptionsProviderAndV45Recorder()
+    {
+        string source = ReadModuleSource();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("optionsProvider: DataAgentV44ProductionShadowOptions.FromEnvironment"));
+            Assert.That(source, Does.Contain("DataAgentV45ProductionObservationRecorder"));
+            Assert.That(source, Does.Contain("observationRecorder:"));
+        });
+    }
+
+    [Test]
     public void CreateGraphHandshakeStreamClientReturnsNullUnlessGraphAndStreamAreConfigured()
     {
         MethodInfo method = StreamClientFactoryMethod();
