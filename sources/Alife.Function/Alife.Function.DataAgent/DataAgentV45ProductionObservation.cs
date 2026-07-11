@@ -24,6 +24,7 @@ public sealed record DataAgentV45ProductionObservationOptions(
 
 public sealed record DataAgentV45ProductionObservationSnapshot(
     int Capacity,
+    int WindowMinutes,
     int ObservationCount,
     int AcceptedCount,
     int RejectedCount,
@@ -127,6 +128,7 @@ public sealed class DataAgentV45ProductionObservationRecorder : IDataAgentV45Pro
 
             return new DataAgentV45ProductionObservationSnapshot(
                 options.Capacity,
+                (int)options.Window.TotalMinutes,
                 values.Length,
                 Count(values, DataAgentV45ProductionObservationStatus.Accepted),
                 Count(values, DataAgentV45ProductionObservationStatus.Rejected),
