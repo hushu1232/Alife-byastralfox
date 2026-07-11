@@ -12,6 +12,22 @@ This Windows-only supervisor keeps `account-a` and `account-b` isolated. It expo
 4. Run mocked tests: `powershell.exe -NoProfile -File tools/local-production/Test-AlifeLocalSupervisor.ps1` and `Test-InstallAlifeLocalSupervisorTask.ps1`.
 5. Install only after dry-run review: `Install-AlifeLocalSupervisorTask.ps1 -Install -PlanPath <local-plan>`.
 
+## Character instances
+
+Validate the existing local character sources without changing either account:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/local-production/Install-AlifeDualAccountCharacters.ps1
+```
+
+Install the complete instances into their isolated account Storage roots:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/local-production/Install-AlifeDualAccountCharacters.ps1 -Install
+```
+
+The fixed mapping is account A to the `真央` instance (presented by QChat as 咪绪) and account B to the `夏羽` instance. Account A's Alife window lists only 真央 and account B's window lists only 夏羽; one window does not aggregate both accounts. The installer does not start, stop, or restart Alife, NapCat, or QQ. Restart and activation require separate owner authorization.
+
 ## Operations
 
 Read safe status with `Get-AlifeLocalProductionStatus.ps1 -StatusPath <status-file>`. Output is restricted to slot id, pid, health, failure/restart/drain/active counters and safe reason codes. `DependencyUnavailable`, `ConfigurationRejected`, `HealthProbeFailed`, `DeadlineExceeded`, `Busy`, and `RestartRecoveryRequired` never include secrets, chat/model text, SQL, stack traces, or absolute paths.
