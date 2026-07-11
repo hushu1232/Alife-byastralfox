@@ -102,7 +102,8 @@ public sealed class DataAgentV3FrozenReadinessSnapshot
     static readonly FrozenSet<string> V4OnlyNames = new[]
     {
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
-        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
+        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
+        "GraphHandshakeV42OperatorEvidencePacketPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     DataAgentV3FrozenReadinessSnapshot(FrozenSet<string> expectedStaticCheckNames, FrozenSet<string> expectedCoreCheckNames)
@@ -178,7 +179,8 @@ public static class DataAgentV3ClosureManifest
     {
         "GraphHandshakeFinalV3ReadinessFreezePresent",
         "GraphHandshakeRealLangGraphManualShadowIntegrationPresent",
-        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent"
+        "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent",
+        "GraphHandshakeV42OperatorEvidencePacketPresent"
     }.ToFrozenSet(StringComparer.Ordinal);
 
     // These exact inventories are derived from the authoritative current V3 readiness

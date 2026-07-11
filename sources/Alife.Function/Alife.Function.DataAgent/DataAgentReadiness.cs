@@ -3438,6 +3438,46 @@ public static class DataAgentReadiness
             checks.Add(v41Ready
                 ? Pass("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", "manual_shadow_context_budget=true;source_baseline=v4.0;max_envelope_chars=1200;max_layer_chars=400;required_layer_count=3;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", $"doc={LowerBool(v41DocExists)};envelope={LowerBool(v41Envelope.Accepted)};markers={LowerBool(v41Markers)}"));
+
+            string v42DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.2-operator-evidence-packet.md");
+            bool v42DocExists = File.Exists(v42DocPath);
+            string v42Doc = v42DocExists ? File.ReadAllText(v42DocPath) : string.Empty;
+            DataAgentRealLangGraphManualShadowResult v42Integration = v40Fallback with
+            {
+                Accepted = true,
+                ReasonCode = "real_langgraph_manual_shadow_integration_accepted",
+                FallbackRequired = false,
+                OperatorRequired = false,
+                ReasonCodes =
+                [
+                    "real_langgraph_manual_shadow_integration_accepted",
+                    "harness_replay_diff_gate_passed"
+                ]
+            };
+            DataAgentV42OperatorEvidencePacket v42Packet = DataAgentV42OperatorEvidencePacketBuilder.Build(
+                new DataAgentV42OperatorEvidenceInput(
+                    v42Integration,
+                    v41Envelope,
+                    DataAgentV42AdvisoryKinds.DiagnosticSummary,
+                    "bounded operator summary",
+                    ["replay_report:v4.1"]));
+            string v42Formatted = DataAgentV42OperatorEvidencePacketFormatter.Format(v42Packet);
+            bool v42Markers =
+                v42Doc.Contains("operator_evidence_packet=v4.2", StringComparison.Ordinal) &&
+                v42Doc.Contains("source_baseline=v4.1", StringComparison.Ordinal) &&
+                v42Doc.Contains("statuses=accepted,rejected,fallback", StringComparison.Ordinal) &&
+                v42Doc.Contains("max_summary_chars=320", StringComparison.Ordinal) &&
+                v42Doc.Contains("max_evidence_refs=8", StringComparison.Ordinal) &&
+                v42Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("status=accepted", StringComparison.Ordinal) &&
+                v42Formatted.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v42Ready = v42DocExists && v42Packet.Accepted && v42Markers;
+            checks.Add(v42Ready
+                ? Pass("GraphHandshakeV42OperatorEvidencePacketPresent", "operator_evidence_packet=v4.2;source_baseline=v4.1;statuses=accepted,rejected,fallback;max_summary_chars=320;max_evidence_refs=8;agent_advisory_only=true;csharp_validation_authority=true;default_result_changed=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeV42OperatorEvidencePacketPresent", $"doc={LowerBool(v42DocExists)};packet={LowerBool(v42Packet.Accepted)};markers={LowerBool(v42Markers)}"));
         }
         catch (Exception ex)
         {
