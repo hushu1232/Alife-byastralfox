@@ -307,8 +307,14 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("v3_final_readiness_freeze=true"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("final_v3_version=v3.28"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("source_versions=v3.0-v3.27"));
-            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("frozen_required_check_count=111"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("frozen_core_check_count=95"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("missing_milestone_count=0"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("missing_evidence_path_count=0"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("missing_required_check_count=0"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("failed_required_check_count=0"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("duplicate_required_check_count=0"));
+            Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("unexpected_check_count=0"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("operator_evidence_pack_present=true"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("readiness_gates_frozen=true"));
             Assert.That(graphHandshakeFinalV3ReadinessFreezeCheck.Detail, Does.Contain("operator_decides=true"));
@@ -493,7 +499,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 113 required passed, 0 required missing"
+                "  Summary: 114 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -558,7 +564,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 113"));
+            Assert.That(script, Does.Contain("$expectedRequired = 114"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

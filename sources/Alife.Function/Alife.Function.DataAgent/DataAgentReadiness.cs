@@ -3134,17 +3134,38 @@ public static class DataAgentReadiness
 
             string v328RepoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
             string v328DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v3.28-final-readiness-freeze.md");
+            string v3LedgerPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v3-closure-ledger.md");
+            string readinessScriptPath = Path.Combine(v328RepoRoot, "tools", "check-dataagent-readiness.ps1");
             bool v328DocExists = File.Exists(v328DocPath);
             string v328Doc = v328DocExists ? File.ReadAllText(v328DocPath) : string.Empty;
+            string v3Ledger = File.Exists(v3LedgerPath) ? File.ReadAllText(v3LedgerPath) : string.Empty;
+            string readinessScript = File.Exists(readinessScriptPath) ? File.ReadAllText(readinessScriptPath) : string.Empty;
+            IReadOnlyList<DataAgentV3MilestoneEvidence> v3Manifest = DataAgentV3ClosureManifest.CreateDefault();
+            DataAgentV3LedgerParseResult parsedV3Ledger = DataAgentV3ClosureManifest.ParseLedger(v3Ledger);
+            DataAgentV3FrozenReadinessSnapshot v3Snapshot = DataAgentV3ClosureManifest.CanonicalReadinessSnapshot;
+            IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
+                .Select(entry => entry.EvidencePath)
+                .Where(path => File.Exists(Path.Combine(v328RepoRoot, path.Replace('/', Path.DirectorySeparatorChar))) )
+                .ToHashSet(StringComparer.Ordinal);
+            IReadOnlyList<string> v3StaticCheckNames = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(
+                DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript));
+            DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
+                v3Snapshot, v3Manifest, checks, parsedV3Ledger, v3StaticCheckNames, existingV3EvidencePaths);
             DataAgentV3FinalReadinessFreeze v328Freeze =
-                DataAgentV3FinalReadinessFreezeBuilder.Build(checks.ToArray(), frozenRequiredCheckCount: 110, frozenCoreCheckCount: 95);
+                DataAgentV3FinalReadinessFreezeBuilder.Build(v3Closure);
             string v328Packet = DataAgentV3FinalReadinessFreezeFormatter.Format(v328Freeze);
             bool v328DocMarkers =
                 v328Doc.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Doc.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Doc.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_required_check_count=111", StringComparison.Ordinal) &&
                 v328Doc.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_milestone_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_evidence_path_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("failed_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("duplicate_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("unexpected_check_count=0", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_decides=true", StringComparison.Ordinal);
@@ -3167,9 +3188,15 @@ public static class DataAgentReadiness
                 string.Equals(v328Freeze.FreezeId, "v3.28-final-readiness-freeze", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.FinalV3Version, "v3.28", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.SourceVersions, "v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Freeze.FrozenRequiredCheckCount == 110 &&
+                v328Freeze.FrozenRequiredCheckCount == 111 &&
                 v328Freeze.FrozenCoreCheckCount == 95 &&
                 v328Freeze.AllFrozenChecksPassed &&
+                v328Freeze.MissingMilestoneCount == 0 &&
+                v328Freeze.MissingEvidencePathCount == 0 &&
+                v328Freeze.MissingRequiredCheckCount == 0 &&
+                v328Freeze.FailedRequiredCheckCount == 0 &&
+                v328Freeze.DuplicateRequiredCheckCount == 0 &&
+                v328Freeze.UnexpectedCheckCount == 0 &&
                 v328Freeze.OperatorEvidencePackPresent &&
                 v328Freeze.ReadinessGatesFrozen &&
                 v328Freeze.OperatorDecides &&
@@ -3188,8 +3215,14 @@ public static class DataAgentReadiness
                 v328Packet.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Packet.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Packet.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_required_check_count=111", StringComparison.Ordinal) &&
                 v328Packet.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_milestone_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_evidence_path_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("failed_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("duplicate_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("unexpected_check_count=0", StringComparison.Ordinal) &&
                 v328Packet.Contains("all_frozen_checks_passed=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
@@ -3208,14 +3241,15 @@ public static class DataAgentReadiness
                 v328Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
                 v328Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
             bool v328Ready =
+                v3Closure.Accepted &&
                 v328DocExists &&
                 v328DocMarkers &&
                 v328Boundary &&
                 v328ModelReady &&
                 v328PacketMarkers;
             checks.Add(v328Ready
-                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=110;frozen_core_check_count=95;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
-                : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)}"));
+                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=111;frozen_core_check_count=95;missing_milestone_count=0;missing_evidence_path_count=0;missing_required_check_count=0;failed_required_check_count=0;duplicate_required_check_count=0;unexpected_check_count=0;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"closure={LowerBool(v3Closure.Accepted)};doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)};missing_milestone_count={v328Freeze.MissingMilestoneCount};missing_evidence_path_count={v328Freeze.MissingEvidencePathCount};missing_required_check_count={v328Freeze.MissingRequiredCheckCount};failed_required_check_count={v328Freeze.FailedRequiredCheckCount};duplicate_required_check_count={v328Freeze.DuplicateRequiredCheckCount};unexpected_check_count={v328Freeze.UnexpectedCheckCount}"));
 
             string v40DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.0-real-langgraph-manual-shadow-integration.md");
             string v40HarnessScriptPath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
