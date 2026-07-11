@@ -17,7 +17,7 @@ function Read-LocalProductionPlan {
         $uri = [Uri]$slot.oneBotUrl
         if ($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1','localhost','[::1]','::1')) { throw 'OneBot URL must use loopback.' }
         if ($ports.ContainsKey($uri.Port)) { throw 'OneBot ports must be unique.' }; $ports[$uri.Port] = $true
-        foreach ($root in @($slot.runtimeRoot,$slot.storageRoot,$slot.tempRoot)) { if ($root -and -not [IO.Path]::IsPathFullyQualified($root)) { throw 'Roots must be absolute.' } }
+        foreach ($root in @($slot.runtimeRoot,$slot.storageRoot,$slot.tempRoot)) { if ($root -and -not [IO.Path]::IsPathRooted($root)) { throw 'Roots must be absolute.' } }
     }
     return $plan
 }
