@@ -25,7 +25,10 @@ function Get-NapCatDualAccountPlan {
 if($MyInvocation.InvocationName-ne'.'){
   $slots=Get-NapCatDualAccountPlan -NapCatRoot $NapCatRoot
   if($AccountPort-ne0){$slots=@($slots|Where-Object Port -eq $AccountPort);if($slots.Count-ne1){throw 'Requested account port was not found.'}}
-  if($RestartLaunchers){if(-not$Start){throw '-RestartLaunchers requires -Start.'};$bootMainPath=$slots[0].BootMain;Get-Process NapCatWinBootMain -ErrorAction SilentlyContinue|Where-Object{$_.Path-eq$bootMainPath}|Stop-Process -Force}
+  if($RestartLaunchers){
+    if(-not$Start){throw '-RestartLaunchers requires -Start.'}
+    foreach($slot in $slots){Get-CimInstance Win32_Process -Filter "Name='NapCatWinBootMain.exe'"|Where-Object{($_.ExecutablePath -eq $slot.BootMain) -and ($_.CommandLine -match [regex]::Escape($slot.AccountId))}|ForEach-Object{Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}}
+  }
   if($Start){foreach($slot in $slots){$arguments=@('-q',$slot.AccountId);if($Interactive){Start-Process -FilePath $slot.Launcher -ArgumentList $arguments -WorkingDirectory $slot.WorkingDirectory}else{Start-Process -FilePath $slot.Launcher -ArgumentList $arguments -WorkingDirectory $slot.WorkingDirectory -WindowStyle Hidden}}}
   [pscustomobject]@{accountCount=$slots.Count;ports=@($slots.Port|Sort-Object);started=[bool]$Start;interactive=[bool]$Interactive}|ConvertTo-Json -Depth 3
 }
