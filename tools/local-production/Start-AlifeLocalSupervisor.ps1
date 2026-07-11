@@ -4,13 +4,15 @@ Import-Module (Join-Path $PSScriptRoot 'LocalProduction.Configuration.psm1') -Fo
 if([string]::IsNullOrWhiteSpace($PlanPath)){throw 'PlanPath is required.'}
 function Write-SafeJson($Value,[string]$Path){$parent=Split-Path -Parent $Path;if($parent){[IO.Directory]::CreateDirectory($parent)|Out-Null};$temp="$Path.tmp";$Value|ConvertTo-Json -Depth 6|Set-Content -LiteralPath $temp -Encoding UTF8;Move-Item -LiteralPath $temp -Destination $Path -Force}
 function Start-AccountWorker($Slot,[string]$Executable,[string]$Token){
-  $start=New-Object Diagnostics.ProcessStartInfo;$start.FileName=$Executable;$start.UseShellExecute=$false;$start.CreateNoWindow=$true
+  $start=New-Object Diagnostics.ProcessStartInfo
+  if([IO.Path]::GetExtension($Executable)-eq'.dll'){$dotnet=if($env:ALIFE_DOTNET_PATH){$env:ALIFE_DOTNET_PATH}else{'C:\Users\hu shu\.dotnet\dotnet.exe'};if(-not(Test-Path -LiteralPath $dotnet)){throw 'User .NET runtime was not found.'};$start.FileName=$dotnet;$start.Arguments='"'+$Executable+'"'}else{$start.FileName=$Executable}
+  $start.UseShellExecute=$false;$start.CreateNoWindow=$true
   $start.EnvironmentVariables['ALIFE_RUNTIME_PATH']=$Slot.runtimeRoot;$start.EnvironmentVariables['ALIFE_STORAGE_PATH']=$Slot.storageRoot;$start.EnvironmentVariables['ALIFE_TEMP_PATH']=$Slot.tempRoot
   $start.EnvironmentVariables['ALIFE_WEBVIEW2_USER_DATA_FOLDER']=(Join-Path $Slot.runtimeRoot 'webview2');$start.EnvironmentVariables['ALIFE_ONEBOT_URL']=$Slot.oneBotUrl;$start.EnvironmentVariables['ALIFE_ONEBOT_TOKEN']=$Token
   [Diagnostics.Process]::Start($start)
 }
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-if([string]::IsNullOrWhiteSpace($ClientExecutablePath)){$ClientExecutablePath=Join-Path $repoRoot 'Outputs\Alife.Client\Alife.Client.exe'}
+if([string]::IsNullOrWhiteSpace($ClientExecutablePath)){$ClientExecutablePath=Join-Path $repoRoot 'Outputs\Alife.Client\Alife.Client.dll'}
 $plan=Read-LocalProductionPlan (Get-Content -LiteralPath $PlanPath -Raw)
 do {
   $accounts=[ordered]@{}
