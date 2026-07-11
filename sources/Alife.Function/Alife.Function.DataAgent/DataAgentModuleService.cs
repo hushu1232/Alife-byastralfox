@@ -22,14 +22,14 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentGraphHandshakeHttpOptions httpOptions,
         DataAgentV44ProductionShadowOptions productionShadowOptions)
     {
-        return CreateGraphHandshakeSidecarClient(
+        return CreateGraphHandshakeSidecarClientWithProvider(
             graphOptions,
             httpOptions,
             productionShadowOptions,
             () => productionShadowOptions);
     }
 
-    static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClient(
+    static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClientWithProvider(
         DataAgentGraphHandshakeOptions graphOptions,
         DataAgentGraphHandshakeHttpOptions httpOptions,
         DataAgentV44ProductionShadowOptions productionShadowOptions,
@@ -104,7 +104,7 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
         DataAgentV45ProductionObservationRecorder productionObservationRecorder = new();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
-            CreateGraphHandshakeSidecarClient(
+            CreateGraphHandshakeSidecarClientWithProvider(
                 graphHandshakeOptions,
                 graphHandshakeHttpOptions,
                 productionShadowOptions,
