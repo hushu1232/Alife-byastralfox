@@ -1,11 +1,16 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Endpoint,
-    [int]$TimeoutSeconds = 3
+    [int]$TimeoutSeconds = 3,
+    [string]$ExpectedContractVersion = "v4.7"
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+
+if ($ExpectedContractVersion -notmatch '^v4\.[0-9]+$') {
+    throw "Expected contract version is invalid."
+}
 
 # manual_only=true
 # starts_runtime=false
@@ -82,7 +87,7 @@ try {
     $health = $healthResult.Body | ConvertFrom-Json
     if ($health.ready -ne $true -or $health.runtimeMode -ne "langgraph" -or
         $health.langGraphLoaded -ne $true -or $health.langGraphVersion -ne "0.3.34" -or
-        $health.graphCompiled -ne $true -or $health.contractVersion -ne "v4.6" -or
+        $health.graphCompiled -ne $true -or $health.contractVersion -ne $ExpectedContractVersion -or
         $health.graphVersion -ne "dataagent-advisory-v1") {
         throw "Health attestation is not production-canary ready."
     }

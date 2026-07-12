@@ -1,4 +1,4 @@
-# DataAgent LangGraph V4.6 Sidecar
+# DataAgent LangGraph V4.7 Sidecar
 
 This is a manual-only, operator-owned loopback advisory runtime. Alife does not start it, install its dependencies, supervise it, or require it for default tests.
 
@@ -16,12 +16,14 @@ Automated tests never run that command. The default runtime mode is `langgraph`;
 
 ```powershell
 python tools/dataagent-langgraph-sidecar/server.py --host 127.0.0.1 --port 8765 --runtime-mode langgraph
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/run-dataagent-langgraph-manual-smoke.ps1 -Endpoint http://127.0.0.1:8765/handshake
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/run-dataagent-langgraph-manual-smoke.ps1 -Endpoint http://127.0.0.1:8765 -ExpectedContractVersion v4.7
 ```
 
 The operator who starts the process owns shutdown. The smoke script does not start, restart, stop, or supervise it.
 
-Production-canary health requires `ready=true`, `runtimeMode=langgraph`, `langGraphLoaded=true`, `langGraphVersion=0.3.34`, `graphCompiled=true`, `contractVersion=v4.6`, and `graphVersion=dataagent-advisory-v1`.
+Production-canary health requires `ready=true`, `runtimeMode=langgraph`, `langGraphLoaded=true`, `langGraphVersion=0.3.34`, `graphCompiled=true`, `contractVersion=v4.7`, `graphVersion=dataagent-advisory-v1`, a stable runtime UUID, a canonical configuration fingerprint, and a positive startup time.
+
+For the owned V4.7 closure run, use `tools/run-dataagent-v47-live-canary.ps1`. It starts one hidden loopback process, waits at most ten seconds, runs the fixed five-item smoke, drives twenty governed C# requests and seven isolated live drills, writes the safe aggregate artifact, and stops only the process it owns.
 
 ## Boundaries
 
@@ -29,4 +31,4 @@ Production-canary health requires `ready=true`, `runtimeMode=langgraph`, `langGr
 - HTTP failures use fixed safe error codes; bodies, exceptions, endpoints, SQL, tokens, hidden context, caller/session identifiers, and local paths are not returned or logged.
 - Accepted responses use `FallbackRequired=false`, but C# remains final validation and execution authority.
 - The sidecar does not execute SQL or tools, mutate checkpoints or state, publish visible text, or control browser, desktop, memory, QQ, or NapCat.
-- V4.6 is a production-canary candidate only. V4.7 must collect the real 20-request window, seven live drills, runtime/config identity, safe aggregates, and closure artifact.
+- V4.7 proves transport, safety, lifecycle, and rollback closure. It remains advisory-only and default-off; model-backed business value is the V4.8 entry gate.
