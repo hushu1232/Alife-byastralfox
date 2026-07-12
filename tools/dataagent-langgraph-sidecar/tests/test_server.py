@@ -31,8 +31,11 @@ def runtime_state(*, ready=True, graph=None):
         "langGraphLoaded": ready,
         "langGraphVersion": "0.3.34" if ready else None,
         "graphCompiled": ready,
-        "contractVersion": "v4.6",
+        "contractVersion": "v4.7",
         "graphVersion": "dataagent-advisory-v1",
+        "runtimeInstanceId": "12345678-1234-5678-9234-567812345678",
+        "configurationFingerprint": "a" * 64,
+        "startedAtUnixSeconds": 1_783_820_000,
     }
     return SimpleNamespace(
         compiled_graph=graph if ready else None,
@@ -65,7 +68,17 @@ class ServerApplicationTests(unittest.TestCase):
         result = app.handle("GET", "/health", {}, b"")
         self.assertEqual(200, result.status)
         self.assertTrue(result.body["ready"])
-        self.assertEqual("v4.6", result.body["contractVersion"])
+        self.assertEqual("v4.7", result.body["contractVersion"])
+
+    def test_invalid_health_attestation_fails_closed(self):
+        state = runtime_state()
+        state.health_attestation()["runtimeInstanceId"] = "not-a-uuid"
+        app = self.server.SidecarApplication(state)
+
+        result = app.handle("GET", "/health", {}, b"")
+
+        self.assertEqual(503, result.status)
+        self.assertEqual({"error": "runtime_not_ready"}, result.body)
 
     def test_valid_request_invokes_graph_once(self):
         graph = FakeGraph(self.accepted)

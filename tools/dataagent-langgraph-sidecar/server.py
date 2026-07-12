@@ -9,6 +9,7 @@ from typing import Any
 from contracts import (
     ContractError,
     MAX_BODY_BYTES,
+    validate_health_attestation,
     validate_handshake_request,
     validate_handshake_response,
 )
@@ -33,7 +34,11 @@ class SidecarApplication:
         body: bytes,
     ) -> HttpResult:
         if method == "GET" and path == "/health":
-            return HttpResult(200, self.runtime_state.health_attestation())
+            try:
+                health = validate_health_attestation(self.runtime_state.health_attestation())
+            except ContractError:
+                return HttpResult(503, {"error": "runtime_not_ready"})
+            return HttpResult(200, health)
         if method != "POST" or path != "/handshake":
             return HttpResult(404, {"error": "not_found"})
 
@@ -48,7 +53,11 @@ class SidecarApplication:
             return HttpResult(413, {"error": "request_body_too_large"})
         if declared_length < 1 or declared_length != len(body):
             return HttpResult(400, {"error": "invalid_request_schema"})
-        if not self.runtime_state.health_attestation().get("ready", False):
+        try:
+            health = validate_health_attestation(self.runtime_state.health_attestation())
+        except ContractError:
+            return HttpResult(503, {"error": "runtime_not_ready"})
+        if not health["ready"]:
             return HttpResult(503, {"error": "runtime_not_ready"})
         try:
             request = validate_handshake_request(json.loads(body.decode("utf-8")))

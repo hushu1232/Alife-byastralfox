@@ -1,3 +1,5 @@
+import re
+import uuid
 from typing import Any
 
 
@@ -25,6 +27,11 @@ RESPONSE_FIELDS = frozenset({
     "NoSqlAuthority", "ReadOnly", "RequestedToolNames",
     "RequestsCheckpointMutation", "RequestsVisibleText",
 })
+HEALTH_FIELDS = frozenset({
+    "ok", "ready", "runtimeMode", "langGraphLoaded", "langGraphVersion",
+    "graphCompiled", "contractVersion", "graphVersion", "runtimeInstanceId",
+    "configurationFingerprint", "startedAtUnixSeconds",
+})
 
 
 class ContractError(ValueError):
@@ -43,6 +50,49 @@ def _string_list(value: Any, maximum: int) -> bool:
         and len(value) <= maximum
         and all(_bounded_string(item, 256) for item in value)
     )
+
+
+def validate_health_attestation(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or frozenset(value) != HEALTH_FIELDS:
+        raise ContractError("invalid_health_attestation")
+    if value["ok"] is not True or value["contractVersion"] != "v4.7":
+        raise ContractError("invalid_health_attestation")
+    if value["graphVersion"] != "dataagent-advisory-v1":
+        raise ContractError("invalid_health_attestation")
+    try:
+        instance_id = value["runtimeInstanceId"]
+        parsed_instance_id = uuid.UUID(instance_id)
+    except (AttributeError, TypeError, ValueError):
+        raise ContractError("invalid_health_attestation") from None
+    if str(parsed_instance_id) != instance_id:
+        raise ContractError("invalid_health_attestation")
+    fingerprint = value["configurationFingerprint"]
+    if not isinstance(fingerprint, str) or re.fullmatch(r"[a-f0-9]{64}", fingerprint) is None:
+        raise ContractError("invalid_health_attestation")
+    started_at = value["startedAtUnixSeconds"]
+    if isinstance(started_at, bool) or not isinstance(started_at, int) or started_at <= 0:
+        raise ContractError("invalid_health_attestation")
+
+    mode = value["runtimeMode"]
+    if mode == "langgraph":
+        valid_runtime = (
+            value["ready"] is True
+            and value["langGraphLoaded"] is True
+            and value["langGraphVersion"] == "0.3.34"
+            and value["graphCompiled"] is True
+        )
+    elif mode == "deterministic-stub":
+        valid_runtime = (
+            value["ready"] is False
+            and value["langGraphLoaded"] is False
+            and value["langGraphVersion"] is None
+            and value["graphCompiled"] is False
+        )
+    else:
+        valid_runtime = False
+    if not valid_runtime:
+        raise ContractError("invalid_health_attestation")
+    return value
 
 
 def validate_handshake_request(value: Any) -> dict[str, Any]:

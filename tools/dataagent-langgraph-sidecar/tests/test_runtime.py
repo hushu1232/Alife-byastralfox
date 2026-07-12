@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import inspect
 import sys
 import unittest
@@ -22,7 +23,17 @@ def load_runtime_module():
     return module
 
 
+def create_v47_runtime(runtime, **kwargs):
+    parameters = inspect.signature(runtime.create_runtime).parameters
+    if "instance_id_factory" not in parameters or "now_unix_seconds" not in parameters:
+        raise AssertionError("create_runtime must expose V4.7 identity factories")
+    return runtime.create_runtime(**kwargs)
+
+
 class RuntimeTests(unittest.TestCase):
+    INSTANCE_ID = "12345678-1234-5678-9234-567812345678"
+    STARTED_AT = 1_783_820_000
+
     def test_version_attestation_uses_distribution_metadata(self):
         runtime = load_runtime_module()
         self.assertIn(
@@ -30,10 +41,12 @@ class RuntimeTests(unittest.TestCase):
             inspect.signature(runtime.create_runtime).parameters,
             "runtime must resolve the installed distribution version",
         )
-        state = runtime.create_runtime(
+        state = create_v47_runtime(runtime,
             import_module=lambda _name: object(),
             resolve_version=lambda name: "0.3.34" if name == "langgraph" else None,
             compile_graph=lambda _module: object(),
+            instance_id_factory=lambda: self.INSTANCE_ID,
+            now_unix_seconds=lambda: self.STARTED_AT,
         )
         self.assertEqual("0.3.34", state.langgraph_version)
 
@@ -87,10 +100,12 @@ class RuntimeTests(unittest.TestCase):
         module = SimpleNamespace(__version__="0.3.34")
         compiled_graph = object()
 
-        state = runtime.create_runtime(
+        state = create_v47_runtime(runtime,
             import_module=lambda _name: module,
             resolve_version=lambda _name: "0.3.34",
             compile_graph=lambda loaded: compiled_graph if loaded is module else None,
+            instance_id_factory=lambda: self.INSTANCE_ID,
+            now_unix_seconds=lambda: self.STARTED_AT,
         )
 
         self.assertIs(compiled_graph, state.compiled_graph)
@@ -106,8 +121,13 @@ class RuntimeTests(unittest.TestCase):
                 "langGraphLoaded": True,
                 "langGraphVersion": "0.3.34",
                 "graphCompiled": True,
-                "contractVersion": "v4.6",
+                "contractVersion": "v4.7",
                 "graphVersion": "dataagent-advisory-v1",
+                "runtimeInstanceId": self.INSTANCE_ID,
+                "configurationFingerprint": hashlib.sha256(
+                    b"langgraph\n0.3.34\nv4.7\ndataagent-advisory-v1\n65536\n65536"
+                ).hexdigest(),
+                "startedAtUnixSeconds": self.STARTED_AT,
             },
             state.health_attestation(),
         )
@@ -121,9 +141,11 @@ class RuntimeTests(unittest.TestCase):
             import_attempted = True
             raise AssertionError("stub must not import langgraph")
 
-        state = runtime.create_runtime(
+        state = create_v47_runtime(runtime,
             mode="deterministic-stub",
             import_module=unexpected_import,
+            instance_id_factory=lambda: self.INSTANCE_ID,
+            now_unix_seconds=lambda: self.STARTED_AT,
         )
 
         self.assertFalse(import_attempted)
@@ -140,8 +162,13 @@ class RuntimeTests(unittest.TestCase):
                 "langGraphLoaded": False,
                 "langGraphVersion": None,
                 "graphCompiled": False,
-                "contractVersion": "v4.6",
+                "contractVersion": "v4.7",
                 "graphVersion": "dataagent-advisory-v1",
+                "runtimeInstanceId": self.INSTANCE_ID,
+                "configurationFingerprint": hashlib.sha256(
+                    b"deterministic-stub\nnone\nv4.7\ndataagent-advisory-v1\n65536\n65536"
+                ).hexdigest(),
+                "startedAtUnixSeconds": self.STARTED_AT,
             },
             state.health_attestation(),
         )
@@ -153,6 +180,45 @@ class RuntimeTests(unittest.TestCase):
             runtime.create_runtime(mode="automatic")
 
         self.assertEqual("runtime_mode_invalid", raised.exception.reason_code)
+
+    def test_identity_is_stable_per_runtime_and_distinct_per_startup(self):
+        runtime = load_runtime_module()
+        identifiers = iter([
+            "12345678-1234-5678-9234-567812345678",
+            "87654321-4321-6789-a234-567812345678",
+        ])
+
+        first = create_v47_runtime(runtime,
+            mode="deterministic-stub",
+            instance_id_factory=lambda: next(identifiers),
+            now_unix_seconds=lambda: self.STARTED_AT,
+        )
+        second = create_v47_runtime(runtime,
+            mode="deterministic-stub",
+            instance_id_factory=lambda: next(identifiers),
+            now_unix_seconds=lambda: self.STARTED_AT + 1,
+        )
+
+        self.assertEqual(first.health_attestation(), first.health_attestation())
+        self.assertNotEqual(first.runtime_instance_id, second.runtime_instance_id)
+
+    def test_invalid_runtime_identity_and_start_time_fail_closed(self):
+        runtime = load_runtime_module()
+        with self.assertRaises(runtime.RuntimeStartupError) as invalid_id:
+            create_v47_runtime(runtime,
+                mode="deterministic-stub",
+                instance_id_factory=lambda: "not-a-uuid",
+                now_unix_seconds=lambda: self.STARTED_AT,
+            )
+        with self.assertRaises(runtime.RuntimeStartupError) as invalid_time:
+            create_v47_runtime(runtime,
+                mode="deterministic-stub",
+                instance_id_factory=lambda: self.INSTANCE_ID,
+                now_unix_seconds=lambda: 0,
+            )
+
+        self.assertEqual("runtime_identity_invalid", invalid_id.exception.reason_code)
+        self.assertEqual("runtime_start_time_invalid", invalid_time.exception.reason_code)
 
     def test_project_metadata_pins_supported_runtime(self):
         pyproject_path = SIDECAR_ROOT / "pyproject.toml"

@@ -49,6 +49,45 @@ def valid_request():
 
 
 class ContractTests(unittest.TestCase):
+    def test_v47_health_contract_rejects_forged_or_unknown_fields(self):
+        contracts = load_module("contracts")
+        self.assertTrue(
+            hasattr(contracts, "validate_health_attestation"),
+            "contracts must expose strict V4.7 health validation",
+        )
+        health = {
+            "ok": True,
+            "ready": True,
+            "runtimeMode": "langgraph",
+            "langGraphLoaded": True,
+            "langGraphVersion": "0.3.34",
+            "graphCompiled": True,
+            "contractVersion": "v4.7",
+            "graphVersion": "dataagent-advisory-v1",
+            "runtimeInstanceId": "12345678-1234-5678-9234-567812345678",
+            "configurationFingerprint": "a" * 64,
+            "startedAtUnixSeconds": 1_783_820_000,
+        }
+        self.assertEqual(health, contracts.validate_health_attestation(health))
+
+        mutations = []
+        for field, value in (
+            ("runtimeInstanceId", "not-a-uuid"),
+            ("configurationFingerprint", "ABC"),
+            ("startedAtUnixSeconds", 0),
+        ):
+            candidate = dict(health)
+            candidate[field] = value
+            mutations.append(candidate)
+        stub_ready = dict(health, runtimeMode="deterministic-stub")
+        mutations.append(stub_ready)
+        mutations.append(dict(health, endpoint="http://secret"))
+
+        for candidate in mutations:
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(contracts.ContractError):
+                    contracts.validate_health_attestation(candidate)
+
     def test_valid_request_is_normalized_without_authority_expansion(self):
         contracts = load_module("contracts")
         request = contracts.validate_handshake_request(valid_request())
