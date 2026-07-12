@@ -12,23 +12,37 @@ public sealed class DataAgentV47CanaryRunnerTests
     public async Task RunnerDrivesTwentyRealGovernedLoopbackHandshakesWithStableHealth()
     {
         await using CanaryResponder responder = new();
+        string output = Path.Combine(Path.GetTempPath(), $"dataagent-v47-runner-{Guid.NewGuid():N}");
         DataAgentV47CanaryArguments arguments = new(
-            responder.Endpoint, "Outputs/dataagent-v4.7-live-canary", 20, 2000, 0);
+            responder.Endpoint, output, 20, 2000, 0);
 
-        DataAgentV47CanaryRunResult result =
-            await new DataAgentV47CanaryRunner().RunAsync(arguments);
-
-        Assert.Multiple(() =>
+        try
         {
-            Assert.That(result.Accepted, Is.True);
-            Assert.That(result.AcceptedCount, Is.EqualTo(20));
-            Assert.That(result.NetworkAttemptCount, Is.EqualTo(20));
-            Assert.That(result.ObservationSnapshot!.ObservationCount, Is.EqualTo(20));
-            Assert.That(result.ObservationSnapshot.FallbackCount, Is.Zero);
-            Assert.That(result.RuntimeIdentity!.StableAcrossWindow, Is.True);
-            Assert.That(responder.HandshakeCount, Is.EqualTo(20));
-            Assert.That(responder.HealthCount, Is.EqualTo(2));
-        });
+            DataAgentV47CanaryRunResult result =
+                await new DataAgentV47CanaryRunner().RunAsync(arguments);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Accepted, Is.True);
+                Assert.That(result.AcceptedCount, Is.EqualTo(20));
+                Assert.That(result.NetworkAttemptCount, Is.EqualTo(20));
+                Assert.That(result.ObservationSnapshot!.ObservationCount, Is.EqualTo(20));
+                Assert.That(result.ObservationSnapshot.FallbackCount, Is.Zero);
+                Assert.That(result.RuntimeIdentity!.StableAcrossWindow, Is.True);
+                Assert.That(result.FaultDrillResult!.Accepted, Is.True);
+                Assert.That(result.FaultDrillResult.Drills, Has.Count.EqualTo(7));
+                Assert.That(result.ClosureResult!.Accepted, Is.True);
+                Assert.That(result.ArtifactWriteResult!.Written, Is.True);
+                Assert.That(File.Exists(result.ArtifactWriteResult.FilePath), Is.True);
+                Assert.That(responder.HandshakeCount, Is.EqualTo(20));
+                Assert.That(responder.HealthCount, Is.EqualTo(2));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
     }
 
     [Test]

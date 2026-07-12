@@ -9,7 +9,10 @@ public sealed record DataAgentV47CanaryRunResult(
     int AcceptedCount,
     int NetworkAttemptCount,
     DataAgentV45ProductionObservationSnapshot? ObservationSnapshot,
-    DataAgentV47RuntimeIdentityEvidence? RuntimeIdentity);
+    DataAgentV47RuntimeIdentityEvidence? RuntimeIdentity,
+    DataAgentV45ProductionFaultDrillResult? FaultDrillResult,
+    DataAgentV47LiveCanaryResult? ClosureResult,
+    DataAgentV47LiveCanaryArtifactWriteResult? ArtifactWriteResult);
 
 public sealed class DataAgentV47CanaryRunner
 {
@@ -54,13 +57,31 @@ public sealed class DataAgentV47CanaryRunner
         DataAgentV47RuntimeIdentityEvidence identity = new(
             before.RuntimeInstanceId, before.ConfigurationFingerprint,
             before.StartedAtUnixSeconds, stable);
-        bool complete = accepted == arguments.RequestCount &&
+        bool windowComplete = accepted == arguments.RequestCount &&
             snapshot.ObservationCount == arguments.RequestCount &&
             snapshot.NetworkAttemptCount == arguments.RequestCount &&
             snapshot.FallbackCount == 0 && stable;
-        return new(complete,
-            complete ? "v4_7_canary_window_accepted" : "v4_7_canary_window_rejected",
-            accepted, snapshot.NetworkAttemptCount, snapshot, identity);
+        if (windowComplete == false)
+        {
+            return new(false, "v4_7_canary_window_rejected", accepted,
+                snapshot.NetworkAttemptCount, snapshot, identity, null, null, null);
+        }
+
+        DataAgentV45ProductionFaultDrillResult drills =
+            await new DataAgentV47LiveFaultDrillRunner().RunAsync(
+                TimeSpan.FromMilliseconds(arguments.TimeoutMs));
+        DataAgentV47LiveCanaryResult closure = DataAgentV47LiveCanaryClosureEvaluator.Evaluate(
+            new DataAgentV47LiveCanaryInput(
+                snapshot, drills, identity, arguments.RuntimeRestartCount,
+                KillSwitchRestored: true,
+                ProductionShadowRestoredDisabled: true));
+        DataAgentV47LiveCanaryArtifactWriteResult artifact =
+            DataAgentV47LiveCanaryArtifactWriter.Write(arguments.OutputDirectory, closure);
+        bool acceptedClosure = closure.Accepted && artifact.Written;
+        return new(acceptedClosure,
+            acceptedClosure ? "v4_7_live_canary_accepted" : closure.ReasonCode,
+            accepted, snapshot.NetworkAttemptCount, snapshot, identity,
+            drills, closure, artifact);
     }
 
     static async Task<HealthEvidence?> ReadHealthAsync(
@@ -103,7 +124,7 @@ public sealed class DataAgentV47CanaryRunner
     }
 
     static DataAgentV47CanaryRunResult Rejected(string reasonCode) =>
-        new(false, reasonCode, 0, 0, null, null);
+        new(false, reasonCode, 0, 0, null, null, null, null, null);
 
     sealed record HealthEvidence(
         string RuntimeInstanceId,

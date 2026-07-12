@@ -35,7 +35,8 @@ public static class DataAgentV45ProductionFaultDrillEvaluator
         {
             [DataAgentV45FaultDrillKind.RuntimeUnavailable] = ["production_shadow_unavailable"],
             [DataAgentV45FaultDrillKind.Timeout] = ["production_shadow_timeout"],
-            [DataAgentV45FaultDrillKind.InvalidSchema] = ["invalid_response_schema", "request_id_mismatch"],
+            [DataAgentV45FaultDrillKind.InvalidSchema] =
+                ["invalid_response_schema", "request_id_mismatch", "production_shadow_invalid_response"],
             [DataAgentV45FaultDrillKind.UnsafeAuthority] = ["sql_authority_requested"],
             [DataAgentV45FaultDrillKind.ConcurrencySaturation] = ["production_shadow_busy"],
             [DataAgentV45FaultDrillKind.CircuitOpenRecovery] = ["production_shadow_circuit_open"],
