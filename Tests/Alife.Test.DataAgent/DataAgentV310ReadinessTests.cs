@@ -15,7 +15,7 @@ public sealed class DataAgentV310ReadinessTests
             Assert.That(declaration, Is.Not.Empty,
                 "Missing readiness declaration for LangGraphRuntimeReadinessContractPresent.");
             Assert.That(declaration, Does.Contain("docs/dataagent/dataagent-v3.10-langgraph-runtime-readiness-contract.md"));
-            Assert.That(script, Does.Contain("$expectedRequired = 118"));
+            Assert.That(script, Does.Contain("$expectedRequired = 119"));
         });
     }
 
