@@ -5,64 +5,19 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-try:
-    from langgraph.graph import END, StateGraph
-except ModuleNotFoundError:
-    END = "__end__"
-    StateGraph = None
-
-
-def build_advisory_response(request: dict[str, Any]) -> dict[str, Any]:
-    request_id = str(request.get("RequestId") or request.get("requestId") or "")
-    node_manifests = request.get("NodeManifests") or request.get("nodeManifests") or []
-    first_node = "query_planner"
-    if isinstance(node_manifests, list) and node_manifests:
-        candidate = node_manifests[0]
-        if isinstance(candidate, dict):
-            first_node = str(candidate.get("NodeName") or candidate.get("nodeName") or first_node)
-
-    return {
-        "RequestId": request_id,
-        "Accepted": True,
-        "ReasonCode": "langgraph_skeleton_advisory",
-        "SelectedNodes": [first_node],
-        "NodeProgress": [
-            {
-                "NodeName": first_node,
-                "Status": "Completed",
-                "ReasonCode": "advisory_only",
-                "Message": "LangGraph skeleton returned advisory intent only.",
-                "Facts": {"authority": "csharp"},
-            }
-        ],
-        "TraceSummary": "LangGraph skeleton accepted advisory handoff; C# remains authority.",
-        "ContextContribution": "sidecar=langgraph_skeleton;authority=csharp",
-        "FallbackRequired": True,
-        "NoSqlAuthority": True,
-        "ReadOnly": True,
-        "RequestedToolNames": [],
-        "RequestsCheckpointMutation": False,
-        "RequestsVisibleText": False,
-    }
-
-
-def advisory_response(request: dict[str, Any]) -> dict[str, Any]:
-    if StateGraph is None:
-        return build_advisory_response(request)
-
-    workflow = StateGraph(dict)
-    workflow.add_node("advisory", lambda state: {"response": build_advisory_response(state["request"])})
-    workflow.set_entry_point("advisory")
-    workflow.add_edge("advisory", END)
-    app = workflow.compile()
-    result = app.invoke({"request": request})
-    return result["response"]
+from contracts import validate_handshake_request
+from runtime import RuntimeState, create_runtime
 
 
 class Handler(BaseHTTPRequestHandler):
+    runtime_state: RuntimeState | None = None
+
     def do_GET(self) -> None:
         if self.path == "/health":
-            self._send_json({"ok": True, "manual_only": True})
+            if self.runtime_state is None:
+                self._send_json({"ok": False, "ready": False})
+                return
+            self._send_json(self.runtime_state.health_attestation())
             return
         self.send_error(404)
 
@@ -79,7 +34,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(400)
             return
 
-        self._send_json(advisory_response(request))
+        request = validate_handshake_request(request)
+        if self.runtime_state is None or self.runtime_state.compiled_graph is None:
+            self.send_error(503)
+            return
+        result = self.runtime_state.compiled_graph.invoke({"request": request})
+        self._send_json(result["response"])
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -97,11 +57,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--runtime-mode", default="langgraph")
     args = parser.parse_args()
 
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         raise SystemExit("Only loopback hosts are allowed.")
 
+    Handler.runtime_state = create_runtime(mode=args.runtime_mode)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.serve_forever()
 
