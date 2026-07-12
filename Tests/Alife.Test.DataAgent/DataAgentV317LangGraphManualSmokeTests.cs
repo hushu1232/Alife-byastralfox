@@ -18,8 +18,12 @@ public sealed class DataAgentV317LangGraphManualSmokeTests
             Assert.That(script, Does.Contain("binds_port=false"));
             Assert.That(script, Does.Contain("loopback_only=true"));
             Assert.That(script, Does.Contain("smoke_valid_advisory=true"));
-            Assert.That(script, Does.Contain("smoke_forbidden_authority_rejected=true"));
-            Assert.That(script, Does.Contain("smoke_timeout_fallback=true"));
+            Assert.That(script, Does.Contain("smoke_health_attestation=true"));
+            Assert.That(script, Does.Contain("smoke_malformed_json=true"));
+            Assert.That(script, Does.Contain("smoke_oversized_request=true"));
+            Assert.That(script, Does.Contain("smoke_unsupported_content_type=true"));
+            Assert.That(script, Does.Not.Contain("forbidden authority rejection is covered"));
+            Assert.That(script, Does.Not.Contain("timeout fallback is covered"));
             Assert.That(script, Does.Not.Contain("Start-Process"));
             Assert.That(script, Does.Not.Contain("pip install"));
             Assert.That(script, Does.Not.Contain("python -m venv"));

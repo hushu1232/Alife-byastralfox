@@ -1,23 +1,32 @@
-# DataAgent LangGraph Sidecar Skeleton
+# DataAgent LangGraph V4.6 Sidecar
 
-This tool is manual-only. Alife does not start it, install dependencies for it, supervise it, or require it for default tests.
+This is a manual-only, operator-owned loopback advisory runtime. Alife does not start it, install its dependencies, supervise it, or require it for default tests.
 
-When `langgraph` is already available in the manually selected Python environment, `server.py` routes the advisory response through a tiny `StateGraph`. When it is not available, the server still returns the same advisory response without requiring default tests or C# runtime startup.
+## Prepare explicitly
 
-## Run Manually
+Use Python 3.11-3.13 in an operator-selected environment and install the checked-in lock explicitly:
 
 ```powershell
-python tools/dataagent-langgraph-sidecar/server.py --host 127.0.0.1 --port 8765
+python -m pip install -r tools/dataagent-langgraph-sidecar/requirements.lock
 ```
 
-## Configure Alife Manually
+Automated tests never run that command. The default runtime mode is `langgraph`; missing dependency, wrong version, or graph compilation failure stops startup. `--runtime-mode deterministic-stub` is developer-only and reports `ready=false`.
 
-```text
-ALIFE_DATAAGENT_GRAPH_HANDSHAKE_ENABLED=true
-ALIFE_DATAAGENT_GRAPH_HANDSHAKE_ENDPOINT=http://127.0.0.1:8765/handshake
-ALIFE_DATAAGENT_GRAPH_HANDSHAKE_TIMEOUT_MS=800
+## Start and verify manually
+
+```powershell
+python tools/dataagent-langgraph-sidecar/server.py --host 127.0.0.1 --port 8765 --runtime-mode langgraph
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/run-dataagent-langgraph-manual-smoke.ps1 -Endpoint http://127.0.0.1:8765/handshake
 ```
 
-## Boundary
+The operator who starts the process owns shutdown. The smoke script does not start, restart, stop, or supervise it.
 
-The server returns only advisory handshake responses. It does not execute SQL, call tools, mutate checkpoints, write diagnostics, publish QChat text, or control browser/desktop/memory.
+Production-canary health requires `ready=true`, `runtimeMode=langgraph`, `langGraphLoaded=true`, `langGraphVersion=0.3.34`, `graphCompiled=true`, `contractVersion=v4.6`, and `graphVersion=dataagent-advisory-v1`.
+
+## Boundaries
+
+- Request and response bodies are capped at 65536 bytes before JSON deserialization.
+- HTTP failures use fixed safe error codes; bodies, exceptions, endpoints, SQL, tokens, hidden context, caller/session identifiers, and local paths are not returned or logged.
+- Accepted responses use `FallbackRequired=false`, but C# remains final validation and execution authority.
+- The sidecar does not execute SQL or tools, mutate checkpoints or state, publish visible text, or control browser, desktop, memory, QQ, or NapCat.
+- V4.6 is a production-canary candidate only. V4.7 must collect the real 20-request window, seven live drills, runtime/config identity, safe aggregates, and closure artifact.

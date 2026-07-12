@@ -16,7 +16,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(checks, Has.Count.EqualTo(102));
+            Assert.That(checks, Has.Count.EqualTo(103));
             Assert.That(checks.All(check => check.Passed), Is.True, string.Join(Environment.NewLine, checks.Select(check => $"{check.Name}:{check.Detail}")));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentModulePresent"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("SqliteSchemaInitializes"));
@@ -415,6 +415,14 @@ public sealed class DataAgentReadinessTests
             Assert.That(graphHandshakeV45ClosureCheck.Detail, Does.Contain("allows_execution=false"));
             Assert.That(graphHandshakeV45ClosureCheck.Detail, Does.Contain("allows_state_write=false"));
             Assert.That(graphHandshakeV45ClosureCheck.Detail, Does.Contain("allows_visible_text=false"));
+            Assert.That(checks.Select(check => check.Name), Does.Contain("GraphHandshakeV46RuntimeTruthPresent"));
+            DataAgentReadinessCheck graphHandshakeV46Check =
+                checks.Single(check => check.Name == "GraphHandshakeV46RuntimeTruthPresent");
+            Assert.That(graphHandshakeV46Check.Detail, Does.Contain("runtime_truth=v4.6"));
+            Assert.That(graphHandshakeV46Check.Detail, Does.Contain("runtime_mode=langgraph"));
+            Assert.That(graphHandshakeV46Check.Detail, Does.Contain("request_body_max_bytes=65536"));
+            Assert.That(graphHandshakeV46Check.Detail, Does.Contain("response_body_max_bytes=65536"));
+            Assert.That(graphHandshakeV46Check.Detail, Does.Contain("live_smoke_count=5"));
             Assert.That(checks.Select(check => check.Name), Does.Contain("DataAgentEndToEndChainContractPresent"));
             DataAgentReadinessCheck dataAgentChainContractCheck = checks.Single(check => check.Name == "DataAgentEndToEndChainContractPresent");
             Assert.That(dataAgentChainContractCheck.Detail, Does.Contain("route_boundary=true"));
@@ -549,7 +557,7 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("AnalysisSummaryWindowPresent"));
             Assert.That(GetSummaryLines(result.StandardOutput), Is.EqualTo(new[]
             {
-                "  Summary: 118 required passed, 0 required missing"
+                "  Summary: 119 required passed, 0 required missing"
             }));
             Assert.That(result.StandardOutput, Does.Contain("AnalysisToolHandlerUsesOrchestrator"));
             Assert.That(result.StandardOutput, Does.Contain("OrchestratorTraceContextPresent"));
@@ -614,7 +622,7 @@ public sealed class DataAgentReadinessTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(script, Does.Contain("$expectedRequired = 118"));
+            Assert.That(script, Does.Contain("$expectedRequired = 119"));
             Assert.That(script, Does.Contain("readiness check count mismatch"));
             Assert.That(script, Does.Contain("function Test-FileOrderedMarkers"));
             Assert.That(declaration, Does.Contain("Test-FileOrderedMarkers"));

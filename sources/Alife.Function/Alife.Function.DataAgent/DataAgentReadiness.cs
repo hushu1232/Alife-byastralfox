@@ -763,12 +763,16 @@ public static class DataAgentReadiness
             string v311DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.11-real-langgraph-sidecar-skeleton.md");
             string v311SidecarPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "server.py");
             string v311ReadmePath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "README.md");
+            string v311ContractsPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "contracts.py");
+            string v311GraphPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "graph.py");
             bool v311DocExists = File.Exists(v311DocPath);
             bool v311SidecarExists = File.Exists(v311SidecarPath);
             bool v311ReadmeExists = File.Exists(v311ReadmePath);
             string v311Doc = v311DocExists ? File.ReadAllText(v311DocPath) : string.Empty;
             string v311Sidecar = v311SidecarExists ? File.ReadAllText(v311SidecarPath) : string.Empty;
             string v311Readme = v311ReadmeExists ? File.ReadAllText(v311ReadmePath) : string.Empty;
+            string v311Contracts = File.Exists(v311ContractsPath) ? File.ReadAllText(v311ContractsPath) : string.Empty;
+            string v311Graph = File.Exists(v311GraphPath) ? File.ReadAllText(v311GraphPath) : string.Empty;
             bool v311ManualOnly =
                 v311Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
                 v311Readme.Contains("manual-only", StringComparison.OrdinalIgnoreCase);
@@ -789,15 +793,15 @@ public static class DataAgentReadiness
                 v311RuntimeStarted == false;
             bool v311NoSqlAuthority =
                 v311Doc.Contains("no_sql_authority=true", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"NoSqlAuthority\": True", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"RequestedToolNames\": []", StringComparison.Ordinal);
+                v311Contracts.Contains("\"NoSqlAuthority\": True", StringComparison.Ordinal) &&
+                v311Contracts.Contains("\"RequestedToolNames\": []", StringComparison.Ordinal);
             bool v311LangGraphHook =
-                v311Sidecar.Contains("from langgraph.graph import END, StateGraph", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("StateGraph(dict)", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("workflow.compile()", StringComparison.Ordinal);
+                v311Graph.Contains("from langgraph.graph import END, StateGraph", StringComparison.Ordinal) &&
+                v311Graph.Contains("AdvisoryGraphState", StringComparison.Ordinal) &&
+                v311Graph.Contains("workflow.compile()", StringComparison.Ordinal);
             bool v311Fallback =
                 v311Doc.Contains("fallback_required=true", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"FallbackRequired\": True", StringComparison.Ordinal);
+                v311Contracts.Contains("\"FallbackRequired\": False", StringComparison.Ordinal);
             bool v311SkeletonReady =
                 v311DocExists &&
                 v311SidecarExists &&
@@ -1131,8 +1135,10 @@ public static class DataAgentReadiness
                 v317Script.Contains("Only loopback hosts are allowed.", StringComparison.Ordinal);
             bool v317SmokeMarkers =
                 v317Script.Contains("smoke_valid_advisory=true", StringComparison.Ordinal) &&
-                v317Script.Contains("smoke_forbidden_authority_rejected=true", StringComparison.Ordinal) &&
-                v317Script.Contains("smoke_timeout_fallback=true", StringComparison.Ordinal);
+                v317Script.Contains("smoke_health_attestation=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_malformed_json=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_oversized_request=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_unsupported_content_type=true", StringComparison.Ordinal);
             bool v317Ready =
                 v317DocExists &&
                 v317ScriptExists &&
@@ -3592,6 +3598,40 @@ public static class DataAgentReadiness
             checks.Add(v45Ready
                 ? Pass("GraphHandshakeV45ProductionClosurePresent", "production_closure=v4.5;source_baseline=v4.4;observation_capacity=256;observation_window_minutes=15;minimum_observations=20;fallback_ratio_basis_points_max=2500;p95_latency_ms_max=2000;retry_storm_threshold_per_minute=60;runtime_restart_count_max=1;fault_drill_count=7;live_kill_switch=true;loopback_only=true;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false;starts_runtime=false;installs_dependencies=false")
                 : Fail("GraphHandshakeV45ProductionClosurePresent", $"doc={LowerBool(v45DocExists)};closure={LowerBool(v45Closure.Accepted)};drills={LowerBool(v45Drills.Accepted)};markers={LowerBool(v45Markers)}"));
+
+            string v46DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.6-runtime-truth.md");
+            string v46RuntimePath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "runtime.py");
+            string v46GraphPath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "graph.py");
+            string v46ServerPath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "server.py");
+            string v46SmokePath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-langgraph-manual-smoke.ps1");
+            bool v46FilesExist = File.Exists(v46DocPath) && File.Exists(v46RuntimePath) &&
+                File.Exists(v46GraphPath) && File.Exists(v46ServerPath) && File.Exists(v46SmokePath);
+            string v46Doc = v46FilesExist ? File.ReadAllText(v46DocPath) : string.Empty;
+            string v46Runtime = v46FilesExist ? File.ReadAllText(v46RuntimePath) : string.Empty;
+            string v46Graph = v46FilesExist ? File.ReadAllText(v46GraphPath) : string.Empty;
+            string v46Server = v46FilesExist ? File.ReadAllText(v46ServerPath) : string.Empty;
+            string v46Smoke = v46FilesExist ? File.ReadAllText(v46SmokePath) : string.Empty;
+            bool v46Markers =
+                v46Doc.Contains("runtime_truth=v4.6", StringComparison.Ordinal) &&
+                v46Doc.Contains("request_body_max_bytes=65536", StringComparison.Ordinal) &&
+                v46Doc.Contains("response_body_max_bytes=65536", StringComparison.Ordinal) &&
+                v46Doc.Contains("live_smoke_count=5", StringComparison.Ordinal) &&
+                v46Runtime.Contains("PINNED_LANGGRAPH_VERSION = \"0.3.34\"", StringComparison.Ordinal) &&
+                v46Runtime.Contains("runtime_dependency_unavailable", StringComparison.Ordinal) &&
+                v46Graph.Contains("AdvisoryGraphState", StringComparison.Ordinal) &&
+                v46Graph.Contains("workflow.compile()", StringComparison.Ordinal) &&
+                v46Server.Contains("MAX_BODY_BYTES", StringComparison.Ordinal) &&
+                v46Server.Contains("unsupported_content_type", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS health attestation", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS valid LangGraph advisory", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS malformed JSON returns 400", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS oversized request returns 413", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS unsupported content type returns 415", StringComparison.Ordinal) &&
+                v46Smoke.Contains("forbidden authority rejection is covered", StringComparison.Ordinal) == false &&
+                v46Smoke.Contains("timeout fallback is covered", StringComparison.Ordinal) == false;
+            checks.Add(v46FilesExist && v46Markers
+                ? Pass("GraphHandshakeV46RuntimeTruthPresent", "runtime_truth=v4.6;source_baseline=v4.5;runtime_mode=langgraph;langgraph_version=0.3.34;contract_version=v4.6;graph_version=dataagent-advisory-v1;graph_compile_count_per_startup=1;request_body_max_bytes=65536;response_body_max_bytes=65536;live_smoke_count=5;loopback_only=true;starts_runtime=false;installs_dependencies=false;default_enabled=false;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;production_closure_complete=false")
+                : Fail("GraphHandshakeV46RuntimeTruthPresent", $"files={LowerBool(v46FilesExist)};markers={LowerBool(v46Markers)}"));
         }
         catch (Exception ex)
         {
