@@ -120,6 +120,52 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
         DataAgentGraphSidecarInvalidResponseException exception =
             Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
 
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("invalid_response_schema"));
+            Assert.That(exception.InnerException, Is.Null);
+        });
+    }
+
+    [Test]
+    public void DeclaredOversizedResponseIsRejectedBeforeDeserialization()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[65537])
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
+        Assert.That(exception.Message, Is.EqualTo("response_body_too_large"));
+    }
+
+    [Test]
+    public void StreamedOversizedResponseWithoutContentLengthIsRejected()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new UnknownLengthContent(new byte[65537])
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
+        Assert.That(exception.Message, Is.EqualTo("response_body_too_large"));
+    }
+
+    [Test]
+    public void MissingRequiredResponseFieldsAreRejectedAsInvalidSchema()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"RequestId\":\"request-1\"}", Encoding.UTF8, "application/json")
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
         Assert.That(exception.Message, Is.EqualTo("invalid_response_schema"));
     }
 
@@ -313,6 +359,20 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    sealed class UnknownLengthContent(byte[] payload) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return stream.WriteAsync(payload).AsTask();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }
