@@ -21,10 +21,17 @@ public static class DataAgentV47LiveCanaryArtifactWriter
         if (result.Accepted == false)
             return Rejected("v4_7_artifact_result_rejected");
 
-        Directory.CreateDirectory(outputDirectory);
-        string filePath = Path.GetFullPath(Path.Combine(outputDirectory, FileName));
-        File.WriteAllText(filePath, DataAgentV47LiveCanaryClosureFormatter.Format(result));
-        return new(true, "v4_7_artifact_written", FileName, filePath);
+        try
+        {
+            Directory.CreateDirectory(outputDirectory);
+            string filePath = Path.GetFullPath(Path.Combine(outputDirectory, FileName));
+            File.WriteAllText(filePath, DataAgentV47LiveCanaryClosureFormatter.Format(result));
+            return new(true, "v4_7_artifact_written", FileName, filePath);
+        }
+        catch (Exception)
+        {
+            return Rejected("v4_7_artifact_write_failed");
+        }
     }
 
     static DataAgentV47LiveCanaryArtifactWriteResult Rejected(string reasonCode) =>

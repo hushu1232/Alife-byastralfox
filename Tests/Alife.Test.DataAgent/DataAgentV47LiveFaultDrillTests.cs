@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Net;
 using System.Net.Sockets;
 using Alife.Function.DataAgent;
 using Alife.Tools.DataAgentV47Canary;
@@ -78,5 +80,81 @@ public sealed class DataAgentV47LiveFaultDrillTests
         Exception? failure = Assert.CatchAsync<Exception>(async () =>
             await probe.ConnectAsync(endpoint.Host, endpoint.Port).WaitAsync(TimeSpan.FromSeconds(2)));
         Assert.That(failure, Is.TypeOf<SocketException>().Or.TypeOf<TimeoutException>());
+    }
+
+    [Test]
+    public void RuntimeUnavailableDrillUsesStoppedOsAssignedLoopbackPortWithoutRetry()
+    {
+        using TcpListener unavailableListener = new(IPAddress.Loopback, 0);
+        unavailableListener.Server.ExclusiveAddressUse = true;
+        unavailableListener.Start();
+        Uri unavailableEndpoint = new(
+            $"http://127.0.0.1:{((IPEndPoint)unavailableListener.LocalEndpoint).Port}");
+        unavailableListener.Stop();
+        bool listenerStoppedBeforeRequest = unavailableListener.Server.IsBound == false;
+
+        using SocketsHttpHandler httpHandler = new()
+        {
+            ConnectTimeout = TimeSpan.FromMilliseconds(100),
+            UseProxy = false
+        };
+        using HttpClient http = new(httpHandler)
+        {
+            Timeout = TimeSpan.FromMilliseconds(500)
+        };
+        DataAgentGraphHandshakeHttpOptions httpOptions = new(
+            new Uri(unavailableEndpoint, "/handshake"),
+            TimeSpan.FromMilliseconds(500), true, false);
+        DataAgentV44ProductionShadowOptions shadowOptions =
+            DataAgentV44ProductionShadowOptions.FromValues(
+                "true", "false", "100", "proven_useful", "2", "3", "30000");
+        using DataAgentV44ProductionShadowClient shadow = new(
+            new DataAgentGraphHandshakeHttpClient(http, httpOptions), shadowOptions);
+        DataAgentGraphHandshakeCoordinator coordinator = new(new(true), shadow);
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "v47-canary", "closed loopback fault drill",
+            DataAgentV47CanaryRequestFactory.Create(1));
+        stopwatch.Stop();
+
+        string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string runnerSource = File.ReadAllText(Path.Combine(
+            root, "tools", "dataagent-v47-canary", "DataAgentV47LiveFaultDrillRunner.cs"));
+        int stopIndex = runnerSource.IndexOf("unavailableListener.Stop()", StringComparison.Ordinal);
+        int governedRequestIndex = runnerSource.IndexOf(
+            "Run(CreateShadow(unavailableEndpoint", StringComparison.Ordinal);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(listenerStoppedBeforeRequest, Is.True);
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Unavailable));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("production_shadow_unavailable"));
+            Assert.That(outcome.Observability!.NetworkAttempted, Is.True);
+            Assert.That(shadow.GetSnapshot().ConsecutiveFailures, Is.EqualTo(1));
+            Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(2)));
+            Assert.That(runnerSource, Does.Contain(
+                "TcpListener unavailableListener = new(IPAddress.Loopback, 0)"));
+            Assert.That(runnerSource, Does.Contain("SocketsHttpHandler unavailableHandler"));
+            Assert.That(runnerSource, Does.Contain("ConnectTimeout"));
+            Assert.That(runnerSource, Does.Contain("UseProxy = false"));
+            Assert.That(stopIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(governedRequestIndex, Is.GreaterThan(stopIndex));
+            Assert.That(runnerSource.Split(
+                "LoopbackFaultBehavior.FailFirstThenAccept", StringSplitOptions.None).Length - 1,
+                Is.EqualTo(1));
+        });
+    }
+
+    static string FindRepoRoot(string start)
+    {
+        DirectoryInfo? current = new(start);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "Alife.slnx")))
+                return current.FullName;
+            current = current.Parent;
+        }
+        throw new DirectoryNotFoundException("repo_root_not_found");
     }
 }

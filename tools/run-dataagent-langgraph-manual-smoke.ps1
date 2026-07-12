@@ -7,6 +7,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Net.Http
 
 if ($ExpectedContractVersion -notmatch '^v4\.[0-9]+$') {
     throw "Expected contract version is invalid."

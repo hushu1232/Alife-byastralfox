@@ -9,6 +9,17 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
+function Normalize-DirectoryPath([string]$Path) {
+    $fullPath = [System.IO.Path]::GetFullPath($Path)
+    $pathRoot = [System.IO.Path]::GetPathRoot($fullPath)
+    if ($fullPath.Length -le $pathRoot.Length) {
+        return $pathRoot
+    }
+    return $fullPath.TrimEnd([char[]]@(
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.IO.Path]::AltDirectorySeparatorChar))
+}
+
 # operator_owned_process=true
 # loopback_only=true
 # readiness_timeout_seconds=10
@@ -21,19 +32,35 @@ if ($RequestCount -lt 20 -or $RequestCount -gt 256) { throw "Request count is ou
 if ($RuntimeRestartCount -lt 0 -or $RuntimeRestartCount -gt 1) { throw "Runtime restart count is outside the allowed range." }
 if ([string]::IsNullOrWhiteSpace($Python)) { throw "Python command is required." }
 
-$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$repoRoot = Normalize-DirectoryPath (Join-Path $PSScriptRoot "..")
 $outputPath = if ([System.IO.Path]::IsPathRooted($OutputDirectory)) {
-    [System.IO.Path]::GetFullPath($OutputDirectory)
+    Normalize-DirectoryPath $OutputDirectory
 } else {
-    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $OutputDirectory))
+    Normalize-DirectoryPath (Join-Path $repoRoot $OutputDirectory)
+}
+if (Test-Path -LiteralPath $outputPath -PathType Leaf) {
+    throw "Output directory is invalid."
 }
 $trackedRoots = @("sources", "Tests", "tools", "docs") | ForEach-Object {
-    [System.IO.Path]::GetFullPath((Join-Path $repoRoot $_)) + [System.IO.Path]::DirectorySeparatorChar
+    Normalize-DirectoryPath (Join-Path $repoRoot $_)
 }
 foreach ($trackedRoot in $trackedRoots) {
-    if ($outputPath.StartsWith($trackedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $trackedPrefix = $trackedRoot + [System.IO.Path]::DirectorySeparatorChar
+    if ([string]::Equals($outputPath, $trackedRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $outputPath.StartsWith($trackedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw "Output directory must be outside tracked source directories."
     }
+}
+
+$artifactFileName = "dataagent-v4.7-live-canary-closure.txt"
+$canonicalArtifactPath = Join-Path $outputPath $artifactFileName
+$pendingOutputPath = Join-Path $outputPath (".dataagent-v4.7-live-canary-pending-" + $PID)
+$pendingArtifactPath = Join-Path $pendingOutputPath $artifactFileName
+if (Test-Path -LiteralPath $canonicalArtifactPath) {
+    if ((Test-Path -LiteralPath $canonicalArtifactPath -PathType Leaf) -eq $false) {
+        throw "Canonical artifact path is invalid."
+    }
+    Remove-Item -LiteralPath $canonicalArtifactPath -Force
 }
 
 $endpoint = "http://127.0.0.1:$Port"
@@ -68,17 +95,32 @@ try {
 
     & $dotnet run --project $projectPath --no-restore -- `
         --endpoint $endpoint `
-        --output $outputPath `
+        --output $pendingOutputPath `
         --request-count $RequestCount `
         --timeout-ms 2000 `
         --runtime-restart-count $RuntimeRestartCount
     if ($LASTEXITCODE -ne 0) { throw "V4.7 canary tool rejected closure evidence." }
+    if ((Test-Path -LiteralPath $pendingArtifactPath -PathType Leaf) -eq $false) {
+        throw "V4.7 pending artifact was not written."
+    }
 }
 finally {
-    if ($null -ne $ownedProcess -and $ownedProcess.HasExited -eq $false) {
-        Stop-Process -Id $ownedProcess.Id
-        $ownedProcess.WaitForExit(5000) | Out-Null
+    if ($null -ne $ownedProcess) {
+        if ($ownedProcess.HasExited -eq $false) {
+            Stop-Process -Id $ownedProcess.Id
+        }
+        if ($ownedProcess.WaitForExit(5000) -eq $false) {
+            throw "Owned LangGraph sidecar did not stop within 5 seconds."
+        }
+        if ($ownedProcess.HasExited -eq $false) {
+            throw "Owned LangGraph sidecar exit was not confirmed."
+        }
     }
-    Write-Output "kill_switch_restored=true"
-    Write-Output "production_shadow_restored_disabled=true"
 }
+
+if ($null -eq $ownedProcess -or $ownedProcess.HasExited -eq $false) {
+    throw "Owned LangGraph sidecar exit was not confirmed."
+}
+Write-Output "kill_switch_restored=true"
+Write-Output "production_shadow_restored_disabled=true"
+Move-Item -LiteralPath $pendingArtifactPath -Destination $canonicalArtifactPath -Force

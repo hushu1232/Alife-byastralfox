@@ -8,6 +8,7 @@ public sealed record DataAgentV47CanaryRunResult(
     string ReasonCode,
     int AcceptedCount,
     int NetworkAttemptCount,
+    IReadOnlyDictionary<string, int> OutcomeReasonCounts,
     DataAgentV45ProductionObservationSnapshot? ObservationSnapshot,
     DataAgentV47RuntimeIdentityEvidence? RuntimeIdentity,
     DataAgentV45ProductionFaultDrillResult? FaultDrillResult,
@@ -40,12 +41,14 @@ public sealed class DataAgentV47CanaryRunner
             observationRecorder: recorder);
 
         int accepted = 0;
+        Dictionary<string, int> reasonCounts = new(StringComparer.Ordinal);
         for (int sequence = 1; sequence <= arguments.RequestCount; sequence++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
                 "v47-canary", "bounded production shadow advisory",
                 DataAgentV47CanaryRequestFactory.Create(sequence));
+            reasonCounts[outcome.ReasonCode] = reasonCounts.GetValueOrDefault(outcome.ReasonCode) + 1;
             if (outcome.Status == DataAgentGraphHandshakeStatus.Accepted &&
                 outcome.FallbackRequired == false)
                 accepted++;
@@ -64,7 +67,7 @@ public sealed class DataAgentV47CanaryRunner
         if (windowComplete == false)
         {
             return new(false, "v4_7_canary_window_rejected", accepted,
-                snapshot.NetworkAttemptCount, snapshot, identity, null, null, null);
+                snapshot.NetworkAttemptCount, reasonCounts, snapshot, identity, null, null, null);
         }
 
         DataAgentV45ProductionFaultDrillResult drills =
@@ -79,8 +82,10 @@ public sealed class DataAgentV47CanaryRunner
             DataAgentV47LiveCanaryArtifactWriter.Write(arguments.OutputDirectory, closure);
         bool acceptedClosure = closure.Accepted && artifact.Written;
         return new(acceptedClosure,
-            acceptedClosure ? "v4_7_live_canary_accepted" : closure.ReasonCode,
-            accepted, snapshot.NetworkAttemptCount, snapshot, identity,
+            acceptedClosure
+                ? "v4_7_live_canary_accepted"
+                : closure.Accepted ? artifact.ReasonCode : closure.ReasonCode,
+            accepted, snapshot.NetworkAttemptCount, reasonCounts, snapshot, identity,
             drills, closure, artifact);
     }
 
@@ -124,7 +129,7 @@ public sealed class DataAgentV47CanaryRunner
     }
 
     static DataAgentV47CanaryRunResult Rejected(string reasonCode) =>
-        new(false, reasonCode, 0, 0, null, null, null, null, null);
+        new(false, reasonCode, 0, 0, new Dictionary<string, int>(), null, null, null, null, null);
 
     sealed record HealthEvidence(
         string RuntimeInstanceId,

@@ -242,7 +242,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
 
     static IEnumerable<TestCaseData> StrictLedgerMutations()
     {
-        string ledger = ReadRealLedger();
+        string ledger = ReadLedgerForMutation();
         string start = "[v3_closure_milestones]";
         string end = "[/v3_closure_milestones]";
         string row = ledger.Split('\n').Select(line => line.TrimEnd('\r')).Single(line => line.StartsWith("| v3.4 |", StringComparison.Ordinal));
@@ -281,7 +281,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
     [Test]
     public void ParseLedgerBoundsMalformedDocumentErrorsAndValidatorRejectsIt()
     {
-        string ledger = ReadRealLedger();
+        string ledger = ReadLedgerForMutation();
         string malformedInventory = string.Join('\n', Enumerable.Range(0, DataAgentV3ClosureManifest.MaxParseErrors * 2)
             .Select(index => $"malformed-inventory-secret-{index}"));
         string malformedRows = string.Join('\n', Enumerable.Range(0, DataAgentV3ClosureManifest.MaxParseErrors * 2)
@@ -505,7 +505,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(names, Has.Count.EqualTo(119));
+            Assert.That(names, Has.Count.EqualTo(120));
             Assert.That(names, Does.Contain("GraphHandshakeDevSidecarLiveSmokeHarnessPresent"));
             Assert.That(names, Does.Contain("LangGraphRuntimeReadinessContractPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
@@ -516,6 +516,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
             Assert.That(names, Does.Contain("GraphHandshakeV44ProductionShadowClientPresent"));
             Assert.That(names, Does.Contain("GraphHandshakeV45ProductionClosurePresent"));
             Assert.That(names, Does.Contain("GraphHandshakeV46RuntimeTruthPresent"));
+            Assert.That(names, Does.Contain("GraphHandshakeV47LiveCanaryClosurePresent"));
             Assert.That(v3Names, Has.Count.EqualTo(111));
             Assert.That(unknown, Is.Empty);
             Assert.That(replacement, Is.Empty);
@@ -675,6 +676,7 @@ public sealed partial class DataAgentV3ClosureManifestTests
         fixture.Snapshot, fixture.Manifest, fixture.DynamicChecks, fixture.Ledger, fixture.StaticNames, fixture.EvidencePaths);
 
     static DataAgentV3LedgerParseResult ParseRealLedgerWithProductionParser() => DataAgentV3ClosureManifest.ParseLedger(ReadRealLedger());
+    static string ReadLedgerForMutation() => ReadRealLedger().ReplaceLineEndings("\n");
     static string ReadRealLedger() => File.ReadAllText(Path.Combine(FindRepoRoot(), "docs", "dataagent", "dataagent-v3-closure-ledger.md"));
     static string ReadReadinessScript() => File.ReadAllText(Path.Combine(FindRepoRoot(), "tools", "check-dataagent-readiness.ps1"));
     static DataAgentV3LedgerEntry ToLedgerEntry(DataAgentV3MilestoneEvidence entry) => new(

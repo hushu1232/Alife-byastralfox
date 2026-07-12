@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -42,9 +41,12 @@ public sealed class DataAgentGraphHandshakeHttpClient : IDataAgentGraphSidecarCl
 
         try
         {
+            byte[] requestPayload = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+            using ByteArrayContent requestContent = new(requestPayload);
+            requestContent.Headers.ContentType = new("application/json");
             using HttpResponseMessage response = httpClient.PostAsync(
                     options.Endpoint,
-                    JsonContent.Create(request, options: JsonOptions),
+                    requestContent,
                     cancellation.Token)
                 .GetAwaiter()
                 .GetResult();
@@ -64,6 +66,10 @@ public sealed class DataAgentGraphHandshakeHttpClient : IDataAgentGraphSidecarCl
         catch (JsonException)
         {
             throw new DataAgentGraphSidecarInvalidResponseException("invalid_response_schema");
+        }
+        catch (TaskCanceledException exception) when (cancellation.IsCancellationRequested == false)
+        {
+            throw new InvalidOperationException("sidecar_unavailable", exception);
         }
         catch (TaskCanceledException exception)
         {

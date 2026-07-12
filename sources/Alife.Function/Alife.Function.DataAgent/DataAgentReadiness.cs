@@ -3632,6 +3632,49 @@ public static class DataAgentReadiness
             checks.Add(v46FilesExist && v46Markers
                 ? Pass("GraphHandshakeV46RuntimeTruthPresent", "runtime_truth=v4.6;source_baseline=v4.5;runtime_mode=langgraph;langgraph_version=0.3.34;contract_version=v4.6;graph_version=dataagent-advisory-v1;graph_compile_count_per_startup=1;request_body_max_bytes=65536;response_body_max_bytes=65536;live_smoke_count=5;loopback_only=true;starts_runtime=false;installs_dependencies=false;default_enabled=false;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;production_closure_complete=false")
                 : Fail("GraphHandshakeV46RuntimeTruthPresent", $"files={LowerBool(v46FilesExist)};markers={LowerBool(v46Markers)}"));
+
+            string v47DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.7-live-canary-closure.md");
+            string v47ScriptPath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-v47-live-canary.ps1");
+            string v47VerifierPath = Path.Combine(v328RepoRoot, "tools", "verify-dataagent-v47-live-canary.ps1");
+            string v47ClosurePath = Path.Combine(v328RepoRoot, "sources", "Alife.Function", "Alife.Function.DataAgent", "DataAgentV47LiveCanaryClosure.cs");
+            string v47WriterPath = Path.Combine(v328RepoRoot, "sources", "Alife.Function", "Alife.Function.DataAgent", "DataAgentV47LiveCanaryArtifactWriter.cs");
+            bool v47FilesExist = File.Exists(v47DocPath) && File.Exists(v47ScriptPath) &&
+                File.Exists(v47VerifierPath) && File.Exists(v47ClosurePath) && File.Exists(v47WriterPath);
+            string v47Doc = v47FilesExist ? File.ReadAllText(v47DocPath) : string.Empty;
+            string v47Script = v47FilesExist ? File.ReadAllText(v47ScriptPath) : string.Empty;
+            string v47Verifier = v47FilesExist ? File.ReadAllText(v47VerifierPath) : string.Empty;
+            string v47ClosureSource = v47FilesExist ? File.ReadAllText(v47ClosurePath) : string.Empty;
+            string v47Writer = v47FilesExist ? File.ReadAllText(v47WriterPath) : string.Empty;
+            DataAgentV47LiveCanaryResult v47Closure = DataAgentV47LiveCanaryClosureEvaluator.Evaluate(
+                new DataAgentV47LiveCanaryInput(
+                    v45Snapshot,
+                    v45Drills,
+                    new DataAgentV47RuntimeIdentityEvidence(
+                        "12345678-1234-5678-9234-567812345678", new string('a', 64), 1_783_820_000, true),
+                    RuntimeRestartCount: 0,
+                    KillSwitchRestored: true,
+                    ProductionShadowRestoredDisabled: true));
+            bool v47Markers =
+                v47Doc.Contains("twenty real requests", StringComparison.OrdinalIgnoreCase) &&
+                v47Doc.Contains("Seven isolated loopback drills", StringComparison.Ordinal) &&
+                v47Doc.Contains("powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-dataagent-v47-live-canary.ps1", StringComparison.Ordinal) &&
+                v47Doc.Contains("-ArtifactPath Outputs/dataagent-v4.7-live-canary/dataagent-v4.7-live-canary-closure.txt", StringComparison.Ordinal) &&
+                v47Script.Contains("--runtime-mode", StringComparison.Ordinal) &&
+                v47Script.Contains("kill_switch_restored=true", StringComparison.Ordinal) &&
+                v47Script.Contains("production_shadow_restored_disabled=true", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("MinimumObservations = 20", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("MaximumP95LatencyMs = 2000", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("v4_7_live_canary_closure_accepted", StringComparison.Ordinal) &&
+                v47Writer.Contains("dataagent-v4.7-live-canary-closure.txt", StringComparison.Ordinal) &&
+                v47Writer.Contains("DataAgentV47LiveCanaryClosureFormatter.Format", StringComparison.Ordinal) &&
+                v47Verifier.Contains("duplicate_artifact_key", StringComparison.Ordinal) &&
+                v47Verifier.Contains("unknown_artifact_key", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_count_relation_invalid", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_network_relation_invalid", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_verified=true", StringComparison.Ordinal);
+            checks.Add(v47FilesExist && v47Closure.Accepted && v47Markers
+                ? Pass("GraphHandshakeV47LiveCanaryClosurePresent", "live_canary_closure=v4.7;source_baseline=v4.6;minimum_observations=20;fallback_ratio_basis_points_max=2500;p95_latency_ms_max=2000;fault_drill_count=7;runtime_identity_stable=true;kill_switch_restored=true;production_shadow_restored_disabled=true;artifact_verifier=tools/verify-dataagent-v47-live-canary.ps1;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false")
+                : Fail("GraphHandshakeV47LiveCanaryClosurePresent", $"files={LowerBool(v47FilesExist)};closure={LowerBool(v47Closure.Accepted)};markers={LowerBool(v47Markers)}"));
         }
         catch (Exception ex)
         {

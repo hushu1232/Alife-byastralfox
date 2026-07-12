@@ -123,6 +123,38 @@ public sealed class DataAgentV47LiveCanaryTests
         });
     }
 
+    [Test]
+    public void WriterSanitizesFilesystemFailuresWithoutThrowing()
+    {
+        string occupiedPath = Path.Combine(
+            Path.GetTempPath(), $"dataagent-v47-occupied-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(occupiedPath, "sensitive-writer-payload");
+
+        try
+        {
+            DataAgentV47LiveCanaryArtifactWriteResult? write = null;
+
+            Assert.DoesNotThrow(() => write =
+                DataAgentV47LiveCanaryArtifactWriter.Write(
+                    occupiedPath,
+                    DataAgentV47LiveCanaryClosureEvaluator.Evaluate(Input())));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(write, Is.Not.Null);
+                Assert.That(write!.Written, Is.False);
+                Assert.That(write.ReasonCode, Is.EqualTo("v4_7_artifact_write_failed"));
+                Assert.That(write.FileName, Is.EqualTo("redacted"));
+                Assert.That(write.FilePath, Is.Empty);
+                Assert.That(File.ReadAllText(occupiedPath), Is.EqualTo("sensitive-writer-payload"));
+            });
+        }
+        finally
+        {
+            File.Delete(occupiedPath);
+        }
+    }
+
     static DataAgentV47LiveCanaryInput Input() => new(
         HealthySnapshot(), PassedDrills(),
         new DataAgentV47RuntimeIdentityEvidence(RuntimeId, new string('a', 64), 1_783_820_000, true),

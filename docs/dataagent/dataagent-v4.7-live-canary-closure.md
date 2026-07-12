@@ -25,6 +25,15 @@ Seven isolated loopback drills prove unavailable transport, timeout, malformed r
 
 The untracked artifact is `dataagent-v4.7-live-canary-closure.txt`. It contains fixed aggregate counts, latency/fallback budgets, runtime UUID/fingerprint/start time, seven drill booleans, authority invariants, and restoration booleans. It contains no endpoint, request or response body, SQL, token, hidden context, exception, identifier, or local path.
 
+Verify the artifact independently after the owned sidecar has stopped:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-dataagent-v47-live-canary.ps1 `
+  -ArtifactPath Outputs/dataagent-v4.7-live-canary/dataagent-v4.7-live-canary-closure.txt
+```
+
+The verifier prints only `artifact_verified=true` when every fixed field and closure invariant is accepted. It does not print the artifact path or payload.
+
 ## Shutdown and rollback
 
 The wrapper does not install packages, create a virtual environment, or start/stop QQ or NapCat. It does not set process-global Alife feature variables. On exit it reports `kill_switch_restored=true` and `production_shadow_restored_disabled=true` after stopping its owned sidecar.

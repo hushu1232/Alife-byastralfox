@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using Alife.Function.DataAgent;
 
 namespace Alife.Tools.DataAgentV47Canary;
@@ -10,11 +12,24 @@ public sealed class DataAgentV47LiveFaultDrillRunner
             throw new ArgumentOutOfRangeException(nameof(timeout));
         List<DataAgentV45FaultDrillObservation> drills = [];
 
-        await using (LoopbackFaultResponder unavailable = await LoopbackFaultResponder.StartAsync(
-            LoopbackFaultBehavior.FailFirstThenAccept, TimeSpan.Zero))
+        using (TcpListener unavailableListener = new(IPAddress.Loopback, 0))
         {
+            unavailableListener.Server.ExclusiveAddressUse = true;
+            unavailableListener.Start();
+            Uri unavailableEndpoint = new(
+                $"http://127.0.0.1:{((IPEndPoint)unavailableListener.LocalEndpoint).Port}");
+            unavailableListener.Stop();
+            using SocketsHttpHandler unavailableHandler = new()
+            {
+                ConnectTimeout = TimeSpan.FromTicks(Math.Max(1, timeout.Ticks / 2)),
+                UseProxy = false
+            };
+            using HttpClient unavailableHttp = new(unavailableHandler)
+            {
+                Timeout = Timeout.InfiniteTimeSpan
+            };
             drills.Add(Observe(DataAgentV45FaultDrillKind.RuntimeUnavailable,
-                Run(CreateShadow(unavailable.Endpoint, timeout), 1),
+                Run(CreateShadow(unavailableEndpoint, timeout, httpClient: unavailableHttp), 1),
                 "production_shadow_unavailable", true));
         }
 
@@ -96,9 +111,10 @@ public sealed class DataAgentV47LiveFaultDrillRunner
     static DataAgentV44ProductionShadowClient CreateShadow(
         Uri endpoint, TimeSpan timeout, DataAgentV44ProductionShadowOptions? options = null,
         Func<DateTimeOffset>? clock = null,
-        Func<DataAgentV44ProductionShadowOptions>? optionsProvider = null)
+        Func<DataAgentV44ProductionShadowOptions>? optionsProvider = null,
+        HttpClient? httpClient = null)
     {
-        HttpClient http = new() { Timeout = timeout };
+        HttpClient http = httpClient ?? new() { Timeout = Timeout.InfiniteTimeSpan };
         DataAgentGraphHandshakeHttpOptions httpOptions = new(
             new Uri(endpoint, "/handshake"), timeout, true, false);
         return new(new DataAgentGraphHandshakeHttpClient(http, httpOptions),

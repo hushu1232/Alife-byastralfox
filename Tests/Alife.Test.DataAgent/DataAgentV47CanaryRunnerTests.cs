@@ -26,6 +26,8 @@ public sealed class DataAgentV47CanaryRunnerTests
                 Assert.That(result.Accepted, Is.True);
                 Assert.That(result.AcceptedCount, Is.EqualTo(20));
                 Assert.That(result.NetworkAttemptCount, Is.EqualTo(20));
+                Assert.That(result.OutcomeReasonCounts,
+                    Is.EqualTo(new Dictionary<string, int> { ["handshake_accepted"] = 20 }));
                 Assert.That(result.ObservationSnapshot!.ObservationCount, Is.EqualTo(20));
                 Assert.That(result.ObservationSnapshot.FallbackCount, Is.Zero);
                 Assert.That(result.RuntimeIdentity!.StableAcrossWindow, Is.True);
@@ -35,6 +37,8 @@ public sealed class DataAgentV47CanaryRunnerTests
                 Assert.That(result.ArtifactWriteResult!.Written, Is.True);
                 Assert.That(File.Exists(result.ArtifactWriteResult.FilePath), Is.True);
                 Assert.That(responder.HandshakeCount, Is.EqualTo(20));
+                Assert.That(responder.ContentLengthHandshakeCount, Is.EqualTo(20));
+                Assert.That(responder.ChunkedHandshakeCount, Is.Zero);
                 Assert.That(responder.HealthCount, Is.EqualTo(2));
             });
         }
@@ -43,6 +47,175 @@ public sealed class DataAgentV47CanaryRunnerTests
             if (Directory.Exists(output))
                 Directory.Delete(output, recursive: true);
         }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public async Task CanaryCliRejectedWindowEmitsOnlyFixedSafeFields()
+    {
+        await using CanaryResponder responder = new(rejectHandshakes: true);
+        string output = Path.Combine(Path.GetTempPath(), $"dataagent-v47-cli-{Guid.NewGuid():N}");
+        TextWriter originalOutput = Console.Out;
+        using StringWriter capturedOutput = new();
+        int exitCode;
+        try
+        {
+            Console.SetOut(capturedOutput);
+            exitCode = await Program.Main(
+            [
+                "--endpoint", responder.Endpoint.ToString(),
+                "--output", output,
+                "--request-count", "20",
+                "--timeout-ms", "2000",
+                "--runtime-restart-count", "0"
+            ]);
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+            if (Directory.Exists(output))
+                Directory.Delete(output, recursive: true);
+        }
+
+        string[] lines = capturedOutput.ToString().Split(
+            ["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
+        string[] keys = lines.Select(line => line.Split('=', 2)[0]).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exitCode, Is.EqualTo(1));
+            Assert.That(keys, Is.EqualTo(new[]
+            {
+                "canary_accepted", "reason_code", "accepted_count", "network_attempt_count",
+                "outcome_reason_counts", "runtime_instance_id"
+            }));
+            Assert.That(lines, Does.Contain("canary_accepted=false"));
+            Assert.That(lines, Does.Contain("reason_code=v4_7_canary_window_rejected"));
+            Assert.That(lines, Does.Contain("accepted_count=0"));
+            Assert.That(lines, Does.Contain("network_attempt_count=3"));
+            Assert.That(lines, Does.Contain(
+                "outcome_reason_counts=production_shadow_circuit_open:17,production_shadow_unavailable:3"));
+            Assert.That(lines.Single(line => line.StartsWith("runtime_instance_id=", StringComparison.Ordinal)),
+                Does.Match("^runtime_instance_id=[a-f0-9-]{36}$"));
+            Assert.That(responder.HandshakeCount, Is.EqualTo(3));
+            Assert.That(capturedOutput.ToString(), Does.Not.Contain(output));
+            Assert.That(capturedOutput.ToString(), Does.Not.Contain("sidecar_http_status"));
+            Assert.That(capturedOutput.ToString(), Does.Not.Contain("exception"));
+        });
+    }
+
+    [Test]
+    public async Task RunnerUsesArtifactFailureReasonWhenAcceptedClosureCannotBeWritten()
+    {
+        await using CanaryResponder responder = new();
+        string occupiedPath = Path.Combine(
+            Path.GetTempPath(), $"dataagent-v47-runner-occupied-{Guid.NewGuid():N}.txt");
+        File.WriteAllText(occupiedPath, "sensitive-runner-payload");
+        DataAgentV47CanaryArguments arguments = new(
+            responder.Endpoint, occupiedPath, 20, 2000, 0);
+
+        try
+        {
+            DataAgentV47CanaryRunResult result =
+                await new DataAgentV47CanaryRunner().RunAsync(arguments);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result.Accepted, Is.False);
+                Assert.That(result.ReasonCode, Is.EqualTo("v4_7_artifact_write_failed"));
+                Assert.That(result.AcceptedCount, Is.EqualTo(20));
+                Assert.That(result.NetworkAttemptCount, Is.EqualTo(20));
+                Assert.That(result.ClosureResult!.Accepted, Is.True);
+                Assert.That(result.ArtifactWriteResult!.Written, Is.False);
+                Assert.That(result.ArtifactWriteResult.ReasonCode,
+                    Is.EqualTo("v4_7_artifact_write_failed"));
+                Assert.That(result.ArtifactWriteResult.FileName, Is.EqualTo("redacted"));
+                Assert.That(result.ArtifactWriteResult.FilePath, Is.Empty);
+                Assert.That(File.ReadAllText(occupiedPath), Is.EqualTo("sensitive-runner-payload"));
+            });
+        }
+        finally
+        {
+            File.Delete(occupiedPath);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public async Task CanaryCliArtifactFailureEmitsOnlyFixedSafeAggregateFields()
+    {
+        await using CanaryResponder responder = new();
+        string occupiedPath = Path.Combine(
+            Path.GetTempPath(), $"dataagent-v47-cli-occupied-{Guid.NewGuid():N}.txt");
+        const string payload = "sensitive-cli-payload";
+        File.WriteAllText(occupiedPath, payload);
+        TextWriter originalOutput = Console.Out;
+        TextWriter originalError = Console.Error;
+        using StringWriter capturedOutput = new();
+        using StringWriter capturedError = new();
+        int exitCode;
+
+        try
+        {
+            Console.SetOut(capturedOutput);
+            Console.SetError(capturedError);
+            exitCode = await Program.Main(
+            [
+                "--endpoint", responder.Endpoint.ToString(),
+                "--output", occupiedPath,
+                "--request-count", "20",
+                "--timeout-ms", "2000",
+                "--runtime-restart-count", "0"
+            ]);
+        }
+        finally
+        {
+            Console.SetOut(originalOutput);
+            Console.SetError(originalError);
+            File.Delete(occupiedPath);
+        }
+
+        string[] lines = capturedOutput.ToString().Split(
+            ["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries);
+        string[] keys = lines.Select(line => line.Split('=', 2)[0]).ToArray();
+        string combined = capturedOutput + Environment.NewLine + capturedError;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exitCode, Is.EqualTo(1));
+            Assert.That(keys, Is.EqualTo(new[]
+            {
+                "canary_accepted", "reason_code", "accepted_count", "network_attempt_count",
+                "outcome_reason_counts", "runtime_instance_id"
+            }));
+            Assert.That(lines, Does.Contain("canary_accepted=false"));
+            Assert.That(lines, Does.Contain("reason_code=v4_7_artifact_write_failed"));
+            Assert.That(lines, Does.Contain("accepted_count=20"));
+            Assert.That(lines, Does.Contain("network_attempt_count=20"));
+            Assert.That(lines, Does.Contain("outcome_reason_counts=handshake_accepted:20"));
+            Assert.That(capturedError.ToString(), Is.Empty);
+            Assert.That(combined, Does.Not.Contain(occupiedPath));
+            Assert.That(combined, Does.Not.Contain(payload));
+            Assert.That(combined, Does.Not.Contain("Exception"));
+            Assert.That(combined, Does.Not.Contain("exception"));
+            Assert.That(combined, Does.Not.Contain(" at "));
+        });
+    }
+
+    [Test]
+    public void CanaryCliHasFixedCatchAllErrorBoundaryWithoutExceptionEcho()
+    {
+        string root = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string source = File.ReadAllText(Path.Combine(
+            root, "tools", "dataagent-v47-canary", "Program.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("catch (Exception)"));
+            Assert.That(source, Does.Contain("reason_code=v4_7_canary_unexpected_failure"));
+            Assert.That(source, Does.Not.Contain("Console.Error.WriteLine(exception"));
+            Assert.That(source, Does.Not.Contain("Console.WriteLine(exception"));
+        });
     }
 
     [Test]
@@ -113,9 +286,13 @@ public sealed class DataAgentV47CanaryRunnerTests
         readonly Task serverTask;
         int handshakeCount;
         int healthCount;
+        int contentLengthHandshakeCount;
+        int chunkedHandshakeCount;
+        readonly bool rejectHandshakes;
 
-        public CanaryResponder()
+        public CanaryResponder(bool rejectHandshakes = false)
         {
+            this.rejectHandshakes = rejectHandshakes;
             listener.Start();
             Endpoint = new Uri($"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}");
             serverTask = ServeAsync();
@@ -124,6 +301,8 @@ public sealed class DataAgentV47CanaryRunnerTests
         public Uri Endpoint { get; }
         public int HandshakeCount => Volatile.Read(ref handshakeCount);
         public int HealthCount => Volatile.Read(ref healthCount);
+        public int ContentLengthHandshakeCount => Volatile.Read(ref contentLengthHandshakeCount);
+        public int ChunkedHandshakeCount => Volatile.Read(ref chunkedHandshakeCount);
 
         async Task ServeAsync()
         {
@@ -189,6 +368,8 @@ public sealed class DataAgentV47CanaryRunnerTests
             }
 
             string body;
+            int statusCode = 200;
+            string statusText = "OK";
             if (requestLine.Contains(" /health ", StringComparison.Ordinal))
             {
                 Interlocked.Increment(ref healthCount);
@@ -203,21 +384,34 @@ public sealed class DataAgentV47CanaryRunnerTests
             else
             {
                 Interlocked.Increment(ref handshakeCount);
-                using JsonDocument request = JsonDocument.Parse(requestBody);
-                string requestId = request.RootElement.GetProperty("RequestId").GetString()!;
-                body = JsonSerializer.Serialize(new
+                if (contentLength > 0)
+                    Interlocked.Increment(ref contentLengthHandshakeCount);
+                if (chunked)
+                    Interlocked.Increment(ref chunkedHandshakeCount);
+                if (rejectHandshakes)
                 {
-                    RequestId = requestId, Accepted = true, ReasonCode = "langgraph_advisory_accepted",
-                    SelectedNodes = new[] { "query_planner" }, NodeProgress = Array.Empty<object>(),
-                    TraceSummary = "advisory complete", ContextContribution = "authority=csharp",
-                    FallbackRequired = false, NoSqlAuthority = true, ReadOnly = true,
-                    RequestedToolNames = Array.Empty<string>(), RequestsCheckpointMutation = false,
-                    RequestsVisibleText = false
-                });
+                    statusCode = 503;
+                    statusText = "Service Unavailable";
+                    body = JsonSerializer.Serialize(new { error = "runtime_not_ready" });
+                }
+                else
+                {
+                    using JsonDocument request = JsonDocument.Parse(requestBody);
+                    string requestId = request.RootElement.GetProperty("RequestId").GetString()!;
+                    body = JsonSerializer.Serialize(new
+                    {
+                        RequestId = requestId, Accepted = true, ReasonCode = "langgraph_advisory_accepted",
+                        SelectedNodes = new[] { "query_planner" }, NodeProgress = Array.Empty<object>(),
+                        TraceSummary = "advisory complete", ContextContribution = "authority=csharp",
+                        FallbackRequired = false, NoSqlAuthority = true, ReadOnly = true,
+                        RequestedToolNames = Array.Empty<string>(), RequestsCheckpointMutation = false,
+                        RequestsVisibleText = false
+                    });
+                }
             }
             byte[] payload = Encoding.UTF8.GetBytes(body);
             byte[] header = Encoding.ASCII.GetBytes(
-                $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {payload.Length}\r\nConnection: close\r\n\r\n");
+                $"HTTP/1.1 {statusCode} {statusText}\r\nContent-Type: application/json\r\nContent-Length: {payload.Length}\r\nConnection: close\r\n\r\n");
             await stream.WriteAsync(header, token);
             await stream.WriteAsync(payload, token);
         }
@@ -230,4 +424,17 @@ public sealed class DataAgentV47CanaryRunnerTests
             cancellation.Dispose();
         }
     }
+
+    static string FindRepoRoot(string start)
+    {
+        DirectoryInfo? current = new(start);
+        while (current is not null)
+        {
+            if (File.Exists(Path.Combine(current.FullName, "Alife.slnx")))
+                return current.FullName;
+            current = current.Parent;
+        }
+        throw new DirectoryNotFoundException("repo_root_not_found");
+    }
+
 }
