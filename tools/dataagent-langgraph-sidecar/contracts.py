@@ -19,6 +19,12 @@ MANIFEST_FIELDS = frozenset({
     "NodeName", "Purpose", "AllowedToolNames", "DeniedCapabilityMarkers",
     "InputShape", "OutputShape", "BusinessTerms", "SafetyNotes",
 })
+RESPONSE_FIELDS = frozenset({
+    "RequestId", "Accepted", "ReasonCode", "SelectedNodes", "NodeProgress",
+    "TraceSummary", "ContextContribution", "FallbackRequired",
+    "NoSqlAuthority", "ReadOnly", "RequestedToolNames",
+    "RequestsCheckpointMutation", "RequestsVisibleText",
+})
 
 
 class ContractError(ValueError):
@@ -101,3 +107,29 @@ def build_accepted_response(request: dict[str, Any]) -> dict[str, Any]:
         "RequestsCheckpointMutation": False,
         "RequestsVisibleText": False,
     }
+
+
+def validate_handshake_response(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or frozenset(value) != RESPONSE_FIELDS:
+        raise ContractError("invalid_response_schema")
+    if value["Accepted"] is not True or value["FallbackRequired"] is not False:
+        raise ContractError("invalid_response_schema")
+    if value["NoSqlAuthority"] is not True or value["ReadOnly"] is not True:
+        raise ContractError("unsafe_response_authority")
+    if value["RequestsCheckpointMutation"] is not False:
+        raise ContractError("unsafe_response_authority")
+    if value["RequestsVisibleText"] is not False or value["RequestedToolNames"] != []:
+        raise ContractError("unsafe_response_authority")
+    if not _bounded_string(value["RequestId"], 128):
+        raise ContractError("invalid_response_schema")
+    if not _bounded_string(value["ReasonCode"], 128):
+        raise ContractError("invalid_response_schema")
+    if not _string_list(value["SelectedNodes"], 16):
+        raise ContractError("invalid_response_schema")
+    if not isinstance(value["NodeProgress"], list) or len(value["NodeProgress"]) > 16:
+        raise ContractError("invalid_response_schema")
+    if not isinstance(value["TraceSummary"], str) or len(value["TraceSummary"]) > 1800:
+        raise ContractError("invalid_response_schema")
+    if not isinstance(value["ContextContribution"], str) or len(value["ContextContribution"]) > 1200:
+        raise ContractError("invalid_response_schema")
+    return value

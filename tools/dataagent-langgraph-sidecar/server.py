@@ -2,51 +2,103 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from contracts import validate_handshake_request
+from contracts import (
+    ContractError,
+    MAX_BODY_BYTES,
+    validate_handshake_request,
+    validate_handshake_response,
+)
 from runtime import RuntimeState, create_runtime
+
+
+@dataclass(frozen=True)
+class HttpResult:
+    status: int
+    body: dict[str, Any]
+
+
+class SidecarApplication:
+    def __init__(self, runtime_state: RuntimeState):
+        self.runtime_state = runtime_state
+
+    def handle(
+        self,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        body: bytes,
+    ) -> HttpResult:
+        if method == "GET" and path == "/health":
+            return HttpResult(200, self.runtime_state.health_attestation())
+        if method != "POST" or path != "/handshake":
+            return HttpResult(404, {"error": "not_found"})
+
+        content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/json":
+            return HttpResult(415, {"error": "unsupported_content_type"})
+        try:
+            declared_length = int(headers.get("content-length", ""))
+        except ValueError:
+            return HttpResult(400, {"error": "invalid_request_schema"})
+        if declared_length > MAX_BODY_BYTES or len(body) > MAX_BODY_BYTES:
+            return HttpResult(413, {"error": "request_body_too_large"})
+        if declared_length < 1 or declared_length != len(body):
+            return HttpResult(400, {"error": "invalid_request_schema"})
+        if not self.runtime_state.health_attestation().get("ready", False):
+            return HttpResult(503, {"error": "runtime_not_ready"})
+        try:
+            request = validate_handshake_request(json.loads(body.decode("utf-8")))
+        except (ContractError, UnicodeDecodeError, json.JSONDecodeError):
+            return HttpResult(400, {"error": "invalid_request_schema"})
+        try:
+            result = self.runtime_state.compiled_graph.invoke({"request": request})
+            response = validate_handshake_response(result["response"])
+        except Exception:
+            return HttpResult(500, {"error": "graph_failure"})
+        return HttpResult(200, response)
 
 
 class Handler(BaseHTTPRequestHandler):
     runtime_state: RuntimeState | None = None
 
     def do_GET(self) -> None:
-        if self.path == "/health":
-            if self.runtime_state is None:
-                self._send_json({"ok": False, "ready": False})
-                return
-            self._send_json(self.runtime_state.health_attestation())
+        if self.runtime_state is None:
+            self._send_json({"error": "runtime_not_ready"}, 503)
             return
-        self.send_error(404)
+        result = SidecarApplication(self.runtime_state).handle("GET", self.path, {}, b"")
+        self._send_json(result.body, result.status)
 
     def do_POST(self) -> None:
-        if self.path != "/handshake":
-            self.send_error(404)
+        if self.runtime_state is None:
+            self._send_json({"error": "runtime_not_ready"}, 503)
             return
-
-        length = int(self.headers.get("content-length", "0"))
-        body = self.rfile.read(length)
         try:
-            request = json.loads(body.decode("utf-8"))
-        except json.JSONDecodeError:
-            self.send_error(400)
+            length = int(self.headers.get("content-length", ""))
+        except ValueError:
+            length = 0
+        headers = {key.lower(): value for key, value in self.headers.items()}
+        if length > MAX_BODY_BYTES:
+            result = SidecarApplication(self.runtime_state).handle(
+                "POST", self.path, headers, b""
+            )
+            self._send_json(result.body, result.status)
             return
-
-        request = validate_handshake_request(request)
-        if self.runtime_state is None or self.runtime_state.compiled_graph is None:
-            self.send_error(503)
-            return
-        result = self.runtime_state.compiled_graph.invoke({"request": request})
-        self._send_json(result["response"])
+        body = self.rfile.read(length)
+        result = SidecarApplication(self.runtime_state).handle(
+            "POST", self.path, headers, body
+        )
+        self._send_json(result.body, result.status)
 
     def log_message(self, format: str, *args: Any) -> None:
         return
 
-    def _send_json(self, value: dict[str, Any]) -> None:
+    def _send_json(self, value: dict[str, Any], status: int = 200) -> None:
         payload = json.dumps(value).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(payload)))
         self.end_headers()
