@@ -115,9 +115,12 @@ public sealed class DataAgentGraphHandshakeCoordinator(
         }
         catch (DataAgentV44ProductionShadowException exception)
         {
-            DataAgentGraphHandshakeStatus status = exception.ReasonCode == "production_shadow_timeout"
-                ? DataAgentGraphHandshakeStatus.Timeout
-                : DataAgentGraphHandshakeStatus.Unavailable;
+            DataAgentGraphHandshakeStatus status = exception.ReasonCode switch
+            {
+                "production_shadow_timeout" => DataAgentGraphHandshakeStatus.Timeout,
+                "production_shadow_invalid_response" => DataAgentGraphHandshakeStatus.Invalid,
+                _ => DataAgentGraphHandshakeStatus.Unavailable
+            };
             return Outcome(
                 status,
                 exception.ReasonCode,

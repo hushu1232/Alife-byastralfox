@@ -28,6 +28,7 @@ public sealed class DataAgentV44ProductionShadowClient : IDataAgentGraphSidecarC
     const string CircuitOpenReason = "production_shadow_circuit_open";
     const string BusyReason = "production_shadow_busy";
     const string TimeoutReason = "production_shadow_timeout";
+    const string InvalidResponseReason = "production_shadow_invalid_response";
     const string UnavailableReason = "production_shadow_unavailable";
     const string AcceptedReason = "production_shadow_accepted";
 
@@ -79,6 +80,11 @@ public sealed class DataAgentV44ProductionShadowClient : IDataAgentGraphSidecarC
             }
 
             return response;
+        }
+        catch (DataAgentGraphSidecarInvalidResponseException)
+        {
+            RecordTransportFailure(InvalidResponseReason);
+            throw Failure(InvalidResponseReason, networkAttempted: true, recordReason: false);
         }
         catch (TimeoutException)
         {

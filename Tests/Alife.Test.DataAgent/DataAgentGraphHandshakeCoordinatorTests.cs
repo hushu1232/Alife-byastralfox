@@ -303,6 +303,7 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
     }
 
     [TestCase("production_shadow_timeout", true, DataAgentGraphHandshakeStatus.Timeout)]
+    [TestCase("production_shadow_invalid_response", true, DataAgentGraphHandshakeStatus.Invalid)]
     [TestCase("production_shadow_unavailable", true, DataAgentGraphHandshakeStatus.Unavailable)]
     [TestCase("production_shadow_circuit_open", false, DataAgentGraphHandshakeStatus.Unavailable)]
     [TestCase("production_shadow_busy", false, DataAgentGraphHandshakeStatus.Unavailable)]
@@ -328,6 +329,47 @@ public sealed class DataAgentGraphHandshakeCoordinatorTests
             Assert.That(outcome.FallbackRequired, Is.True);
             Assert.That(outcome.Response, Is.Null);
             Assert.That(outcome.Observability!.NetworkAttempted, Is.EqualTo(networkAttempted));
+        });
+    }
+
+    [Test]
+    public void InvalidHttpResponseRemainsRejectedThroughShadowCoordinatorAndV45Recorder()
+    {
+        DataAgentV45ProductionObservationRecorder recorder = new();
+        DataAgentV44ProductionShadowOptions ready = new(
+            Enabled: true,
+            KillSwitchActive: false,
+            ValueScore: 100,
+            ValueStatus: "proven_useful",
+            MaxConcurrency: 2,
+            FailureThreshold: 3,
+            CircuitOpenDuration: TimeSpan.FromSeconds(30));
+        DataAgentV44ProductionShadowClient shadow = new(
+            new ThrowingSidecarClient(
+                new DataAgentGraphSidecarInvalidResponseException("invalid_response_schema")),
+            ready);
+        DataAgentGraphHandshakeCoordinator coordinator = new(
+            new DataAgentGraphHandshakeOptions(true),
+            shadow,
+            observabilityContext: new DataAgentGraphSidecarObservabilityContext(true, false),
+            observationRecorder: recorder,
+            observationClock: () => new DateTimeOffset(2026, 7, 12, 8, 0, 0, TimeSpan.Zero));
+
+        DataAgentGraphHandshakeOutcome outcome = coordinator.TryHandshake(
+            "owner",
+            "Which gates failed?",
+            AcceptedResult());
+        DataAgentV45ProductionObservationSnapshot snapshot = recorder.GetSnapshot(
+            new DateTimeOffset(2026, 7, 12, 8, 0, 0, TimeSpan.Zero));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(outcome.Status, Is.EqualTo(DataAgentGraphHandshakeStatus.Invalid));
+            Assert.That(outcome.ReasonCode, Is.EqualTo("production_shadow_invalid_response"));
+            Assert.That(outcome.Observability!.NetworkAttempted, Is.True);
+            Assert.That(snapshot.RejectedCount, Is.EqualTo(1));
+            Assert.That(snapshot.UnavailableCount, Is.Zero);
+            Assert.That(shadow.GetSnapshot().ConsecutiveFailures, Is.EqualTo(1));
         });
     }
 
