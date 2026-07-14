@@ -19,9 +19,9 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
             "accepted", "advisory matched", now), now);
         DataAgentLangGraphShadowArtifactWriteResult rejected = store.RecordLangGraphShadowArtifact(CreateArtifact(
             "artifact-rejected", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.GateRejected,
-            "diff_gate_rejected", "diff gate rejected", now.AddMinutes(1)), now);
+            "diff_gate_rejected", "diff gate rejected", now.AddMinutes(1)), now.AddMinutes(1));
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadLangGraphShadowArtifactAggregate(now);
+        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadLangGraphShadowArtifactAggregate(now.AddMinutes(1));
 
         Assert.Multiple(() =>
         {
@@ -39,6 +39,7 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("password=hunter2")]
     [TestCase("connection_string=Data Source=local")]
     [TestCase("hidden_context")]
+    [TestCase("file:///etc/passwd")]
     [TestCase("/opt/alife/cache")]
     [TestCase("safe metadata /usr/local/bin")]
     [TestCase("safe metadata /root/.cache")]
@@ -83,16 +84,17 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
 
         DataAgentLangGraphShadowArtifact expired = CreateArtifact(
             "expired", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Timeout,
-            "timed_out", "expired", now.AddDays(-1), now);
+            "timed_out", "expired", now.AddDays(-91));
         store.Write(expired, now);
         for (int index = 0; index < 21; index++)
         {
+            DateTimeOffset writeNow = now.AddMinutes(index);
             store.Write(CreateArtifact(
                 $"artifact-{index:D2}", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Accepted,
-                $"accepted-{index:D2}", "safe", now.AddMinutes(index)), now);
+                $"accepted-{index:D2}", "safe", writeNow), writeNow);
         }
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now);
+        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now.AddMinutes(20));
 
         Assert.Multiple(() =>
         {
@@ -160,6 +162,60 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
             Assert.That(result.ReasonCode, Is.EqualTo("expired_artifact"));
             Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
             Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void WriteRejectsFutureCreatedAtWithoutPersistingMetadata()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(CreateArtifact(
+            "future-artifact",
+            "session-1",
+            "replay-1",
+            DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted",
+            "safe",
+            now.AddDays(365)), now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("future_artifact"));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void WriteBoundsTimestampOverflowWithoutThrowingOrPersistingMetadata()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        DataAgentLangGraphShadowArtifact artifact = CreateArtifact(
+            "maximum-timestamp",
+            "session-1",
+            "replay-1",
+            DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted",
+            "safe",
+            DateTimeOffset.MaxValue,
+            DateTimeOffset.MaxValue);
+        DataAgentLangGraphShadowArtifactWriteResult? result = null;
+
+        Assert.DoesNotThrow(() => result = store.Write(artifact, now));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("invalid_artifact_timestamp"));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
         });
     }
 
@@ -233,11 +289,11 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         DataAgentLangGraphShadowArtifactStore store = new(databasePath);
 
         store.Write(CreateArtifact("a", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Accepted, "accepted", "summary-a", now), now);
-        store.Write(CreateArtifact("b", "session-2", "replay-2", DataAgentLangGraphShadowArtifactOutcome.ProtocolRejected, "protocol", "summary-b", now.AddMinutes(1)), now);
-        store.Write(CreateArtifact("c", "session-3", "replay-3", DataAgentLangGraphShadowArtifactOutcome.Timeout, "timeout", "summary-c", now.AddMinutes(2)), now);
-        store.Write(CreateArtifact("d", "session-4", "replay-4", DataAgentLangGraphShadowArtifactOutcome.Fallback, "fallback", "summary-d", now.AddMinutes(3)), now);
+        store.Write(CreateArtifact("b", "session-2", "replay-2", DataAgentLangGraphShadowArtifactOutcome.ProtocolRejected, "protocol", "summary-b", now.AddMinutes(1)), now.AddMinutes(1));
+        store.Write(CreateArtifact("c", "session-3", "replay-3", DataAgentLangGraphShadowArtifactOutcome.Timeout, "timeout", "summary-c", now.AddMinutes(2)), now.AddMinutes(2));
+        store.Write(CreateArtifact("d", "session-4", "replay-4", DataAgentLangGraphShadowArtifactOutcome.Fallback, "fallback", "summary-d", now.AddMinutes(3)), now.AddMinutes(3));
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now);
+        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now.AddMinutes(3));
 
         Assert.Multiple(() =>
         {

@@ -70,7 +70,19 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         if (HasUnsafeOrOutOfBoundsMetadata(artifact, summary))
             return new(false, "unsafe_artifact_metadata");
 
-        DateTimeOffset expiresAt = artifact.CreatedAt.AddDays(RetentionDays);
+        DateTimeOffset expiresAt;
+        try
+        {
+            expiresAt = artifact.CreatedAt.AddDays(RetentionDays);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return new(false, "invalid_artifact_timestamp");
+        }
+
+        if (artifact.CreatedAt > now)
+            return new(false, "future_artifact");
+
         if (expiresAt <= now)
             return new(false, "expired_artifact");
 
