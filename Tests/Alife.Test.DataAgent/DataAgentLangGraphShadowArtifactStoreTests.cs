@@ -41,6 +41,8 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("hidden_context")]
     [TestCase("Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")]
     [TestCase("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")]
+    [TestCase("Authorization: Basic YTpi")]
+    [TestCase("Basic YTpi")]
     [TestCase("-----BEGIN PRIVATE KEY-----")]
     [TestCase("file:///etc/passwd")]
     [TestCase("/opt/alife/cache")]
