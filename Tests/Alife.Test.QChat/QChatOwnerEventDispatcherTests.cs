@@ -33,20 +33,67 @@ public class QChatOwnerEventDispatcherTests
     }
 
     [Test]
+    public void OwnerEventRecordsPreserveOriginalPositionalContract()
+    {
+        QChatOwnerEventRequest request = new(
+            "request-dedupe", "xiayu", 1001, "info", "engineering", "test", "source-id", "request-message");
+        QChatOwnerEventEntry entry = new(
+            "event-id", "entry-dedupe", "xiayu", 1001, "info", "engineering", "test", "source-id",
+            "entry-message", QChatOwnerEventStatus.Pending, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch,
+            0, null, null, null);
+
+        var (requestDedupeKey, requestAgentId, requestOwnerId, requestSeverity, requestCategory, requestSource,
+            requestSourceId, requestMessage) = request;
+        var (entryEventId, entryDedupeKey, entryAgentId, entryOwnerId, entrySeverity, entryCategory, entrySource,
+            entrySourceId, entryMessage, entryStatus, entryCreatedAt, entryNextAttemptAt, entryAttemptCount,
+            entryDeliveredAt, entryDeliveryMessageId, entryLastError) = entry;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(requestDedupeKey, Is.EqualTo("request-dedupe"));
+            Assert.That(requestAgentId, Is.EqualTo("xiayu"));
+            Assert.That(requestOwnerId, Is.EqualTo(1001));
+            Assert.That(requestSeverity, Is.EqualTo("info"));
+            Assert.That(requestCategory, Is.EqualTo("engineering"));
+            Assert.That(requestSource, Is.EqualTo("test"));
+            Assert.That(requestSourceId, Is.EqualTo("source-id"));
+            Assert.That(requestMessage, Is.EqualTo("request-message"));
+            Assert.That(entryEventId, Is.EqualTo("event-id"));
+            Assert.That(entryDedupeKey, Is.EqualTo("entry-dedupe"));
+            Assert.That(entryAgentId, Is.EqualTo("xiayu"));
+            Assert.That(entryOwnerId, Is.EqualTo(1001));
+            Assert.That(entrySeverity, Is.EqualTo("info"));
+            Assert.That(entryCategory, Is.EqualTo("engineering"));
+            Assert.That(entrySource, Is.EqualTo("test"));
+            Assert.That(entrySourceId, Is.EqualTo("source-id"));
+            Assert.That(entryMessage, Is.EqualTo("entry-message"));
+            Assert.That(entryStatus, Is.EqualTo(QChatOwnerEventStatus.Pending));
+            Assert.That(entryCreatedAt, Is.EqualTo(DateTimeOffset.UnixEpoch));
+            Assert.That(entryNextAttemptAt, Is.EqualTo(DateTimeOffset.UnixEpoch));
+            Assert.That(entryAttemptCount, Is.Zero);
+            Assert.That(entryDeliveredAt, Is.Null);
+            Assert.That(entryDeliveryMessageId, Is.Null);
+            Assert.That(entryLastError, Is.Null);
+        });
+    }
+
+    [Test]
     public async Task FlushAsyncFormatsTypedEngineeringEventWithoutChangingGenericEvents()
     {
         QChatOwnerEventOutbox outbox = new(CreateTempPath());
         FakeOneBotRuntime runtime = new() { NextMessageId = 10 };
-        QChatOwnerEventEntry genericEntry = outbox.Enqueue(CreateRequest("generic"));
+        QChatOwnerEventEntry genericEntry = outbox.Enqueue(CreateRequest("generic") with { Category = "engineering" });
         QChatOwnerEventEntry engineeringEntry = outbox.Enqueue(new QChatOwnerEventRequest(
             DedupeKey: "engineering", AgentId: "xiayu", OwnerId: 1001,
             Severity: "info", Category: "engineering", Source: "test", SourceId: "engineering",
-            Message: "generic-message-must-not-be-sent",
-            EngineeringReply: new QChatOwnerEngineeringReply(
+            Message: "generic-message-must-not-be-sent")
+        {
+            EngineeringReply = new QChatOwnerEngineeringReply(
                 QChatOwnerEngineeringReplyStage.Blocked,
                 "checked=qchat-owner-event-dispatcher",
                 "tests=not-run",
-                "missing_evidence=correlation-id")));
+                "missing_evidence=correlation-id")
+        });
         QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
 
         int delivered = await dispatcher.FlushAsync();
@@ -65,6 +112,46 @@ public class QChatOwnerEventDispatcherTests
             Assert.That(engineeringMessage, Does.Not.Contain("generic-message-must-not-be-sent"));
             Assert.That(outbox.GetById(genericEntry.EventId)!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
             Assert.That(outbox.GetById(engineeringEntry.EventId)!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+        });
+    }
+
+    [Test]
+    public async Task FlushAsyncPreservesTypedEngineeringPayloadAcrossReloadAndRetry()
+    {
+        string path = CreateTempPath();
+        QChatOwnerEventOutbox outbox = new(path);
+        QChatOwnerEventEntry entry = outbox.Enqueue(new QChatOwnerEventRequest(
+            "typed-reload", "xiayu", 1001, "info", "engineering", "test", "typed-reload",
+            "raw-message-placeholder-must-not-be-sent")
+        {
+            EngineeringReply = new QChatOwnerEngineeringReply(
+                QChatOwnerEngineeringReplyStage.Blocked,
+                "checked=qchat-owner-event-dispatcher-reload",
+                "tests=not-run",
+                "missing_evidence=correlation-id")
+        });
+        FakeOneBotRuntime failingRuntime = new()
+        {
+            SendException = new InvalidOperationException("offline")
+        };
+
+        int firstDelivered = await new QChatOwnerEventDispatcher(outbox, () => failingRuntime).FlushAsync();
+
+        QChatOwnerEventOutbox reloadedOutbox = new(path);
+        FakeOneBotRuntime successfulRuntime = new() { NextMessageId = 10 };
+        int retryDelivered = await new QChatOwnerEventDispatcher(reloadedOutbox, () => successfulRuntime)
+            .FlushAsync(includeScheduled: true);
+
+        string deliveredMessage = successfulRuntime.PrivateMessages.Single().Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstDelivered, Is.Zero);
+            Assert.That(retryDelivered, Is.EqualTo(1));
+            Assert.That(deliveredMessage, Does.Contain("checked=qchat-owner-event-dispatcher-reload"));
+            Assert.That(deliveredMessage, Does.Contain("tests=not-run"));
+            Assert.That(deliveredMessage, Does.Contain("missing_evidence=correlation-id"));
+            Assert.That(deliveredMessage, Does.Not.Contain("raw-message-placeholder-must-not-be-sent"));
+            Assert.That(reloadedOutbox.GetById(entry.EventId)!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
         });
     }
 

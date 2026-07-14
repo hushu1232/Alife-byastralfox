@@ -24,8 +24,10 @@ public sealed record QChatOwnerEventRequest(
     string Category,
     string Source,
     string SourceId,
-    string Message,
-    QChatOwnerEngineeringReply? EngineeringReply = null);
+    string Message)
+{
+    public QChatOwnerEngineeringReply? EngineeringReply { get; init; }
+}
 
 public sealed record QChatOwnerEventEntry(
     string EventId,
@@ -43,8 +45,10 @@ public sealed record QChatOwnerEventEntry(
     int AttemptCount,
     DateTimeOffset? DeliveredAt,
     long? DeliveryMessageId,
-    string? LastError,
-    QChatOwnerEngineeringReply? EngineeringReply = null);
+    string? LastError)
+{
+    public QChatOwnerEngineeringReply? EngineeringReply { get; init; }
+}
 
 public sealed record QChatOwnerEventSummary(
     int Total,
@@ -119,8 +123,10 @@ public sealed class QChatOwnerEventOutbox
                 AttemptCount: 0,
                 DeliveredAt: null,
                 DeliveryMessageId: null,
-                LastError: null,
-                EngineeringReply: request.EngineeringReply);
+                LastError: null)
+            {
+                EngineeringReply = request.EngineeringReply
+            };
 
             Store(entry, append: true);
             return entry;
