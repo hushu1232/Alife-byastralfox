@@ -16,6 +16,7 @@ using Alife.Framework;
 using Alife.Function.Agent;
 using Alife.Function.DesktopControl;
 using Alife.Function.Emotion;
+using Alife.Function.DataAgent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Alife.Function.MessageFilter;
@@ -6721,7 +6722,8 @@ public partial class QChatService(
             GetRecentDataAgentTraceDiagnostics,
             GetRecentDataAgentProgressDiagnostics,
             recentDiagnosticsCache,
-            recentDataAgentGraph: GetRecentDataAgentGraphDiagnostics);
+            recentDataAgentGraph: GetRecentDataAgentGraphDiagnostics,
+            recentDataAgentLangGraph: GetRecentDataAgentLangGraphDiagnostics);
     }
 
     async Task<bool> TryHandleRollbackCommandAsync(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
@@ -9139,6 +9141,9 @@ public partial class QChatService(
 
         return fallback;
     }
+
+    static string GetRecentDataAgentLangGraphDiagnostics() =>
+        DataAgentLangGraphShadowArtifactRuntimeProvider.ReadConfiguredAggregate();
 
     void UpdateRecentSemanticDiagnostics(
         QChatPendingDispatchSession session,

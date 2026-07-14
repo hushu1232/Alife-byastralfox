@@ -297,6 +297,98 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    [NonParallelizable]
+    public void ArtifactWriterPersistsCSharpDerivedAggregateThroughConfiguredSqliteStoreWithoutChangingManualResult()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v4-artifact-store", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        string outputDirectory = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v4-artifacts", Guid.NewGuid().ToString("N"));
+        string? previousProvider = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER");
+        string? previousSqlitePath = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        IDataAgentStore store = new SqliteDataAgentStore(databasePath);
+        DataAgentRealLangGraphManualShadowResult result =
+            DataAgentRealLangGraphManualShadowIntegration.Evaluate(NewInput());
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", databasePath);
+
+            DataAgentRealLangGraphManualShadowArtifactWriteResult write =
+                DataAgentRealLangGraphManualShadowArtifactWriter.Write(outputDirectory, result);
+            DataAgentLangGraphShadowArtifactAggregate aggregate =
+                store.ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(write.Written, Is.True);
+                Assert.That(result.Accepted, Is.True);
+                Assert.That(result.DefaultResultChanged, Is.False);
+                Assert.That(aggregate.Total, Is.EqualTo(1));
+                Assert.That(aggregate.Accepted, Is.EqualTo(1));
+                Assert.That(aggregate.LatestReasonCode, Is.EqualTo("real_langgraph_manual_shadow_integration_accepted"));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", previousProvider);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", previousSqlitePath);
+        }
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void RuntimeProviderClassifiesCSharpResultsAndReturnsExactUnavailableAggregateWithoutSqlite()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "v4-runtime-provider", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        string? previousProvider = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER");
+        string? previousSqlitePath = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", databasePath);
+
+            DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(
+                DataAgentRealLangGraphManualShadowIntegration.Evaluate(NewInput()), now);
+            DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(
+                NewDirectResult(reasonCode: "manual_shadow_rejected"), now);
+            DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(
+                NewDirectResult(reasonCode: "protocol_failure"), now);
+            DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(
+                NewDirectResult(reasonCode: "timeout_or_transport_failure"), now);
+            DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(
+                NewDirectResult(reasonCode: "manual_shadow_fallback"), now);
+
+            string aggregate = DataAgentLangGraphShadowArtifactRuntimeProvider.ReadConfiguredAggregate(now);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "postgres");
+            string unavailable = DataAgentLangGraphShadowArtifactRuntimeProvider.ReadConfiguredAggregate(now);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.sqlite"));
+            string unavailableWithoutStore = DataAgentLangGraphShadowArtifactRuntimeProvider.ReadConfiguredAggregate(now);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(aggregate, Does.Contain("total=5"));
+                Assert.That(aggregate, Does.Contain("accepted=1"));
+                Assert.That(aggregate, Does.Contain("gate_rejected=1"));
+                Assert.That(aggregate, Does.Contain("protocol_rejected=1"));
+                Assert.That(aggregate, Does.Contain("timeout=1"));
+                Assert.That(aggregate, Does.Contain("fallback=1"));
+                Assert.That(unavailable, Is.EqualTo(DataAgentLangGraphShadowArtifactRuntimeProvider.UnavailableAggregate));
+                Assert.That(unavailableWithoutStore, Is.EqualTo(DataAgentLangGraphShadowArtifactRuntimeProvider.UnavailableAggregate));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", previousProvider);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", previousSqlitePath);
+        }
+    }
+
+    [Test]
     public void ArtifactWriterRejectsMissingOutputDirectory()
     {
         DataAgentRealLangGraphManualShadowArtifactWriteResult write =
