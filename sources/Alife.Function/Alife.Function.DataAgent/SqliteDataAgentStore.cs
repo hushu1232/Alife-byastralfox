@@ -64,4 +64,16 @@ public sealed class SqliteDataAgentStore : IDataAgentStore
     {
         return new DataAgentToolBrokerAuditLog(databasePath).ReadAll();
     }
+
+    public DataAgentLangGraphShadowArtifactWriteResult RecordLangGraphShadowArtifact(
+        DataAgentLangGraphShadowArtifact artifact,
+        DateTimeOffset now)
+    {
+        return new DataAgentLangGraphShadowArtifactStore(databasePath).Write(artifact, now);
+    }
+
+    public DataAgentLangGraphShadowArtifactAggregate ReadLangGraphShadowArtifactAggregate(DateTimeOffset now)
+    {
+        return new DataAgentLangGraphShadowArtifactStore(databasePath).ReadAggregate(now);
+    }
 }
