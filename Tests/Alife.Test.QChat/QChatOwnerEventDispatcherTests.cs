@@ -33,6 +33,42 @@ public class QChatOwnerEventDispatcherTests
     }
 
     [Test]
+    public async Task FlushAsyncFormatsTypedEngineeringEventWithoutChangingGenericEvents()
+    {
+        QChatOwnerEventOutbox outbox = new(CreateTempPath());
+        FakeOneBotRuntime runtime = new() { NextMessageId = 10 };
+        QChatOwnerEventEntry genericEntry = outbox.Enqueue(CreateRequest("generic"));
+        QChatOwnerEventEntry engineeringEntry = outbox.Enqueue(new QChatOwnerEventRequest(
+            DedupeKey: "engineering", AgentId: "xiayu", OwnerId: 1001,
+            Severity: "info", Category: "engineering", Source: "test", SourceId: "engineering",
+            Message: "generic-message-must-not-be-sent",
+            EngineeringReply: new QChatOwnerEngineeringReply(
+                QChatOwnerEngineeringReplyStage.Blocked,
+                "checked=qchat-owner-event-dispatcher",
+                "tests=not-run",
+                "missing_evidence=correlation-id")));
+        QChatOwnerEventDispatcher dispatcher = new(outbox, () => runtime);
+
+        int delivered = await dispatcher.FlushAsync();
+
+        string genericMessage = runtime.PrivateMessages.Single(message =>
+            message.Message.Contains("action=test result=success", StringComparison.Ordinal)).Message;
+        string engineeringMessage = runtime.PrivateMessages.Single(message =>
+            message.Message.Contains("checked=qchat-owner-event-dispatcher", StringComparison.Ordinal)).Message;
+        Assert.Multiple(() =>
+        {
+            Assert.That(delivered, Is.EqualTo(2));
+            Assert.That(genericMessage, Does.StartWith("术术，我看过了。"));
+            Assert.That(engineeringMessage, Does.StartWith("术术，"));
+            Assert.That(engineeringMessage, Does.Contain("tests=not-run"));
+            Assert.That(engineeringMessage, Does.Contain("missing_evidence=correlation-id"));
+            Assert.That(engineeringMessage, Does.Not.Contain("generic-message-must-not-be-sent"));
+            Assert.That(outbox.GetById(genericEntry.EventId)!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+            Assert.That(outbox.GetById(engineeringEntry.EventId)!.Status, Is.EqualTo(QChatOwnerEventStatus.Delivered));
+        });
+    }
+
+    [Test]
     public async Task FlushAsyncKeepsEventPendingWhenRuntimeThrows()
     {
         string path = CreateTempPath();

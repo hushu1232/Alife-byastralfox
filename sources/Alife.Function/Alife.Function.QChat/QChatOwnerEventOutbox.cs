@@ -24,7 +24,8 @@ public sealed record QChatOwnerEventRequest(
     string Category,
     string Source,
     string SourceId,
-    string Message);
+    string Message,
+    QChatOwnerEngineeringReply? EngineeringReply = null);
 
 public sealed record QChatOwnerEventEntry(
     string EventId,
@@ -42,7 +43,8 @@ public sealed record QChatOwnerEventEntry(
     int AttemptCount,
     DateTimeOffset? DeliveredAt,
     long? DeliveryMessageId,
-    string? LastError);
+    string? LastError,
+    QChatOwnerEngineeringReply? EngineeringReply = null);
 
 public sealed record QChatOwnerEventSummary(
     int Total,
@@ -89,6 +91,8 @@ public sealed class QChatOwnerEventOutbox
         ValidateRequired(request.Source, nameof(request.Source));
         ValidateRequired(request.SourceId, nameof(request.SourceId));
         ValidateRequired(request.Message, nameof(request.Message));
+        if (request.EngineeringReply is not null)
+            ValidateRequired(request.EngineeringReply.Facts, nameof(request.EngineeringReply.Facts));
 
         lock (syncRoot)
         {
@@ -115,7 +119,8 @@ public sealed class QChatOwnerEventOutbox
                 AttemptCount: 0,
                 DeliveredAt: null,
                 DeliveryMessageId: null,
-                LastError: null);
+                LastError: null,
+                EngineeringReply: request.EngineeringReply);
 
             Store(entry, append: true);
             return entry;
@@ -322,7 +327,9 @@ public sealed class QChatOwnerEventOutbox
         !string.IsNullOrWhiteSpace(entry.SourceId) &&
         !string.IsNullOrWhiteSpace(entry.Message) &&
         Enum.IsDefined(entry.Status) &&
-        string.Equals(entry.EventId, CreateEventId(entry.DedupeKey), StringComparison.Ordinal);
+        string.Equals(entry.EventId, CreateEventId(entry.DedupeKey), StringComparison.Ordinal) &&
+        (entry.EngineeringReply is null ||
+         !string.IsNullOrWhiteSpace(entry.EngineeringReply.Facts));
 
     void StoreLoaded(QChatOwnerEventEntry entry)
     {
