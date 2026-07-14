@@ -103,6 +103,98 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     }
 
     [Test]
+    public void WriteAlwaysUsesNinetyDayExpiryAndNeverLeavesExpiredInputMetadata()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+
+        DataAgentLangGraphShadowArtifactWriteResult earlierExpiry = store.Write(CreateArtifact(
+            "expiry-earlier", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted", "safe", now, now.AddDays(-1)), now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(earlierExpiry.Written, Is.True);
+            Assert.That(ReadExpiry(databasePath, "expiry-earlier"), Is.EqualTo(now.AddDays(90)));
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+
+        DataAgentLangGraphShadowArtifactWriteResult expiresAtNow = store.Write(CreateArtifact(
+            "expiry-now", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.ProtocolRejected,
+            "protocol", "safe", now, now), now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(expiresAtNow.Written, Is.True);
+            Assert.That(ReadExpiry(databasePath, "expiry-now"), Is.EqualTo(now.AddDays(90)));
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void WriteNormalizesNullAndBlankSummaryForSafeClassifiedOutcomes()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+
+        DataAgentLangGraphShadowArtifactWriteResult protocol = store.Write(CreateArtifact(
+            "blank-protocol", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.ProtocolRejected,
+            "protocol", null!, now), now);
+        DataAgentLangGraphShadowArtifactWriteResult timeout = store.Write(CreateArtifact(
+            "blank-timeout", "session-2", "replay-2", DataAgentLangGraphShadowArtifactOutcome.Timeout,
+            "timeout", "", now), now);
+        DataAgentLangGraphShadowArtifactWriteResult fallback = store.Write(CreateArtifact(
+            "blank-fallback", "session-3", "replay-3", DataAgentLangGraphShadowArtifactOutcome.Fallback,
+            "fallback", "   ", now), now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(protocol.Written, Is.True);
+            Assert.That(timeout.Written, Is.True);
+            Assert.That(fallback.Written, Is.True);
+            Assert.That(ReadSummaries(databasePath), Is.All.EqualTo(string.Empty));
+        });
+    }
+
+    [TestCase("oversized_id")]
+    [TestCase("local_path")]
+    [TestCase("control_character")]
+    [TestCase("oversized_summary")]
+    [TestCase("overbudget_context")]
+    public void WriteRejectsUnsafeOrOversizedBoundedMetadata(string caseName)
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        DataAgentLangGraphShadowArtifact artifact = CreateArtifact(
+            "artifact-safe", "session-safe", "replay-safe", DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted", "safe", now);
+        artifact = caseName switch
+        {
+            "oversized_id" => artifact with { ArtifactId = new string('a', 129) },
+            "local_path" => artifact with { Summary = @"C:\\Users\\operator\\secret.txt" },
+            "control_character" => artifact with { Summary = "safe\u0001summary" },
+            "oversized_summary" => artifact with { Summary = new string('s', DataAgentV42OperatorEvidencePacketBuilder.MaxSummaryChars + 1) },
+            "overbudget_context" => artifact with { ContextChars = DataAgentGraphHandshakeLimits.MaxContextContributionChars + 1 },
+            _ => throw new ArgumentOutOfRangeException(nameof(caseName))
+        };
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(artifact, now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("unsafe_artifact_metadata"));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
+        });
+    }
+
+    [Test]
     public void ReadAggregateReturnsCountsRetentionAndNoSummary()
     {
         string databasePath = CreateDatabasePath();
@@ -239,5 +331,38 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT COALESCE(group_concat(artifact_id || reason_code || summary, '|'), '') FROM langgraph_shadow_artifact";
         return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
+    }
+
+    static DateTimeOffset ReadExpiry(string databasePath, string artifactId)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT expires_at FROM langgraph_shadow_artifact WHERE artifact_id = $artifactId";
+        command.Parameters.AddWithValue("$artifactId", artifactId);
+        return DateTimeOffset.Parse(Convert.ToString(command.ExecuteScalar())!);
+    }
+
+    static int ReadExpiredRowCount(string databasePath, DateTimeOffset now)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM langgraph_shadow_artifact WHERE expires_at <= $now";
+        command.Parameters.AddWithValue("$now", now.UtcDateTime.ToString("O"));
+        return Convert.ToInt32(command.ExecuteScalar());
+    }
+
+    static IReadOnlyList<string> ReadSummaries(string databasePath)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT summary FROM langgraph_shadow_artifact ORDER BY artifact_id";
+        using SqliteDataReader reader = command.ExecuteReader();
+        List<string> summaries = [];
+        while (reader.Read())
+            summaries.Add(reader.GetString(0));
+        return summaries;
     }
 }

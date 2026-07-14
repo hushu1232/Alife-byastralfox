@@ -49,6 +49,14 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    static readonly Regex SafeTokenPattern = new(
+        "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    static readonly Regex AbsolutePathPattern = new(
+        @"[A-Za-z]:[\\/]|(?:^|\s)/(?:Users|home|var|tmp|etc)/|\\",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     public DataAgentLangGraphShadowArtifactWriteResult Write(
         DataAgentLangGraphShadowArtifact artifact,
         DateTimeOffset now)
@@ -58,7 +66,8 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         if (Enum.IsDefined(typeof(DataAgentLangGraphShadowArtifactOutcome), artifact.Outcome) == false)
             return new(false, "invalid_artifact_outcome");
 
-        if (HasUnsafeOrMissingMetadata(artifact))
+        string summary = NormalizeSummary(artifact.Summary);
+        if (HasUnsafeOrOutOfBoundsMetadata(artifact, summary))
             return new(false, "unsafe_artifact_metadata");
 
         try
@@ -70,7 +79,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
             ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE expires_at <= $now", command =>
                 command.Parameters.AddWithValue("$now", nowText));
 
-            DateTimeOffset expiresAt = CapExpiry(artifact.ExpiresAt, artifact.CreatedAt);
+            DateTimeOffset expiresAt = artifact.CreatedAt.AddDays(RetentionDays);
             ExecuteNonQuery(connection, transaction, """
                 INSERT INTO langgraph_shadow_artifact (
                     artifact_id, session_id, replay_id, outcome, reason_code, summary, context_chars,
@@ -85,8 +94,8 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
                 command.Parameters.AddWithValue("$replayId", artifact.ReplayId);
                 command.Parameters.AddWithValue("$outcome", artifact.Outcome.ToString());
                 command.Parameters.AddWithValue("$reasonCode", artifact.ReasonCode);
-                command.Parameters.AddWithValue("$summary", artifact.Summary);
-                command.Parameters.AddWithValue("$contextChars", Math.Max(0, artifact.ContextChars));
+                command.Parameters.AddWithValue("$summary", summary);
+                command.Parameters.AddWithValue("$contextChars", artifact.ContextChars);
                 command.Parameters.AddWithValue("$diffGatePassed", artifact.DiffGatePassed ? 1 : 0);
                 command.Parameters.AddWithValue("$fallbackRequired", artifact.FallbackRequired ? 1 : 0);
                 command.Parameters.AddWithValue("$createdAt", ToStorageText(artifact.CreatedAt));
@@ -182,27 +191,39 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         }
     }
 
-    static bool HasUnsafeOrMissingMetadata(DataAgentLangGraphShadowArtifact artifact)
+    static bool HasUnsafeOrOutOfBoundsMetadata(
+        DataAgentLangGraphShadowArtifact artifact,
+        string normalizedSummary)
     {
-        return IsUnsafeOrMissing(artifact.ArtifactId) ||
-               IsUnsafeOrMissing(artifact.SessionId) ||
-               IsUnsafeOrMissing(artifact.ReplayId) ||
-               IsUnsafeOrMissing(artifact.ReasonCode) ||
-               IsUnsafeOrMissing(artifact.Summary);
+        return IsSafeToken(artifact.ArtifactId) == false ||
+               IsSafeToken(artifact.SessionId) == false ||
+               IsSafeToken(artifact.ReplayId) == false ||
+               IsSafeToken(artifact.ReasonCode) == false ||
+               IsSafeSummary(normalizedSummary) == false ||
+               artifact.ContextChars < 0 ||
+               artifact.ContextChars > DataAgentGraphHandshakeLimits.MaxContextContributionChars;
     }
 
-    static bool IsUnsafeOrMissing(string? value)
+    static bool IsSafeToken(string? value)
     {
-        return string.IsNullOrWhiteSpace(value) ||
-               DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(value) ||
-               AdditionalUnsafeMarkerPattern.IsMatch(value);
+        return string.IsNullOrWhiteSpace(value) == false &&
+               SafeTokenPattern.IsMatch(value) &&
+               ContainsUnsafe(value) == false;
     }
 
-    static DateTimeOffset CapExpiry(DateTimeOffset expiresAt, DateTimeOffset createdAt)
+    static bool IsSafeSummary(string value)
     {
-        DateTimeOffset policyExpiry = createdAt.AddDays(RetentionDays);
-        return expiresAt <= policyExpiry ? expiresAt : policyExpiry;
+        return value.Length <= DataAgentV42OperatorEvidencePacketBuilder.MaxSummaryChars &&
+               ContainsUnsafe(value) == false;
     }
+
+    static string NormalizeSummary(string? value) => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    static bool ContainsUnsafe(string value) =>
+        DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(value) ||
+        AdditionalUnsafeMarkerPattern.IsMatch(value) ||
+        AbsolutePathPattern.IsMatch(value) ||
+        value.Any(char.IsControl);
 
     static string ToStorageText(DateTimeOffset value) => value.ToUniversalTime().ToString("O");
 
