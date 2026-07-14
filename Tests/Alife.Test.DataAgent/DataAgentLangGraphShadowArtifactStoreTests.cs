@@ -39,6 +39,9 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("password=hunter2")]
     [TestCase("connection_string=Data Source=local")]
     [TestCase("hidden_context")]
+    [TestCase("client_secret=do-not-store")]
+    [TestCase("access_token=do-not-store")]
+    [TestCase("secrets=do-not-store")]
     public void WriteDoesNotPersistUnsafeMetadata(string unsafeValue)
     {
         string databasePath = CreateDatabasePath();
@@ -147,6 +150,32 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
             Assert.That(result.ReasonCode, Is.EqualTo("artifact_write_failed"));
             Assert.That(artifact.Outcome, Is.EqualTo(DataAgentLangGraphShadowArtifactOutcome.GateRejected));
             Assert.That(artifact.FallbackRequired, Is.False);
+        });
+    }
+
+    [Test]
+    public void WriteRejectsInvalidOutcomeWithoutPersistingMetadata()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        DataAgentLangGraphShadowArtifact artifact = CreateArtifact(
+            "artifact-invalid-outcome",
+            "session-1",
+            "replay-1",
+            (DataAgentLangGraphShadowArtifactOutcome)999,
+            "invalid_outcome",
+            "safe",
+            now);
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(artifact, now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("invalid_artifact_outcome"));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
         });
     }
 

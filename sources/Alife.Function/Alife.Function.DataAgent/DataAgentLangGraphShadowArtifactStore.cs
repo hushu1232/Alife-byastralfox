@@ -46,7 +46,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
     public const int PerScopeLimit = 20;
 
     static readonly Regex AdditionalUnsafeMarkerPattern = new(
-        @"\b(?:secret|token|credential)\b",
+        @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public DataAgentLangGraphShadowArtifactWriteResult Write(
@@ -54,6 +54,9 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(artifact);
+
+        if (Enum.IsDefined(typeof(DataAgentLangGraphShadowArtifactOutcome), artifact.Outcome) == false)
+            return new(false, "invalid_artifact_outcome");
 
         if (HasUnsafeOrMissingMetadata(artifact))
             return new(false, "unsafe_artifact_metadata");

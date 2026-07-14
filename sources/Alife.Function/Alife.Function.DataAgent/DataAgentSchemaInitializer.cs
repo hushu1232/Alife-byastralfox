@@ -96,7 +96,7 @@ public static class DataAgentSchemaInitializer
                 artifact_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,
                 replay_id TEXT NOT NULL,
-                outcome TEXT NOT NULL,
+                outcome TEXT NOT NULL CHECK (outcome IN ('Accepted', 'GateRejected', 'ProtocolRejected', 'Timeout', 'Fallback')),
                 reason_code TEXT NOT NULL,
                 summary TEXT NOT NULL,
                 context_chars INTEGER NOT NULL,
