@@ -40,6 +40,7 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("connection_string=Data Source=local")]
     [TestCase("hidden_context")]
     [TestCase("Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")]
+    [TestCase("Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")]
     [TestCase("-----BEGIN PRIVATE KEY-----")]
     [TestCase("file:///etc/passwd")]
     [TestCase("/opt/alife/cache")]

@@ -46,7 +46,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
     public const int PerScopeLimit = 20;
 
     static readonly Regex AdditionalUnsafeMarkerPattern = new(
-        @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])|authorization\s*:\s*(?:basic|bearer)\b|-----BEGIN [A-Z0-9 ]+-----|-----END [A-Z0-9 ]+-----",
+        @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])|authorization\s*:\s*(?:basic|bearer)\b|\bbasic\s+[A-Za-z0-9+/]{8,}={0,2}(?![A-Za-z0-9+/=])|-----BEGIN [A-Z0-9 ]+-----|-----END [A-Z0-9 ]+-----",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex SafeTokenPattern = new(
