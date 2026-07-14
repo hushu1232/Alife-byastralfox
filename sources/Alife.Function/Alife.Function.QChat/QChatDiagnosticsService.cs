@@ -383,6 +383,15 @@ public static class QChatDiagnosticsService
             {
                 return true;
             }
+
+            if (text[index] == '\\' && text[index + 1] == '\\')
+                return true;
+
+            if (text[index] == '/' &&
+                (index == 0 || text[index - 1] == '=' || char.IsWhiteSpace(text[index - 1])))
+            {
+                return true;
+            }
         }
 
         return false;

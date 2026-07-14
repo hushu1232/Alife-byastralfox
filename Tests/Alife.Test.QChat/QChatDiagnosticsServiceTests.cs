@@ -812,6 +812,8 @@ public class QChatDiagnosticsServiceTests
     [TestCase("connection_string=Host=localhost;Username=alife", "connection_string")]
     [TestCase("[hidden_context]internal[/hidden_context]", "[hidden_context]")]
     [TestCase(@"latest_reason_code=C:\\Alife\\Runtime\\langgraph.db", @"C:\\Alife\\Runtime\\langgraph.db")]
+    [TestCase(@"latest_reason_code=\\server\share\langgraph.db", @"\\server\share\langgraph.db")]
+    [TestCase("latest_reason_code=/var/lib/alife/langgraph.db", "/var/lib/alife/langgraph.db")]
     public void TryHandleDataAgentLangGraphDiagnosticsRedactsUnsafeAggregateText(
         string unsafeText,
         string forbiddenText)
