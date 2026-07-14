@@ -1,3 +1,4 @@
+using System;
 using Alife.Function.QChat;
 using NUnit.Framework;
 
@@ -37,13 +38,11 @@ public sealed class QChatOwnerEngineeringReplyFormatterTests
     {
         QChatOwnerEngineeringReply reply = new(QChatOwnerEngineeringReplyStage.Complete, "path=qchat-owner-event-dispatcher", "tests=5 passed, 0 failed", "live_validation=not-run");
         string formatted = QChatOwnerEngineeringReplyFormatter.Format("mixu", QChatSenderRole.Owner, reply);
-        Assert.Multiple(() =>
-        {
-            Assert.That(formatted, Does.StartWith("主人，"));
-            Assert.That(formatted, Does.Contain("tests=5 passed, 0 failed"));
-            Assert.That(formatted, Does.Contain("live_validation=not-run"));
-            Assert.That(formatted, Does.Not.Contain("术术"));
-        });
+        Assert.That(formatted, Is.EqualTo(string.Join(Environment.NewLine,
+            "主人，这条路径已处理完。",
+            "path=qchat-owner-event-dispatcher",
+            "tests=5 passed, 0 failed",
+            "live_validation=not-run")));
     }
 
     [Test]
