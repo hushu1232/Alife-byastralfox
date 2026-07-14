@@ -12,7 +12,8 @@ public sealed class QChatDataAgentDiagnosticsCommandContractTests
         ("evidence", QChatDataAgentDiagnosticsTopic.Evidence),
         ("trace", QChatDataAgentDiagnosticsTopic.Trace),
         ("progress", QChatDataAgentDiagnosticsTopic.Progress),
-        ("graph", QChatDataAgentDiagnosticsTopic.Graph)
+        ("graph", QChatDataAgentDiagnosticsTopic.Graph),
+        ("langgraph", QChatDataAgentDiagnosticsTopic.LangGraph)
     ];
 
     static IEnumerable<TestCaseData> DataAgentCommands()
@@ -197,7 +198,9 @@ public sealed class QChatDataAgentDiagnosticsCommandContractTests
             "diag progress",
             "diagnostics progress",
             "diag graph",
-            "diagnostics graph"
+            "diagnostics graph",
+            "diag langgraph",
+            "diagnostics langgraph"
         }));
     }
 }

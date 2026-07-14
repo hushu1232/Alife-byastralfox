@@ -15,6 +15,7 @@ public sealed record QChatDiagnosticsRuntimeState(
     string? RecentDataAgentTrace = null,
     string? RecentDataAgentProgress = null,
     string? RecentDataAgentGraph = null,
+    string? RecentDataAgentLangGraph = null,
     QChatRecentDiagnosticsCache? RecentDiagnosticsCache = null,
     string? SessionKey = null,
     DateTimeOffset? DiagnosticsNow = null);
@@ -138,6 +139,7 @@ public static class QChatDiagnosticsService
             QChatDataAgentDiagnosticsTopic.Trace => BuildDataAgentTraceDiagnosticsText(runtimeState, route),
             QChatDataAgentDiagnosticsTopic.Progress => BuildDataAgentProgressDiagnosticsText(runtimeState, route),
             QChatDataAgentDiagnosticsTopic.Graph => BuildDataAgentGraphDiagnosticsText(runtimeState, route),
+            QChatDataAgentDiagnosticsTopic.LangGraph => BuildDataAgentLangGraphDiagnosticsText(runtimeState),
             _ => throw new InvalidOperationException($"Unknown DataAgent diagnostics topic: {topic}")
         };
     }
@@ -293,6 +295,97 @@ public static class QChatDiagnosticsService
                 "state=unavailable",
                 "reason=graph_diagnostics_unavailable")
             : sanitized;
+    }
+
+    static string BuildDataAgentLangGraphDiagnosticsText(QChatDiagnosticsRuntimeState runtimeState)
+    {
+        const string title = "DataAgent LangGraph diagnostics";
+        string sanitized = SanitizeDiagnosticText(runtimeState.RecentDataAgentLangGraph, title);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return string.Join(Environment.NewLine,
+                title,
+                "state=unavailable",
+                "reason=langgraph_artifact_aggregate_unavailable");
+        }
+
+        string redacted = string.Join(Environment.NewLine,
+            title,
+            "state=redacted",
+            "reason=hidden_context_redacted");
+        if (string.Equals(sanitized, redacted, StringComparison.Ordinal))
+            return sanitized;
+
+        if (ContainsLocalPath(sanitized))
+        {
+            return string.Join(Environment.NewLine,
+                title,
+                "state=redacted",
+                "reason=hidden_context_redacted");
+        }
+
+        string[] fields = ExtractLangGraphAggregateFields(sanitized);
+        return fields.Length == 0
+            ? string.Join(Environment.NewLine,
+                title,
+                "state=unavailable",
+                "reason=langgraph_artifact_aggregate_unavailable")
+            : string.Join(Environment.NewLine, [title, .. fields]);
+    }
+
+    static string[] ExtractLangGraphAggregateFields(string text)
+    {
+        string[] fieldNames =
+        [
+            "total",
+            "accepted",
+            "gate_rejected",
+            "protocol_rejected",
+            "timeout",
+            "fallback",
+            "latest_reason_code",
+            "oldest_created_at",
+            "newest_created_at",
+            "retention_days",
+            "per_scope_limit"
+        ];
+        Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string line in text.ReplaceLineEndings("\n").Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            int separator = line.IndexOf('=');
+            if (separator <= 0)
+                continue;
+
+            string name = line[..separator].Trim();
+            if (Array.IndexOf(fieldNames, name) < 0)
+                continue;
+
+            values[name] = line[(separator + 1)..].Trim();
+        }
+
+        List<string> fields = [];
+        foreach (string name in fieldNames)
+        {
+            if (values.TryGetValue(name, out string? value))
+                fields.Add($"{name}={value}");
+        }
+
+        return [.. fields];
+    }
+
+    static bool ContainsLocalPath(string text)
+    {
+        for (int index = 0; index <= text.Length - 3; index++)
+        {
+            if (char.IsLetter(text[index]) && text[index + 1] == ':' &&
+                (text[index + 2] == '\\' || text[index + 2] == '/'))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     static string? GetRecentCachedText(
@@ -518,6 +611,7 @@ public static class QChatDiagnosticsService
             "/dataagent diag trace - DataAgent trace diagnostics",
             "/dataagent diag progress - DataAgent progress diagnostics",
             "/dataagent diag graph - DataAgent DataQueryGraph dry-run diagnostics",
+            "/dataagent diag langgraph - DataAgent LangGraph shadow artifact aggregate diagnostics",
             "",
             "说明：",
             "诊断信息只给主人账号开放，用来排查 QQ 链路。");

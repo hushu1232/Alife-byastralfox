@@ -714,6 +714,130 @@ public class QChatDiagnosticsServiceTests
         });
     }
 
+    [TestCase("/dataagent diag langgraph")]
+    [TestCase("/dataagent diagnostics langgraph")]
+    [TestCase("/qchat diag dataagent langgraph")]
+    [TestCase("/qchat diagnostics dataagent langgraph")]
+    public void TryHandleDataAgentLangGraphDiagnosticsShowsOnlyAggregateFieldsForOwner(string command)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentLangGraph: string.Join(Environment.NewLine,
+                "total=8",
+                "accepted=3",
+                "gate_rejected=1",
+                "protocol_rejected=1",
+                "timeout=1",
+                "fallback=2",
+                "latest_reason_code=manual_shadow_fallback",
+                "oldest_created_at=2026-07-14T00:00:00.0000000+00:00",
+                "newest_created_at=2026-07-14T00:05:00.0000000+00:00",
+                "retention_days=7",
+                "per_scope_limit=64",
+                "summary=must_not_be_exposed"));
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            command,
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(new[]
+            {
+                "DataAgent LangGraph diagnostics",
+                "total=8",
+                "accepted=3",
+                "gate_rejected=1",
+                "protocol_rejected=1",
+                "timeout=1",
+                "fallback=2",
+                "latest_reason_code=manual_shadow_fallback",
+                "oldest_created_at=2026-07-14T00:00:00.0000000+00:00",
+                "newest_created_at=2026-07-14T00:05:00.0000000+00:00",
+                "retention_days=7",
+                "per_scope_limit=64"
+            }));
+            Assert.That(result.Text, Does.Not.Contain("summary="));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentLangGraphDiagnosticsReturnsUnavailableWhenAggregateIsEmpty()
+    {
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag langgraph",
+            CreateRoute(),
+            CreateProfile(),
+            new QChatDiagnosticsRuntimeState());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(new[]
+            {
+                "DataAgent LangGraph diagnostics",
+                "state=unavailable",
+                "reason=langgraph_artifact_aggregate_unavailable"
+            }));
+        });
+    }
+
+    [Test]
+    public void TryHandleDataAgentLangGraphDiagnosticsDoesNotTreatUntrustedRedactionTextAsAggregateOutput()
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentLangGraph: string.Join(Environment.NewLine,
+                "state=redacted",
+                "summary=must_not_be_exposed"));
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diag langgraph",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(new[]
+        {
+            "DataAgent LangGraph diagnostics",
+            "state=unavailable",
+            "reason=langgraph_artifact_aggregate_unavailable"
+        }));
+    }
+
+    [TestCase("SELECT COUNT(*) FROM langgraph_shadow_artifact", "SELECT")]
+    [TestCase("Authorization: Bearer token-abcdef123456", "token-abcdef123456")]
+    [TestCase("password=secret", "password=secret")]
+    [TestCase("connection_string=Host=localhost;Username=alife", "connection_string")]
+    [TestCase("[hidden_context]internal[/hidden_context]", "[hidden_context]")]
+    [TestCase(@"latest_reason_code=C:\\Alife\\Runtime\\langgraph.db", @"C:\\Alife\\Runtime\\langgraph.db")]
+    public void TryHandleDataAgentLangGraphDiagnosticsRedactsUnsafeAggregateText(
+        string unsafeText,
+        string forbiddenText)
+    {
+        QChatDiagnosticsRuntimeState state = new(
+            RecentDataAgentLangGraph: "total=1" + Environment.NewLine + unsafeText);
+
+        QChatDiagnosticsResult result = QChatDiagnosticsService.TryHandle(
+            "/dataagent diagnostics langgraph",
+            CreateRoute(),
+            CreateProfile(),
+            state);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Handled, Is.True);
+            Assert.That(result.Text.Split(Environment.NewLine), Is.EqualTo(new[]
+            {
+                "DataAgent LangGraph diagnostics",
+                "state=redacted",
+                "reason=hidden_context_redacted"
+            }));
+            Assert.That(result.Text, Does.Not.Contain(forbiddenText));
+        });
+    }
+
     [Test]
     public void TryHandleDataAgentTraceDiagnosticsPrefersSessionCacheOverLegacyTrace()
     {
