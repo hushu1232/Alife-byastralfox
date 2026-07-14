@@ -61,6 +61,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         DataAgentLangGraphShadowArtifact artifact,
         DateTimeOffset now)
     {
+        PurgeExpired(now);
         ArgumentNullException.ThrowIfNull(artifact);
 
         if (Enum.IsDefined(typeof(DataAgentLangGraphShadowArtifactOutcome), artifact.Outcome) == false)
@@ -241,6 +242,21 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         value.Any(char.IsControl);
 
     static string ToStorageText(DateTimeOffset value) => value.ToUniversalTime().ToString("O");
+
+    void PurgeExpired(DateTimeOffset now)
+    {
+        try
+        {
+            using SqliteConnection connection = DataAgentSqlite.Open(databasePath);
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM langgraph_shadow_artifact WHERE julianday(expires_at) <= julianday($now)";
+            command.Parameters.AddWithValue("$now", ToStorageText(now));
+            command.ExecuteNonQuery();
+        }
+        catch (SqliteException)
+        {
+        }
+    }
 
     static void ExecuteNonQuery(
         SqliteConnection connection,

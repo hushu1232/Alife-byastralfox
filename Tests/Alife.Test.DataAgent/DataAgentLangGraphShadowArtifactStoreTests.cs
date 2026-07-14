@@ -183,6 +183,38 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         });
     }
 
+    [TestCase("invalid_outcome", "invalid_artifact_outcome")]
+    [TestCase("future", "future_artifact")]
+    [TestCase("expired", "expired_artifact")]
+    public void WritePurgesDirectlySeededExpiredRowsBeforeValidationReturn(string caseName, string expectedReasonCode)
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        SeedExpiredArtifacts(databasePath, now);
+        DataAgentLangGraphShadowArtifact artifact = CreateArtifact(
+            "validation-artifact", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted", "safe", now);
+        artifact = caseName switch
+        {
+            "invalid_outcome" => artifact with { Outcome = (DataAgentLangGraphShadowArtifactOutcome)999 },
+            "future" => artifact with { CreatedAt = now.AddDays(1) },
+            "expired" => artifact with { CreatedAt = now.AddDays(-91) },
+            _ => throw new ArgumentOutOfRangeException(nameof(caseName))
+        };
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(artifact, now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo(expectedReasonCode));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
     [Test]
     public void WriteRejectsArtifactWhoseCreatedAtWouldAlreadyBeExpired()
     {
