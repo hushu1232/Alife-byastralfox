@@ -39,6 +39,9 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("password=hunter2")]
     [TestCase("connection_string=Data Source=local")]
     [TestCase("hidden_context")]
+    [TestCase("/opt/alife/cache")]
+    [TestCase("safe metadata /usr/local/bin")]
+    [TestCase("safe metadata /root/.cache")]
     [TestCase("client_secret=do-not-store")]
     [TestCase("access_token=do-not-store")]
     [TestCase("secrets=do-not-store")]
@@ -129,6 +132,33 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         {
             Assert.That(expiresAtNow.Written, Is.True);
             Assert.That(ReadExpiry(databasePath, "expiry-now"), Is.EqualTo(now.AddDays(90)));
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void WriteRejectsArtifactWhoseCreatedAtWouldAlreadyBeExpired()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        DataAgentLangGraphShadowArtifact artifact = CreateArtifact(
+            "stale-artifact",
+            "session-1",
+            "replay-1",
+            DataAgentLangGraphShadowArtifactOutcome.Timeout,
+            "timeout",
+            "safe",
+            now.AddDays(-91));
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(artifact, now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("expired_artifact"));
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
             Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
         });
     }

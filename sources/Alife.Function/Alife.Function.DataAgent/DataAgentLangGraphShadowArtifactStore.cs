@@ -54,7 +54,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex AbsolutePathPattern = new(
-        @"[A-Za-z]:[\\/]|(?:^|\s)/(?:Users|home|var|tmp|etc)/|\\",
+        @"[A-Za-z]:[\\/]|(?:^|(?<=[^A-Za-z0-9_:/.-]))/[^\s]*|\\",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public DataAgentLangGraphShadowArtifactWriteResult Write(
@@ -70,6 +70,10 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         if (HasUnsafeOrOutOfBoundsMetadata(artifact, summary))
             return new(false, "unsafe_artifact_metadata");
 
+        DateTimeOffset expiresAt = artifact.CreatedAt.AddDays(RetentionDays);
+        if (expiresAt <= now)
+            return new(false, "expired_artifact");
+
         try
         {
             using SqliteConnection connection = DataAgentSqlite.Open(databasePath);
@@ -79,7 +83,6 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
             ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE expires_at <= $now", command =>
                 command.Parameters.AddWithValue("$now", nowText));
 
-            DateTimeOffset expiresAt = artifact.CreatedAt.AddDays(RetentionDays);
             ExecuteNonQuery(connection, transaction, """
                 INSERT INTO langgraph_shadow_artifact (
                     artifact_id, session_id, replay_id, outcome, reason_code, summary, context_chars,
