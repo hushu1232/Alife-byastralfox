@@ -39,6 +39,8 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     [TestCase("password=hunter2")]
     [TestCase("connection_string=Data Source=local")]
     [TestCase("hidden_context")]
+    [TestCase("Authorization: Basic QWxhZGRpbjpvcGVuIHNlc2FtZQ==")]
+    [TestCase("-----BEGIN PRIVATE KEY-----")]
     [TestCase("file:///etc/passwd")]
     [TestCase("/opt/alife/cache")]
     [TestCase("safe metadata /usr/local/bin")]
@@ -134,6 +136,46 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         {
             Assert.That(expiresAtNow.Written, Is.True);
             Assert.That(ReadExpiry(databasePath, "expiry-now"), Is.EqualTo(now.AddDays(90)));
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void WriteRemovesDirectlySeededExpiredRowsAtAndBeforeNow()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        SeedExpiredArtifacts(databasePath, now);
+
+        DataAgentLangGraphShadowArtifactWriteResult result = store.Write(CreateArtifact(
+            "current-artifact", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.Accepted,
+            "accepted", "safe", now), now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Written, Is.True);
+            Assert.That(ReadArtifactIds(databasePath), Is.EqualTo(new[] { "current-artifact" }));
+            Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
+        });
+    }
+
+    [Test]
+    public void ReadAggregateRemovesDirectlySeededExpiredRowsAtAndBeforeNow()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-14T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+        SeedExpiredArtifacts(databasePath, now);
+
+        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(aggregate.Total, Is.Zero);
+            Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
             Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
         });
     }
@@ -450,5 +492,30 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         while (reader.Read())
             summaries.Add(reader.GetString(0));
         return summaries;
+    }
+
+    static void SeedExpiredArtifacts(string databasePath, DateTimeOffset now)
+    {
+        SeedArtifact(databasePath, "expired-before", now.AddDays(-91), now.AddTicks(-1));
+        SeedArtifact(databasePath, "expired-at-now", now.AddDays(-90), now);
+    }
+
+    static void SeedArtifact(string databasePath, string artifactId, DateTimeOffset createdAt, DateTimeOffset expiresAt)
+    {
+        using SqliteConnection connection = new($"Data Source={databasePath}");
+        connection.Open();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO langgraph_shadow_artifact (
+                artifact_id, session_id, replay_id, outcome, reason_code, summary, context_chars,
+                diff_gate_passed, fallback_required, created_at, expires_at)
+            VALUES (
+                $artifactId, 'seed-session', 'seed-replay', 'Accepted', 'seeded', 'safe', 0,
+                1, 0, $createdAt, $expiresAt)
+            """;
+        command.Parameters.AddWithValue("$artifactId", artifactId);
+        command.Parameters.AddWithValue("$createdAt", createdAt.UtcDateTime.ToString("O"));
+        command.Parameters.AddWithValue("$expiresAt", expiresAt.UtcDateTime.ToString("O"));
+        command.ExecuteNonQuery();
     }
 }

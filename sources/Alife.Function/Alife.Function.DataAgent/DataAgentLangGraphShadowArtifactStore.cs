@@ -46,7 +46,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
     public const int PerScopeLimit = 20;
 
     static readonly Regex AdditionalUnsafeMarkerPattern = new(
-        @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])",
+        @"(?:client|access)[\s_-]*(?:secret|token)|(?<![A-Za-z])(?:secret|secrets|token|credential)(?![A-Za-z])|authorization\s*:\s*(?:basic|bearer)\b|-----BEGIN [A-Z0-9 ]+-----|-----END [A-Z0-9 ]+-----",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     static readonly Regex SafeTokenPattern = new(
@@ -92,7 +92,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
             using SqliteTransaction transaction = connection.BeginTransaction();
             string nowText = ToStorageText(now);
 
-            ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE expires_at <= $now", command =>
+            ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE julianday(expires_at) <= julianday($now)", command =>
                 command.Parameters.AddWithValue("$now", nowText));
 
             ExecuteNonQuery(connection, transaction, """
@@ -147,7 +147,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         {
             using SqliteConnection connection = DataAgentSqlite.Open(databasePath);
             using SqliteTransaction transaction = connection.BeginTransaction();
-            ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE expires_at <= $now", command =>
+            ExecuteNonQuery(connection, transaction, "DELETE FROM langgraph_shadow_artifact WHERE julianday(expires_at) <= julianday($now)", command =>
                 command.Parameters.AddWithValue("$now", ToStorageText(now)));
 
             using SqliteCommand aggregateCommand = connection.CreateCommand();
