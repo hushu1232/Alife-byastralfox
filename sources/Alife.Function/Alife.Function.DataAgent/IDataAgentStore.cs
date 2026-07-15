@@ -11,6 +11,11 @@ public interface IDataAgentStore
     IReadOnlyList<DataAgentAuditRecord> ReadQueryAudit();
     void RecordToolBrokerAudit(DataAgentToolBrokerAuditRecord record);
     IReadOnlyList<DataAgentToolBrokerAuditRecord> ReadToolBrokerAudit();
+    DataAgentLangGraphShadowArtifactWriteResult RecordLangGraphShadowArtifact(
+        DataAgentLangGraphShadowArtifact artifact,
+        DateTimeOffset now) => throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
+    DataAgentLangGraphShadowArtifactReadResult ReadLangGraphShadowArtifactAggregate(DateTimeOffset now) =>
+        throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
 }
 
 public sealed record DataAgentAcceptedAuditInput(

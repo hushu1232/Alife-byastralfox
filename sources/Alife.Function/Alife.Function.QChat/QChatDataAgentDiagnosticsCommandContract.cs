@@ -8,7 +8,8 @@ public enum QChatDataAgentDiagnosticsTopic
     Evidence,
     Trace,
     Progress,
-    Graph
+    Graph,
+    LangGraph
 }
 
 public static class QChatDataAgentDiagnosticsCommandContract
@@ -24,7 +25,9 @@ public static class QChatDataAgentDiagnosticsCommandContract
         "diag progress",
         "diagnostics progress",
         "diag graph",
-        "diagnostics graph"
+        "diagnostics graph",
+        "diag langgraph",
+        "diagnostics langgraph"
     ];
 
     public static bool TryParseDataAgentCommand(
@@ -104,12 +107,14 @@ public static class QChatDataAgentDiagnosticsCommandContract
             "trace" => QChatDataAgentDiagnosticsTopic.Trace,
             "progress" => QChatDataAgentDiagnosticsTopic.Progress,
             "graph" => QChatDataAgentDiagnosticsTopic.Graph,
+            "langgraph" => QChatDataAgentDiagnosticsTopic.LangGraph,
             _ => default
         };
 
         return value.Equals("evidence", StringComparison.OrdinalIgnoreCase) ||
                value.Equals("trace", StringComparison.OrdinalIgnoreCase) ||
                value.Equals("progress", StringComparison.OrdinalIgnoreCase) ||
-               value.Equals("graph", StringComparison.OrdinalIgnoreCase);
+               value.Equals("graph", StringComparison.OrdinalIgnoreCase) ||
+               value.Equals("langgraph", StringComparison.OrdinalIgnoreCase);
     }
 }

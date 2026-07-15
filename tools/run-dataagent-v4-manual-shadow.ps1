@@ -1,7 +1,8 @@
 param(
     [string]$BaseUri = "http://127.0.0.1:8765",
     [string]$OutputDirectory = "",
-    [int]$TimeoutMs = 2000
+    [int]$TimeoutMs = 2000,
+    [string]$ArtifactBridgePath = ""
 )
 
 Set-StrictMode -Version 2.0
@@ -82,6 +83,165 @@ function ConvertTo-ManualShadowFailureReason {
     }
 
     return $text
+}
+
+function ConvertTo-ManualShadowBridgeFallbackReason {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        return "manual_shadow_failed"
+    }
+
+    switch ([string]$Value) {
+        "manual_shadow_response_rejected" {
+            return "manual_shadow_response_rejected"
+        }
+        default {
+            return "manual_shadow_failed"
+        }
+    }
+}
+
+function ConvertTo-WindowsProcessArgument {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        throw "process_argument_missing"
+    }
+
+    $quoted = New-Object System.Text.StringBuilder
+    [void]$quoted.Append([char]34)
+    $backslashCount = 0
+
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashCount++
+            continue
+        }
+
+        if ($character -eq [char]34) {
+            [void]$quoted.Append([char]92, ($backslashCount * 2) + 1)
+            [void]$quoted.Append([char]34)
+            $backslashCount = 0
+            continue
+        }
+
+        if ($backslashCount -gt 0) {
+            [void]$quoted.Append([char]92, $backslashCount)
+            $backslashCount = 0
+        }
+
+        [void]$quoted.Append($character)
+    }
+
+    if ($backslashCount -gt 0) {
+        [void]$quoted.Append([char]92, $backslashCount * 2)
+    }
+
+    [void]$quoted.Append([char]34)
+    return $quoted.ToString()
+}
+
+function Invoke-ManualShadowArtifactBridge {
+    param(
+        [string]$Outcome,
+        [string]$ReasonCode,
+        [int]$HealthStatusCode,
+        [int]$HandshakeStatusCode
+    )
+
+    $persisted = $false
+    $process = $null
+    $discardOutputTask = $null
+    $discardErrorTask = $null
+    try {
+        if (($Outcome -ne "accepted" -and $Outcome -ne "fallback") -or
+            ($ReasonCode -ne "manual_shadow_handshake_accepted" -and
+             $ReasonCode -ne "manual_shadow_response_rejected" -and
+             $ReasonCode -ne "manual_shadow_failed")) {
+            throw "artifact_bridge_input_rejected"
+        }
+
+        $bridgePath = $ArtifactBridgePath
+        if ([string]::IsNullOrWhiteSpace($bridgePath)) {
+            $repoRoot = Split-Path -Parent $PSScriptRoot
+            $bridgePath = Join-Path `
+                $repoRoot `
+                "Outputs\\Alife.Tools.DataAgentShadowArtifact\\Alife.Tools.DataAgentShadowArtifact.dll"
+        }
+
+        if ((Test-Path -LiteralPath $bridgePath -PathType Leaf) -eq $false) {
+            throw "artifact_bridge_missing"
+        }
+
+        $bridgeArguments = @(
+            $bridgePath,
+            "--outcome", $Outcome,
+            "--reason-code", $ReasonCode,
+            "--health-status", ([int]$HealthStatusCode).ToString([System.Globalization.CultureInfo]::InvariantCulture),
+            "--handshake-status", ([int]$HandshakeStatusCode).ToString([System.Globalization.CultureInfo]::InvariantCulture),
+            "--context-layers", "3"
+        )
+
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = "C:\Users\hu shu\.dotnet\dotnet.exe"
+        $startInfo.Arguments = (($bridgeArguments | ForEach-Object { ConvertTo-WindowsProcessArgument $_ }) -join " ")
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $startInfo
+
+        if ($process.Start() -eq $false) {
+            throw "artifact_bridge_start_failed"
+        }
+
+        $discardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $discardErrorTask = $process.StandardError.ReadToEndAsync()
+        if ($process.WaitForExit(2000)) {
+            $persisted = $process.ExitCode -eq 0
+        }
+        else {
+            try {
+                $process.Kill()
+                $null = $process.WaitForExit(250)
+            }
+            catch {
+            }
+        }
+    }
+    catch {
+        $persisted = $false
+    }
+    finally {
+        if ($null -ne $discardOutputTask) {
+            try {
+                $null = $discardOutputTask.Wait(250)
+            }
+            catch {
+            }
+        }
+
+        if ($null -ne $discardErrorTask) {
+            try {
+                $null = $discardErrorTask.Wait(250)
+            }
+            catch {
+            }
+        }
+
+        if ($null -ne $process) {
+            try {
+                $process.Dispose()
+            }
+            catch {
+            }
+        }
+    }
+
+    Write-Output ("artifact_persisted={0}" -f $persisted.ToString().ToLowerInvariant())
 }
 
 function Join-SidecarUri {
@@ -366,6 +526,9 @@ function New-V40HandshakeRequest {
 
 Write-Output "DataAgent V4.0 manual LangGraph shadow"
 
+$healthStatusCode = 0
+$handshakeStatusCode = 0
+
 try {
     if ($TimeoutMs -le 0) {
         throw "TimeoutMs must be greater than zero."
@@ -376,7 +539,9 @@ try {
     $request = New-V40HandshakeRequest
 
     $healthResponse = Invoke-JsonRequest -Method "GET" -Uri (Join-SidecarUri $base "/health") -TimeoutSeconds $timeoutSeconds
+    $healthStatusCode = [int]$healthResponse.StatusCode
     $handshakeResponse = Invoke-JsonRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake") -Body $request -TimeoutSeconds $timeoutSeconds
+    $handshakeStatusCode = [int]$handshakeResponse.StatusCode
     $handshakeValidated = Assert-ManualShadowHandshakeResponse $handshakeResponse
 
     if ([string]::IsNullOrWhiteSpace($OutputDirectory) -eq $false) {
@@ -387,12 +552,24 @@ try {
             -HandshakeValidated $handshakeValidated
     }
 
+    Invoke-ManualShadowArtifactBridge `
+        -Outcome "accepted" `
+        -ReasonCode "manual_shadow_handshake_accepted" `
+        -HealthStatusCode $healthStatusCode `
+        -HandshakeStatusCode $handshakeStatusCode
+
     Write-Output "handshake_validated=true"
     Write-Output "PASS manual_shadow"
     exit 0
 }
 catch {
     $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+    $bridgeReason = ConvertTo-ManualShadowBridgeFallbackReason $_.Exception.Message
+    Invoke-ManualShadowArtifactBridge `
+        -Outcome "fallback" `
+        -ReasonCode $bridgeReason `
+        -HealthStatusCode $healthStatusCode `
+        -HandshakeStatusCode $handshakeStatusCode
     Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
     exit 1
 }

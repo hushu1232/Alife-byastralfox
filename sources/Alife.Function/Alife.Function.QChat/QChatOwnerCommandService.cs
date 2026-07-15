@@ -129,7 +129,8 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
         Func<string>? recentDataAgentProgress = null,
         QChatRecentDiagnosticsCache? recentDiagnosticsCache = null,
         Func<DateTimeOffset>? diagnosticsNow = null,
-        Func<string>? recentDataAgentGraph = null)
+        Func<string>? recentDataAgentGraph = null,
+        Func<string>? recentDataAgentLangGraph = null)
     {
         ArgumentNullException.ThrowIfNull(messageEvent);
 
@@ -181,6 +182,7 @@ public sealed class QChatOwnerCommandService(IEnumerable<QChatOwnerCommandHandle
                 RecentDataAgentTrace: recentDataAgentTrace?.Invoke(),
                 RecentDataAgentProgress: recentDataAgentProgress?.Invoke(),
                 RecentDataAgentGraph: recentDataAgentGraph?.Invoke(),
+                RecentDataAgentLangGraph: recentDataAgentLangGraph?.Invoke(),
                 RecentDiagnosticsCache: recentDiagnosticsCache,
                 SessionKey: route.SessionKey,
                 DiagnosticsNow: diagnosticsNow?.Invoke()));
