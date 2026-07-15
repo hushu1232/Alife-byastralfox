@@ -47,9 +47,14 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
     }
 
     [TestCase("protocol_rejected", "safe_reason", 200, 200, 3)]
-    [TestCase("accepted", "SELECT_hidden_context", 200, 200, 3)]
+    [TestCase("accepted", "select_users", 200, 200, 3)]
     [TestCase("accepted", "access_token", 200, 200, 3)]
+    [TestCase("accepted", "secret", 200, 200, 3)]
+    [TestCase("accepted", "credential", 200, 200, 3)]
+    [TestCase("accepted", "hidden_context", 200, 200, 3)]
     [TestCase("accepted", @"C:\private", 200, 200, 3)]
+    [TestCase("accepted", "safe\u0001reason", 200, 200, 3)]
+    [TestCase("accepted", "safe.reason", 200, 200, 3)]
     [TestCase("accepted", "safe_reason", 99, 200, 3)]
     [TestCase("accepted", "safe_reason", 600, 200, 3)]
     [TestCase("accepted", "safe_reason", 200, 200, 4)]

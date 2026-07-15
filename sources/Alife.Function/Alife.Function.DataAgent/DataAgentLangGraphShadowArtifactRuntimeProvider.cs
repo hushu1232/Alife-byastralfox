@@ -145,7 +145,7 @@ public static class DataAgentLangGraphShadowArtifactRuntimeProvider
 
         foreach (char character in reasonCode)
         {
-            if (char.IsAsciiLetterOrDigit(character) == false && character is not '_' and not '-' and not '.')
+            if (char.IsAsciiLetterOrDigit(character) == false && character is not '_' and not '-')
                 return false;
         }
 
@@ -156,6 +156,8 @@ public static class DataAgentLangGraphShadowArtifactRuntimeProvider
     static bool ContainsManualShadowUnsafeMarker(string value)
     {
         string[] markers = [
+            "sql", "select", "insert", "update", "delete", "drop", "alter", "create", "truncate",
+            "execute", "call", "merge", "grant", "revoke", "pragma", "attach", "begin", "commit", "rollback",
             "secret", "token", "credential", "password", "bearer", "basic", "authorization",
             "hidden_context", "hidden-context", "path", "file"
         ];
