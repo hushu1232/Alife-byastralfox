@@ -253,6 +253,36 @@ $checks = @(
     New-Check -Group "Analysis" -Name "AnalysisTerminalToolsDoNotQuery" -Passed ((Test-FileMarker "sources/Alife.Function/Alife.Function.DataAgent/DataAgentAnalysisToolHandler.cs" @("dataagent_analysis_summarize", "dataagent_analysis_end", "orchestrator.Summarize", "orchestrator.End")) -and (Test-FileMarker "Tests/Alife.Test.DataAgent/DataAgentAnalysisToolHandlerTests.cs" @("SummarizeCallsOrchestratorAndPublishesTerminalContext", "EndCallsOrchestratorAndPublishesTerminalContext", "orchestration_trace=Summarize:Succeeded>Checkpoint:Succeeded", "orchestration_trace=End:Succeeded>Checkpoint:Succeeded"))) -Detail "terminal analysis tools avoid answer-boundary query calls"
 )
 
+$checks = @($checks | Where-Object { $_.Name -cne "GraphHandshakeRealLangGraphManualShadowContextBudgetPresent" })
+$checks += @(New-Check -Group "Store" -Name "GraphHandshakeV47ManualShadowProtocolPresent" -Passed (
+        (Test-FileMarker "tools/run-dataagent-v4-manual-shadow.ps1" @(
+            "New-V47HandshakeRequest",
+            "Assert-ManualShadowV47HealthResponse",
+            "Assert-ManualShadowV47HandshakeResponse",
+            'NoSqlAuthority = $true',
+            'ReadOnly = $true',
+            'FallbackAvailable = $true',
+            'dataagent.diagnostics.progress.read',
+            'sql.execute',
+            'checkpoint.write',
+            'qchat.visible_text',
+            'tool.execute',
+            'manual_shadow_response_rejected',
+            'Invoke-ManualShadowArtifactBridge',
+            'Assert-LoopbackBaseUri'
+        )) -and
+        (Test-FileOmitsMarker "tools/run-dataagent-v4-manual-shadow.ps1" @(
+            "New-V40HandshakeRequest",
+            "Assert-ManualShadowHandshakeResponse",
+            "ContextBudget",
+            "ContextLayers",
+            "Start-Process",
+            "pip install",
+            "python -m venv"
+        ))
+    ) -Detail "V4.7 strict manual shadow protocol: exact health and handshake validation, advisory-only request, no V4.0 context envelope, no runtime startup"
+)
+
 Write-Output "DataAgent Readiness"
 
 foreach ($group in @("Core", "Schema", "Safety", "Query", "Context", "Planner", "Tool", "ToolBroker", "Store", "Governance", "Analysis")) {

@@ -603,11 +603,31 @@ public sealed class DataAgentReadinessTests
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeOperatorEvidencePackPresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeRealLangGraphManualShadowIntegrationPresent"));
+            Assert.That(result.StandardOutput, Does.Contain("GraphHandshakeV47ManualShadowProtocolPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentEndToEndChainContractPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentReplayRunbookPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentNodeToolScopePolicyPresent"));
             Assert.That(result.StandardOutput, Does.Contain("DataAgentSafetyCapabilitiesRemainDeterministic"));
             Assert.That(result.StandardOutput, Does.Not.Contain("Baseline Summary"));
+        });
+    }
+
+    [Test]
+    public void ReadinessScriptRecognizesStrictV47ManualShadowProtocol()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string script = File.ReadAllText(Path.Combine(repoRoot, "tools", "check-dataagent-readiness.ps1"));
+
+        string declaration = FindNewCheckDeclaration(script, "GraphHandshakeV47ManualShadowProtocolPresent");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declaration, Does.Contain("New-V47HandshakeRequest"));
+            Assert.That(declaration, Does.Contain("Assert-ManualShadowV47HealthResponse"));
+            Assert.That(declaration, Does.Contain("Assert-ManualShadowV47HandshakeResponse"));
+            Assert.That(declaration, Does.Contain("ContextBudget"));
+            Assert.That(declaration, Does.Contain("ContextLayers"));
+            Assert.That(declaration, Does.Contain("Test-FileOmitsMarker"));
         });
     }
 
