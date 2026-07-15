@@ -815,6 +815,44 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
     [Test]
     [NonParallelizable]
+    public void ManualHarnessScriptRecordsOnlyFallbackWhenLegacyArtifactWriteFails()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string bridgePath = ResolveShadowArtifactBridgePath(repoRoot);
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+        string outputDirectory = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "manual-shadow-legacy-artifact-failure",
+            Guid.NewGuid().ToString("N"),
+            "not-a-directory");
+        Directory.CreateDirectory(Path.GetDirectoryName(outputDirectory)!);
+        File.WriteAllText(outputDirectory, "fixture");
+
+        using ManualShadowLoopbackServer server = new(NewSafeManualHandshakeResponseJson());
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-ArtifactBridgePath", bridgePath,
+            "-OutputDirectory", outputDirectory,
+            "-TimeoutMs", "5000");
+
+        DataAgentLangGraphShadowArtifactReadResult read = ReadManualShadowArtifactAggregate(databasePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Accepted, Is.EqualTo(0));
+            Assert.That(read.Aggregate.Fallback, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
     public void ManualHarnessScriptPersistsAcceptedOutcomeThroughDefaultArtifactBridgePath()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -907,6 +945,41 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(read.Aggregate!.Accepted, Is.EqualTo(0));
             Assert.That(read.Aggregate.Fallback, Is.EqualTo(1));
             Assert.That(read.Aggregate.LatestReasonCode, Is.EqualTo("manual_shadow_response_rejected"));
+        });
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    [NonParallelizable]
+    public void ManualHarnessScriptCompletesWithOriginalExitContractWhenArtifactBridgeHangs(bool acceptedHandshake)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string hangingBridgePath = ResolveHangingShadowArtifactBridgePath(repoRoot);
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+        string handshakeBody = acceptedHandshake
+            ? NewSafeManualHandshakeResponseJson()
+            : "{\"accepted\":false,\"secret\":\"must_not_reach_bridge\"}";
+
+        using ManualShadowLoopbackServer server = new(handshakeBody);
+        TimedScriptResult timed = RunPowerShellFileWithTimeout(
+            scriptPath,
+            timeoutMilliseconds: 5000,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-ArtifactBridgePath", hangingBridgePath,
+            "-TimeoutMs", "5000");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(timed.Completed, Is.True, timed.Result.StandardOutput + timed.Result.StandardError);
+            Assert.That(timed.Result.ExitCode, Is.EqualTo(acceptedHandshake ? 0 : 1));
+            Assert.That(timed.Result.StandardOutput, Does.Contain("artifact_persisted=false"));
+            Assert.That(timed.Result.StandardOutput, Does.Contain(acceptedHandshake
+                ? "PASS manual_shadow"
+                : "FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(timed.Result.StandardOutput, Does.Not.Contain("must_not_reach_bridge"));
+            Assert.That(timed.Result.StandardError, Is.Empty);
         });
     }
 
@@ -1127,6 +1200,38 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return RunPowerShell(startInfo);
     }
 
+    static TimedScriptResult RunPowerShellFileWithTimeout(
+        string scriptPath,
+        int timeoutMilliseconds,
+        IReadOnlyDictionary<string, string> environment,
+        params string[] arguments)
+    {
+        ProcessStartInfo startInfo = NewPowerShellStartInfo();
+        foreach ((string name, string value) in environment)
+            startInfo.Environment[name] = value;
+
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(scriptPath);
+        foreach (string argument in arguments)
+            startInfo.ArgumentList.Add(argument);
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to start PowerShell.");
+        bool completed = process.WaitForExit(timeoutMilliseconds);
+        if (completed == false)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+
+        return new TimedScriptResult(
+            completed,
+            new ScriptResult(
+                process.ExitCode,
+                process.StandardOutput.ReadToEnd(),
+                process.StandardError.ReadToEnd()));
+    }
+
     static string ResolveShadowArtifactBridgePath(string repoRoot)
     {
         string bridgePath = Path.Combine(
@@ -1135,6 +1240,17 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             "Alife.Tools.DataAgentShadowArtifact",
             "Alife.Tools.DataAgentShadowArtifact.dll");
         Assert.That(File.Exists(bridgePath), Is.True, "Build the shadow artifact bridge before script integration tests.");
+        return bridgePath;
+    }
+
+    static string ResolveHangingShadowArtifactBridgePath(string repoRoot)
+    {
+        string bridgePath = Path.Combine(
+            repoRoot,
+            "Outputs",
+            "Alife.Test.DataAgentShadowArtifactHang",
+            "Alife.Test.DataAgentShadowArtifactHang.dll");
+        Assert.That(File.Exists(bridgePath), Is.True, "Build the hanging shadow artifact bridge fixture before script integration tests.");
         return bridgePath;
     }
 
@@ -1657,4 +1773,6 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
+
+    readonly record struct TimedScriptResult(bool Completed, ScriptResult Result);
 }

@@ -102,6 +102,46 @@ function ConvertTo-ManualShadowBridgeFallbackReason {
     }
 }
 
+function ConvertTo-WindowsProcessArgument {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        throw "process_argument_missing"
+    }
+
+    $quoted = New-Object System.Text.StringBuilder
+    [void]$quoted.Append([char]34)
+    $backslashCount = 0
+
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq [char]92) {
+            $backslashCount++
+            continue
+        }
+
+        if ($character -eq [char]34) {
+            [void]$quoted.Append([char]92, ($backslashCount * 2) + 1)
+            [void]$quoted.Append([char]34)
+            $backslashCount = 0
+            continue
+        }
+
+        if ($backslashCount -gt 0) {
+            [void]$quoted.Append([char]92, $backslashCount)
+            $backslashCount = 0
+        }
+
+        [void]$quoted.Append($character)
+    }
+
+    if ($backslashCount -gt 0) {
+        [void]$quoted.Append([char]92, $backslashCount * 2)
+    }
+
+    [void]$quoted.Append([char]34)
+    return $quoted.ToString()
+}
+
 function Invoke-ManualShadowArtifactBridge {
     param(
         [string]$Outcome,
@@ -111,6 +151,9 @@ function Invoke-ManualShadowArtifactBridge {
     )
 
     $persisted = $false
+    $process = $null
+    $discardOutputTask = $null
+    $discardErrorTask = $null
     try {
         if (($Outcome -ne "accepted" -and $Outcome -ne "fallback") -or
             ($ReasonCode -ne "manual_shadow_handshake_accepted" -and
@@ -131,18 +174,59 @@ function Invoke-ManualShadowArtifactBridge {
             throw "artifact_bridge_missing"
         }
 
-        $dotnetPath = "C:\Users\hu shu\.dotnet\dotnet.exe"
-        $null = & $dotnetPath `
-            $bridgePath `
-            "--outcome" $Outcome `
-            "--reason-code" $ReasonCode `
-            "--health-status" ([int]$HealthStatusCode) `
-            "--handshake-status" ([int]$HandshakeStatusCode) `
-            "--context-layers" "3" 2>&1
-        $persisted = $LASTEXITCODE -eq 0
+        $bridgeArguments = @(
+            $bridgePath,
+            "--outcome", $Outcome,
+            "--reason-code", $ReasonCode,
+            "--health-status", ([int]$HealthStatusCode).ToString([System.Globalization.CultureInfo]::InvariantCulture),
+            "--handshake-status", ([int]$HandshakeStatusCode).ToString([System.Globalization.CultureInfo]::InvariantCulture),
+            "--context-layers", "3"
+        )
+
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = "C:\Users\hu shu\.dotnet\dotnet.exe"
+        $startInfo.Arguments = (($bridgeArguments | ForEach-Object { ConvertTo-WindowsProcessArgument $_ }) -join " ")
+        $startInfo.UseShellExecute = $false
+        $startInfo.CreateNoWindow = $true
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $startInfo
+
+        if ($process.Start() -eq $false) {
+            throw "artifact_bridge_start_failed"
+        }
+
+        $discardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $discardErrorTask = $process.StandardError.ReadToEndAsync()
+        if ($process.WaitForExit(2000)) {
+            $persisted = $process.ExitCode -eq 0
+        }
+        else {
+            try {
+                $process.Kill()
+                $null = $process.WaitForExit(1000)
+            }
+            catch {
+            }
+        }
     }
     catch {
         $persisted = $false
+    }
+    finally {
+        if ($null -ne $discardOutputTask) {
+            $null = $discardOutputTask.Wait(1000)
+        }
+
+        if ($null -ne $discardErrorTask) {
+            $null = $discardErrorTask.Wait(1000)
+        }
+
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
     }
 
     Write-Output ("artifact_persisted={0}" -f $persisted.ToString().ToLowerInvariant())
@@ -448,12 +532,6 @@ try {
     $handshakeStatusCode = [int]$handshakeResponse.StatusCode
     $handshakeValidated = Assert-ManualShadowHandshakeResponse $handshakeResponse
 
-    Invoke-ManualShadowArtifactBridge `
-        -Outcome "accepted" `
-        -ReasonCode "manual_shadow_handshake_accepted" `
-        -HealthStatusCode $healthStatusCode `
-        -HandshakeStatusCode $handshakeStatusCode
-
     if ([string]::IsNullOrWhiteSpace($OutputDirectory) -eq $false) {
         Write-ManualShadowArtifact `
             -OutputDirectory $OutputDirectory `
@@ -461,6 +539,12 @@ try {
             -HandshakeStatusCode ([int]$handshakeResponse.StatusCode) `
             -HandshakeValidated $handshakeValidated
     }
+
+    Invoke-ManualShadowArtifactBridge `
+        -Outcome "accepted" `
+        -ReasonCode "manual_shadow_handshake_accepted" `
+        -HealthStatusCode $healthStatusCode `
+        -HandshakeStatusCode $handshakeStatusCode
 
     Write-Output "handshake_validated=true"
     Write-Output "PASS manual_shadow"
