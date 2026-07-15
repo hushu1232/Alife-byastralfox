@@ -815,6 +815,36 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
     [Test]
     [NonParallelizable]
+    public void ManualHarnessScriptPersistsAcceptedOutcomeThroughDefaultArtifactBridgePath()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+
+        using ManualShadowLoopbackServer server = new(NewSafeManualHandshakeResponseJson());
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-TimeoutMs", "5000");
+
+        DataAgentLangGraphShadowArtifactReadResult read = ReadManualShadowArtifactAggregate(databasePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=true"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Accepted, Is.EqualTo(1));
+            Assert.That(read.Aggregate.Fallback, Is.EqualTo(0));
+            Assert.That(read.Aggregate.LatestReasonCode, Is.EqualTo("manual_shadow_handshake_accepted"));
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
     public void ManualHarnessScriptPersistsAcceptedOutcomeThroughExplicitArtifactBridge()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);

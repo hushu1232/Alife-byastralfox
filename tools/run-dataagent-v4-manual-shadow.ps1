@@ -121,9 +121,10 @@ function Invoke-ManualShadowArtifactBridge {
 
         $bridgePath = $ArtifactBridgePath
         if ([string]::IsNullOrWhiteSpace($bridgePath)) {
+            $repoRoot = Split-Path -Parent $PSScriptRoot
             $bridgePath = Join-Path `
-                $PSScriptRoot `
-                "dataagent-shadow-artifact\\bin\\Release\\net9.0-windows10.0.19041.0\\Alife.Tools.DataAgentShadowArtifact.dll"
+                $repoRoot `
+                "Outputs\\Alife.Tools.DataAgentShadowArtifact\\Alife.Tools.DataAgentShadowArtifact.dll"
         }
 
         if ((Test-Path -LiteralPath $bridgePath -PathType Leaf) -eq $false) {
