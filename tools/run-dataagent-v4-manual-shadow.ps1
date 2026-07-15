@@ -509,6 +509,16 @@ function Assert-ManualShadowV47HandshakeResponse {
 function Assert-ManualShadowV47HealthResponse {
     param([object]$Response)
 
+    if ($null -eq $Response) {
+        throw "manual_shadow_response_rejected"
+    }
+
+    $statusCodeProperties = @($Response.PSObject.Properties | Where-Object { $_.Name -ceq "StatusCode" })
+    if ($statusCodeProperties.Count -ne 1 -or ($statusCodeProperties[0].Value -is [int]) -eq $false -or
+        [int]$statusCodeProperties[0].Value -ne 200) {
+        throw "manual_shadow_response_rejected"
+    }
+
     $json = ConvertTo-ManualShadowStrictJsonObject -Response $Response -MaximumContentChars 4096
     Assert-ManualShadowExactFields -JsonObject $json -ExpectedFields @(
         "ok", "ready", "runtimeMode", "langGraphLoaded", "langGraphVersion",

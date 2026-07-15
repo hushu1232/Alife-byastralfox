@@ -1264,6 +1264,36 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
+    [Test]
+    public void ManualHarnessRejectsV47HealthWithNonOkStatusWithoutLeakingBody()
+    {
+        string healthBody = NewSafeManualV47HealthJson();
+        string escapedHealthBody = EscapePowerShellSingleQuotedString(healthBody);
+        ScriptResult result = RunPowerShellCommand(BuildPowerShellFunctionHarness(
+            Path.Combine(FindRepoRoot(TestContext.CurrentContext.TestDirectory), "tools", "run-dataagent-v4-manual-shadow.ps1"),
+            $$"""
+            $response = [pscustomobject]@{ StatusCode = 202; Content = '{{escapedHealthBody}}' }
+            try {
+                Assert-ManualShadowV47HealthResponse $response | Out-Null
+                Write-Output "PASS manual_shadow"
+                exit 0
+            }
+            catch {
+                $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+                Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
+                exit 1
+            }
+            """));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(healthBody));
+        });
+    }
+
     [TestCase("contractVersion", "v4.0")]
     [TestCase("ready", false)]
     [TestCase("runtimeMode", "deterministic-stub")]
