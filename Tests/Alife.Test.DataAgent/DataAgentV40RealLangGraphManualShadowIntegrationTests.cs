@@ -789,6 +789,10 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     [TestCase("RequestedToolNames", new[] { "sql.execute" })]
     [TestCase("RequestsCheckpointMutation", true)]
     [TestCase("RequestsVisibleText", true)]
+    [TestCase("Accepted", false)]
+    [TestCase("FallbackRequired", true)]
+    [TestCase("NoSqlAuthority", false)]
+    [TestCase("ReadOnly", false)]
     public void ManualHarnessRejectsUnsafeV47ResponseAuthority(string propertyName, object value)
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -1179,23 +1183,56 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(propertyNames, Is.EquivalentTo(V47RequestFields));
             Assert.That(propertyNames, Does.Not.Contain("ContextBudget"));
             Assert.That(propertyNames, Does.Not.Contain("ContextLayers"));
+            Assert.That(request.GetProperty("RequestId").GetString(), Is.EqualTo("v4-manual-shadow-operator-run"));
+            Assert.That(request.GetProperty("SessionId").GetString(), Is.EqualTo("v4-manual-shadow"));
+            Assert.That(request.GetProperty("TurnId").GetString(), Is.EqualTo("manual-shadow-1"));
+            Assert.That(request.GetProperty("CallerId").GetString(), Is.EqualTo("operator"));
+            Assert.That(request.GetProperty("GoalOrQuestion").GetString(), Is.EqualTo("Summarize replay evidence for operator review."));
+            Assert.That(request.GetProperty("ScenarioContextSummary").GetString(), Is.EqualTo("scenario_context=manual_shadow;source_baseline=v3.28"));
+            Assert.That(request.GetProperty("RouteScope").GetString(), Is.EqualTo("route_present=true;route_allows_query=true"));
+            Assert.That(request.GetProperty("QueryConstraints").GetString(), Is.EqualTo("default_result_changed=false;execute_sql=false"));
             Assert.That(request.GetProperty("NoSqlAuthority").GetBoolean(), Is.True);
             Assert.That(request.GetProperty("ReadOnly").GetBoolean(), Is.True);
             Assert.That(request.GetProperty("FallbackAvailable").GetBoolean(), Is.True);
-            Assert.That(request.GetProperty("TraceBudgetChars").GetInt32(), Is.InRange(1, 1800));
-            Assert.That(request.GetProperty("ProgressBudget").GetInt32(), Is.InRange(1, 16));
+            Assert.That(request.GetProperty("TraceBudgetChars").GetInt32(), Is.EqualTo(1200));
+            Assert.That(request.GetProperty("ProgressBudget").GetInt32(), Is.EqualTo(8));
 
             JsonElement manifests = request.GetProperty("NodeManifests");
             Assert.That(manifests.GetArrayLength(), Is.EqualTo(1));
             JsonElement manifest = manifests[0];
             Assert.That(manifest.EnumerateObject().Select(property => property.Name), Is.EquivalentTo(V47ManifestFields));
             Assert.That(manifest.GetProperty("NodeName").GetString(), Is.EqualTo("diagnostics_router"));
-            Assert.That(manifest.GetProperty("AllowedToolNames").GetArrayLength(), Is.LessThanOrEqualTo(8));
-            Assert.That(manifest.GetProperty("DeniedCapabilityMarkers").GetArrayLength(), Is.GreaterThan(0));
+            Assert.That(manifest.GetProperty("Purpose").GetString(), Is.EqualTo("Summarize replay evidence"));
+            Assert.That(manifest.GetProperty("AllowedToolNames").EnumerateArray().Select(value => value.GetString()),
+                Is.EquivalentTo(new[] { "dataagent.diagnostics.progress.read" }));
+            Assert.That(manifest.GetProperty("DeniedCapabilityMarkers").EnumerateArray().Select(value => value.GetString()),
+                Is.EquivalentTo(new[] { "sql.execute", "checkpoint.write", "qchat.visible_text", "tool.execute" }));
+            Assert.That(manifest.GetProperty("InputShape").GetString(), Is.EqualTo("replay_evidence"));
+            Assert.That(manifest.GetProperty("OutputShape").GetString(), Is.EqualTo("advisory_summary"));
+            Assert.That(manifest.GetProperty("BusinessTerms").EnumerateArray().Select(value => value.GetString()),
+                Is.EquivalentTo(new[] { "replay", "diagnostics", "operator" }));
+            Assert.That(manifest.GetProperty("SafetyNotes").GetString(), Is.EqualTo("No execution or persistence authority"));
             Assert.That(result.StandardOutput, Does.Not.Contain("SELECT"));
             Assert.That(result.StandardOutput, Does.Not.Contain("hidden_context"));
             Assert.That(result.StandardOutput, Does.Not.Contain("bearer"));
             Assert.That(result.StandardOutput, Does.Not.Contain("password"));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessRejectsV47ResponseWithArbitraryExtraField()
+    {
+        const string unsafeValue = "must_not_be_accepted";
+        string handshakeBody = NewSafeManualHandshakeResponseJson(("unexpected_response_field", unsafeValue));
+        ScriptResult result = RunManualHarnessHandshakeValidation(handshakeBody);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(unsafeValue));
+            Assert.That(result.StandardOutput, Does.Not.Contain(handshakeBody));
         });
     }
 
@@ -1229,6 +1266,11 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
     [TestCase("contractVersion", "v4.0")]
     [TestCase("ready", false)]
+    [TestCase("runtimeMode", "deterministic-stub")]
+    [TestCase("langGraphLoaded", false)]
+    [TestCase("langGraphVersion", "0.3.33")]
+    [TestCase("graphCompiled", false)]
+    [TestCase("graphVersion", "dataagent-advisory-v0")]
     [TestCase("unsafe_extra", "must_not_be_accepted")]
     public void ManualHarnessRejectsUnsafeOrNonExactV47HealthWithoutLeakingBody(string propertyName, object value)
     {
