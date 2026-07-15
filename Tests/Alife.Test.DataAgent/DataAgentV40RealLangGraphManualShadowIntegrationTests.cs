@@ -814,6 +814,110 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    [NonParallelizable]
+    public void ManualHarnessScriptPersistsAcceptedOutcomeThroughExplicitArtifactBridge()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string bridgePath = ResolveShadowArtifactBridgePath(repoRoot);
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+
+        using ManualShadowLoopbackServer server = new(NewSafeManualHandshakeResponseJson());
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-ArtifactBridgePath", bridgePath,
+            "-TimeoutMs", "5000");
+
+        DataAgentLangGraphShadowArtifactReadResult read = ReadManualShadowArtifactAggregate(databasePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=true"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Accepted, Is.EqualTo(1));
+            Assert.That(read.Aggregate.Fallback, Is.EqualTo(0));
+            Assert.That(read.Aggregate.LatestReasonCode, Is.EqualTo("manual_shadow_handshake_accepted"));
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void ManualHarnessScriptPersistsRejectedHandshakeAsFallbackThroughExplicitArtifactBridge()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string bridgePath = ResolveShadowArtifactBridgePath(repoRoot);
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+        const string unsafeHandshakeBody = "{\"accepted\":false,\"secret\":\"must_not_reach_bridge\"}";
+
+        using ManualShadowLoopbackServer server = new(unsafeHandshakeBody);
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-ArtifactBridgePath", bridgePath,
+            "-TimeoutMs", "5000");
+
+        DataAgentLangGraphShadowArtifactReadResult read = ReadManualShadowArtifactAggregate(databasePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=true"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("must_not_reach_bridge"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("\"secret\""));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Accepted, Is.EqualTo(0));
+            Assert.That(read.Aggregate.Fallback, Is.EqualTo(1));
+            Assert.That(read.Aggregate.LatestReasonCode, Is.EqualTo("manual_shadow_response_rejected"));
+        });
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    [NonParallelizable]
+    public void ManualHarnessScriptKeepsOriginalExitContractWhenArtifactBridgeIsUnavailable(bool acceptedHandshake)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string missingBridgePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, Guid.NewGuid().ToString("N"), "missing.dll");
+        string databasePath = CreateManualShadowArtifactDatabasePath();
+        string handshakeBody = acceptedHandshake
+            ? NewSafeManualHandshakeResponseJson()
+            : "{\"accepted\":false,\"secret\":\"must_not_reach_bridge\"}";
+
+        using ManualShadowLoopbackServer server = new(handshakeBody);
+        ScriptResult result = RunPowerShellFile(
+            scriptPath,
+            CreateSqliteEnvironment(databasePath),
+            "-BaseUri", server.BaseUri,
+            "-ArtifactBridgePath", missingBridgePath,
+            "-TimeoutMs", "5000");
+
+        DataAgentLangGraphShadowArtifactReadResult read = ReadManualShadowArtifactAggregate(databasePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(acceptedHandshake ? 0 : 1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=false"));
+            Assert.That(result.StandardOutput, Does.Contain(acceptedHandshake
+                ? "PASS manual_shadow"
+                : "FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("must_not_reach_bridge"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Total, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
     public void ManualHarnessPassesOnlyAfterHandshakeResponseIsValidated()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -968,9 +1072,21 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return RunPowerShell(startInfo);
     }
 
-    static ScriptResult RunPowerShellFile(string scriptPath, params string[] arguments)
+    static ScriptResult RunPowerShellFile(string scriptPath, params string[] arguments) =>
+        RunPowerShellFile(scriptPath, environment: null, arguments);
+
+    static ScriptResult RunPowerShellFile(
+        string scriptPath,
+        IReadOnlyDictionary<string, string>? environment,
+        params string[] arguments)
     {
         ProcessStartInfo startInfo = NewPowerShellStartInfo();
+        if (environment is not null)
+        {
+            foreach ((string name, string value) in environment)
+                startInfo.Environment[name] = value;
+        }
+
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(scriptPath);
         foreach (string argument in arguments)
@@ -980,6 +1096,38 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
         return RunPowerShell(startInfo);
     }
+
+    static string ResolveShadowArtifactBridgePath(string repoRoot)
+    {
+        string bridgePath = Path.Combine(
+            repoRoot,
+            "Outputs",
+            "Alife.Tools.DataAgentShadowArtifact",
+            "Alife.Tools.DataAgentShadowArtifact.dll");
+        Assert.That(File.Exists(bridgePath), Is.True, "Build the shadow artifact bridge before script integration tests.");
+        return bridgePath;
+    }
+
+    static string CreateManualShadowArtifactDatabasePath()
+    {
+        string databasePath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "manual-shadow-script-bridge",
+            Guid.NewGuid().ToString("N"),
+            "dataagent.sqlite");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        return databasePath;
+    }
+
+    static IReadOnlyDictionary<string, string> CreateSqliteEnvironment(string databasePath) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ALIFE_DATAAGENT_STORE_PROVIDER"] = "sqlite",
+            ["ALIFE_DATAAGENT_SQLITE_PATH"] = databasePath
+        };
+
+    static DataAgentLangGraphShadowArtifactReadResult ReadManualShadowArtifactAggregate(string databasePath) =>
+        new SqliteDataAgentStore(databasePath).ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
 
     static ScriptResult RunManualHarnessHandshakeValidation(string handshakeBody)
     {

@@ -1,7 +1,8 @@
 param(
     [string]$BaseUri = "http://127.0.0.1:8765",
     [string]$OutputDirectory = "",
-    [int]$TimeoutMs = 2000
+    [int]$TimeoutMs = 2000,
+    [string]$ArtifactBridgePath = ""
 )
 
 Set-StrictMode -Version 2.0
@@ -82,6 +83,68 @@ function ConvertTo-ManualShadowFailureReason {
     }
 
     return $text
+}
+
+function ConvertTo-ManualShadowBridgeFallbackReason {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        return "manual_shadow_failed"
+    }
+
+    switch ([string]$Value) {
+        "manual_shadow_response_rejected" {
+            return "manual_shadow_response_rejected"
+        }
+        default {
+            return "manual_shadow_failed"
+        }
+    }
+}
+
+function Invoke-ManualShadowArtifactBridge {
+    param(
+        [string]$Outcome,
+        [string]$ReasonCode,
+        [int]$HealthStatusCode,
+        [int]$HandshakeStatusCode
+    )
+
+    $persisted = $false
+    try {
+        if (($Outcome -ne "accepted" -and $Outcome -ne "fallback") -or
+            ($ReasonCode -ne "manual_shadow_handshake_accepted" -and
+             $ReasonCode -ne "manual_shadow_response_rejected" -and
+             $ReasonCode -ne "manual_shadow_failed")) {
+            throw "artifact_bridge_input_rejected"
+        }
+
+        $bridgePath = $ArtifactBridgePath
+        if ([string]::IsNullOrWhiteSpace($bridgePath)) {
+            $bridgePath = Join-Path `
+                $PSScriptRoot `
+                "dataagent-shadow-artifact\\bin\\Release\\net9.0-windows10.0.19041.0\\Alife.Tools.DataAgentShadowArtifact.dll"
+        }
+
+        if ((Test-Path -LiteralPath $bridgePath -PathType Leaf) -eq $false) {
+            throw "artifact_bridge_missing"
+        }
+
+        $dotnetPath = "C:\Users\hu shu\.dotnet\dotnet.exe"
+        $null = & $dotnetPath `
+            $bridgePath `
+            "--outcome" $Outcome `
+            "--reason-code" $ReasonCode `
+            "--health-status" ([int]$HealthStatusCode) `
+            "--handshake-status" ([int]$HandshakeStatusCode) `
+            "--context-layers" "3" 2>&1
+        $persisted = $LASTEXITCODE -eq 0
+    }
+    catch {
+        $persisted = $false
+    }
+
+    Write-Output ("artifact_persisted={0}" -f $persisted.ToString().ToLowerInvariant())
 }
 
 function Join-SidecarUri {
@@ -366,6 +429,9 @@ function New-V40HandshakeRequest {
 
 Write-Output "DataAgent V4.0 manual LangGraph shadow"
 
+$healthStatusCode = 0
+$handshakeStatusCode = 0
+
 try {
     if ($TimeoutMs -le 0) {
         throw "TimeoutMs must be greater than zero."
@@ -376,8 +442,16 @@ try {
     $request = New-V40HandshakeRequest
 
     $healthResponse = Invoke-JsonRequest -Method "GET" -Uri (Join-SidecarUri $base "/health") -TimeoutSeconds $timeoutSeconds
+    $healthStatusCode = [int]$healthResponse.StatusCode
     $handshakeResponse = Invoke-JsonRequest -Method "POST" -Uri (Join-SidecarUri $base "/handshake") -Body $request -TimeoutSeconds $timeoutSeconds
+    $handshakeStatusCode = [int]$handshakeResponse.StatusCode
     $handshakeValidated = Assert-ManualShadowHandshakeResponse $handshakeResponse
+
+    Invoke-ManualShadowArtifactBridge `
+        -Outcome "accepted" `
+        -ReasonCode "manual_shadow_handshake_accepted" `
+        -HealthStatusCode $healthStatusCode `
+        -HandshakeStatusCode $handshakeStatusCode
 
     if ([string]::IsNullOrWhiteSpace($OutputDirectory) -eq $false) {
         Write-ManualShadowArtifact `
@@ -393,6 +467,12 @@ try {
 }
 catch {
     $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+    $bridgeReason = ConvertTo-ManualShadowBridgeFallbackReason $_.Exception.Message
+    Invoke-ManualShadowArtifactBridge `
+        -Outcome "fallback" `
+        -ReasonCode $bridgeReason `
+        -HealthStatusCode $healthStatusCode `
+        -HandshakeStatusCode $handshakeStatusCode
     Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
     exit 1
 }
