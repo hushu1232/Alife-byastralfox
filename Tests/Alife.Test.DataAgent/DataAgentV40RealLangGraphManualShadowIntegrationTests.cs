@@ -391,6 +391,96 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
+    [NonParallelizable]
+    public void ShadowArtifactBridgePersistsAcceptedBoundedInvocationThroughConfiguredSqlite()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "shadow-artifact-bridge", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+
+        ScriptResult result = RunShadowArtifactBridge(
+            databasePath,
+            "--reason-code", "manual_shadow_accepted",
+            "--context-layers", "3",
+            "--outcome", "accepted",
+            "--handshake-status", "200",
+            "--health-status", "200");
+
+        IDataAgentStore store = new SqliteDataAgentStore(databasePath);
+        DataAgentLangGraphShadowArtifactReadResult read =
+            store.ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
+            Assert.That(result.StandardOutput, Is.EqualTo("artifact_persisted=true"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Total, Is.EqualTo(1));
+            Assert.That(read.Aggregate.Accepted, Is.EqualTo(1));
+            Assert.That(read.Aggregate.Fallback, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void ShadowArtifactBridgeRejectsUnknownRawJsonOptionWithoutWritingArtifact()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "shadow-artifact-bridge", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+
+        ScriptResult result = RunShadowArtifactBridge(
+            databasePath,
+            "--outcome", "accepted",
+            "--reason-code", "manual_shadow_accepted",
+            "--health-status", "200",
+            "--handshake-status", "200",
+            "--context-layers", "3",
+            "--raw-json", "{}");
+
+        IDataAgentStore store = new SqliteDataAgentStore(databasePath);
+        DataAgentLangGraphShadowArtifactReadResult read =
+            store.ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(result.StandardOutput, Is.EqualTo("artifact_persisted=false"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Total, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void ShadowArtifactBridgeRejectsNonClosedProtocolOutcomeWithoutWritingArtifact()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "shadow-artifact-bridge", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+
+        ScriptResult result = RunShadowArtifactBridge(
+            databasePath,
+            "--outcome", "protocol_rejected",
+            "--reason-code", "manual_shadow_protocol_rejected",
+            "--health-status", "200",
+            "--handshake-status", "200",
+            "--context-layers", "3");
+
+        IDataAgentStore store = new SqliteDataAgentStore(databasePath);
+        DataAgentLangGraphShadowArtifactReadResult read =
+            store.ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0));
+            Assert.That(result.StandardOutput, Is.EqualTo("artifact_persisted=false"));
+            Assert.That(result.StandardError, Is.Empty);
+            Assert.That(read.Available, Is.True);
+            Assert.That(read.Aggregate!.Total, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
     public void ArtifactWriterRejectsMissingOutputDirectory()
     {
         DataAgentRealLangGraphManualShadowArtifactWriteResult write =
@@ -925,6 +1015,53 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         """);
 
         return RunPowerShellCommand(harness);
+    }
+
+    static ScriptResult RunShadowArtifactBridge(string databasePath, params string[] arguments)
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string projectPath = Path.Combine(repoRoot, "tools", "dataagent-shadow-artifact", "Alife.Tools.DataAgentShadowArtifact.csproj");
+        Assert.That(File.Exists(projectPath), Is.True, "The shadow artifact bridge project must exist.");
+
+        string dotnet = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "dotnet.exe");
+        string bridgeDll = Path.Combine(
+            repoRoot,
+            "Outputs",
+            "Alife.Tools.DataAgentShadowArtifact",
+            "Alife.Tools.DataAgentShadowArtifact.dll");
+        Assert.That(File.Exists(bridgeDll), Is.True, "Shadow artifact bridge DLL must exist after build.");
+
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = dotnet,
+            WorkingDirectory = repoRoot,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+        startInfo.Environment["ALIFE_DATAAGENT_STORE_PROVIDER"] = "sqlite";
+        startInfo.Environment["ALIFE_DATAAGENT_SQLITE_PATH"] = databasePath;
+        startInfo.ArgumentList.Add(bridgeDll);
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Failed to start shadow artifact bridge.");
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
+        if (process.WaitForExit(15000) == false)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+            throw new TimeoutException("Shadow artifact bridge did not exit within 15 seconds.");
+        }
+
+        return new ScriptResult(process.ExitCode, stdout, stderr);
     }
 
     static ProcessStartInfo NewPowerShellStartInfo()
