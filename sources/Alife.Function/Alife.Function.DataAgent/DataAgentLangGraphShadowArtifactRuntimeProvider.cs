@@ -1,8 +1,35 @@
 namespace Alife.Function.DataAgent;
 
+public sealed record DataAgentManualShadowArtifactRequest(
+    string Outcome,
+    string ReasonCode,
+    int HealthStatusCode,
+    int HandshakeStatusCode,
+    int ContextLayerCount);
+
 public static class DataAgentLangGraphShadowArtifactRuntimeProvider
 {
     public const string UnavailableAggregate = "state=unavailable\nreason=langgraph_artifact_aggregate_unavailable";
+
+    public static DataAgentLangGraphShadowArtifactWriteResult RecordManualShadowArtifact(
+        DataAgentManualShadowArtifactRequest request,
+        DateTimeOffset now)
+    {
+        if (IsValidManualShadowArtifactRequest(request) == false)
+            return new(false, "langgraph_artifact_bridge_input_rejected");
+
+        try
+        {
+            IDataAgentStore? store = CreateConfiguredSqliteStore();
+            return store is null
+                ? new DataAgentLangGraphShadowArtifactWriteResult(false, "langgraph_artifact_store_unavailable")
+                : store.RecordLangGraphShadowArtifact(CreateArtifact(request, now), now);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
+        {
+            return new DataAgentLangGraphShadowArtifactWriteResult(false, "langgraph_artifact_store_unavailable");
+        }
+    }
 
     public static DataAgentLangGraphShadowArtifactWriteResult RecordManualShadowResult(
         DataAgentRealLangGraphManualShadowResult result,
@@ -78,6 +105,65 @@ public static class DataAgentLangGraphShadowArtifactRuntimeProvider
             CreatedAt: now,
             ExpiresAt: now);
     }
+
+    static DataAgentLangGraphShadowArtifact CreateArtifact(
+        DataAgentManualShadowArtifactRequest request,
+        DateTimeOffset now)
+    {
+        bool accepted = string.Equals(request.Outcome, "accepted", StringComparison.Ordinal);
+        return new DataAgentLangGraphShadowArtifact(
+            $"manual-shadow-{Guid.NewGuid():N}",
+            "manual-shadow",
+            "manual-shadow",
+            accepted
+                ? DataAgentLangGraphShadowArtifactOutcome.Accepted
+                : DataAgentLangGraphShadowArtifactOutcome.Fallback,
+            request.ReasonCode,
+            $"manual_shadow_outcome;health_status={request.HealthStatusCode};handshake_status={request.HandshakeStatusCode};context_layers=3",
+            ContextChars: 0,
+            DiffGatePassed: accepted,
+            FallbackRequired: accepted == false,
+            CreatedAt: now,
+            ExpiresAt: now);
+    }
+
+    static bool IsValidManualShadowArtifactRequest(DataAgentManualShadowArtifactRequest? request)
+    {
+        return request is not null &&
+               (string.Equals(request.Outcome, "accepted", StringComparison.Ordinal) ||
+                string.Equals(request.Outcome, "fallback", StringComparison.Ordinal)) &&
+               IsSafeManualShadowReasonCode(request.ReasonCode) &&
+               IsValidHttpStatusCode(request.HealthStatusCode) &&
+               IsValidHttpStatusCode(request.HandshakeStatusCode) &&
+               request.ContextLayerCount == 3;
+    }
+
+    static bool IsSafeManualShadowReasonCode(string? reasonCode)
+    {
+        if (string.IsNullOrEmpty(reasonCode) || reasonCode.Length > 128)
+            return false;
+
+        foreach (char character in reasonCode)
+        {
+            if (char.IsAsciiLetterOrDigit(character) == false && character is not '_' and not '-' and not '.')
+                return false;
+        }
+
+        return DataAgentGraphHandshakeUnsafeDiagnosticDetector.ContainsUnsafeText(reasonCode) == false &&
+               ContainsManualShadowUnsafeMarker(reasonCode) == false;
+    }
+
+    static bool ContainsManualShadowUnsafeMarker(string value)
+    {
+        string[] markers = [
+            "secret", "token", "credential", "password", "bearer", "basic", "authorization",
+            "hidden_context", "hidden-context", "path", "file"
+        ];
+
+        return markers.Any(marker => value.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static bool IsValidHttpStatusCode(int statusCode) => statusCode == 0 || (statusCode >= 100 && statusCode <= 599);
 
     static DataAgentLangGraphShadowArtifactOutcome ClassifyOutcome(
         DataAgentRealLangGraphManualShadowResult result)

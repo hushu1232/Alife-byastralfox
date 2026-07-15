@@ -7,6 +7,99 @@ namespace Alife.Test.DataAgent;
 public sealed class DataAgentLangGraphShadowArtifactStoreTests
 {
     [Test]
+    [NonParallelizable]
+    public void ManualShadowArtifactBoundaryPersistsOnlyAcceptedAndFallbackResults()
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-15T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        string? previousProvider = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER");
+        string? previousSqlitePath = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", databasePath);
+
+            DataAgentLangGraphShadowArtifactWriteResult accepted =
+                DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowArtifact(
+                    new DataAgentManualShadowArtifactRequest("accepted", "handshake_valid", 200, 200, 3), now);
+            DataAgentLangGraphShadowArtifactWriteResult fallback =
+                DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowArtifact(
+                    new DataAgentManualShadowArtifactRequest("fallback", "handshake_transport_failed", 200, 0, 3), now.AddMinutes(1));
+            DataAgentLangGraphShadowArtifactAggregate aggregate = new SqliteDataAgentStore(databasePath)
+                .ReadLangGraphShadowArtifactAggregate(now.AddMinutes(1)).Aggregate!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(accepted.Written, Is.True);
+                Assert.That(fallback.Written, Is.True);
+                Assert.That(aggregate.Total, Is.EqualTo(2));
+                Assert.That(aggregate.Accepted, Is.EqualTo(1));
+                Assert.That(aggregate.Fallback, Is.EqualTo(1));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", previousProvider);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", previousSqlitePath);
+        }
+    }
+
+    [TestCase("protocol_rejected", "safe_reason", 200, 200, 3)]
+    [TestCase("accepted", "SELECT_hidden_context", 200, 200, 3)]
+    [TestCase("accepted", "access_token", 200, 200, 3)]
+    [TestCase("accepted", @"C:\private", 200, 200, 3)]
+    [TestCase("accepted", "safe_reason", 99, 200, 3)]
+    [TestCase("accepted", "safe_reason", 600, 200, 3)]
+    [TestCase("accepted", "safe_reason", 200, 200, 4)]
+    [TestCase("accepted", "", 200, 200, 3)]
+    [TestCase("accepted", null, 200, 200, 3)]
+    [NonParallelizable]
+    public void ManualShadowArtifactBoundaryRejectsUnsafeOrOutOfContractInput(
+        string outcome,
+        string? reasonCode,
+        int healthStatusCode,
+        int handshakeStatusCode,
+        int contextLayerCount)
+    {
+        string databasePath = CreateDatabasePath();
+        DateTimeOffset now = DateTimeOffset.Parse("2026-07-15T00:00:00Z");
+        DataAgentSchemaInitializer.Initialize(databasePath);
+        string? previousProvider = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER");
+        string? previousSqlitePath = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", databasePath);
+
+            DataAgentLangGraphShadowArtifactWriteResult result =
+                DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowArtifact(
+                    new DataAgentManualShadowArtifactRequest(
+                        outcome,
+                        reasonCode!,
+                        healthStatusCode,
+                        handshakeStatusCode,
+                        contextLayerCount),
+                    now);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(result, Is.EqualTo(new DataAgentLangGraphShadowArtifactWriteResult(
+                    false,
+                    "langgraph_artifact_bridge_input_rejected")));
+                Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", previousProvider);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", previousSqlitePath);
+        }
+    }
+
+    [Test]
     public void WritePersistsSafeAcceptedAndRejectedMetadata()
     {
         string databasePath = CreateDatabasePath();
