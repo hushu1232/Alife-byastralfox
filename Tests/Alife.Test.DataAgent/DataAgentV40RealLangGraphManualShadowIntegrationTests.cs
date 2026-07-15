@@ -10,6 +10,34 @@ namespace Alife.Test.DataAgent;
 [TestFixture]
 public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 {
+    static readonly string[] V47RequestFields =
+    [
+        "RequestId", "SessionId", "TurnId", "CallerId", "GoalOrQuestion",
+        "ScenarioContextSummary", "RouteScope", "QueryConstraints",
+        "NodeManifests", "NoSqlAuthority", "ReadOnly", "FallbackAvailable",
+        "TraceBudgetChars", "ProgressBudget"
+    ];
+
+    static readonly string[] V47ManifestFields =
+    [
+        "NodeName", "Purpose", "AllowedToolNames", "DeniedCapabilityMarkers",
+        "InputShape", "OutputShape", "BusinessTerms", "SafetyNotes"
+    ];
+
+    static readonly string[] V47ResponseFields =
+    [
+        "RequestId", "Accepted", "ReasonCode", "SelectedNodes", "NodeProgress",
+        "TraceSummary", "ContextContribution", "FallbackRequired", "NoSqlAuthority",
+        "ReadOnly", "RequestedToolNames", "RequestsCheckpointMutation", "RequestsVisibleText"
+    ];
+
+    static readonly string[] V47HealthFields =
+    [
+        "ok", "ready", "runtimeMode", "langGraphLoaded", "langGraphVersion",
+        "graphCompiled", "contractVersion", "graphVersion", "runtimeInstanceId",
+        "configurationFingerprint", "startedAtUnixSeconds"
+    ];
+
     [Test]
     public void IntegrationAcceptsManualLangGraphAdvisoryThroughReplayDiffGate()
     {
@@ -650,8 +678,8 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     [TestCase("")]
     [TestCase("{not-json")]
     [TestCase("[]")]
-    [TestCase("""{"accepted":true}""")]
-    public void ManualHarnessRejectsInvalidHandshakeJsonOrSchema(string handshakeBody)
+    [TestCase("""{"Accepted":true}""")]
+    public void ManualHarnessRejectsInvalidV47HandshakeJsonOrSchema(string handshakeBody)
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
@@ -663,7 +691,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         }
 
         try {
-            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Assert-ManualShadowV47HandshakeResponse $response | Out-Null
             Write-Output "PASS manual_shadow"
             exit 0
         }
@@ -687,7 +715,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
-    public void ManualHarnessRejectsHandshakeResponseWithoutContentPropertyUsingSanitizedFallback()
+    public void ManualHarnessRejectsV47HandshakeResponseWithoutContentPropertyUsingSanitizedFallback()
     {
         ScriptResult result = RunManualHarnessResponseValidation("""
         $response = [pscustomobject]@{
@@ -709,7 +737,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     [TestCase("123")]
     [TestCase("@{ accepted = $true }")]
     [TestCase("''")]
-    public void ManualHarnessRejectsNullWrongTypeOrEmptyHandshakeContent(string contentExpression)
+    public void ManualHarnessRejectsNullWrongTypeOrEmptyV47HandshakeContent(string contentExpression)
     {
         ScriptResult result = RunManualHarnessResponseValidation($$"""
         $response = [pscustomobject]@{
@@ -729,9 +757,9 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
-    public void ManualHarnessRejectsMissingForbiddenAuthorityClaims()
+    public void ManualHarnessRejectsV47ResponseWithoutRequestedToolNames()
     {
-        string handshakeBody = NewSafeManualHandshakeResponseJsonWithoutForbiddenAuthorityClaims();
+        string handshakeBody = NewSafeManualHandshakeResponseJsonWithoutRequestedToolNames();
         ScriptResult result = RunManualHarnessHandshakeValidation(handshakeBody);
 
         Assert.Multiple(() =>
@@ -743,9 +771,10 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
-    [TestCaseSource(nameof(RejectedForbiddenAuthorityClaimsCases))]
-    public void ManualHarnessRejectsNonEmptyOrMalformedForbiddenAuthorityClaims(string handshakeBody)
+    [Test]
+    public void ManualHarnessRejectsV47ResponseWithExtraV40Marker()
     {
+        string handshakeBody = NewSafeManualHandshakeResponseJson(("ContextBudget", new { max = 1200 }));
         ScriptResult result = RunManualHarnessHandshakeValidation(handshakeBody);
 
         Assert.Multiple(() =>
@@ -757,27 +786,10 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         });
     }
 
-    [TestCase("requests_visible_text", true)]
+    [TestCase("RequestedToolNames", new[] { "sql.execute" })]
+    [TestCase("RequestsCheckpointMutation", true)]
     [TestCase("RequestsVisibleText", true)]
-    [TestCase("requests_checkpoint_write", true)]
-    [TestCase("RequestsCheckpointWrite", true)]
-    [TestCase("requests_sql_authority", true)]
-    [TestCase("RequestsSqlAuthority", true)]
-    [TestCase("requests_state_write", true)]
-    [TestCase("RequestsStateWrite", true)]
-    [TestCase("calls_sidecar", true)]
-    [TestCase("CallsSidecar", true)]
-    [TestCase("default_result_changed", true)]
-    [TestCase("DefaultResultChanged", true)]
-    [TestCase("stores_secrets", true)]
-    [TestCase("StoresSecrets", true)]
-    [TestCase("stores_sql", true)]
-    [TestCase("StoresSql", true)]
-    [TestCase("stores_hidden_context", true)]
-    [TestCase("StoresHiddenContext", true)]
-    [TestCase("no_sql_authority", false)]
-    [TestCase("NoSqlAuthority", false)]
-    public void ManualHarnessRejectsForbiddenAuthorityClaims(string propertyName, bool value)
+    public void ManualHarnessRejectsUnsafeV47ResponseAuthority(string propertyName, object value)
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
@@ -790,7 +802,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         }
 
         try {
-            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Assert-ManualShadowV47HandshakeResponse $response | Out-Null
             Write-Output "PASS manual_shadow"
             exit 0
         }
@@ -951,6 +963,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(result.StandardOutput, Does.Contain("PASS manual_shadow"));
             Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=true"));
             Assert.That(result.StandardError, Is.Empty);
+            Assert.That(server.HandshakeRequestPropertyNames, Is.EquivalentTo(V47RequestFields));
             Assert.That(read.Available, Is.True);
             Assert.That(read.Aggregate!.Accepted, Is.EqualTo(1));
             Assert.That(read.Aggregate.Fallback, Is.EqualTo(0));
@@ -1098,7 +1111,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
-    public void ManualHarnessPassesOnlyAfterHandshakeResponseIsValidated()
+    public void ManualHarnessV47ScriptPersistsAcceptedOutcomeAndSendsExactRequestEnvelope()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
@@ -1130,6 +1143,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             Assert.That(result.StandardOutput, Does.Not.Contain(outputDirectory));
             Assert.That(server.HandshakeRequestContentLength, Is.GreaterThan(0));
             Assert.That(server.HandshakeRequestBodyBytesDrained, Is.EqualTo(server.HandshakeRequestContentLength));
+            Assert.That(server.HandshakeRequestPropertyNames, Is.EquivalentTo(V47RequestFields));
             Assert.That(File.Exists(artifactPath), Is.True);
             Assert.That(propertyNames, Does.Contain("handshake_validated"));
             Assert.That(propertyNames, Does.Not.Contain("source_baseline"));
@@ -1144,12 +1158,12 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     }
 
     [Test]
-    public void ManualHarnessRequestCarriesBudgetedContextWithoutRawAuthorityData()
+    public void ManualHarnessBuildsExactV47RequestWithoutV40ContextEnvelope()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
         string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
         string harness = BuildPowerShellFunctionHarness(scriptPath, """
-        $request = New-V40HandshakeRequest
+        $request = New-V47HandshakeRequest
         $json = $request | ConvertTo-Json -Depth 16 -Compress
         Write-Output $json
         """);
@@ -1159,17 +1173,90 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         Assert.Multiple(() =>
         {
             Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardError);
-            Assert.That(result.StandardOutput, Does.Contain("\"ContextBudget\""));
-            Assert.That(result.StandardOutput, Does.Contain("\"MaxEnvelopeChars\":1200"));
-            Assert.That(result.StandardOutput, Does.Contain("\"MaxLayerChars\":400"));
-            Assert.That(result.StandardOutput, Does.Contain("\"ContextLayers\""));
-            Assert.That(result.StandardOutput, Does.Contain("layer_1_route"));
-            Assert.That(result.StandardOutput, Does.Contain("layer_2_evidence"));
-            Assert.That(result.StandardOutput, Does.Contain("layer_3_excerpt"));
+            using JsonDocument document = JsonDocument.Parse(result.StandardOutput);
+            JsonElement request = document.RootElement;
+            string[] propertyNames = request.EnumerateObject().Select(property => property.Name).ToArray();
+            Assert.That(propertyNames, Is.EquivalentTo(V47RequestFields));
+            Assert.That(propertyNames, Does.Not.Contain("ContextBudget"));
+            Assert.That(propertyNames, Does.Not.Contain("ContextLayers"));
+            Assert.That(request.GetProperty("NoSqlAuthority").GetBoolean(), Is.True);
+            Assert.That(request.GetProperty("ReadOnly").GetBoolean(), Is.True);
+            Assert.That(request.GetProperty("FallbackAvailable").GetBoolean(), Is.True);
+            Assert.That(request.GetProperty("TraceBudgetChars").GetInt32(), Is.InRange(1, 1800));
+            Assert.That(request.GetProperty("ProgressBudget").GetInt32(), Is.InRange(1, 16));
+
+            JsonElement manifests = request.GetProperty("NodeManifests");
+            Assert.That(manifests.GetArrayLength(), Is.EqualTo(1));
+            JsonElement manifest = manifests[0];
+            Assert.That(manifest.EnumerateObject().Select(property => property.Name), Is.EquivalentTo(V47ManifestFields));
+            Assert.That(manifest.GetProperty("NodeName").GetString(), Is.EqualTo("diagnostics_router"));
+            Assert.That(manifest.GetProperty("AllowedToolNames").GetArrayLength(), Is.LessThanOrEqualTo(8));
+            Assert.That(manifest.GetProperty("DeniedCapabilityMarkers").GetArrayLength(), Is.GreaterThan(0));
             Assert.That(result.StandardOutput, Does.Not.Contain("SELECT"));
             Assert.That(result.StandardOutput, Does.Not.Contain("hidden_context"));
             Assert.That(result.StandardOutput, Does.Not.Contain("bearer"));
             Assert.That(result.StandardOutput, Does.Not.Contain("password"));
+        });
+    }
+
+    [Test]
+    public void ManualHarnessAcceptsExactV47HealthAndHandshakeContracts()
+    {
+        string healthBody = NewSafeManualV47HealthJson();
+        string handshakeBody = NewSafeManualHandshakeResponseJson();
+        string escapedHealthBody = EscapePowerShellSingleQuotedString(healthBody);
+        string escapedHandshakeBody = EscapePowerShellSingleQuotedString(handshakeBody);
+        string harness = BuildPowerShellFunctionHarness(
+            Path.Combine(FindRepoRoot(TestContext.CurrentContext.TestDirectory), "tools", "run-dataagent-v4-manual-shadow.ps1"),
+            $$"""
+            $health = [pscustomobject]@{ StatusCode = 200; Content = '{{escapedHealthBody}}' }
+            $handshake = [pscustomobject]@{ StatusCode = 200; Content = '{{escapedHandshakeBody}}' }
+            Assert-ManualShadowV47HealthResponse $health | Out-Null
+            Assert-ManualShadowV47HandshakeResponse $handshake | Out-Null
+            Write-Output "PASS manual_shadow"
+            """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Is.EqualTo("PASS manual_shadow" + Environment.NewLine));
+            Assert.That(JsonDocument.Parse(healthBody).RootElement.EnumerateObject().Select(property => property.Name), Is.EquivalentTo(V47HealthFields));
+            Assert.That(JsonDocument.Parse(handshakeBody).RootElement.EnumerateObject().Select(property => property.Name), Is.EquivalentTo(V47ResponseFields));
+        });
+    }
+
+    [TestCase("contractVersion", "v4.0")]
+    [TestCase("ready", false)]
+    [TestCase("unsafe_extra", "must_not_be_accepted")]
+    public void ManualHarnessRejectsUnsafeOrNonExactV47HealthWithoutLeakingBody(string propertyName, object value)
+    {
+        string healthBody = NewSafeManualV47HealthJson((propertyName, value));
+        string escapedHealthBody = EscapePowerShellSingleQuotedString(healthBody);
+        ScriptResult result = RunPowerShellCommand(BuildPowerShellFunctionHarness(
+            Path.Combine(FindRepoRoot(TestContext.CurrentContext.TestDirectory), "tools", "run-dataagent-v4-manual-shadow.ps1"),
+            $$"""
+            $response = [pscustomobject]@{ StatusCode = 200; Content = '{{escapedHealthBody}}' }
+            try {
+                Assert-ManualShadowV47HealthResponse $response | Out-Null
+                Write-Output "PASS manual_shadow"
+                exit 0
+            }
+            catch {
+                $reason = ConvertTo-ManualShadowFailureReason $_.Exception.Message
+                Write-Output ("FALLBACK manual_shadow {0}" -f $reason)
+                exit 1
+            }
+            """));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(1), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("FALLBACK manual_shadow manual_shadow_response_rejected"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("PASS manual_shadow"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("must_not_be_accepted"));
+            Assert.That(result.StandardOutput, Does.Not.Contain(healthBody));
         });
     }
 
@@ -1374,7 +1461,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         {{responseSetup}}
 
         try {
-            Assert-ManualShadowHandshakeResponse $response | Out-Null
+            Assert-ManualShadowV47HandshakeResponse $response | Out-Null
             Write-Output "PASS manual_shadow"
             exit 0
         }
@@ -1484,45 +1571,59 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return value.Replace("'", "''", StringComparison.Ordinal);
     }
 
+    static string NewSafeManualV47HealthJson(params (string Name, object Value)[] overrides)
+    {
+        Dictionary<string, object> health = new(StringComparer.Ordinal)
+        {
+            ["ok"] = true,
+            ["ready"] = true,
+            ["runtimeMode"] = "langgraph",
+            ["langGraphLoaded"] = true,
+            ["langGraphVersion"] = "0.3.34",
+            ["graphCompiled"] = true,
+            ["contractVersion"] = "v4.7",
+            ["graphVersion"] = "dataagent-advisory-v1",
+            ["runtimeInstanceId"] = "8d7674fd-89a9-4d1c-a864-64e5d5960489",
+            ["configurationFingerprint"] = new string('a', 64),
+            ["startedAtUnixSeconds"] = 1_784_225_600
+        };
+
+        foreach ((string name, object value) in overrides)
+        {
+            health[name] = value;
+        }
+
+        return JsonSerializer.Serialize(health);
+    }
+
     static string NewSafeManualHandshakeResponseJson(params (string Name, object Value)[] overrides)
-    {
-        return NewSafeManualHandshakeResponseJson(includeForbiddenAuthorityClaims: true, overrides);
-    }
-
-    static string NewSafeManualHandshakeResponseJsonWithoutForbiddenAuthorityClaims(params (string Name, object Value)[] overrides)
-    {
-        return NewSafeManualHandshakeResponseJson(includeForbiddenAuthorityClaims: false, overrides);
-    }
-
-    static string NewSafeManualHandshakeResponseJson(
-        bool includeForbiddenAuthorityClaims,
-        params (string Name, object Value)[] overrides)
     {
         Dictionary<string, object> response = new(StringComparer.Ordinal)
         {
-            ["accepted"] = true,
-            ["agent_advisory_only"] = true,
-            ["harness_execution_authority"] = true,
-            ["csharp_validation_authority"] = true,
-            ["default_result_changed"] = false,
-            ["fallback_required"] = true,
-            ["starts_runtime"] = false,
-            ["installs_dependencies"] = false,
-            ["calls_sidecar"] = false,
-            ["stores_secrets"] = false,
-            ["stores_sql"] = false,
-            ["stores_hidden_context"] = false,
-            ["replay_diff_gate_passed"] = true,
-            ["forbidden_authority_claimed"] = false,
-            ["requests_visible_text"] = false,
-            ["requests_checkpoint_write"] = false,
-            ["requests_sql_authority"] = false,
-            ["requests_state_write"] = false,
-            ["no_sql_authority"] = true
+            ["RequestId"] = "v4-manual-shadow-operator-run",
+            ["Accepted"] = true,
+            ["ReasonCode"] = "langgraph_advisory_accepted",
+            ["SelectedNodes"] = new[] { "diagnostics_router" },
+            ["NodeProgress"] = new[]
+            {
+                new Dictionary<string, object>(StringComparer.Ordinal)
+                {
+                    ["NodeName"] = "diagnostics_router",
+                    ["Status"] = "Completed",
+                    ["ReasonCode"] = "advisory_only",
+                    ["Message"] = "Advisory graph completed without authority transfer.",
+                    ["Facts"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["authority"] = "csharp" }
+                }
+            },
+            ["TraceSummary"] = "Advisory graph completed; C# remains authority.",
+            ["ContextContribution"] = "sidecar=langgraph;authority=csharp",
+            ["FallbackRequired"] = false,
+            ["NoSqlAuthority"] = true,
+            ["ReadOnly"] = true,
+            ["RequestedToolNames"] = Array.Empty<string>(),
+            ["RequestsCheckpointMutation"] = false,
+            ["RequestsVisibleText"] = false
         };
-
-        if (includeForbiddenAuthorityClaims)
-            response["forbidden_authority_claims"] = Array.Empty<string>();
 
         foreach ((string name, object value) in overrides)
         {
@@ -1532,18 +1633,14 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
         return JsonSerializer.Serialize(response);
     }
 
-    static IEnumerable<TestCaseData> RejectedForbiddenAuthorityClaimsCases()
+    static string NewSafeManualHandshakeResponseJsonWithoutRequestedToolNames()
     {
-        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", null!)))
-            .SetName("ManualHarnessRejectsNullSnakeCaseForbiddenAuthorityClaims");
-        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("ForbiddenAuthorityClaims", null!)))
-            .SetName("ManualHarnessRejectsNullPascalCaseForbiddenAuthorityClaims");
-        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", "execute_sql")))
-            .SetName("ManualHarnessRejectsScalarForbiddenAuthorityClaims");
-        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", new { authority = "execute_sql" })))
-            .SetName("ManualHarnessRejectsObjectForbiddenAuthorityClaims");
-        yield return new TestCaseData(NewSafeManualHandshakeResponseJson(("forbidden_authority_claims", new[] { "execute_sql" })))
-            .SetName("ManualHarnessRejectsNonEmptyArrayForbiddenAuthorityClaims");
+        using JsonDocument document = JsonDocument.Parse(NewSafeManualHandshakeResponseJson());
+        Dictionary<string, JsonElement> response = document.RootElement
+            .EnumerateObject()
+            .Where(property => property.Name != "RequestedToolNames")
+            .ToDictionary(property => property.Name, property => property.Value.Clone(), StringComparer.Ordinal);
+        return JsonSerializer.Serialize(response);
     }
 
     static DataAgentRealLangGraphManualShadowResult NewDirectResult(
@@ -1682,14 +1779,17 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
     {
         readonly TcpListener listener;
         readonly string handshakeBody;
+        readonly string healthBody;
         readonly Task serverTask;
         int handshakeRequestContentLength;
         int handshakeRequestBodyBytesDrained;
+        string? handshakeRequestBody;
         bool disposed;
 
-        public ManualShadowLoopbackServer(string handshakeBody)
+        public ManualShadowLoopbackServer(string handshakeBody, string? healthBody = null)
         {
             this.handshakeBody = handshakeBody;
+            this.healthBody = healthBody ?? NewSafeManualV47HealthJson();
             listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -1704,6 +1804,19 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
         public int HandshakeRequestBodyBytesDrained =>
             System.Threading.Volatile.Read(ref handshakeRequestBodyBytesDrained);
+
+        public string[] HandshakeRequestPropertyNames
+        {
+            get
+            {
+                string? body = System.Threading.Volatile.Read(ref handshakeRequestBody);
+                if (string.IsNullOrWhiteSpace(body))
+                    return [];
+
+                using JsonDocument document = JsonDocument.Parse(body);
+                return document.RootElement.EnumerateObject().Select(property => property.Name).ToArray();
+            }
+        }
 
         public void Dispose()
         {
@@ -1754,11 +1867,12 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
                             System.Threading.Volatile.Write(
                                 ref handshakeRequestBodyBytesDrained,
                                 request.BodyBytesDrained);
+                            System.Threading.Volatile.Write(ref handshakeRequestBody, request.Body);
                         }
 
                         string body = isHandshakeRequest
                             ? handshakeBody
-                            : """{"healthy":true}""";
+                            : healthBody;
 
                         byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
                         byte[] headerBytes = Encoding.ASCII.GetBytes(
@@ -1793,13 +1907,17 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             }
 
             if (headerEndIndex < 0)
-                return new RequestInfo(Encoding.ASCII.GetString(requestBytes.ToArray()), 0, 0);
+                return new RequestInfo(Encoding.ASCII.GetString(requestBytes.ToArray()), 0, 0, string.Empty);
 
             int headerByteCount = headerEndIndex + 4;
             string headers = Encoding.ASCII.GetString(requestBytes.GetRange(0, headerByteCount).ToArray());
             int contentLength = ParseContentLength(headers);
             int bodyBytesAlreadyRead = Math.Min(contentLength, Math.Max(0, requestBytes.Count - headerByteCount));
             int bodyBytesDrained = bodyBytesAlreadyRead;
+            List<byte> bodyBytes = requestBytes
+                .Skip(headerByteCount)
+                .Take(bodyBytesAlreadyRead)
+                .ToList();
 
             while (bodyBytesDrained < contentLength)
             {
@@ -1809,9 +1927,13 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
                     break;
 
                 bodyBytesDrained += read;
+                bodyBytes.AddRange(buffer.AsSpan(0, read).ToArray());
             }
 
-            return new RequestInfo(headers, contentLength, bodyBytesDrained);
+            string body = contentLength == bodyBytesDrained
+                ? Encoding.UTF8.GetString(bodyBytes.ToArray())
+                : string.Empty;
+            return new RequestInfo(headers, contentLength, bodyBytesDrained, body);
         }
 
         static int IndexOfHeaderTerminator(IReadOnlyList<byte> bytes)
@@ -1846,7 +1968,7 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
             return 0;
         }
 
-        readonly record struct RequestInfo(string Headers, int ContentLength, int BodyBytesDrained);
+        readonly record struct RequestInfo(string Headers, int ContentLength, int BodyBytesDrained, string Body);
     }
 
     readonly record struct ScriptResult(int ExitCode, string StandardOutput, string StandardError);
