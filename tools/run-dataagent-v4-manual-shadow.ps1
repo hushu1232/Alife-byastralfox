@@ -206,7 +206,7 @@ function Invoke-ManualShadowArtifactBridge {
         else {
             try {
                 $process.Kill()
-                $null = $process.WaitForExit(1000)
+                $null = $process.WaitForExit(250)
             }
             catch {
             }
@@ -217,15 +217,27 @@ function Invoke-ManualShadowArtifactBridge {
     }
     finally {
         if ($null -ne $discardOutputTask) {
-            $null = $discardOutputTask.Wait(1000)
+            try {
+                $null = $discardOutputTask.Wait(250)
+            }
+            catch {
+            }
         }
 
         if ($null -ne $discardErrorTask) {
-            $null = $discardErrorTask.Wait(1000)
+            try {
+                $null = $discardErrorTask.Wait(250)
+            }
+            catch {
+            }
         }
 
         if ($null -ne $process) {
-            $process.Dispose()
+            try {
+                $process.Dispose()
+            }
+            catch {
+            }
         }
     }
 

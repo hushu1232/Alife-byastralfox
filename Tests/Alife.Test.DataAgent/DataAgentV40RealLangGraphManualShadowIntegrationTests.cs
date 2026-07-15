@@ -815,6 +815,83 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
     [Test]
     [NonParallelizable]
+    public void ManualHarnessBridgeCleanupFailureDoesNotEscapeOrChangeAcceptedTerminalResult()
+    {
+        string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
+        string scriptPath = Path.Combine(repoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
+        string bridgePath = ResolveShadowArtifactBridgePath(repoRoot);
+        string escapedBridgePath = EscapePowerShellSingleQuotedString(bridgePath);
+        string harness = BuildPowerShellFunctionHarness(scriptPath, $$"""
+        $ArtifactBridgePath = '{{escapedBridgePath}}'
+
+        $failingTask = [pscustomobject]@{}
+        $failingTask | Add-Member -MemberType ScriptMethod -Name Wait -Value {
+            param([int]$Milliseconds)
+            throw "cleanup_task_failed"
+        }
+
+        $failingStream = [pscustomobject]@{ Task = $failingTask }
+        $failingStream | Add-Member -MemberType ScriptMethod -Name ReadToEndAsync -Value {
+            return $this.Task
+        }
+
+        $fakeProcess = [pscustomobject]@{
+            StartInfo = $null
+            StandardOutput = $failingStream
+            StandardError = $failingStream
+            ExitCode = 0
+        }
+        $fakeProcess | Add-Member -MemberType ScriptMethod -Name Start -Value { return $true }
+        $fakeProcess | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+            param([int]$Milliseconds)
+            return $true
+        }
+        $fakeProcess | Add-Member -MemberType ScriptMethod -Name Dispose -Value {
+            throw "cleanup_dispose_failed"
+        }
+
+        function New-Object {
+            param(
+                [Parameter(Position = 0)][string]$TypeName,
+                [Parameter(ValueFromRemainingArguments = $true)][object[]]$Remaining
+            )
+
+            if ($TypeName -eq "System.Diagnostics.Process") {
+                return $fakeProcess
+            }
+
+            return Microsoft.PowerShell.Utility\New-Object $TypeName @Remaining
+        }
+
+        try {
+            Invoke-ManualShadowArtifactBridge `
+                -Outcome "accepted" `
+                -ReasonCode "manual_shadow_handshake_accepted" `
+                -HealthStatusCode 200 `
+                -HandshakeStatusCode 200
+            Write-Output "after_bridge=true"
+        }
+        catch {
+            Write-Output "bridge_escaped=true"
+        }
+        """);
+
+        ScriptResult result = RunPowerShellCommand(harness);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.EqualTo(0), result.StandardOutput + result.StandardError);
+            Assert.That(result.StandardOutput, Does.Contain("artifact_persisted=true"));
+            Assert.That(result.StandardOutput, Does.Contain("after_bridge=true"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("bridge_escaped=true"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("cleanup_task_failed"));
+            Assert.That(result.StandardOutput, Does.Not.Contain("cleanup_dispose_failed"));
+            Assert.That(result.StandardError, Is.Empty);
+        });
+    }
+
+    [Test]
+    [NonParallelizable]
     public void ManualHarnessScriptRecordsOnlyFallbackWhenLegacyArtifactWriteFails()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
