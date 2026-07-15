@@ -40,6 +40,10 @@ public sealed record DataAgentLangGraphShadowArtifactAggregate(
 
 public sealed record DataAgentLangGraphShadowArtifactWriteResult(bool Written, string ReasonCode);
 
+public sealed record DataAgentLangGraphShadowArtifactReadResult(
+    bool Available,
+    DataAgentLangGraphShadowArtifactAggregate? Aggregate);
+
 public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
 {
     public const int RetentionDays = 90;
@@ -142,7 +146,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
         }
     }
 
-    public DataAgentLangGraphShadowArtifactAggregate ReadAggregate(DateTimeOffset now)
+    public DataAgentLangGraphShadowArtifactReadResult ReadAggregate(DateTimeOffset now)
     {
         try
         {
@@ -188,7 +192,7 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
             string latestReasonCode = Convert.ToString(latestReasonCommand.ExecuteScalar()) ?? string.Empty;
             transaction.Commit();
 
-            return new(
+            return new(true, new(
                 total,
                 accepted,
                 gateRejected,
@@ -199,11 +203,11 @@ public sealed class DataAgentLangGraphShadowArtifactStore(string databasePath)
                 oldest,
                 newest,
                 RetentionDays,
-                PerScopeLimit);
+                PerScopeLimit));
         }
         catch (SqliteException)
         {
-            return new(0, 0, 0, 0, 0, 0, string.Empty, null, null, RetentionDays, PerScopeLimit);
+            return new(false, null);
         }
     }
 

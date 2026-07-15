@@ -316,11 +316,13 @@ public sealed class DataAgentV40RealLangGraphManualShadowIntegrationTests
 
             DataAgentRealLangGraphManualShadowArtifactWriteResult write =
                 DataAgentRealLangGraphManualShadowArtifactWriter.Write(outputDirectory, result);
-            DataAgentLangGraphShadowArtifactAggregate aggregate =
+            DataAgentLangGraphShadowArtifactReadResult read =
                 store.ReadLangGraphShadowArtifactAggregate(DateTimeOffset.UtcNow);
+            DataAgentLangGraphShadowArtifactAggregate aggregate = read.Aggregate!;
 
             Assert.Multiple(() =>
             {
+                Assert.That(read.Available, Is.True);
                 Assert.That(write.Written, Is.True);
                 Assert.That(result.Accepted, Is.True);
                 Assert.That(result.DefaultResultChanged, Is.False);

@@ -72,7 +72,7 @@ public sealed class SqliteDataAgentStore : IDataAgentStore
         return new DataAgentLangGraphShadowArtifactStore(databasePath).Write(artifact, now);
     }
 
-    public DataAgentLangGraphShadowArtifactAggregate ReadLangGraphShadowArtifactAggregate(DateTimeOffset now)
+    public DataAgentLangGraphShadowArtifactReadResult ReadLangGraphShadowArtifactAggregate(DateTimeOffset now)
     {
         return new DataAgentLangGraphShadowArtifactStore(databasePath).ReadAggregate(now);
     }

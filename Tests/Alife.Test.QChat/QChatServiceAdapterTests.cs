@@ -4020,6 +4020,71 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    [NonParallelizable]
+    public async Task OwnerLangGraphDiagnosticReturnsExactUnavailableAggregateForExistingInvalidSqliteWhileNonOwnerGetsNoReply()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "qchat-langgraph-invalid", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        string? previousProvider = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER");
+        string? previousSqlitePath = Environment.GetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+        File.WriteAllText(databasePath, "not a sqlite database");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", "sqlite");
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", databasePath);
+            FakeOneBotRuntime runtime = new() { BotId = 2905391496 };
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                AllowPrivateGuestChat = true,
+                EnableBalancedTextStreaming = false
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/dataagent diag langgraph"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+            string ownerReply = runtime.PrivateMessages.Single().Message;
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 2002,
+                RawMessage = "/dataagent diag langgraph"
+            });
+            await Task.Delay(150);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(ownerReply, Does.EndWith(string.Join(Environment.NewLine,
+                    "DataAgent LangGraph diagnostics",
+                    "state=unavailable",
+                    "reason=langgraph_artifact_aggregate_unavailable")));
+                Assert.That(ownerReply, Does.Not.Contain("total=0"));
+                Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+                Assert.That(runtime.GroupMessages, Is.Empty);
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_STORE_PROVIDER", previousProvider);
+            Environment.SetEnvironmentVariable("ALIFE_DATAAGENT_SQLITE_PATH", previousSqlitePath);
+        }
+    }
+
+    [Test]
     public async Task NonOwnerPrivateDataAgentGraphDiagnosticDropsBeforeModelDispatch()
     {
         await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>

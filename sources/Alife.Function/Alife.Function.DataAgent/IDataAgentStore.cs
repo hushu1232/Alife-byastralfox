@@ -14,7 +14,7 @@ public interface IDataAgentStore
     DataAgentLangGraphShadowArtifactWriteResult RecordLangGraphShadowArtifact(
         DataAgentLangGraphShadowArtifact artifact,
         DateTimeOffset now) => throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
-    DataAgentLangGraphShadowArtifactAggregate ReadLangGraphShadowArtifactAggregate(DateTimeOffset now) =>
+    DataAgentLangGraphShadowArtifactReadResult ReadLangGraphShadowArtifactAggregate(DateTimeOffset now) =>
         throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
 }
 

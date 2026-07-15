@@ -31,7 +31,11 @@ public static class DataAgentLangGraphShadowArtifactRuntimeProvider
             if (store is null)
                 return UnavailableAggregate;
 
-            return FormatAggregate(store.ReadLangGraphShadowArtifactAggregate(now ?? DateTimeOffset.UtcNow));
+            DataAgentLangGraphShadowArtifactReadResult read =
+                store.ReadLangGraphShadowArtifactAggregate(now ?? DateTimeOffset.UtcNow);
+            return read.Available && read.Aggregate is not null
+                ? FormatAggregate(read.Aggregate)
+                : UnavailableAggregate;
         }
         catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException)
         {

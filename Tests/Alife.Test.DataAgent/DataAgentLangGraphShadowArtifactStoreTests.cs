@@ -21,10 +21,12 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
             "artifact-rejected", "session-1", "replay-1", DataAgentLangGraphShadowArtifactOutcome.GateRejected,
             "diff_gate_rejected", "diff gate rejected", now.AddMinutes(1)), now.AddMinutes(1));
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadLangGraphShadowArtifactAggregate(now.AddMinutes(1));
+        DataAgentLangGraphShadowArtifactReadResult read = store.ReadLangGraphShadowArtifactAggregate(now.AddMinutes(1));
+        DataAgentLangGraphShadowArtifactAggregate aggregate = read.Aggregate!;
 
         Assert.Multiple(() =>
         {
+            Assert.That(read.Available, Is.True);
             Assert.That(accepted.Written, Is.True);
             Assert.That(rejected.Written, Is.True);
             Assert.That(aggregate.Total, Is.EqualTo(2));
@@ -99,10 +101,12 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
                 $"accepted-{index:D2}", "safe", writeNow), writeNow);
         }
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now.AddMinutes(20));
+        DataAgentLangGraphShadowArtifactReadResult read = store.ReadAggregate(now.AddMinutes(20));
+        DataAgentLangGraphShadowArtifactAggregate aggregate = read.Aggregate!;
 
         Assert.Multiple(() =>
         {
+            Assert.That(read.Available, Is.True);
             Assert.That(aggregate.Total, Is.EqualTo(20));
             Assert.That(aggregate.Accepted, Is.EqualTo(20));
             Assert.That(aggregate.PerScopeLimit, Is.EqualTo(20));
@@ -173,10 +177,12 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         DataAgentLangGraphShadowArtifactStore store = new(databasePath);
         SeedExpiredArtifacts(databasePath, now);
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now);
+        DataAgentLangGraphShadowArtifactReadResult read = store.ReadAggregate(now);
+        DataAgentLangGraphShadowArtifactAggregate aggregate = read.Aggregate!;
 
         Assert.Multiple(() =>
         {
+            Assert.That(read.Available, Is.True);
             Assert.That(aggregate.Total, Is.Zero);
             Assert.That(ReadStoredRowCount(databasePath), Is.Zero);
             Assert.That(ReadExpiredRowCount(databasePath, now), Is.Zero);
@@ -370,10 +376,12 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
         store.Write(CreateArtifact("c", "session-3", "replay-3", DataAgentLangGraphShadowArtifactOutcome.Timeout, "timeout", "summary-c", now.AddMinutes(2)), now.AddMinutes(2));
         store.Write(CreateArtifact("d", "session-4", "replay-4", DataAgentLangGraphShadowArtifactOutcome.Fallback, "fallback", "summary-d", now.AddMinutes(3)), now.AddMinutes(3));
 
-        DataAgentLangGraphShadowArtifactAggregate aggregate = store.ReadAggregate(now.AddMinutes(3));
+        DataAgentLangGraphShadowArtifactReadResult read = store.ReadAggregate(now.AddMinutes(3));
+        DataAgentLangGraphShadowArtifactAggregate aggregate = read.Aggregate!;
 
         Assert.Multiple(() =>
         {
+            Assert.That(read.Available, Is.True);
             Assert.That(aggregate.Total, Is.EqualTo(4));
             Assert.That(aggregate.Accepted, Is.EqualTo(1));
             Assert.That(aggregate.ProtocolRejected, Is.EqualTo(1));
@@ -384,6 +392,23 @@ public sealed class DataAgentLangGraphShadowArtifactStoreTests
             Assert.That(aggregate.NewestCreatedAt, Is.EqualTo(now.AddMinutes(3)));
             Assert.That(aggregate.RetentionDays, Is.EqualTo(90));
             Assert.That(typeof(DataAgentLangGraphShadowArtifactAggregate).GetProperties().Select(property => property.Name), Does.Not.Contain("Summary"));
+        });
+    }
+
+    [Test]
+    public void ReadAggregatePreservesUnavailableForExistingInvalidSqliteFile()
+    {
+        string databasePath = Path.Combine(TestContext.CurrentContext.WorkDirectory, "langgraph-invalid", Guid.NewGuid().ToString("N"), "dataagent.sqlite");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
+        File.WriteAllText(databasePath, "not a sqlite database");
+        DataAgentLangGraphShadowArtifactStore store = new(databasePath);
+
+        DataAgentLangGraphShadowArtifactReadResult read = store.ReadAggregate(DateTimeOffset.UtcNow);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(read.Available, Is.False);
+            Assert.That(read.Aggregate, Is.Null);
         });
     }
 
