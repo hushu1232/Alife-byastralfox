@@ -37,9 +37,15 @@ public sealed class QChatOwnerEventDispatcher(
 
                 try
                 {
+                    string? ownerAddress = QChatAgentIdentityRegistry.CreateDefault()
+                        .ResolveByAgentId(entry.AgentId)?
+                        .Profile
+                        .OwnerAddressName;
                     string formattedMessage = QChatCommandPersonaFormatter.Format(
-                        entry.AgentId,
-                        QChatSenderRole.Owner,
+                        new QChatPersonaFeedbackContext(
+                            entry.AgentId,
+                            QChatSenderRole.Owner,
+                            ownerAddress),
                         entry.Message);
                     OneBotSendMessageResult? result = await runtimeProvider()
                         .SendPrivateMessageWithResult(entry.OwnerId, formattedMessage);

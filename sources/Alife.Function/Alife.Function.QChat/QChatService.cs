@@ -1566,12 +1566,27 @@ public partial class QChatService(
         string message)
     {
         QChatConfig config = Configuration ?? new QChatConfig();
-        string agentId = ResolveCurrentAgentId(config);
-        string formatted = QChatCommandPersonaFormatter.Format(agentId, senderRole, message);
+        QChatPersonaFeedbackContext feedbackContext = CreateFeedbackContext(
+            senderRole,
+            messageEvent.UserId,
+            ResolveCurrentBotId(config, messageEvent));
+        string formatted = QChatCommandPersonaFormatter.Format(feedbackContext, message);
         if (string.IsNullOrWhiteSpace(formatted))
             return Task.CompletedTask;
 
         return SendSingleMessageAsync(targetType, targetId, formatted.Trim());
+    }
+
+    QChatPersonaFeedbackContext CreateFeedbackContext(
+        QChatSenderRole senderRole,
+        long userId,
+        long botId)
+    {
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string agentId = ResolveCurrentAgentId(config);
+        profileRuntimeServices.UserProfiles.TryGetProfile(agentId, botId, userId, out QChatUserProfile? profile);
+        string preferredAddress = ResolvePreferredAddress(config, userId, null, agentId, botId);
+        return new QChatPersonaFeedbackContext(agentId, senderRole, preferredAddress, profile?.RelationshipLabel);
     }
 
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
@@ -1846,12 +1861,17 @@ public partial class QChatService(
         if (replySession == null)
             return;
 
-        string message = QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(
-            QChatTaskFeedbackKind.Failed,
-            "qq.file_upload",
-            fileName,
-            targetId,
-            deterministicResult.Error));
+        string message = QChatTaskFeedbackFormatter.Format(
+            new QChatTaskFeedbackContext(
+                QChatTaskFeedbackKind.Failed,
+                "qq.file_upload",
+                fileName,
+                targetId,
+                deterministicResult.Error),
+            CreateFeedbackContext(
+                replySession.SenderRole,
+                replySession.SenderId,
+                replySession.ResolvedBotId));
         try
         {
             await SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, message, streamText: false);
@@ -2015,12 +2035,17 @@ public partial class QChatService(
         if (replySession == null)
             return;
 
-        string message = QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(
-            QChatTaskFeedbackKind.Failed,
-            taskType,
-            fileName,
-            targetId,
-            result.Error));
+        string message = QChatTaskFeedbackFormatter.Format(
+            new QChatTaskFeedbackContext(
+                QChatTaskFeedbackKind.Failed,
+                taskType,
+                fileName,
+                targetId,
+                result.Error),
+            CreateFeedbackContext(
+                replySession.SenderRole,
+                replySession.SenderId,
+                replySession.ResolvedBotId));
         try
         {
             await SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, message, streamText: false);
@@ -7711,12 +7736,17 @@ public partial class QChatService(
                 await SendTextOrMediaMessageAsync(
                     OneBotMessageType.Private,
                     messageEvent.UserId,
-                    QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(
-                        QChatTaskFeedbackKind.Progress,
-                        "group-file-upload",
-                        fileName,
-                        groupId,
-                        null)),
+                    QChatTaskFeedbackFormatter.Format(
+                        new QChatTaskFeedbackContext(
+                            QChatTaskFeedbackKind.Progress,
+                            "group-file-upload",
+                            fileName,
+                            groupId,
+                            null),
+                        CreateFeedbackContext(
+                            QChatSenderRole.Owner,
+                            messageEvent.UserId,
+                            ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent))),
                     streamText: false);
             }
         }
@@ -7735,12 +7765,17 @@ public partial class QChatService(
             text
         });
 
-        string message = QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(
-            result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
-            "group-file-upload",
-            fileName,
-            groupId,
-            result.Executed ? null : BuildTaskFailureDetail(result)));
+        string message = QChatTaskFeedbackFormatter.Format(
+            new QChatTaskFeedbackContext(
+                result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
+                "group-file-upload",
+                fileName,
+                groupId,
+                result.Executed ? null : BuildTaskFailureDetail(result)),
+            CreateFeedbackContext(
+                QChatSenderRole.Owner,
+                messageEvent.UserId,
+                ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent)));
         await SendTextOrMediaMessageAsync(
             OneBotMessageType.Private,
             messageEvent.UserId,
@@ -9381,10 +9416,19 @@ public partial class QChatService(
         if (string.IsNullOrEmpty(outgoing) || IsInternalNoReplyStatus(outgoing))
             return;
 
+        string rawOutgoing = outgoing;
+
         if (TryEnsureQChatReplyTargetAllowed(replySession.MessageType, replySession.TargetId, "relation-cache-tool-result") == false)
             return;
         if (ShouldSuppressOutgoingForQuietMode(replySession.MessageType, replySession.TargetId, "relation-cache-tool-result"))
             return;
+
+        outgoing = QChatCommandPersonaFormatter.Format(
+            CreateFeedbackContext(
+                replySession.SenderRole,
+                replySession.SenderId,
+                replySession.ResolvedBotId),
+            outgoing);
 
         QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
             new QChatDeterministicTaskContext(
@@ -9399,7 +9443,7 @@ public partial class QChatService(
             WriteQChatDiagnostic("qchat-tool-result-sent", "QChat read-only tool result was sent to the current QQ session.", new {
                 replySession.MessageType,
                 replySession.TargetId,
-                message = outgoing
+                message = rawOutgoing
             });
             return;
         }

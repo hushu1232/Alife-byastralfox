@@ -7814,9 +7814,11 @@ public class QChatServiceAdapterTests
                     925402131L,
                     file.Replace('\\', '/'),
                     "hello_world.c")));
+                Assert.That(runtime.PrivateMessages[0].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002"));
                 Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("\u5728\u4f20"));
                 Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("925402131"));
-                Assert.That(runtime.PrivateMessages[1].Message, Is.EqualTo("hello_world.c \u5df2\u4e0a\u4f20\u5230 925402131 \u7fa4\u6587\u4ef6"));
+                Assert.That(runtime.PrivateMessages[1].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002"));
+                Assert.That(runtime.PrivateMessages[1].Message, Does.Contain("hello_world.c \u5df2\u4e0a\u4f20\u5230 925402131 \u7fa4\u6587\u4ef6"));
             });
         }
         finally
@@ -16031,6 +16033,65 @@ public class QChatServiceAdapterTests
             Calls++;
             LastRequest = request;
             return Task.FromResult(snapshot);
+        }
+    }
+
+    [Test]
+    public async Task MixuPredecessorReceivesPersonalizedCSharpPermissionDenialWithoutOwnerPrivileges()
+    {
+        string profileRoot = Path.Combine(Path.GetTempPath(), "alife-mixu-predecessor-profile-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            QChatUserProfileService profiles = new(profileRoot);
+            profiles.SetProfile("mixu", 3340947887, new QChatUserProfile(
+                UserId: 2001,
+                PreferredNickname: "\u524d\u8f88",
+                RelationshipLabel: "predecessor",
+                Source: "local-owner-profile",
+                Confidence: 1f));
+            FakeOneBotRuntime runtime = new();
+            CapturingQChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                runtime,
+                profiles)
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 3340947887,
+                    OwnerId = 1001,
+                    AllowPrivateGuestChat = true,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            QChatInboundMessage? received = null;
+            service.InboundChatDispatcher = async message =>
+            {
+                received = message;
+                await service.QChatFileList();
+            };
+            StartService(service, "\u54aa\u7eea");
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 3340947887,
+                UserId = 2001,
+                RawMessage = "list files"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(received, Is.Not.Null);
+                Assert.That(received!.SenderRole, Is.EqualTo(QChatSenderRole.PrivateGuest));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("\u524d\u8f88"));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("\u53ea\u8ba4\u4e3b\u4eba\u8d26\u53f7"));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(profileRoot))
+                Directory.Delete(profileRoot, recursive: true);
         }
     }
 
