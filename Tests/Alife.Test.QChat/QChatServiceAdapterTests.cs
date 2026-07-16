@@ -7832,11 +7832,15 @@ public class QChatServiceAdapterTests
     {
         string originalCurrentDirectory = Environment.CurrentDirectory;
         string root = Path.Combine(Path.GetTempPath(), "alife-qchat-owner-private-to-group-failure-tests", Guid.NewGuid().ToString("N"));
+        string personaRoot = Path.Combine(Path.GetTempPath(), "alife-qchat-persona-feedback-tests", Guid.NewGuid().ToString("N"));
         string outputDirectory = Path.Combine(root, "output");
         Directory.CreateDirectory(outputDirectory);
         File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
         string file = Path.Combine(outputDirectory, "hello_world.c");
         await File.WriteAllTextAsync(file, "#include <stdio.h>\n");
+        string personaPath = Path.Combine(personaRoot, "Character", "\u590f\u7fbd", "Memory", "Persona", "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(personaPath)!);
+        await File.WriteAllTextAsync(personaPath, "\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002");
 
         try
         {
@@ -7854,7 +7858,9 @@ public class QChatServiceAdapterTests
                 EnableBalancedTextStreaming = false,
                 EnableTaskProgressFeedback = true,
                 TaskProgressFeedbackMilliseconds = 25
-            });
+            },
+            personaMemoryContextProvider: new QChatPersonaMemoryContextProvider(personaRoot),
+            characterName: "\u590f\u7fbd");
             int dispatchCount = 0;
             service.InboundChatDispatcher = _ =>
             {
@@ -7882,6 +7888,8 @@ public class QChatServiceAdapterTests
         finally
         {
             Environment.CurrentDirectory = originalCurrentDirectory;
+            if (Directory.Exists(personaRoot))
+                Directory.Delete(personaRoot, recursive: true);
         }
     }
 
@@ -16123,7 +16131,9 @@ public class QChatServiceAdapterTests
         AgentBrowserSiteExperienceStore? browserSiteExperienceStore = null,
         AgentBrowserMediaOutputService? browserMediaOutputService = null,
         Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
-        XmlFunctionCaller? functionCaller = null)
+        XmlFunctionCaller? functionCaller = null,
+        QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
+        string characterName = "QChatTest")
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         functionCaller ??= new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>());
@@ -16155,11 +16165,12 @@ public class QChatServiceAdapterTests
             browserProvider: browserProvider,
             browserSiteExperienceStore: browserSiteExperienceStore,
             browserMediaOutputService: browserMediaOutputService,
-            voiceWarmupEndpointProbe: voiceWarmupEndpointProbe)
+            voiceWarmupEndpointProbe: voiceWarmupEndpointProbe,
+            personaMemoryContextProvider: personaMemoryContextProvider)
         {
             Configuration = config
         };
-        StartService(service);
+        StartService(service, characterName);
         return service;
     }
 

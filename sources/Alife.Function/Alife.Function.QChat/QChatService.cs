@@ -1528,13 +1528,15 @@ public partial class QChatService(
         long targetId,
         string message,
         bool streamText,
-        bool personaDisclosureChecked = false)
+        bool personaDisclosureChecked = false,
+        string? personaDisclosureCandidate = null)
     {
         if (type == OneBotMessageType.Group)
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
-        if (personaDisclosureChecked == false && personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, message))
+        string disclosureCandidate = personaDisclosureCandidate ?? message;
+        if (personaDisclosureChecked == false && personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, disclosureCandidate))
         {
             WriteQChatDiagnostic("persona-memory-disclosure-blocked", "Blocked an outgoing persona-memory disclosure.", new {
                 type,
@@ -1861,20 +1863,27 @@ public partial class QChatService(
         if (replySession == null)
             return;
 
+        QChatTaskFeedbackContext feedback = new(
+            QChatTaskFeedbackKind.Failed,
+            "qq.file_upload",
+            fileName,
+            targetId,
+            deterministicResult.Error);
+        string feedbackBody = QChatTaskFeedbackFormatter.Format(feedback);
         string message = QChatTaskFeedbackFormatter.Format(
-            new QChatTaskFeedbackContext(
-                QChatTaskFeedbackKind.Failed,
-                "qq.file_upload",
-                fileName,
-                targetId,
-                deterministicResult.Error),
+            feedback,
             CreateFeedbackContext(
                 replySession.SenderRole,
                 replySession.SenderId,
                 replySession.ResolvedBotId));
         try
         {
-            await SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, message, streamText: false);
+            await SendTextOrMediaMessageAsync(
+                replySession.MessageType,
+                replySession.TargetId,
+                message,
+                streamText: false,
+                personaDisclosureCandidate: feedbackBody);
         }
         catch (Exception ex)
         {
@@ -2035,20 +2044,27 @@ public partial class QChatService(
         if (replySession == null)
             return;
 
+        QChatTaskFeedbackContext feedback = new(
+            QChatTaskFeedbackKind.Failed,
+            taskType,
+            fileName,
+            targetId,
+            result.Error);
+        string feedbackBody = QChatTaskFeedbackFormatter.Format(feedback);
         string message = QChatTaskFeedbackFormatter.Format(
-            new QChatTaskFeedbackContext(
-                QChatTaskFeedbackKind.Failed,
-                taskType,
-                fileName,
-                targetId,
-                result.Error),
+            feedback,
             CreateFeedbackContext(
                 replySession.SenderRole,
                 replySession.SenderId,
                 replySession.ResolvedBotId));
         try
         {
-            await SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, message, streamText: false);
+            await SendTextOrMediaMessageAsync(
+                replySession.MessageType,
+                replySession.TargetId,
+                message,
+                streamText: false,
+                personaDisclosureCandidate: feedbackBody);
         }
         catch (Exception ex)
         {
@@ -7733,21 +7749,24 @@ public partial class QChatService(
             if (await Task.WhenAny(uploadTask, delayTask) == delayTask)
             {
                 sentProgress = true;
+                QChatTaskFeedbackContext progressFeedback = new(
+                    QChatTaskFeedbackKind.Progress,
+                    "group-file-upload",
+                    fileName,
+                    groupId,
+                    null);
+                string progressBody = QChatTaskFeedbackFormatter.Format(progressFeedback);
                 await SendTextOrMediaMessageAsync(
                     OneBotMessageType.Private,
                     messageEvent.UserId,
                     QChatTaskFeedbackFormatter.Format(
-                        new QChatTaskFeedbackContext(
-                            QChatTaskFeedbackKind.Progress,
-                            "group-file-upload",
-                            fileName,
-                            groupId,
-                            null),
+                        progressFeedback,
                         CreateFeedbackContext(
                             QChatSenderRole.Owner,
                             messageEvent.UserId,
                             ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent))),
-                    streamText: false);
+                    streamText: false,
+                    personaDisclosureCandidate: progressBody);
             }
         }
 
@@ -7765,13 +7784,15 @@ public partial class QChatService(
             text
         });
 
+        QChatTaskFeedbackContext taskFeedback = new(
+            result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
+            "group-file-upload",
+            fileName,
+            groupId,
+            result.Executed ? null : BuildTaskFailureDetail(result));
+        string taskFeedbackBody = QChatTaskFeedbackFormatter.Format(taskFeedback);
         string message = QChatTaskFeedbackFormatter.Format(
-            new QChatTaskFeedbackContext(
-                result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
-                "group-file-upload",
-                fileName,
-                groupId,
-                result.Executed ? null : BuildTaskFailureDetail(result)),
+            taskFeedback,
             CreateFeedbackContext(
                 QChatSenderRole.Owner,
                 messageEvent.UserId,
@@ -7780,7 +7801,8 @@ public partial class QChatService(
             OneBotMessageType.Private,
             messageEvent.UserId,
             message,
-            streamText: false);
+            streamText: false,
+            personaDisclosureCandidate: taskFeedbackBody);
         if (Configuration?.EnableContinuationGate == true)
         {
             QChatContinuationDecision continuation = QChatContinuationPolicy.Decide(new QChatContinuationContext(
@@ -9436,7 +9458,12 @@ public partial class QChatService(
                 FileName: null,
                 TargetType: replySession.MessageType,
                 TargetId: replySession.TargetId),
-            () => SendTextOrMediaMessageAsync(replySession.MessageType, replySession.TargetId, outgoing, streamText: true));
+            () => SendTextOrMediaMessageAsync(
+                replySession.MessageType,
+                replySession.TargetId,
+                outgoing,
+                streamText: true,
+                personaDisclosureCandidate: rawOutgoing));
 
         if (result.Succeeded)
         {
