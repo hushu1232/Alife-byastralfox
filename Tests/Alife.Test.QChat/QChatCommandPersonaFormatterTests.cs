@@ -74,6 +74,20 @@ public sealed class QChatCommandPersonaFormatterTests
     }
 
     [Test]
+    public void FormatForMixuPredecessorKeepsCommandBodyAndUsesRespectfulLead()
+    {
+        QChatPersonaFeedbackContext context = new("mixu", QChatSenderRole.PrivateGuest, "\u524d\u8f88", "predecessor");
+
+        string formatted = QChatCommandPersonaFormatter.Format(context, "diagnostic=ready");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.Contain("\u524d\u8f88"));
+            Assert.That(formatted, Does.Contain("diagnostic=ready"));
+        });
+    }
+
+    [Test]
     public void FormatReturnsEmptyForEmptyInput()
     {
         Assert.That(QChatCommandPersonaFormatter.Format("xiayu", QChatSenderRole.Owner, "   "), Is.Empty);

@@ -6,22 +6,21 @@ public static class QChatCommandPersonaFormatter
 {
     public static string Format(string? agentId, QChatSenderRole senderRole, string? text)
     {
+        return Format(new QChatPersonaFeedbackContext(agentId, senderRole), text);
+    }
+
+    public static string Format(QChatPersonaFeedbackContext context, string? text)
+    {
         string body = text?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(body))
             return "";
 
-        string normalizedAgent = string.IsNullOrWhiteSpace(agentId) ? "" : agentId.Trim().ToLowerInvariant();
-        string lead = normalizedAgent switch
-        {
-            "xiayu" when senderRole == QChatSenderRole.Owner => "\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002",
-            "mixu" when senderRole == QChatSenderRole.Owner => "\u4e3b\u4eba\uff0c\u72b6\u6001\u5728\u8fd9\u91cc\u3002",
-            _ => "\u72b6\u6001\u5982\u4e0b\u3002"
-        };
+        string normalizedAgent = string.IsNullOrWhiteSpace(context.AgentId) ? "" : context.AgentId.Trim().ToLowerInvariant();
 
         if (IsDenial(body))
             body = FormatDenial(normalizedAgent, body);
 
-        return $"{lead}{Environment.NewLine}{body}";
+        return QChatPersonaFeedback.Prefix(context, body);
     }
 
     static string FormatDenial(string normalizedAgent, string text)

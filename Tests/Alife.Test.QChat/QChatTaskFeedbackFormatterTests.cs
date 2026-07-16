@@ -77,6 +77,27 @@ public class QChatTaskFeedbackFormatterTests
     }
 
     [Test]
+    public void FormatTaskFeedbackForMixuMotherKeepsFileAndFailureDetail()
+    {
+        QChatPersonaFeedbackContext context = new("mixu", QChatSenderRole.PrivateGuest, "\u5988\u5988", "mother");
+        string message = QChatTaskFeedbackFormatter.Format(
+            new QChatTaskFeedbackContext(
+                QChatTaskFeedbackKind.Failed,
+                "qq.file_upload",
+                "report.txt",
+                42,
+                "gateway-timeout"),
+            context);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("\u5988\u5988"));
+            Assert.That(message, Does.Contain("report.txt"));
+            Assert.That(message, Does.Contain("gateway-timeout"));
+        });
+    }
+
+    [Test]
     public void FormatUploadUncertainReportsPossibleLateCompletion()
     {
         string message = QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(

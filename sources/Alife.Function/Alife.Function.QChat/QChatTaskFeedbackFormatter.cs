@@ -43,6 +43,11 @@ public static class QChatTaskFeedbackFormatter
         };
     }
 
+    public static string Format(QChatTaskFeedbackContext context, QChatPersonaFeedbackContext personaContext)
+    {
+        return QChatPersonaFeedback.Prefix(personaContext, Format(context));
+    }
+
     static string FormatTarget(QChatTaskFeedbackContext context)
     {
         if (context.TargetId.HasValue == false)
