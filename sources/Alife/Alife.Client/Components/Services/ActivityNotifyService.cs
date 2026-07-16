@@ -22,6 +22,13 @@ public sealed record ActivityActivationStatus(
     ActivityActivationState State);
 
 /// <summary>
+/// A fixed, non-sensitive display representation of an activity state.
+/// </summary>
+public sealed record ActivityActivationPresentation(
+    string Label,
+    string CssClass);
+
+/// <summary>
 /// Provides safe lifecycle state notifications for client UI components.
 /// </summary>
 public class ActivityNotifyService
@@ -46,6 +53,17 @@ public class ActivityNotifyService
             return states.TryGetValue(characterName, out ActivityActivationState state)
                 ? state
                 : null;
+    }
+
+    public static ActivityActivationPresentation? GetActivationPresentation(ActivityActivationState? state)
+    {
+        return state switch {
+            ActivityActivationState.Initializing => new("Initializing", "status-initializing"),
+            ActivityActivationState.Active => new("Active", "status-active"),
+            ActivityActivationState.Failed => new("Failed", "status-failed"),
+            ActivityActivationState.Destroyed => new("Stopped", "status-stopped"),
+            _ => null
+        };
     }
 
     void Publish(string characterName, ActivityActivationState state)

@@ -58,6 +58,23 @@ public class ActivityNotifyServiceTests
         Assert.That(service.GetActivationState("UnknownCharacter"), Is.Null);
     }
 
+    [TestCase(ActivityActivationState.Initializing, "Initializing", "status-initializing")]
+    [TestCase(ActivityActivationState.Active, "Active", "status-active")]
+    [TestCase(ActivityActivationState.Failed, "Failed", "status-failed")]
+    [TestCase(ActivityActivationState.Destroyed, "Stopped", "status-stopped")]
+    public void ActivationStateHasFixedSafePresentation(ActivityActivationState state, string label, string cssClass)
+    {
+        ActivityActivationPresentation? presentation = ActivityNotifyService.GetActivationPresentation(state);
+
+        Assert.That(presentation, Is.EqualTo(new ActivityActivationPresentation(label, cssClass)));
+    }
+
+    [Test]
+    public void MissingActivationStateHasNoPresentation()
+    {
+        Assert.That(ActivityNotifyService.GetActivationPresentation(null), Is.Null);
+    }
+
     static void RaiseEvent(object target, string eventName, params object?[] arguments)
     {
         FieldInfo? field = target.GetType().GetField(eventName, BindingFlags.Instance | BindingFlags.NonPublic);

@@ -24,17 +24,20 @@
     <!-- 角色列表 -->
     @foreach (Character character in CharacterSystem.GetAllCharacters())
     {
-        bool isActive = ChatActivitySystem.IsActivated(character);
-        <Tooltip Title="@(character.Name)" Placement="@Placement.Right">
+        ActivityActivationState? activationState = ActivityNotifyService.GetActivationState(character.Name);
+        ActivityActivationPresentation? activityPresentation = ActivityNotifyService.GetActivationPresentation(activationState);
+        <Tooltip Title="@(activityPresentation == null ? character.Name : $"{character.Name} - {activityPresentation.Label}")" Placement="@Placement.Right">
             <NavLink href="@($"agent/{character.Name}")" Class="nav-item-icon character-item" ActiveClass="active">
                 <div style="position: relative; display: flex; align-items: center; justify-content: center;">
                     <Avatar Size="@AvatarSize.Large" Style="background: #1890ff; color: #fff; font-weight: bold;">
                         @(character.Name.FirstOrDefault())
                     </Avatar>
 
-                    @if (isActive)
+                    @if (activityPresentation != null)
                     {
-                        <span class="status-dot status-online"
+                        <span class="status-dot @activityPresentation.CssClass"
+                              aria-label="@activityPresentation.Label"
+                              title="@activityPresentation.Label"
                               style="position: absolute; bottom: 0; right: 0;"></span>
                     }
                 </div>
@@ -63,20 +66,26 @@
         transform: scale(1.1);
     }
 
+    .status-initializing { background-color: #1890ff; }
+    .status-active { background-color: #52c41a; }
+    .status-failed { background-color: #ff4d4f; }
+    .status-stopped { background-color: #8c8c8c; }
+
 </style>
 
 @code {
     protected override void OnInitialized()
     {
         CharacterSystem.OnChanged += Refresh;
-        ActivityNotifyService.OnChanged += Refresh;
+        ActivityNotifyService.OnActivationStateChanged += RefreshActivationState;
     }
 
     void Refresh() => InvokeAsync(StateHasChanged);
+    void RefreshActivationState(ActivityActivationStatus _) => InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         CharacterSystem.OnChanged -= Refresh;
-        ActivityNotifyService.OnChanged -= Refresh;
+        ActivityNotifyService.OnActivationStateChanged -= RefreshActivationState;
     }
 }
