@@ -95,14 +95,4 @@ public static class AlifePath
         Directory.CreateDirectory(RuntimeFolderPath);
         Directory.CreateDirectory(TempFolderPath);
     }
-    private static string ResolvePathOverride(string? pathOverride, string defaultPath, string parameterName)
-    {
-        if (string.IsNullOrEmpty(pathOverride))
-            return defaultPath;
-
-        if (!Path.IsPathFullyQualified(pathOverride))
-            throw new ArgumentException("Local path overrides must be fully qualified.", parameterName);
-
-        return Path.GetFullPath(pathOverride);
-    }
 }
