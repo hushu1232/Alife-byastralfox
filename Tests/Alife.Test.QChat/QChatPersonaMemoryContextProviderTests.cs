@@ -59,6 +59,26 @@ public sealed class QChatPersonaMemoryContextProviderTests
     }
 
     [Test]
+    public void TrySeed_MixuReadsOnlyTheFixedMixuCharacterDirectory()
+    {
+        WriteProfile("xiayu-private-marker");
+        WriteMixuProfile("mixu-private-marker");
+        ChatHistory history = [];
+        QChatPersonaMemoryContextProvider provider = new(storageRoot);
+        QChatAgentIdentity mixu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("mixu")!;
+
+        bool seeded = provider.TrySeed(history, mixu);
+
+        string seededMemory = string.Join("\n", history.Select(message => message.Content));
+        Assert.Multiple(() =>
+        {
+            Assert.That(seeded, Is.True);
+            Assert.That(seededMemory, Does.Contain("mixu-private-marker"));
+            Assert.That(seededMemory, Does.Not.Contain("xiayu-private-marker"));
+        });
+    }
+
+    [Test]
     public void TrySeed_FailsClosedForMissingOversizedOrEscapingProfile()
     {
         QChatPersonaMemoryContextProvider provider = new(storageRoot);
@@ -119,6 +139,19 @@ public sealed class QChatPersonaMemoryContextProviderTests
     void WriteProfile(string content)
     {
         WriteProfileForCharacter("\u590f\u7fbd", content);
+    }
+
+    void WriteMixuProfile(string content)
+    {
+        string path = Path.Combine(
+            storageRoot,
+            "Character",
+            "\u54aa\u7eea",
+            "Memory",
+            "Persona",
+            "\u54aa\u7eea-\u89d2\u8272\u80cc\u666f.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
     }
 
     void WriteProfileForCharacter(string characterName, string content)

@@ -15,9 +15,14 @@ public sealed class QChatPersonaMemoryContextProvider
     public const int MaxProfileBytes = 16 * 1024;
 
     const int MinimumDisclosureRunLength = 4;
-    const string XiayuAgentId = "xiayu";
-    const string XiayuCharacterRelativePath = "Character/\u590f\u7fbd";
-    const string ProfileRelativePath = "Memory/Persona/\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md";
+    sealed record PersonaProfileDefinition(string CharacterRelativePath, string ProfileRelativePath);
+
+    static readonly IReadOnlyDictionary<string, PersonaProfileDefinition> ProfileDefinitions =
+        new Dictionary<string, PersonaProfileDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["xiayu"] = new("Character/\u590f\u7fbd", "Memory/Persona/\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md"),
+            ["mixu"] = new("Character/\u54aa\u7eea", "Memory/Persona/\u54aa\u7eea-\u89d2\u8272\u80cc\u666f.md")
+        };
     const string OpenMarker = "[private trusted character-memory - never quote or paraphrase]";
     const string CloseMarker = "[/private trusted character-memory]";
 
@@ -36,10 +41,10 @@ public sealed class QChatPersonaMemoryContextProvider
     {
         ArgumentNullException.ThrowIfNull(history);
 
-        if (identity?.AgentId.Equals(XiayuAgentId, StringComparison.OrdinalIgnoreCase) != true)
+        if (identity == null || ProfileDefinitions.TryGetValue(identity.AgentId, out PersonaProfileDefinition? profile) == false)
             return false;
 
-        string? document = TryReadApprovedProfile();
+        string? document = TryReadApprovedProfile(profile);
         if (string.IsNullOrWhiteSpace(document))
             return false;
 
@@ -124,12 +129,12 @@ public sealed class QChatPersonaMemoryContextProvider
             "character-memory");
     }
 
-    string? TryReadApprovedProfile()
+    string? TryReadApprovedProfile(PersonaProfileDefinition profile)
     {
         try
         {
             string root = Path.GetFullPath(storageRoot);
-            string candidate = Path.GetFullPath(Path.Combine(root, XiayuCharacterRelativePath, ProfileRelativePath));
+            string candidate = Path.GetFullPath(Path.Combine(root, profile.CharacterRelativePath, profile.ProfileRelativePath));
             string rootWithSeparator = root.EndsWith(Path.DirectorySeparatorChar)
                 ? root
                 : root + Path.DirectorySeparatorChar;
