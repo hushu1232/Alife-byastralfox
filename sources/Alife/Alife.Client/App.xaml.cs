@@ -67,17 +67,27 @@ public partial class App
 
         ServiceProvider = services.BuildServiceProvider();
         ServiceProvider.GetRequiredService<ChatMessageService>();
-        _ = Task.Run(async () => {
-            try
-            {
-                await ServiceProvider.GetRequiredService<ChatActivitySystem>().ActivateAutoActivateCharacters();
-            }
-            catch (Exception ex)
-            {
-                AlifeTerminal.LogError(ex.ToString());
-            }
-        });
-        ServiceProvider.GetRequiredService<MainWindow>().Show();
+        ServiceProvider.GetRequiredService<ActivityNotifyService>();
+
+        MainWindow mainWindow = ServiceProvider.GetRequiredService<MainWindow>();
+        int automaticActivationScheduled = 0;
+        mainWindow.Loaded += (_, _) => {
+            if (Interlocked.Exchange(ref automaticActivationScheduled, 1) != 0)
+                return;
+
+            _ = Task.Run(async () => {
+                try
+                {
+                    await ServiceProvider.GetRequiredService<ChatActivitySystem>().ActivateAutoActivateCharacters();
+                }
+                catch (Exception ex)
+                {
+                    AlifeTerminal.LogError($"Automatic character activation failed: {ex.GetType().Name}");
+                }
+            });
+        };
+
+        mainWindow.Show();
     }
 
 #if DEBUG

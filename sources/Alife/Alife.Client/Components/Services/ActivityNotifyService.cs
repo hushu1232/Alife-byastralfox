@@ -3,16 +3,112 @@ using Alife.Framework;
 namespace Alife.Components.Services;
 
 /// <summary>
-/// UI层专属的活动状态变更通知中心。
-/// 由于不直接修改Framework，该服务用于显式通知UI组件（如侧边栏）刷新状态。
+/// A UI-safe projection of a character activity lifecycle state.
+/// </summary>
+public enum ActivityActivationState
+{
+    Initializing,
+    Active,
+    Failed,
+    Destroyed
+}
+
+/// <summary>
+/// Contains only the character UI identity and lifecycle state. It deliberately
+/// carries no exception, diagnostic, DataAgent, or LangGraph payload.
+/// </summary>
+public sealed record ActivityActivationStatus(
+    string CharacterName,
+    ActivityActivationState State);
+
+/// <summary>
+/// A fixed, non-sensitive display representation of an activity state.
+/// </summary>
+public sealed record ActivityActivationPresentation(
+    string Label,
+    string CssClass);
+
+/// <summary>
+/// Provides safe lifecycle state notifications for client UI components.
 /// </summary>
 public class ActivityNotifyService
 {
     public event Action? OnChanged;
+    public event Action<ActivityActivationStatus>? OnActivationStateChanged;
+
+    readonly Dictionary<string, ActivityActivationState> states = new(StringComparer.Ordinal);
+    readonly object stateGate = new();
 
     public ActivityNotifyService(ChatActivitySystem system)
     {
-        system.Activated += _ => OnChanged?.Invoke();
-        system.Destroyed += _ => OnChanged?.Invoke();
+        system.Activating += character => Publish(character.Name, ActivityActivationState.Initializing);
+        system.Activated += activity => Publish(activity.Character.Name, ActivityActivationState.Active);
+        system.ActivationFailed += (character, _) => Publish(character.Name, ActivityActivationState.Failed);
+        system.Destroyed += activity => Publish(activity.Character.Name, ActivityActivationState.Destroyed);
+    }
+
+    public ActivityActivationState? GetActivationState(string characterName)
+    {
+        lock (stateGate)
+            return states.TryGetValue(characterName, out ActivityActivationState state)
+                ? state
+                : null;
+    }
+
+    public static ActivityActivationPresentation? GetActivationPresentation(ActivityActivationState? state)
+    {
+        return state switch {
+            ActivityActivationState.Initializing => new("Initializing", "status-initializing"),
+            ActivityActivationState.Active => new("Active", "status-active"),
+            ActivityActivationState.Failed => new("Failed", "status-failed"),
+            ActivityActivationState.Destroyed => new("Stopped", "status-stopped"),
+            _ => null
+        };
+    }
+
+    void Publish(string characterName, ActivityActivationState state)
+    {
+        ActivityActivationStatus status = new(characterName, state);
+        lock (stateGate)
+            states[characterName] = state;
+
+        NotifySafely(OnActivationStateChanged, status);
+        NotifySafely(OnChanged);
+    }
+
+    static void NotifySafely(Action? handlers)
+    {
+        if (handlers == null)
+            return;
+
+        foreach (Action handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler();
+            }
+            catch
+            {
+                // UI refresh listeners must never change the activation result.
+            }
+        }
+    }
+
+    static void NotifySafely(Action<ActivityActivationStatus>? handlers, ActivityActivationStatus status)
+    {
+        if (handlers == null)
+            return;
+
+        foreach (Action<ActivityActivationStatus> handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                handler(status);
+            }
+            catch
+            {
+                // UI state listeners must never change the activation result.
+            }
+        }
     }
 }
