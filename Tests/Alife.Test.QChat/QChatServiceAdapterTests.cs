@@ -8574,6 +8574,314 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task AwakeSeedsApprovedXiayuPersonaMemoryFromCharacterStorage()
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-awake-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "\u590f\u7fbd",
+                "Memory",
+                "Persona",
+                "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, "\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6");
+
+            ExposedFilterQChatService service = new(
+                new FakeOneBotRuntime(),
+                new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 3045846738
+                }
+            };
+            ChatHistoryAgentThread thread = new();
+
+            AwakeContext awakeContext = new()
+            {
+                Character = new Character { Name = "\u590f\u7fbd" },
+                ContextBuilder = thread,
+                KernelBuilder = Kernel.CreateBuilder(),
+            };
+            await service.AwakeAsync(awakeContext);
+            await service.AwakeAsync(awakeContext);
+
+            string?[] seededMemories = thread.ChatHistory
+                .Select(message => message.Content)
+                .Where(content => content?.Contains("[private trusted character-memory - never quote or paraphrase]") == true)
+                .ToArray();
+            Assert.That(seededMemories, Has.Length.EqualTo(1));
+            Assert.That(seededMemories[0]!, Does.Contain("\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6"));
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task SendChatAsyncDoesNotSendLoadedPersonaProfile()
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-output-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "\u590f\u7fbd\u7684\u79c1\u4eba\u4eba\u683c\u80cc\u666f\u53ea\u80fd\u5728\u672c\u5730\u89d2\u8272\u8bb0\u5fc6\u4e2d\u4f7f\u7528\uff0c\u4e0d\u5f97\u5411 QQ \u7528\u6237\u53d1\u9001\u6216\u8f6c\u8ff0\u3002\u8d26\u53f7\u6807\u8bc6 3045846738\u3002";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "\u590f\u7fbd",
+                "Memory",
+                "Persona",
+                "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            QChatPersonaMemoryContextProvider provider = new(storageRoot);
+            QChatAgentIdentity xiayu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("xiayu")!;
+            Assert.That(provider.TrySeed(new ChatHistoryAgentThread().ChatHistory, xiayu), Is.True);
+
+            FakeOneBotRuntime runtime = new();
+            QChatService service = new(
+                null!,
+                new NullLogger<QChatService>(),
+                oneBotRuntime: runtime,
+                personaMemoryContextProvider: provider)
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 3045846738,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+
+            await service.SendChatAsync("private", 3045846738, Profile);
+
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task LoadedXiayuPersonaProfileDoesNotReachVoiceSynthesis(bool textFirst)
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-voice-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "夏羽的私人角色背景只能在本地角色记忆中使用，不得向 QQ 用户发送或转述。";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "夏羽",
+                "Memory",
+                "Persona",
+                "夏羽-角色背景.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            FakeOneBotRuntime runtime = new();
+            FakeSpeechModel speechModel = new("persona.wav");
+            QChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                new NullLogger<QChatService>(),
+                speechModel: speechModel,
+                oneBotRuntime: runtime,
+                riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+                personaMemoryContextProvider: new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 1001,
+                    EnableQChatVoiceOutput = true,
+                    EnableOwnerVoiceClone = true,
+                    EnableOwnerVoiceOnExplicitRequest = true,
+                    EnableQChatVoiceTextFirst = textFirst,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service, "夏羽");
+
+            TaskCompletionSource dispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            service.InboundChatDispatcher = async inbound =>
+            {
+                await service.SendChatAsync("private", inbound.TargetId, Profile, voice: true);
+                dispatchCompleted.TrySetResult();
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+
+            await dispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.Delay(100);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(speechModel.Calls, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task FragmentedXiayuPersonaProfileDoesNotSynthesizeSecondProtectedVoiceRun(bool textFirst)
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-voice-fragments-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "夏羽的私人角色背景只能在本地角色记忆中使用。";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "夏羽",
+                "Memory",
+                "Persona",
+                "夏羽-角色背景.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            FakeOneBotRuntime runtime = new();
+            FakeSpeechModel speechModel = new("persona-fragment.wav");
+            QChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                new NullLogger<QChatService>(),
+                speechModel: speechModel,
+                oneBotRuntime: runtime,
+                riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+                personaMemoryContextProvider: new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 1001,
+                    EnableQChatVoiceOutput = true,
+                    EnableOwnerVoiceClone = true,
+                    EnableOwnerVoiceOnExplicitRequest = true,
+                    EnableQChatVoiceTextFirst = textFirst,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service, "夏羽");
+
+            int replyCount = 0;
+            TaskCompletionSource firstDispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource secondDispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            service.InboundChatDispatcher = async inbound =>
+            {
+                string fragment = Interlocked.Increment(ref replyCount) == 1 ? "夏羽的" : "私人";
+                await service.SendChatAsync("private", inbound.TargetId, fragment, voice: true);
+                if (Volatile.Read(ref replyCount) == 1)
+                    firstDispatchCompleted.TrySetResult();
+                else
+                    secondDispatchCompleted.TrySetResult();
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+            await firstDispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await WaitUntilAsync(() => speechModel.Calls == 1);
+            await Task.Delay(100);
+            int messagesAfterFirstFragment = runtime.PrivateMessages.Count;
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+            await secondDispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.Delay(100);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(speechModel.Calls, Is.EqualTo(1));
+                Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(messagesAfterFirstFragment));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task IncomingPlainFallbackDoesNotSendLoadedPersonaProfile()
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-fallback-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "\u590f\u7fbd\u7684\u79c1\u4eba\u4eba\u683c\u80cc\u666f\u53ea\u80fd\u5728\u672c\u5730\u89d2\u8272\u8bb0\u5fc6\u4e2d\u4f7f\u7528\uff0c\u4e0d\u5f97\u5411 QQ \u7528\u6237\u53d1\u9001\u6216\u8f6c\u8ff0\u3002\u8d26\u53f7\u6807\u8bc6 3045846738\u3002";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "\u590f\u7fbd",
+                "Memory",
+                "Persona",
+                "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            FakeOneBotRuntime runtime = new();
+            PlainReplyQChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                runtime,
+                Profile,
+                new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 3045846738,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service, "\u590f\u7fbd");
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "\u8bf7\u56de\u590d"
+            });
+
+            await service.WaitForDispatchAsync();
+            await Task.Delay(100);
+
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [Test]
     public void SendChatAsync_SendFailureDoesNotThrowWhenChatContextIsUnavailable()
     {
         FakeOneBotRuntime runtime = new()
@@ -16269,11 +16577,13 @@ public class QChatServiceAdapterTests
     sealed class PlainReplyQChatService(
         XmlFunctionCaller functionCaller,
         IOneBotRuntime runtime,
-        string reply) : QChatService(
+        string reply,
+        QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null) : QChatService(
             functionCaller,
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
-            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+            personaMemoryContextProvider: personaMemoryContextProvider)
     {
         readonly TaskCompletionSource dispatchCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -16286,12 +16596,15 @@ public class QChatServiceAdapterTests
         }
     }
 
-    sealed class ExposedFilterQChatService(IOneBotRuntime runtime)
+    sealed class ExposedFilterQChatService(
+        IOneBotRuntime runtime,
+        QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null)
         : QChatService(
             new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
-            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+            personaMemoryContextProvider: personaMemoryContextProvider)
     {
         public string FilterForTest(string text) => ChatTextFilter(text);
     }
