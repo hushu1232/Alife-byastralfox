@@ -126,6 +126,42 @@ public class ChatActivityActivationDiagnosticsTests
         });
     }
 
+    [Test]
+    public async Task ActivateAutoActivateCharactersDoesNotStartTheSameCharacterTwiceConcurrently()
+    {
+        await WithTemporaryStorageAsync(async () => {
+            StorageSystem storage = new();
+            CharacterSystem characterSystem = new(storage);
+            ConfigurationSystem configurationSystem = new(storage);
+            ModuleSystem moduleSystem = new(storage, new NullLogger<ModuleSystem>());
+            ChatActivitySystem activitySystem = new(characterSystem, configurationSystem, moduleSystem, storage);
+            Character character = characterSystem.CreateCharacter($"ConcurrentAutoActivate-{Guid.NewGuid():N}");
+            character.AutoActivate = true;
+            character.Modules.Clear();
+            characterSystem.SaveCharacter(character);
+
+            int starts = 0;
+            TaskCompletionSource firstActivationStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource releaseFirstActivation = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            activitySystem.Activating += _ => {
+                if (Interlocked.Increment(ref starts) == 1)
+                {
+                    firstActivationStarted.SetResult();
+                    releaseFirstActivation.Task.GetAwaiter().GetResult();
+                }
+            };
+
+            Task firstActivation = Task.Run(activitySystem.ActivateAutoActivateCharacters);
+            await firstActivationStarted.Task;
+            Task secondActivation = activitySystem.ActivateAutoActivateCharacters();
+            releaseFirstActivation.SetResult();
+            await Task.WhenAll(firstActivation, secondActivation);
+            await activitySystem.ActivateAutoActivateCharacters();
+
+            Assert.That(starts, Is.EqualTo(2), "A failed activation must release the character for a later retry.");
+        });
+    }
+
     static async Task WithTemporaryStorageAsync(Func<Task> test)
     {
         string previousStorage = AlifePath.StorageFolderPath;
