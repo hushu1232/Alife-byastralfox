@@ -8671,6 +8671,164 @@ public class QChatServiceAdapterTests
         }
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task LoadedXiayuPersonaProfileDoesNotReachVoiceSynthesis(bool textFirst)
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-voice-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "夏羽的私人角色背景只能在本地角色记忆中使用，不得向 QQ 用户发送或转述。";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "夏羽",
+                "Memory",
+                "Persona",
+                "夏羽-角色背景.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            FakeOneBotRuntime runtime = new();
+            FakeSpeechModel speechModel = new("persona.wav");
+            QChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                new NullLogger<QChatService>(),
+                speechModel: speechModel,
+                oneBotRuntime: runtime,
+                riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+                personaMemoryContextProvider: new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 1001,
+                    EnableQChatVoiceOutput = true,
+                    EnableOwnerVoiceClone = true,
+                    EnableOwnerVoiceOnExplicitRequest = true,
+                    EnableQChatVoiceTextFirst = textFirst,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service, "夏羽");
+
+            TaskCompletionSource dispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            service.InboundChatDispatcher = async inbound =>
+            {
+                await service.SendChatAsync("private", inbound.TargetId, Profile, voice: true);
+                dispatchCompleted.TrySetResult();
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+
+            await dispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.Delay(100);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(speechModel.Calls, Is.Zero);
+                Assert.That(runtime.PrivateMessages, Is.Empty);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task FragmentedXiayuPersonaProfileDoesNotSynthesizeSecondProtectedVoiceRun(bool textFirst)
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-voice-fragments-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            const string Profile = "夏羽的私人角色背景只能在本地角色记忆中使用。";
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "夏羽",
+                "Memory",
+                "Persona",
+                "夏羽-角色背景.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, Profile);
+
+            FakeOneBotRuntime runtime = new();
+            FakeSpeechModel speechModel = new("persona-fragment.wav");
+            QChatService service = new(
+                new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+                new NullLogger<QChatService>(),
+                speechModel: speechModel,
+                oneBotRuntime: runtime,
+                riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+                personaMemoryContextProvider: new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 1001,
+                    EnableQChatVoiceOutput = true,
+                    EnableOwnerVoiceClone = true,
+                    EnableOwnerVoiceOnExplicitRequest = true,
+                    EnableQChatVoiceTextFirst = textFirst,
+                    EnableBalancedTextStreaming = false
+                }
+            };
+            StartService(service, "夏羽");
+
+            int replyCount = 0;
+            TaskCompletionSource firstDispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource secondDispatchCompleted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            service.InboundChatDispatcher = async inbound =>
+            {
+                string fragment = Interlocked.Increment(ref replyCount) == 1 ? "夏羽的" : "私人";
+                await service.SendChatAsync("private", inbound.TargetId, fragment, voice: true);
+                if (Volatile.Read(ref replyCount) == 1)
+                    firstDispatchCompleted.TrySetResult();
+                else
+                    secondDispatchCompleted.TrySetResult();
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+            await firstDispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await WaitUntilAsync(() => speechModel.Calls == 1);
+            await Task.Delay(100);
+            int messagesAfterFirstFragment = runtime.PrivateMessages.Count;
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 1001,
+                RawMessage = "say it as voice"
+            });
+            await secondDispatchCompleted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            await Task.Delay(100);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(speechModel.Calls, Is.EqualTo(1));
+                Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(messagesAfterFirstFragment));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
     [Test]
     public async Task IncomingPlainFallbackDoesNotSendLoadedPersonaProfile()
     {

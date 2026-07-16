@@ -613,7 +613,9 @@ public partial class QChatService(
             if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
                 return;
 
-            (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "xml-qchat");
+            (string? voiceMessage, bool sentAsVoice, bool personaDisclosureChecked) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "xml-qchat");
+            if (voiceMessage == null)
+                return;
             message = voiceMessage;
 
             QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
@@ -622,7 +624,7 @@ public partial class QChatService(
                     FileName: null,
                     TargetType: type,
                     TargetId: targetId),
-                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
+                () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false, personaDisclosureChecked));
 
             if (result.Succeeded)
             {
@@ -890,7 +892,9 @@ public partial class QChatService(
                 return;
         }
 
-        (string voiceMessage, bool sentAsVoice) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "direct-qchat");
+        (string? voiceMessage, bool sentAsVoice, bool personaDisclosureChecked) = await TryApplyQChatVoicePolicyAsync(type, targetId, message, voice, "direct-qchat");
+        if (voiceMessage == null)
+            return;
         message = voiceMessage;
 
         QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
@@ -899,7 +903,7 @@ public partial class QChatService(
                 FileName: null,
                 TargetType: type,
                 TargetId: targetId),
-            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false));
+            () => SendTextOrMediaMessageAsync(type, targetId, message, streamText: sentAsVoice == false, personaDisclosureChecked));
 
         if (result.Succeeded)
         {
@@ -913,7 +917,7 @@ public partial class QChatService(
         }, result.Exception);
     }
 
-    async Task<(string Message, bool SentAsVoice)> TryApplyQChatVoicePolicyAsync(
+    async Task<(string? Message, bool SentAsVoice, bool PersonaDisclosureChecked)> TryApplyQChatVoicePolicyAsync(
         OneBotMessageType type,
         long targetId,
         string message,
@@ -921,12 +925,22 @@ public partial class QChatService(
         string source)
     {
         if (voiceRequested == false)
-            return (message, false);
+            return (message, false, false);
 
         QChatReplySession? replySession = GetCurrentReplySessionForGuard();
         QChatSenderRole senderRole = replySession?.SenderRole ?? QChatSenderRole.PrivateGuest;
         string plainText = OneBotSegment.GetPlainText(message);
         string textFallback = BuildVoiceTextFallback(plainText);
+        if (personaMemoryContext.IsOutgoingPersonaDisclosurePreflight(type, targetId, plainText))
+        {
+            WriteQChatDiagnostic("persona-memory-voice-disclosure-blocked", "Blocked persona-memory content before QChat voice synthesis.", new {
+                source,
+                type,
+                targetId
+            });
+            return (null, false, true);
+        }
+
         QChatConfig config = Configuration ?? new QChatConfig();
         QChatPersonaIntent voiceIntent = InferVoicePersonaIntent(replySession, senderRole);
         QChatHardSafetyRisk hardSafetyRisk = InferVoiceHardSafetyRisk(replySession);
@@ -959,7 +973,7 @@ public partial class QChatService(
                 explicitVoiceRequestedByUser,
                 decision.Reason
             });
-            return (textFallback, false);
+            return (textFallback, false, true);
         }
 
         if (speechModel == null)
@@ -971,7 +985,7 @@ public partial class QChatService(
                 senderRole,
                 decision.Reason
             });
-            return (textFallback, false);
+            return (textFallback, false, true);
         }
 
         QChatVoiceProfileConfig voiceProfiles = config.VoiceProfiles ?? QChatVoiceProfileConfig.CreateDefault();
@@ -991,7 +1005,7 @@ public partial class QChatService(
                     voiceDecisionReason = decision.Reason,
                     profileDecisionReason = profileDecision.Reason
                 });
-                return (textFallback, false);
+                return (textFallback, false, true);
             }
         }
 
@@ -1018,7 +1032,7 @@ public partial class QChatService(
                     if (TryEnsureQChatReplyTargetAllowed(type, targetId, "qchat-voice-text-first") == false)
                         return;
 
-                    await SendTextOrMediaMessageAsync(type, targetId, $"[CQ:record,file={backgroundFile}]", streamText: false);
+                    await SendTextOrMediaMessageAsync(type, targetId, $"[CQ:record,file={backgroundFile}]", streamText: false, personaDisclosureChecked: true);
                 }
                 catch (Exception ex)
                 {
@@ -1033,7 +1047,7 @@ public partial class QChatService(
                 }
             });
 
-            return (message, false);
+            return (message, false, true);
         }
 
         string? file = await GenerateQChatVoiceFileAsync(
@@ -1049,9 +1063,9 @@ public partial class QChatService(
             CancellationToken.None);
 
         if (string.IsNullOrWhiteSpace(file))
-            return (textFallback, false);
+            return (textFallback, false, true);
 
-        return ($"[CQ:record,file={file}]", true);
+        return ($"[CQ:record,file={file}]", true, true);
     }
 
     static bool IsExplicitVoiceRequestedByUser(QChatReplySession? replySession)
@@ -1509,13 +1523,18 @@ public partial class QChatService(
         }
     }
 
-    async Task SendTextOrMediaMessageAsync(OneBotMessageType type, long targetId, string message, bool streamText)
+    async Task SendTextOrMediaMessageAsync(
+        OneBotMessageType type,
+        long targetId,
+        string message,
+        bool streamText,
+        bool personaDisclosureChecked = false)
     {
         if (type == OneBotMessageType.Group)
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
-        if (personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, message))
+        if (personaDisclosureChecked == false && personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, message))
         {
             WriteQChatDiagnostic("persona-memory-disclosure-blocked", "Blocked an outgoing persona-memory disclosure.", new {
                 type,

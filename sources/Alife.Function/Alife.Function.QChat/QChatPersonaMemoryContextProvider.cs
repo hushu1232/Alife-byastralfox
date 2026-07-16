@@ -58,6 +58,11 @@ public sealed class QChatPersonaMemoryContextProvider
         return IsOutgoingPersonaDisclosure($"{type}:{targetId}", message);
     }
 
+    public bool IsOutgoingPersonaDisclosurePreflight(OneBotMessageType type, long targetId, string? message)
+    {
+        return IsOutgoingPersonaDisclosure(type, targetId, message);
+    }
+
     bool IsOutgoingPersonaDisclosure(string route, string? message)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -92,9 +97,10 @@ public sealed class QChatPersonaMemoryContextProvider
                 }
             }
 
-            disclosureTails[route] = candidate.Length < MinimumDisclosureRunLength - 1
+            int maximumTailLength = MinimumDisclosureRunLength - 1;
+            disclosureTails[route] = candidate.Length <= maximumTailLength
                 ? candidate
-                : candidate[(MinimumDisclosureRunLength - 1)..];
+                : candidate[^maximumTailLength..];
         }
 
         return false;
