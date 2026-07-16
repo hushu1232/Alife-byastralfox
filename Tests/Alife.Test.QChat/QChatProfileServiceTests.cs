@@ -21,7 +21,7 @@ public class QChatProfileServiceTests
             Assert.That(profile.DisplayName, Is.EqualTo("\u590f\u7fbd"));
             Assert.That(profile.PersonaPath, Is.EqualTo(@"C:\Users\hu shu\Desktop\personalitysetting"));
             Assert.That(profile.MemoryScope, Is.EqualTo("qchat/xiayu"));
-            Assert.That(profile.Model, Is.EqualTo("deepseek-v4-flash"));
+            Assert.That(profile.Model, Is.EqualTo("grok-4.5"));
             Assert.That(profile.OwnerAddressName, Is.EqualTo("\u672f\u672f"));
             Assert.That(profile.PersonaTags, Does.Contain("17-year-old-girl"));
             Assert.That(profile.PersonaTags, Does.Contain("high-intelligence"));
@@ -49,7 +49,7 @@ public class QChatProfileServiceTests
             Assert.That(profile.DisplayName, Is.EqualTo("\u54aa\u7eea"));
             Assert.That(profile.OwnerAddressName, Is.EqualTo("\u4e3b\u4eba"));
             Assert.That(profile.MemoryScope, Is.EqualTo("qchat/mixu"));
-            Assert.That(profile.Model, Is.EqualTo("deepseek-v4-flash"));
+            Assert.That(profile.Model, Is.EqualTo("grok-4.5"));
             Assert.That(profile.PersonaTags, Does.Contain("catgirl"));
             Assert.That(profile.MemoryScope, Is.Not.EqualTo(xiaYu.MemoryScope));
             Assert.That(profile.Capabilities.AllowComputerFileTools, Is.EqualTo(xiaYu.Capabilities.AllowComputerFileTools));

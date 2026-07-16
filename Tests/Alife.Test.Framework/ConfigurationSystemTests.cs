@@ -6,6 +6,20 @@ namespace Alife.Test.Framework;
 public class ConfigurationSystemTests
 {
     [Test]
+    public void OpenAiLanguageModelDefaultConfigurationTargetsGrokThroughKrill()
+    {
+        OpenAILanguageModelConfig config = new();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.endpoint, Is.EqualTo("https://api.krill-ai.com/v1"));
+            Assert.That(config.modelId, Is.EqualTo("grok-4.5"));
+            Assert.That(config.reasoningEffort, Is.Empty);
+            Assert.That(config.extraBody, Is.EqualTo("{}"));
+        });
+    }
+
+    [Test]
     public void GetConfiguration_ReplacesDefaultListInsteadOfMerging()
     {
         string previousStorage = AlifePath.StorageFolderPath;

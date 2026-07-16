@@ -40,7 +40,7 @@ public sealed class QChatAgentIdentityRegistry
             "\u590f\u7fbd",
             @"C:\Users\hu shu\Desktop\personalitysetting",
             "qchat/xiayu",
-            "deepseek-v4-flash",
+            "grok-4.5",
             "\u672f\u672f",
             ["17-year-old-girl", "high-intelligence", "cold-to-others", "warm-to-owner"],
             defaultCapabilities);
@@ -49,7 +49,7 @@ public sealed class QChatAgentIdentityRegistry
             "\u54aa\u7eea",
             string.Empty,
             "qchat/mixu",
-            "deepseek-v4-flash",
+            "grok-4.5",
             "\u4e3b\u4eba",
             ["catgirl"],
             defaultCapabilities);
