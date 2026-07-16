@@ -24,7 +24,9 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     IDataAgentGraphSidecarClient? sidecarClient = null,
     DataAgentGraphSidecarProgressBridge? progressBridge = null,
     IDataAgentGraphHandshakeStreamClient? streamClient = null,
-    DataAgentGraphSidecarObservabilityContext? observabilityContext = null)
+    DataAgentGraphSidecarObservabilityContext? observabilityContext = null,
+    IDataAgentV45ProductionObservationSink? observationRecorder = null,
+    Func<DateTimeOffset>? observationClock = null)
 {
     readonly DataAgentGraphHandshakeOptions options = options ?? throw new ArgumentNullException(nameof(options));
     readonly IDataAgentGraphSidecarClient sidecarClient = sidecarClient ?? DisabledDataAgentGraphSidecarClient.Instance;
@@ -32,8 +34,30 @@ public sealed class DataAgentGraphHandshakeCoordinator(
     readonly IDataAgentGraphHandshakeStreamClient? streamClient = streamClient;
     readonly DataAgentGraphSidecarObservabilityContext observabilityContext =
         observabilityContext ?? InferObservabilityContext(sidecarClient, streamClient);
+    readonly IDataAgentV45ProductionObservationSink? observationRecorder = observationRecorder;
+    readonly Func<DateTimeOffset> observationClock = observationClock ?? (() => DateTimeOffset.UtcNow);
 
     public DataAgentGraphHandshakeOutcome TryHandshake(
+        string callerId,
+        string goalOrQuestion,
+        DataAgentOrchestrationResult result)
+    {
+        DateTimeOffset startedAt = observationClock();
+        DataAgentGraphHandshakeOutcome outcome = TryHandshakeCore(callerId, goalOrQuestion, result);
+        DateTimeOffset completedAt = observationClock();
+        try
+        {
+            observationRecorder?.Record(outcome, completedAt - startedAt, completedAt);
+        }
+        catch (Exception)
+        {
+            // V4.5 production observation is diagnostic and cannot change the deterministic outcome.
+        }
+
+        return outcome;
+    }
+
+    DataAgentGraphHandshakeOutcome TryHandshakeCore(
         string callerId,
         string goalOrQuestion,
         DataAgentOrchestrationResult result)
@@ -88,6 +112,21 @@ public sealed class DataAgentGraphHandshakeCoordinator(
                 response,
                 validation,
                 networkAttempted: true);
+        }
+        catch (DataAgentV44ProductionShadowException exception)
+        {
+            DataAgentGraphHandshakeStatus status = exception.ReasonCode switch
+            {
+                "production_shadow_timeout" => DataAgentGraphHandshakeStatus.Timeout,
+                "production_shadow_invalid_response" => DataAgentGraphHandshakeStatus.Invalid,
+                _ => DataAgentGraphHandshakeStatus.Unavailable
+            };
+            return Outcome(
+                status,
+                exception.ReasonCode,
+                fallbackRequired: true,
+                request,
+                networkAttempted: exception.NetworkAttempted);
         }
         catch (DataAgentGraphSidecarInvalidResponseException)
         {

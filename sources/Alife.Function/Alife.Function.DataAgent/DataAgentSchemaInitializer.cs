@@ -91,6 +91,26 @@ public static class DataAgentSchemaInitializer
                 reason TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS langgraph_shadow_artifact (
+                artifact_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                replay_id TEXT NOT NULL,
+                outcome TEXT NOT NULL CHECK (outcome IN ('Accepted', 'GateRejected', 'ProtocolRejected', 'Timeout', 'Fallback')),
+                reason_code TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                context_chars INTEGER NOT NULL,
+                diff_gate_passed INTEGER NOT NULL,
+                fallback_required INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_langgraph_shadow_artifact_scope_created
+                ON langgraph_shadow_artifact (session_id, replay_id, created_at, artifact_id);
+
+            CREATE INDEX IF NOT EXISTS ix_langgraph_shadow_artifact_expires_at
+                ON langgraph_shadow_artifact (expires_at);
             """;
         command.ExecuteNonQuery();
     }

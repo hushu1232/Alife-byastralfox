@@ -10,8 +10,14 @@ namespace Alife.Function.DataAgent;
 public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
     : InteractiveModule<DataAgentModuleService>
 {
+    readonly DataAgentV45ProductionObservationRecorder productionObservationRecorder = new();
+
     public IReadOnlyList<string> RegisteredCapabilityProviderNames { get; private set; } = [];
     public IReadOnlyList<string> RegisteredCapabilityToolNames { get; private set; } = [];
+
+    public DataAgentV45ProductionObservationSnapshot GetProductionShadowObservationSnapshot(
+        DateTimeOffset? now = null) =>
+        productionObservationRecorder.GetSnapshot(now ?? DateTimeOffset.UtcNow);
 
     internal static IDataAgentAnalysisSessionStore CreateAnalysisSessionStore(
         DataAgentAnalysisSessionStoreOptions options) =>
@@ -19,7 +25,21 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
 
     internal static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClient(
         DataAgentGraphHandshakeOptions graphOptions,
-        DataAgentGraphHandshakeHttpOptions httpOptions)
+        DataAgentGraphHandshakeHttpOptions httpOptions,
+        DataAgentV44ProductionShadowOptions productionShadowOptions)
+    {
+        return CreateGraphHandshakeSidecarClientWithProvider(
+            graphOptions,
+            httpOptions,
+            productionShadowOptions,
+            () => productionShadowOptions);
+    }
+
+    static IDataAgentGraphSidecarClient CreateGraphHandshakeSidecarClientWithProvider(
+        DataAgentGraphHandshakeOptions graphOptions,
+        DataAgentGraphHandshakeHttpOptions httpOptions,
+        DataAgentV44ProductionShadowOptions productionShadowOptions,
+        Func<DataAgentV44ProductionShadowOptions> optionsProvider)
     {
         if (graphOptions.Enabled == false ||
             httpOptions.Configured == false ||
@@ -28,7 +48,14 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             return DisabledDataAgentGraphSidecarClient.Instance;
         }
 
-        return new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
+        IDataAgentGraphSidecarClient httpClient =
+            new DataAgentGraphHandshakeHttpClient(new HttpClient(), httpOptions);
+        return productionShadowOptions.Enabled
+            ? new DataAgentV44ProductionShadowClient(
+                httpClient,
+                productionShadowOptions,
+                optionsProvider: optionsProvider)
+            : httpClient;
     }
 
     internal static IDataAgentGraphHandshakeStreamClient? CreateGraphHandshakeStreamClient(
@@ -78,14 +105,23 @@ public sealed class DataAgentModuleService(XmlFunctionCaller functionService)
             DataAgentGraphHandshakeHttpOptions.FromEnvironment();
         DataAgentGraphHandshakeStreamOptions graphHandshakeStreamOptions =
             DataAgentGraphHandshakeStreamOptions.FromEnvironment();
+        DataAgentV44ProductionShadowOptions productionShadowOptions =
+            DataAgentV44ProductionShadowOptions.FromEnvironment();
         DataAgentGraphHandshakeCoordinator graphHandshakeCoordinator = new(
             graphHandshakeOptions,
-            CreateGraphHandshakeSidecarClient(graphHandshakeOptions, graphHandshakeHttpOptions),
+            CreateGraphHandshakeSidecarClientWithProvider(
+                graphHandshakeOptions,
+                graphHandshakeHttpOptions,
+                productionShadowOptions,
+                optionsProvider: DataAgentV44ProductionShadowOptions.FromEnvironment),
             new DataAgentGraphSidecarProgressBridge(progressSink),
-            CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions),
+            productionShadowOptions.Enabled
+                ? null
+                : CreateGraphHandshakeStreamClient(graphHandshakeOptions, graphHandshakeStreamOptions),
             new DataAgentGraphSidecarObservabilityContext(
                 graphHandshakeHttpOptions.Configured || graphHandshakeStreamOptions.Configured,
-                graphHandshakeHttpOptions.RuntimeStarted || graphHandshakeStreamOptions.RuntimeStarted));
+                graphHandshakeHttpOptions.RuntimeStarted || graphHandshakeStreamOptions.RuntimeStarted),
+            observationRecorder: productionObservationRecorder);
 
         DataAgentCapabilityRegistry capabilityRegistry = new();
         capabilityRegistry.Add(new DataAgentQueryCapabilityProvider(service, Poke));

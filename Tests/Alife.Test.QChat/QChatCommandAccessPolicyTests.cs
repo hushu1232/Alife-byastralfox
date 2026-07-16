@@ -18,6 +18,10 @@ public sealed class QChatCommandAccessPolicyTests
         "/dataagent diag graph",
         "/dataagent diagnostics graph",
         "/dataagent diag graph - DataAgent DataQueryGraph dry-run diagnostics",
+        "/dataagent diag langgraph",
+        "/dataagent diagnostics langgraph",
+        "/qchat diag dataagent langgraph",
+        "/qchat diagnostics dataagent langgraph",
         "  /DATAAGENT diag evidence  "
     ];
 

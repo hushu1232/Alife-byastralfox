@@ -763,12 +763,16 @@ public static class DataAgentReadiness
             string v311DocPath = Path.Combine(v311RepoRoot, "docs", "dataagent", "dataagent-v3.11-real-langgraph-sidecar-skeleton.md");
             string v311SidecarPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "server.py");
             string v311ReadmePath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "README.md");
+            string v311ContractsPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "contracts.py");
+            string v311GraphPath = Path.Combine(v311RepoRoot, "tools", "dataagent-langgraph-sidecar", "graph.py");
             bool v311DocExists = File.Exists(v311DocPath);
             bool v311SidecarExists = File.Exists(v311SidecarPath);
             bool v311ReadmeExists = File.Exists(v311ReadmePath);
             string v311Doc = v311DocExists ? File.ReadAllText(v311DocPath) : string.Empty;
             string v311Sidecar = v311SidecarExists ? File.ReadAllText(v311SidecarPath) : string.Empty;
             string v311Readme = v311ReadmeExists ? File.ReadAllText(v311ReadmePath) : string.Empty;
+            string v311Contracts = File.Exists(v311ContractsPath) ? File.ReadAllText(v311ContractsPath) : string.Empty;
+            string v311Graph = File.Exists(v311GraphPath) ? File.ReadAllText(v311GraphPath) : string.Empty;
             bool v311ManualOnly =
                 v311Doc.Contains("manual_only=true", StringComparison.Ordinal) &&
                 v311Readme.Contains("manual-only", StringComparison.OrdinalIgnoreCase);
@@ -789,15 +793,15 @@ public static class DataAgentReadiness
                 v311RuntimeStarted == false;
             bool v311NoSqlAuthority =
                 v311Doc.Contains("no_sql_authority=true", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"NoSqlAuthority\": True", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"RequestedToolNames\": []", StringComparison.Ordinal);
+                v311Contracts.Contains("\"NoSqlAuthority\": True", StringComparison.Ordinal) &&
+                v311Contracts.Contains("\"RequestedToolNames\": []", StringComparison.Ordinal);
             bool v311LangGraphHook =
-                v311Sidecar.Contains("from langgraph.graph import END, StateGraph", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("StateGraph(dict)", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("workflow.compile()", StringComparison.Ordinal);
+                v311Graph.Contains("from langgraph.graph import END, StateGraph", StringComparison.Ordinal) &&
+                v311Graph.Contains("AdvisoryGraphState", StringComparison.Ordinal) &&
+                v311Graph.Contains("workflow.compile()", StringComparison.Ordinal);
             bool v311Fallback =
                 v311Doc.Contains("fallback_required=true", StringComparison.Ordinal) &&
-                v311Sidecar.Contains("\"FallbackRequired\": True", StringComparison.Ordinal);
+                v311Contracts.Contains("\"FallbackRequired\": False", StringComparison.Ordinal);
             bool v311SkeletonReady =
                 v311DocExists &&
                 v311SidecarExists &&
@@ -1131,8 +1135,10 @@ public static class DataAgentReadiness
                 v317Script.Contains("Only loopback hosts are allowed.", StringComparison.Ordinal);
             bool v317SmokeMarkers =
                 v317Script.Contains("smoke_valid_advisory=true", StringComparison.Ordinal) &&
-                v317Script.Contains("smoke_forbidden_authority_rejected=true", StringComparison.Ordinal) &&
-                v317Script.Contains("smoke_timeout_fallback=true", StringComparison.Ordinal);
+                v317Script.Contains("smoke_health_attestation=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_malformed_json=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_oversized_request=true", StringComparison.Ordinal) &&
+                v317Script.Contains("smoke_unsupported_content_type=true", StringComparison.Ordinal);
             bool v317Ready =
                 v317DocExists &&
                 v317ScriptExists &&
@@ -3134,17 +3140,38 @@ public static class DataAgentReadiness
 
             string v328RepoRoot = FindRepositoryRoot(AppContext.BaseDirectory);
             string v328DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v3.28-final-readiness-freeze.md");
+            string v3LedgerPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v3-closure-ledger.md");
+            string readinessScriptPath = Path.Combine(v328RepoRoot, "tools", "check-dataagent-readiness.ps1");
             bool v328DocExists = File.Exists(v328DocPath);
             string v328Doc = v328DocExists ? File.ReadAllText(v328DocPath) : string.Empty;
+            string v3Ledger = File.Exists(v3LedgerPath) ? File.ReadAllText(v3LedgerPath) : string.Empty;
+            string readinessScript = File.Exists(readinessScriptPath) ? File.ReadAllText(readinessScriptPath) : string.Empty;
+            IReadOnlyList<DataAgentV3MilestoneEvidence> v3Manifest = DataAgentV3ClosureManifest.CreateDefault();
+            DataAgentV3LedgerParseResult parsedV3Ledger = DataAgentV3ClosureManifest.ParseLedger(v3Ledger);
+            DataAgentV3FrozenReadinessSnapshot v3Snapshot = DataAgentV3ClosureManifest.CanonicalReadinessSnapshot;
+            IReadOnlySet<string> existingV3EvidencePaths = v3Manifest
+                .Select(entry => entry.EvidencePath)
+                .Where(path => File.Exists(Path.Combine(v328RepoRoot, path.Replace('/', Path.DirectorySeparatorChar))) )
+                .ToHashSet(StringComparer.Ordinal);
+            IReadOnlyList<string> v3StaticCheckNames = DataAgentV3ClosureManifest.ProjectValidatedV3StaticCheckNames(
+                DataAgentV3ClosureManifest.ParseStaticCheckNames(readinessScript));
+            DataAgentV3ClosureResult v3Closure = DataAgentV3ClosureValidator.Validate(
+                v3Snapshot, v3Manifest, checks, parsedV3Ledger, v3StaticCheckNames, existingV3EvidencePaths);
             DataAgentV3FinalReadinessFreeze v328Freeze =
-                DataAgentV3FinalReadinessFreezeBuilder.Build(checks.ToArray(), frozenRequiredCheckCount: 110, frozenCoreCheckCount: 95);
+                DataAgentV3FinalReadinessFreezeBuilder.Build(v3Closure);
             string v328Packet = DataAgentV3FinalReadinessFreezeFormatter.Format(v328Freeze);
             bool v328DocMarkers =
                 v328Doc.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Doc.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Doc.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Doc.Contains("frozen_required_check_count=111", StringComparison.Ordinal) &&
                 v328Doc.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_milestone_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_evidence_path_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("missing_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("failed_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("duplicate_required_check_count=0", StringComparison.Ordinal) &&
+                v328Doc.Contains("unexpected_check_count=0", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
                 v328Doc.Contains("operator_decides=true", StringComparison.Ordinal);
@@ -3167,9 +3194,15 @@ public static class DataAgentReadiness
                 string.Equals(v328Freeze.FreezeId, "v3.28-final-readiness-freeze", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.FinalV3Version, "v3.28", StringComparison.Ordinal) &&
                 string.Equals(v328Freeze.SourceVersions, "v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Freeze.FrozenRequiredCheckCount == 110 &&
+                v328Freeze.FrozenRequiredCheckCount == 111 &&
                 v328Freeze.FrozenCoreCheckCount == 95 &&
                 v328Freeze.AllFrozenChecksPassed &&
+                v328Freeze.MissingMilestoneCount == 0 &&
+                v328Freeze.MissingEvidencePathCount == 0 &&
+                v328Freeze.MissingRequiredCheckCount == 0 &&
+                v328Freeze.FailedRequiredCheckCount == 0 &&
+                v328Freeze.DuplicateRequiredCheckCount == 0 &&
+                v328Freeze.UnexpectedCheckCount == 0 &&
                 v328Freeze.OperatorEvidencePackPresent &&
                 v328Freeze.ReadinessGatesFrozen &&
                 v328Freeze.OperatorDecides &&
@@ -3188,8 +3221,14 @@ public static class DataAgentReadiness
                 v328Packet.Contains("v3_final_readiness_freeze=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("final_v3_version=v3.28", StringComparison.Ordinal) &&
                 v328Packet.Contains("source_versions=v3.0-v3.27", StringComparison.Ordinal) &&
-                v328Packet.Contains("frozen_required_check_count=110", StringComparison.Ordinal) &&
+                v328Packet.Contains("frozen_required_check_count=111", StringComparison.Ordinal) &&
                 v328Packet.Contains("frozen_core_check_count=95", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_milestone_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_evidence_path_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("missing_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("failed_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("duplicate_required_check_count=0", StringComparison.Ordinal) &&
+                v328Packet.Contains("unexpected_check_count=0", StringComparison.Ordinal) &&
                 v328Packet.Contains("all_frozen_checks_passed=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("operator_evidence_pack_present=true", StringComparison.Ordinal) &&
                 v328Packet.Contains("readiness_gates_frozen=true", StringComparison.Ordinal) &&
@@ -3208,14 +3247,15 @@ public static class DataAgentReadiness
                 v328Packet.Contains("SELECT", StringComparison.OrdinalIgnoreCase) == false &&
                 v328Packet.Contains("bearer", StringComparison.OrdinalIgnoreCase) == false;
             bool v328Ready =
+                v3Closure.Accepted &&
                 v328DocExists &&
                 v328DocMarkers &&
                 v328Boundary &&
                 v328ModelReady &&
                 v328PacketMarkers;
             checks.Add(v328Ready
-                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=110;frozen_core_check_count=95;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
-                : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)}"));
+                ? Pass("GraphHandshakeFinalV3ReadinessFreezePresent", "v3_final_readiness_freeze=true;final_v3_version=v3.28;source_versions=v3.0-v3.27;frozen_required_check_count=111;frozen_core_check_count=95;missing_milestone_count=0;missing_evidence_path_count=0;missing_required_check_count=0;failed_required_check_count=0;duplicate_required_check_count=0;unexpected_check_count=0;operator_evidence_pack_present=true;readiness_gates_frozen=true;operator_decides=true;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;manual_only=true;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeFinalV3ReadinessFreezePresent", $"closure={LowerBool(v3Closure.Accepted)};doc={LowerBool(v328DocExists)};doc_markers={LowerBool(v328DocMarkers)};boundary={LowerBool(v328Boundary)};model={LowerBool(v328ModelReady)};packet={LowerBool(v328PacketMarkers)};missing_milestone_count={v328Freeze.MissingMilestoneCount};missing_evidence_path_count={v328Freeze.MissingEvidencePathCount};missing_required_check_count={v328Freeze.MissingRequiredCheckCount};failed_required_check_count={v328Freeze.FailedRequiredCheckCount};duplicate_required_check_count={v328Freeze.DuplicateRequiredCheckCount};unexpected_check_count={v328Freeze.UnexpectedCheckCount}"));
 
             string v40DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.0-real-langgraph-manual-shadow-integration.md");
             string v40HarnessScriptPath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-v4-manual-shadow.ps1");
@@ -3404,6 +3444,237 @@ public static class DataAgentReadiness
             checks.Add(v41Ready
                 ? Pass("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", "manual_shadow_context_budget=true;source_baseline=v4.0;max_envelope_chars=1200;max_layer_chars=400;required_layer_count=3;agent_advisory_only=true;harness_execution_authority=true;csharp_validation_authority=true;default_result_changed=false;starts_runtime=false;installs_dependencies=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
                 : Fail("GraphHandshakeRealLangGraphManualShadowContextBudgetPresent", $"doc={LowerBool(v41DocExists)};envelope={LowerBool(v41Envelope.Accepted)};markers={LowerBool(v41Markers)}"));
+
+            string v42DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.2-operator-evidence-packet.md");
+            bool v42DocExists = File.Exists(v42DocPath);
+            string v42Doc = v42DocExists ? File.ReadAllText(v42DocPath) : string.Empty;
+            DataAgentRealLangGraphManualShadowResult v42Integration = v40Fallback with
+            {
+                Accepted = true,
+                ReasonCode = "real_langgraph_manual_shadow_integration_accepted",
+                FallbackRequired = false,
+                OperatorRequired = false,
+                ReasonCodes =
+                [
+                    "real_langgraph_manual_shadow_integration_accepted",
+                    "harness_replay_diff_gate_passed"
+                ]
+            };
+            DataAgentV42OperatorEvidencePacket v42Packet = DataAgentV42OperatorEvidencePacketBuilder.Build(
+                new DataAgentV42OperatorEvidenceInput(
+                    v42Integration,
+                    v41Envelope,
+                    DataAgentV42AdvisoryKinds.DiagnosticSummary,
+                    "bounded operator summary",
+                    ["replay_report:v4.1"]));
+            string v42Formatted = DataAgentV42OperatorEvidencePacketFormatter.Format(v42Packet);
+            bool v42Markers =
+                v42Doc.Contains("operator_evidence_packet=v4.2", StringComparison.Ordinal) &&
+                v42Doc.Contains("source_baseline=v4.1", StringComparison.Ordinal) &&
+                v42Doc.Contains("statuses=accepted,rejected,fallback", StringComparison.Ordinal) &&
+                v42Doc.Contains("max_summary_chars=320", StringComparison.Ordinal) &&
+                v42Doc.Contains("max_evidence_refs=8", StringComparison.Ordinal) &&
+                v42Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("status=accepted", StringComparison.Ordinal) &&
+                v42Formatted.Contains("default_result_changed=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v42Formatted.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v42Ready = v42DocExists && v42Packet.Accepted && v42Markers;
+            checks.Add(v42Ready
+                ? Pass("GraphHandshakeV42OperatorEvidencePacketPresent", "operator_evidence_packet=v4.2;source_baseline=v4.1;statuses=accepted,rejected,fallback;max_summary_chars=320;max_evidence_refs=8;agent_advisory_only=true;csharp_validation_authority=true;default_result_changed=false;calls_sidecar=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false")
+                : Fail("GraphHandshakeV42OperatorEvidencePacketPresent", $"doc={LowerBool(v42DocExists)};packet={LowerBool(v42Packet.Accepted)};markers={LowerBool(v42Markers)}"));
+
+            string v43DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.3-cross-module-value-score.md");
+            bool v43DocExists = File.Exists(v43DocPath);
+            string v43Doc = v43DocExists ? File.ReadAllText(v43DocPath) : string.Empty;
+            DataAgentV43CrossModuleValueResult v43Value = DataAgentV43CrossModuleValueEvaluator.Evaluate(
+                new DataAgentV43CrossModuleValueInput(
+                    v42Packet,
+                    ["qchat.intent_hint", "memory.candidate_summary"],
+                    DataAgentV43OperatorDisposition.Adopted,
+                    ReviewBeforeMs: 1000,
+                    ReviewAfterMs: 0));
+            string v43Formatted = DataAgentV43CrossModuleValueFormatter.Format(v43Value);
+            bool v43Markers =
+                v43Doc.Contains("cross_module_value_score=v4.3", StringComparison.Ordinal) &&
+                v43Doc.Contains("source_baseline=v4.2", StringComparison.Ordinal) &&
+                v43Doc.Contains("capability_count=6", StringComparison.Ordinal) &&
+                v43Doc.Contains("score_range=0-100", StringComparison.Ordinal) &&
+                v43Doc.Contains("eligibility_score=80", StringComparison.Ordinal) &&
+                v43Doc.Contains("calls_sidecar=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("status=proven_useful", StringComparison.Ordinal) &&
+                v43Formatted.Contains("total_score=100", StringComparison.Ordinal) &&
+                v43Formatted.Contains("production_shadow_eligible=true", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v43Formatted.Contains("allows_visible_text=false", StringComparison.Ordinal);
+            bool v43Ready = v43DocExists && v43Value.Accepted && v43Value.ProductionShadowEligible && v43Markers;
+            checks.Add(v43Ready
+                ? Pass("GraphHandshakeV43CrossModuleValueScorePresent", "cross_module_value_score=v4.3;source_baseline=v4.2;capability_count=6;score_range=0-100;eligibility_score=80;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;calls_sidecar=false")
+                : Fail("GraphHandshakeV43CrossModuleValueScorePresent", $"doc={LowerBool(v43DocExists)};value={LowerBool(v43Value.Accepted)};eligible={LowerBool(v43Value.ProductionShadowEligible)};markers={LowerBool(v43Markers)}"));
+
+            string v44DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.4-production-shadow-client.md");
+            bool v44DocExists = File.Exists(v44DocPath);
+            string v44Doc = v44DocExists ? File.ReadAllText(v44DocPath) : string.Empty;
+            DataAgentV44ProductionShadowOptions v44Defaults =
+                DataAgentV44ProductionShadowOptions.FromValues(null, null, null, null, null, null, null);
+            DataAgentV44ProductionShadowOptions v44ReadyOptions =
+                DataAgentV44ProductionShadowOptions.FromValues("true", "false", "80", "proven_useful", "2", "3", "30000");
+            bool v44Markers =
+                v44Doc.Contains("production_shadow_client=v4.4", StringComparison.Ordinal) &&
+                v44Doc.Contains("source_baseline=v4.3", StringComparison.Ordinal) &&
+                v44Doc.Contains("default_enabled=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("kill_switch_default=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("loopback_only=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("no_retry=true", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v44Doc.Contains("allows_visible_text=false", StringComparison.Ordinal);
+            bool v44Ready =
+                v44DocExists &&
+                v44Defaults.Enabled == false &&
+                v44Defaults.KillSwitchActive &&
+                v44ReadyOptions.Ready &&
+                typeof(IDataAgentGraphSidecarClient).IsAssignableFrom(typeof(DataAgentV44ProductionShadowClient)) &&
+                v44Markers;
+            checks.Add(v44Ready
+                ? Pass("GraphHandshakeV44ProductionShadowClientPresent", "production_shadow_client=v4.4;source_baseline=v4.3;default_enabled=false;kill_switch_default=true;loopback_only=true;value_gate_score=80;value_gate_status=proven_useful;bounded_concurrency=true;circuit_breaker=true;no_retry=true;starts_runtime=false;installs_dependencies=false;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false")
+                : Fail("GraphHandshakeV44ProductionShadowClientPresent", $"doc={LowerBool(v44DocExists)};defaults={LowerBool(v44Defaults.Enabled == false && v44Defaults.KillSwitchActive)};ready={LowerBool(v44ReadyOptions.Ready)};markers={LowerBool(v44Markers)}"));
+
+            string v45DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.5-production-closure.md");
+            bool v45DocExists = File.Exists(v45DocPath);
+            string v45Doc = v45DocExists ? File.ReadAllText(v45DocPath) : string.Empty;
+            DataAgentV45ProductionFaultDrillResult v45Drills = DataAgentV45ProductionFaultDrillEvaluator.Evaluate(
+            [
+                new(DataAgentV45FaultDrillKind.RuntimeUnavailable, true, "production_shadow_unavailable", true),
+                new(DataAgentV45FaultDrillKind.Timeout, true, "production_shadow_timeout", true),
+                new(DataAgentV45FaultDrillKind.InvalidSchema, true, "request_id_mismatch", true),
+                new(DataAgentV45FaultDrillKind.UnsafeAuthority, true, "sql_authority_requested", true),
+                new(DataAgentV45FaultDrillKind.ConcurrencySaturation, true, "production_shadow_busy", false),
+                new(DataAgentV45FaultDrillKind.CircuitOpenRecovery, true, "production_shadow_circuit_open", false),
+                new(DataAgentV45FaultDrillKind.LiveKillSwitch, true, "production_shadow_kill_switch_active", false)
+            ]);
+            DataAgentV45ProductionObservationSnapshot v45Snapshot = new(
+                Capacity: 256,
+                WindowMinutes: 15,
+                ObservationCount: 20,
+                AcceptedCount: 18,
+                RejectedCount: 1,
+                FallbackCount: 0,
+                TimeoutCount: 1,
+                UnavailableCount: 0,
+                BusyCount: 0,
+                CircuitOpenCount: 0,
+                NetworkAttemptCount: 20,
+                AverageLatencyMs: 400,
+                P95LatencyMs: 900,
+                FallbackRatioBasisPoints: 500,
+                MaxObservationsPerMinute: 4,
+                RetryStormDetected: false,
+                StoresSensitiveData: false);
+            DataAgentV45ProductionClosureResult v45Closure = DataAgentV45ProductionClosureEvaluator.Evaluate(
+                new DataAgentV45ProductionClosureInput(v43Value, v45Snapshot, v45Drills, RuntimeRestartCount: 1));
+            string v45Formatted = DataAgentV45ProductionClosureFormatter.Format(v45Closure);
+            bool v45Markers =
+                v45Doc.Contains("production_closure=v4.5", StringComparison.Ordinal) &&
+                v45Doc.Contains("source_baseline=v4.4", StringComparison.Ordinal) &&
+                v45Doc.Contains("observation_capacity=256", StringComparison.Ordinal) &&
+                v45Doc.Contains("observation_window_minutes=15", StringComparison.Ordinal) &&
+                v45Doc.Contains("minimum_observations=20", StringComparison.Ordinal) &&
+                v45Doc.Contains("fallback_ratio_basis_points_max=2500", StringComparison.Ordinal) &&
+                v45Doc.Contains("p95_latency_ms_max=2000", StringComparison.Ordinal) &&
+                v45Doc.Contains("fault_drill_count=7", StringComparison.Ordinal) &&
+                v45Doc.Contains("live_kill_switch=true", StringComparison.Ordinal) &&
+                v45Formatted.Contains("accepted=true", StringComparison.Ordinal) &&
+                v45Formatted.Contains("fault_drill_count=7", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_execution=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_state_write=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("allows_visible_text=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_secrets=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_sql=false", StringComparison.Ordinal) &&
+                v45Formatted.Contains("stores_hidden_context=false", StringComparison.Ordinal);
+            bool v45Ready = v45DocExists && v45Closure.Accepted && v45Drills.Accepted && v45Markers;
+            checks.Add(v45Ready
+                ? Pass("GraphHandshakeV45ProductionClosurePresent", "production_closure=v4.5;source_baseline=v4.4;observation_capacity=256;observation_window_minutes=15;minimum_observations=20;fallback_ratio_basis_points_max=2500;p95_latency_ms_max=2000;retry_storm_threshold_per_minute=60;runtime_restart_count_max=1;fault_drill_count=7;live_kill_switch=true;loopback_only=true;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;default_result_changed=false;stores_secrets=false;stores_sql=false;stores_hidden_context=false;starts_runtime=false;installs_dependencies=false")
+                : Fail("GraphHandshakeV45ProductionClosurePresent", $"doc={LowerBool(v45DocExists)};closure={LowerBool(v45Closure.Accepted)};drills={LowerBool(v45Drills.Accepted)};markers={LowerBool(v45Markers)}"));
+
+            string v46DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.6-runtime-truth.md");
+            string v46RuntimePath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "runtime.py");
+            string v46GraphPath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "graph.py");
+            string v46ServerPath = Path.Combine(v328RepoRoot, "tools", "dataagent-langgraph-sidecar", "server.py");
+            string v46SmokePath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-langgraph-manual-smoke.ps1");
+            bool v46FilesExist = File.Exists(v46DocPath) && File.Exists(v46RuntimePath) &&
+                File.Exists(v46GraphPath) && File.Exists(v46ServerPath) && File.Exists(v46SmokePath);
+            string v46Doc = v46FilesExist ? File.ReadAllText(v46DocPath) : string.Empty;
+            string v46Runtime = v46FilesExist ? File.ReadAllText(v46RuntimePath) : string.Empty;
+            string v46Graph = v46FilesExist ? File.ReadAllText(v46GraphPath) : string.Empty;
+            string v46Server = v46FilesExist ? File.ReadAllText(v46ServerPath) : string.Empty;
+            string v46Smoke = v46FilesExist ? File.ReadAllText(v46SmokePath) : string.Empty;
+            bool v46Markers =
+                v46Doc.Contains("runtime_truth=v4.6", StringComparison.Ordinal) &&
+                v46Doc.Contains("request_body_max_bytes=65536", StringComparison.Ordinal) &&
+                v46Doc.Contains("response_body_max_bytes=65536", StringComparison.Ordinal) &&
+                v46Doc.Contains("live_smoke_count=5", StringComparison.Ordinal) &&
+                v46Runtime.Contains("PINNED_LANGGRAPH_VERSION = \"0.3.34\"", StringComparison.Ordinal) &&
+                v46Runtime.Contains("runtime_dependency_unavailable", StringComparison.Ordinal) &&
+                v46Graph.Contains("AdvisoryGraphState", StringComparison.Ordinal) &&
+                v46Graph.Contains("workflow.compile()", StringComparison.Ordinal) &&
+                v46Server.Contains("MAX_BODY_BYTES", StringComparison.Ordinal) &&
+                v46Server.Contains("unsupported_content_type", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS health attestation", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS valid LangGraph advisory", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS malformed JSON returns 400", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS oversized request returns 413", StringComparison.Ordinal) &&
+                v46Smoke.Contains("PASS unsupported content type returns 415", StringComparison.Ordinal) &&
+                v46Smoke.Contains("forbidden authority rejection is covered", StringComparison.Ordinal) == false &&
+                v46Smoke.Contains("timeout fallback is covered", StringComparison.Ordinal) == false;
+            checks.Add(v46FilesExist && v46Markers
+                ? Pass("GraphHandshakeV46RuntimeTruthPresent", "runtime_truth=v4.6;source_baseline=v4.5;runtime_mode=langgraph;langgraph_version=0.3.34;contract_version=v4.6;graph_version=dataagent-advisory-v1;graph_compile_count_per_startup=1;request_body_max_bytes=65536;response_body_max_bytes=65536;live_smoke_count=5;loopback_only=true;starts_runtime=false;installs_dependencies=false;default_enabled=false;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false;production_closure_complete=false")
+                : Fail("GraphHandshakeV46RuntimeTruthPresent", $"files={LowerBool(v46FilesExist)};markers={LowerBool(v46Markers)}"));
+
+            string v47DocPath = Path.Combine(v328RepoRoot, "docs", "dataagent", "dataagent-v4.7-live-canary-closure.md");
+            string v47ScriptPath = Path.Combine(v328RepoRoot, "tools", "run-dataagent-v47-live-canary.ps1");
+            string v47VerifierPath = Path.Combine(v328RepoRoot, "tools", "verify-dataagent-v47-live-canary.ps1");
+            string v47ClosurePath = Path.Combine(v328RepoRoot, "sources", "Alife.Function", "Alife.Function.DataAgent", "DataAgentV47LiveCanaryClosure.cs");
+            string v47WriterPath = Path.Combine(v328RepoRoot, "sources", "Alife.Function", "Alife.Function.DataAgent", "DataAgentV47LiveCanaryArtifactWriter.cs");
+            bool v47FilesExist = File.Exists(v47DocPath) && File.Exists(v47ScriptPath) &&
+                File.Exists(v47VerifierPath) && File.Exists(v47ClosurePath) && File.Exists(v47WriterPath);
+            string v47Doc = v47FilesExist ? File.ReadAllText(v47DocPath) : string.Empty;
+            string v47Script = v47FilesExist ? File.ReadAllText(v47ScriptPath) : string.Empty;
+            string v47Verifier = v47FilesExist ? File.ReadAllText(v47VerifierPath) : string.Empty;
+            string v47ClosureSource = v47FilesExist ? File.ReadAllText(v47ClosurePath) : string.Empty;
+            string v47Writer = v47FilesExist ? File.ReadAllText(v47WriterPath) : string.Empty;
+            DataAgentV47LiveCanaryResult v47Closure = DataAgentV47LiveCanaryClosureEvaluator.Evaluate(
+                new DataAgentV47LiveCanaryInput(
+                    v45Snapshot,
+                    v45Drills,
+                    new DataAgentV47RuntimeIdentityEvidence(
+                        "12345678-1234-5678-9234-567812345678", new string('a', 64), 1_783_820_000, true),
+                    RuntimeRestartCount: 0,
+                    KillSwitchRestored: true,
+                    ProductionShadowRestoredDisabled: true));
+            bool v47Markers =
+                v47Doc.Contains("twenty real requests", StringComparison.OrdinalIgnoreCase) &&
+                v47Doc.Contains("Seven isolated loopback drills", StringComparison.Ordinal) &&
+                v47Doc.Contains("powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-dataagent-v47-live-canary.ps1", StringComparison.Ordinal) &&
+                v47Doc.Contains("-ArtifactPath Outputs/dataagent-v4.7-live-canary/dataagent-v4.7-live-canary-closure.txt", StringComparison.Ordinal) &&
+                v47Script.Contains("--runtime-mode", StringComparison.Ordinal) &&
+                v47Script.Contains("kill_switch_restored=true", StringComparison.Ordinal) &&
+                v47Script.Contains("production_shadow_restored_disabled=true", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("MinimumObservations = 20", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("MaximumP95LatencyMs = 2000", StringComparison.Ordinal) &&
+                v47ClosureSource.Contains("v4_7_live_canary_closure_accepted", StringComparison.Ordinal) &&
+                v47Writer.Contains("dataagent-v4.7-live-canary-closure.txt", StringComparison.Ordinal) &&
+                v47Writer.Contains("DataAgentV47LiveCanaryClosureFormatter.Format", StringComparison.Ordinal) &&
+                v47Verifier.Contains("duplicate_artifact_key", StringComparison.Ordinal) &&
+                v47Verifier.Contains("unknown_artifact_key", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_count_relation_invalid", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_network_relation_invalid", StringComparison.Ordinal) &&
+                v47Verifier.Contains("artifact_verified=true", StringComparison.Ordinal);
+            checks.Add(v47FilesExist && v47Closure.Accepted && v47Markers
+                ? Pass("GraphHandshakeV47LiveCanaryClosurePresent", "live_canary_closure=v4.7;source_baseline=v4.6;minimum_observations=20;fallback_ratio_basis_points_max=2500;p95_latency_ms_max=2000;fault_drill_count=7;runtime_identity_stable=true;kill_switch_restored=true;production_shadow_restored_disabled=true;artifact_verifier=tools/verify-dataagent-v47-live-canary.ps1;agent_advisory_only=true;csharp_validation_authority=true;allows_execution=false;allows_state_write=false;allows_visible_text=false")
+                : Fail("GraphHandshakeV47LiveCanaryClosurePresent", $"files={LowerBool(v47FilesExist)};closure={LowerBool(v47Closure.Accepted)};markers={LowerBool(v47Markers)}"));
         }
         catch (Exception ex)
         {

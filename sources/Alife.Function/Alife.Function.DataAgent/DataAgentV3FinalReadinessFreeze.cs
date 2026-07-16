@@ -22,7 +22,13 @@ public sealed record DataAgentV3FinalReadinessFreeze(
     bool CallsSidecar,
     bool StoresSecrets,
     bool StoresSql,
-    bool StoresHiddenContext);
+    bool StoresHiddenContext,
+    int MissingMilestoneCount,
+    int MissingEvidencePathCount,
+    int MissingRequiredCheckCount,
+    int FailedRequiredCheckCount,
+    int DuplicateRequiredCheckCount,
+    int UnexpectedCheckCount);
 
 public static class DataAgentV3FinalReadinessFreezeBuilder
 {
@@ -30,40 +36,27 @@ public static class DataAgentV3FinalReadinessFreezeBuilder
     public const string FinalV3Version = "v3.28";
     public const string SourceVersions = "v3.0-v3.27";
 
-    public static DataAgentV3FinalReadinessFreeze Build(
-        IReadOnlyCollection<DataAgentReadinessCheck> frozenChecks,
-        int frozenRequiredCheckCount,
-        int frozenCoreCheckCount)
+    public static DataAgentV3FinalReadinessFreeze Build(DataAgentV3ClosureResult closure)
     {
-        ArgumentNullException.ThrowIfNull(frozenChecks);
-
-        bool operatorEvidencePackPresent = frozenChecks.Any(check =>
-            string.Equals(check.Name, "GraphHandshakeOperatorEvidencePackPresent", StringComparison.Ordinal) &&
-            check.Passed &&
-            check.Detail.Contains("operator_evidence_pack=true", StringComparison.Ordinal) &&
-            check.Detail.Contains("operator_decides=true", StringComparison.Ordinal));
-        bool countsFrozen =
-            frozenRequiredCheckCount == 110 &&
-            frozenCoreCheckCount == 95;
-        bool allFrozenChecksPassed =
-            frozenChecks.All(check => check.Passed) &&
-            operatorEvidencePackPresent &&
-            countsFrozen;
-        bool readinessGatesFrozen =
-            allFrozenChecksPassed &&
-            operatorEvidencePackPresent;
+        ArgumentNullException.ThrowIfNull(closure);
+        int unexpectedCheckCount =
+            closure.UnexpectedMilestoneVersions.Count +
+            closure.UnexpectedV4CheckNames.Count +
+            closure.LedgerParseErrors.Count +
+            closure.LedgerParityMismatches.Count +
+            closure.AuthorityExpansionCount;
 
         return new DataAgentV3FinalReadinessFreeze(
             FreezeId,
             FinalV3Version,
             SourceVersions,
-            frozenRequiredCheckCount,
-            frozenCoreCheckCount,
-            allFrozenChecksPassed,
-            operatorEvidencePackPresent,
-            readinessGatesFrozen,
-            FallbackRequired: readinessGatesFrozen == false,
-            OperatorRequired: readinessGatesFrozen == false,
+            closure.StaticRequiredCheckCount,
+            closure.FrozenCoreCheckCount,
+            closure.Accepted,
+            closure.OperatorEvidencePackPresent,
+            closure.Accepted,
+            FallbackRequired: !closure.Accepted,
+            OperatorRequired: !closure.Accepted,
             OperatorDecides: true,
             AgentAdvisoryOnly: true,
             HarnessExecutionAuthority: true,
@@ -75,7 +68,13 @@ public static class DataAgentV3FinalReadinessFreezeBuilder
             CallsSidecar: false,
             StoresSecrets: false,
             StoresSql: false,
-            StoresHiddenContext: false);
+            StoresHiddenContext: false,
+            MissingMilestoneCount: closure.MissingMilestoneVersions.Count,
+            MissingEvidencePathCount: closure.MissingEvidencePaths.Count,
+            MissingRequiredCheckCount: closure.MissingRequiredCheckNames.Count,
+            FailedRequiredCheckCount: closure.FailedRequiredCheckNames.Count + closure.FailedCoreCheckNames.Count,
+            DuplicateRequiredCheckCount: closure.DuplicateRequiredCheckNames.Count,
+            UnexpectedCheckCount: unexpectedCheckCount);
     }
 }
 
@@ -87,7 +86,9 @@ public static class DataAgentV3FinalReadinessFreezeFormatter
 
         return string.Join(
             Environment.NewLine,
-            "v3_final_readiness_freeze=true",
+            freeze.AllFrozenChecksPassed
+                ? "v3_final_readiness_freeze=true"
+                : "v3_final_readiness_freeze=false",
             $"freeze_id={SafeToken(freeze.FreezeId)}",
             $"final_v3_version={SafeToken(freeze.FinalV3Version)}",
             $"source_versions={SafeToken(freeze.SourceVersions)}",
@@ -110,6 +111,12 @@ public static class DataAgentV3FinalReadinessFreezeFormatter
             $"stores_secrets={LowerBool(freeze.StoresSecrets)}",
             $"stores_sql={LowerBool(freeze.StoresSql)}",
             $"stores_hidden_context={LowerBool(freeze.StoresHiddenContext)}",
+            $"missing_milestone_count={freeze.MissingMilestoneCount}",
+            $"missing_evidence_path_count={freeze.MissingEvidencePathCount}",
+            $"missing_required_check_count={freeze.MissingRequiredCheckCount}",
+            $"failed_required_check_count={freeze.FailedRequiredCheckCount}",
+            $"duplicate_required_check_count={freeze.DuplicateRequiredCheckCount}",
+            $"unexpected_check_count={freeze.UnexpectedCheckCount}",
             string.Empty);
     }
 

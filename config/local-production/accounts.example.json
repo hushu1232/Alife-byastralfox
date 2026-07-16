@@ -1,0 +1,3 @@
+{"maxQueueDepth":16,"drainTimeoutSeconds":90,"idleTimeoutSeconds":300,"accounts":[
+ {"id":"account-a","oneBotUrl":"ws://127.0.0.1:3001","runtimeRoot":"D:\\Alife\\runtime\\account-a","storageRoot":"D:\\Alife\\storage\\account-a","tempRoot":"D:\\Alife\\.tmp\\account-a","oneBotTokenEnvironmentVariable":"ALIFE_ACCOUNT_A_ONEBOT_TOKEN"},
+ {"id":"account-b","oneBotUrl":"ws://127.0.0.1:3002","runtimeRoot":"D:\\Alife\\runtime\\account-b","storageRoot":"D:\\Alife\\storage\\account-b","tempRoot":"D:\\Alife\\.tmp\\account-b","oneBotTokenEnvironmentVariable":"ALIFE_ACCOUNT_B_ONEBOT_TOKEN"}]}

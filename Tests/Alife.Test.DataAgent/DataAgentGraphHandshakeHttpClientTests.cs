@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Alife.Function.DataAgent;
+using Alife.Tools.DataAgentV47Canary;
 
 namespace Alife.Test.DataAgent;
 
@@ -120,17 +123,124 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
         DataAgentGraphSidecarInvalidResponseException exception =
             Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
 
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("invalid_response_schema"));
+            Assert.That(exception.InnerException, Is.Null);
+        });
+    }
+
+    [Test]
+    public void DeclaredOversizedResponseIsRejectedBeforeDeserialization()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[65537])
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
+        Assert.That(exception.Message, Is.EqualTo("response_body_too_large"));
+    }
+
+    [Test]
+    public void StreamedOversizedResponseWithoutContentLengthIsRejected()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new UnknownLengthContent(new byte[65537])
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
+        Assert.That(exception.Message, Is.EqualTo("response_body_too_large"));
+    }
+
+    [Test]
+    public void MissingRequiredResponseFieldsAreRejectedAsInvalidSchema()
+    {
+        DataAgentGraphHandshakeHttpClient client = NewClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"RequestId\":\"request-1\"}", Encoding.UTF8, "application/json")
+        });
+
+        DataAgentGraphSidecarInvalidResponseException exception =
+            Assert.Throws<DataAgentGraphSidecarInvalidResponseException>(() => client.TryHandshake(NewRequest()))!;
+
         Assert.That(exception.Message, Is.EqualTo("invalid_response_schema"));
     }
 
     [Test]
-    public void TimeoutThrowsTimeoutException()
+    public void TaskCanceledBeforeOptionsDeadlineThrowsUnavailableException()
     {
         DataAgentGraphHandshakeHttpClient client = NewClient(_ => throw new TaskCanceledException("timed out"));
 
-        TimeoutException exception = Assert.Throws<TimeoutException>(() => client.TryHandshake(NewRequest()))!;
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => client.TryHandshake(NewRequest()))!;
 
-        Assert.That(exception.Message, Is.EqualTo("sidecar_timeout"));
+        Assert.That(exception.Message, Is.EqualTo("sidecar_unavailable"));
+    }
+
+    [Test]
+    public void ConnectStageCancellationBeforeOptionsDeadlineIsTransportUnavailable()
+    {
+        using TcpListener unavailableListener = new(IPAddress.Loopback, 0);
+        unavailableListener.Server.ExclusiveAddressUse = true;
+        unavailableListener.Start();
+        Uri endpoint = new(
+            $"http://127.0.0.1:{((IPEndPoint)unavailableListener.LocalEndpoint).Port}/handshake");
+        unavailableListener.Stop();
+
+        using SocketsHttpHandler handler = new()
+        {
+            ConnectTimeout = TimeSpan.FromMilliseconds(100),
+            UseProxy = false
+        };
+        using HttpClient http = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        DataAgentGraphHandshakeHttpClient client = new(
+            http,
+            new DataAgentGraphHandshakeHttpOptions(
+                endpoint, TimeSpan.FromMilliseconds(1500), true, false));
+
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            () => client.TryHandshake(NewRequest()))!;
+        stopwatch.Stop();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("sidecar_unavailable"));
+            Assert.That(stopwatch.Elapsed, Is.LessThan(TimeSpan.FromSeconds(1)));
+        });
+    }
+
+    [Test]
+    public async Task OptionsDeadlineDuringActiveDelayedResponseIsTimeout()
+    {
+        await using LoopbackFaultResponder delayed = await LoopbackFaultResponder.StartAsync(
+            LoopbackFaultBehavior.Delayed, TimeSpan.FromMilliseconds(500));
+        using SocketsHttpHandler handler = new()
+        {
+            ConnectTimeout = TimeSpan.FromMilliseconds(50),
+            UseProxy = false
+        };
+        using HttpClient http = new(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        DataAgentGraphHandshakeHttpClient client = new(
+            http,
+            new DataAgentGraphHandshakeHttpOptions(
+                new Uri(delayed.Endpoint, "/handshake"),
+                TimeSpan.FromMilliseconds(150), true, false));
+
+        TimeoutException exception = Assert.Throws<TimeoutException>(
+            () => client.TryHandshake(NewRequest()))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("sidecar_timeout"));
+            Assert.That(delayed.RequestCount, Is.EqualTo(1));
+        });
     }
 
     static DataAgentGraphHandshakeHttpClient NewClient(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
@@ -313,6 +423,20 @@ public sealed class DataAgentGraphHandshakeHttpClientTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(responseFactory(request));
+        }
+    }
+
+    sealed class UnknownLengthContent(byte[] payload) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return stream.WriteAsync(payload).AsTask();
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }

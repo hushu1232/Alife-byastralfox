@@ -62,22 +62,29 @@ public sealed class DataAgentV311ReadinessTests
     }
 
     [Test]
-    public void ManualSkeletonContainsRealLangGraphHookWithoutRequiringDependency()
+    public void ManualSkeletonEvolvedToStrictTypedLangGraphRuntime()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
-        string skeleton = File.ReadAllText(Path.Combine(
+        string runtime = File.ReadAllText(Path.Combine(
             repoRoot,
             "tools",
             "dataagent-langgraph-sidecar",
-            "server.py"));
+            "runtime.py"));
+        string graph = File.ReadAllText(Path.Combine(
+            repoRoot, "tools", "dataagent-langgraph-sidecar", "graph.py"));
+        string contracts = File.ReadAllText(Path.Combine(
+            repoRoot, "tools", "dataagent-langgraph-sidecar", "contracts.py"));
 
         Assert.Multiple(() =>
         {
-            Assert.That(skeleton, Does.Contain("from langgraph.graph import END, StateGraph"));
-            Assert.That(skeleton, Does.Contain("ModuleNotFoundError"));
-            Assert.That(skeleton, Does.Contain("StateGraph(dict)"));
-            Assert.That(skeleton, Does.Contain("workflow.compile()"));
-            Assert.That(skeleton, Does.Contain("build_advisory_response"));
+            Assert.That(runtime, Does.Contain("runtime_dependency_unavailable"));
+            Assert.That(runtime, Does.Contain("runtime_graph_compile_failed"));
+            Assert.That(runtime, Does.Contain("PINNED_LANGGRAPH_VERSION = \"0.3.34\""));
+            Assert.That(graph, Does.Contain("from langgraph.graph import END, StateGraph"));
+            Assert.That(graph, Does.Contain("AdvisoryGraphState"));
+            Assert.That(graph, Does.Contain("workflow.compile()"));
+            Assert.That(contracts, Does.Contain("\"FallbackRequired\": False"));
+            Assert.That(contracts, Does.Contain("\"NoSqlAuthority\": True"));
         });
     }
 

@@ -9,17 +9,14 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
     public void FinalReadinessFreezeSummarizesFrozenV3ChecksWithoutRuntimeAuthority()
     {
         DataAgentV3FinalReadinessFreeze freeze =
-            DataAgentV3FinalReadinessFreezeBuilder.Build(
-                NewFrozenChecks(),
-                frozenRequiredCheckCount: 110,
-                frozenCoreCheckCount: 95);
+            DataAgentV3FinalReadinessFreezeBuilder.Build(AcceptedClosure());
 
         Assert.Multiple(() =>
         {
             Assert.That(freeze.FreezeId, Is.EqualTo("v3.28-final-readiness-freeze"));
             Assert.That(freeze.FinalV3Version, Is.EqualTo("v3.28"));
             Assert.That(freeze.SourceVersions, Is.EqualTo("v3.0-v3.27"));
-            Assert.That(freeze.FrozenRequiredCheckCount, Is.EqualTo(110));
+            Assert.That(freeze.FrozenRequiredCheckCount, Is.EqualTo(111));
             Assert.That(freeze.FrozenCoreCheckCount, Is.EqualTo(95));
             Assert.That(freeze.AllFrozenChecksPassed, Is.True);
             Assert.That(freeze.OperatorEvidencePackPresent, Is.True);
@@ -43,15 +40,19 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
     public void FinalReadinessFreezeFailsClosedWhenRequiredCheckIsMissingOrFailed()
     {
         DataAgentV3FinalReadinessFreeze missingOperatorPack =
-            DataAgentV3FinalReadinessFreezeBuilder.Build(
-                NewFrozenChecks().Where(check => check.Name != "GraphHandshakeOperatorEvidencePackPresent").ToArray(),
-                frozenRequiredCheckCount: 110,
-                frozenCoreCheckCount: 95);
+            DataAgentV3FinalReadinessFreezeBuilder.Build(AcceptedClosure() with
+            {
+                Accepted = false,
+                OperatorEvidencePackPresent = false,
+                MissingRequiredCheckNames = ["GraphHandshakeOperatorEvidencePackPresent"]
+            });
         DataAgentV3FinalReadinessFreeze failedReadiness =
-            DataAgentV3FinalReadinessFreezeBuilder.Build(
-                NewFrozenChecks(failedCheckName: "GraphHandshakeOperatorEvidencePackPresent"),
-                frozenRequiredCheckCount: 110,
-                frozenCoreCheckCount: 95);
+            DataAgentV3FinalReadinessFreezeBuilder.Build(AcceptedClosure() with
+            {
+                Accepted = false,
+                OperatorEvidencePackPresent = false,
+                FailedRequiredCheckNames = ["GraphHandshakeOperatorEvidencePackPresent"]
+            });
 
         Assert.Multiple(() =>
         {
@@ -74,10 +75,7 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
     public void FinalReadinessFreezeFormatsCompactSafePacket()
     {
         DataAgentV3FinalReadinessFreeze freeze =
-            DataAgentV3FinalReadinessFreezeBuilder.Build(
-                NewFrozenChecks(extraDetail: "unsafe SELECT hidden_context bearer secret"),
-                frozenRequiredCheckCount: 110,
-                frozenCoreCheckCount: 95);
+            DataAgentV3FinalReadinessFreezeBuilder.Build(AcceptedClosure());
 
         string text = DataAgentV3FinalReadinessFreezeFormatter.Format(freeze);
 
@@ -86,7 +84,7 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
             Assert.That(text, Does.Contain("v3_final_readiness_freeze=true"));
             Assert.That(text, Does.Contain("final_v3_version=v3.28"));
             Assert.That(text, Does.Contain("source_versions=v3.0-v3.27"));
-            Assert.That(text, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(text, Does.Contain("frozen_required_check_count=111"));
             Assert.That(text, Does.Contain("frozen_core_check_count=95"));
             Assert.That(text, Does.Contain("all_frozen_checks_passed=true"));
             Assert.That(text, Does.Contain("operator_evidence_pack_present=true"));
@@ -110,6 +108,32 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
     }
 
     [Test]
+    public void FinalReadinessFreezeFailsClosedWithoutLeakingClosureEvidence()
+    {
+        const string unsafeName = "DataAgentReplayRunbookPresent SELECT bearer C:\\secret private_context_payload";
+        DataAgentV3FinalReadinessFreeze freeze = DataAgentV3FinalReadinessFreezeBuilder.Build(AcceptedClosure() with
+        {
+            Accepted = false,
+            MissingRequiredCheckNames = [unsafeName]
+        });
+
+        string text = DataAgentV3FinalReadinessFreezeFormatter.Format(freeze);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(text, Does.StartWith("v3_final_readiness_freeze=false"));
+            Assert.That(text, Does.Contain("missing_required_check_count=1"));
+            Assert.That(text, Does.Contain("fallback_required=true"));
+            Assert.That(text, Does.Contain("operator_required=true"));
+            Assert.That(text, Does.Not.Contain("DataAgentReplayRunbookPresent"));
+            Assert.That(text, Does.Not.Contain("SELECT"));
+            Assert.That(text, Does.Not.Contain("bearer"));
+            Assert.That(text, Does.Not.Contain("C:\\secret"));
+            Assert.That(text, Does.Not.Contain("private_context_payload"));
+        });
+    }
+
+    [Test]
     public void V328DocumentDeclaresFinalReadinessFreezeBoundary()
     {
         string repoRoot = FindRepoRoot(TestContext.CurrentContext.TestDirectory);
@@ -120,7 +144,7 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
             Assert.That(doc, Does.Contain("v3_final_readiness_freeze=true"));
             Assert.That(doc, Does.Contain("final_v3_version=v3.28"));
             Assert.That(doc, Does.Contain("source_versions=v3.0-v3.27"));
-            Assert.That(doc, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(doc, Does.Contain("frozen_required_check_count=111"));
             Assert.That(doc, Does.Contain("frozen_core_check_count=95"));
             Assert.That(doc, Does.Contain("operator_decides=true"));
             Assert.That(doc, Does.Contain("agent_advisory_only=true"));
@@ -152,10 +176,10 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
         Assert.Multiple(() =>
         {
             Assert.That(script, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
-            Assert.That(script, Does.Contain("$expectedRequired = 113"));
+            Assert.That(script, Does.Contain("$expectedRequired = 120"));
             Assert.That(source, Does.Contain("GraphHandshakeFinalV3ReadinessFreezePresent"));
             Assert.That(source, Does.Contain("DataAgentV3FinalReadinessFreezeBuilder.Build"));
-            Assert.That(source, Does.Contain("frozen_required_check_count=110"));
+            Assert.That(source, Does.Contain("frozen_required_check_count=111"));
             Assert.That(source, Does.Contain("frozen_core_check_count=95"));
         });
     }
@@ -179,6 +203,8 @@ public sealed class DataAgentV328FinalReadinessFreezeTests
                     : $"ready=true;{extraDetail ?? string.Empty}"))
             .ToArray();
     }
+
+    static DataAgentV3ClosureResult AcceptedClosure() => new(true, 111, 95, [], [], [], [], [], [], [], [], [], [], [], 0, true, true, true);
 
     static string FindRepoRoot(string startDirectory)
     {

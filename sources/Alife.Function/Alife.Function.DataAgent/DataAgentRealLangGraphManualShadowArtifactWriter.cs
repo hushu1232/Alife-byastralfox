@@ -43,6 +43,7 @@ public static class DataAgentRealLangGraphManualShadowArtifactWriter
             string.Empty);
 
         File.WriteAllText(filePath, body);
+        _ = DataAgentLangGraphShadowArtifactRuntimeProvider.RecordManualShadowResult(result, DateTimeOffset.UtcNow);
 
         return new DataAgentRealLangGraphManualShadowArtifactWriteResult(
             Written: true,
