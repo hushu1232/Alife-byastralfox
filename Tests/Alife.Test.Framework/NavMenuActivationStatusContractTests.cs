@@ -18,6 +18,8 @@ public class NavMenuActivationStatusContractTests
         Assert.That(source, Does.Contain("ActivityNotifyService.GetActivationPresentation(activationState)"));
         Assert.That(source, Does.Contain("activityPresentation.Label"));
         Assert.That(source, Does.Contain("activityPresentation.CssClass"));
+        Assert.That(source, Does.Contain("role=\"status\""));
+        Assert.That(source, Does.Contain("<span class=\"visually-hidden\">@activityPresentation.Label</span>"));
         Assert.That(source, Does.Contain("ActivityNotifyService.OnActivationStateChanged += RefreshActivationState"));
         Assert.That(source, Does.Contain("ActivityNotifyService.OnActivationStateChanged -= RefreshActivationState"));
         Assert.That(source, Does.Not.Contain("ActivationFailed"));

@@ -121,12 +121,12 @@ public class ChatActivitySystem
         {
             if (!activities.TryGetValue(character.Name, out chatActivity))
                 return;
+
+            activities.Remove(character.Name);
         }
 
         Destroying?.Invoke(chatActivity);
         await chatActivity.DisposeAsync();
-        lock (activationGate)
-            activities.Remove(character.Name);
         Destroyed?.Invoke(chatActivity);
     }
 

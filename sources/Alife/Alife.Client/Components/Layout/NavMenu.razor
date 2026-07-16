@@ -36,9 +36,12 @@
                     @if (activityPresentation != null)
                     {
                         <span class="status-dot @activityPresentation.CssClass"
+                              role="status"
                               aria-label="@activityPresentation.Label"
                               title="@activityPresentation.Label"
-                              style="position: absolute; bottom: 0; right: 0;"></span>
+                              style="position: absolute; bottom: 0; right: 0;">
+                            <span class="visually-hidden">@activityPresentation.Label</span>
+                        </span>
                     }
                 </div>
             </NavLink>
@@ -70,6 +73,18 @@
     .status-active { background-color: #52c41a; }
     .status-failed { background-color: #ff4d4f; }
     .status-stopped { background-color: #8c8c8c; }
+
+    .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
 
 </style>
 

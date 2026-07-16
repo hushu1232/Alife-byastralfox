@@ -6,6 +6,9 @@ using Alife.Function.QChat;
 using Alife.Platform;
 using Autofac;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.Agents;
+using System.Reflection;
 
 namespace Alife.Test.Framework;
 
@@ -160,6 +163,57 @@ public class ChatActivityActivationDiagnosticsTests
 
             Assert.That(starts, Is.EqualTo(2), "A failed activation must release the character for a later retry.");
         });
+    }
+
+    [Test]
+    public async Task DeactivateDoesNotDestroyTheSameActivityTwiceConcurrently()
+    {
+        await WithTemporaryStorageAsync(async () => {
+            StorageSystem storage = new();
+            CharacterSystem characterSystem = new(storage);
+            ConfigurationSystem configurationSystem = new(storage);
+            ModuleSystem moduleSystem = new(storage, new NullLogger<ModuleSystem>());
+            ChatActivitySystem activitySystem = new(characterSystem, configurationSystem, moduleSystem, storage);
+            Character character = characterSystem.CreateCharacter($"ConcurrentDeactivate-{Guid.NewGuid():N}");
+            IContainer moduleContainer = ChatActivity.BuildModuleContainer([], character, configurationSystem);
+            ChatActivity activity = new(
+                character,
+                Kernel.CreateBuilder().Build(),
+                moduleContainer,
+                new ChatBot(null!, new ChatHistoryAgentThread()),
+                []);
+            AddActivity(activitySystem, character, activity);
+
+            int destroying = 0;
+            int destroyed = 0;
+            TaskCompletionSource firstDestroying = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource releaseFirstDestroying = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            activitySystem.Destroying += _ => {
+                if (Interlocked.Increment(ref destroying) == 1)
+                {
+                    firstDestroying.SetResult();
+                    releaseFirstDestroying.Task.GetAwaiter().GetResult();
+                }
+            };
+            activitySystem.Destroyed += _ => Interlocked.Increment(ref destroyed);
+
+            Task firstDeactivation = Task.Run(() => activitySystem.Deactivate(character));
+            await firstDestroying.Task;
+            Task secondDeactivation = activitySystem.Deactivate(character);
+            releaseFirstDestroying.SetResult();
+            await Task.WhenAll(firstDeactivation, secondDeactivation);
+
+            Assert.That(destroying, Is.EqualTo(1));
+            Assert.That(destroyed, Is.EqualTo(1));
+            Assert.That(activitySystem.IsActivated(character), Is.False);
+        });
+    }
+
+    static void AddActivity(ChatActivitySystem activitySystem, Character character, ChatActivity activity)
+    {
+        FieldInfo activitiesField = typeof(ChatActivitySystem).GetField("activities", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Dictionary<string, ChatActivity> activities = (Dictionary<string, ChatActivity>)activitiesField.GetValue(activitySystem)!;
+        activities.Add(character.Name, activity);
     }
 
     static async Task WithTemporaryStorageAsync(Func<Task> test)
