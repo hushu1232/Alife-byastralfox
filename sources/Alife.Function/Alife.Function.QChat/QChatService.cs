@@ -333,6 +333,7 @@ public partial class QChatService(
 {
     const string DesktopControlAgentId = "xiayu";
     readonly QChatPersonaMemoryContextProvider personaMemoryContext = personaMemoryContextProvider ?? new();
+    bool approvedPersonaMemorySeeded;
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
     readonly QChatImageRecognitionService? injectedImageRecognitionService = imageRecognitionService;
@@ -1514,6 +1515,14 @@ public partial class QChatService(
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        if (personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, message))
+        {
+            WriteQChatDiagnostic("persona-memory-disclosure-blocked", "Blocked an outgoing persona-memory disclosure.", new {
+                type,
+                targetId
+            });
+            return;
+        }
         message = ApplyQChatFactualityGuardToOutgoing(type, targetId, message);
         if (string.IsNullOrWhiteSpace(message))
             return;
@@ -2575,8 +2584,18 @@ public partial class QChatService(
 
     void SeedApprovedPersonaMemory()
     {
+        if (approvedPersonaMemorySeeded)
+            return;
+
         QChatAgentIdentity? identity = ResolveRuntimeIdentity();
-        personaMemoryContext.TrySeed(ChatHistory, identity, Character.StorageKey);
+        approvedPersonaMemorySeeded = personaMemoryContext.TrySeed(ChatHistory, identity);
+    }
+
+    bool ShouldSuppressPersonaMemoryDisclosureProbe(string rawMessage)
+    {
+        QChatAgentIdentity? identity = ResolveRuntimeIdentity();
+        return identity?.AgentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase) == true &&
+               personaMemoryContext.IsPersonaDisclosureProbe(rawMessage);
     }
 
     QChatAgentIdentity? ResolveRuntimeIdentity()
@@ -4470,6 +4489,15 @@ public partial class QChatService(
     {
         QChatConfig config = Configuration!;
         long resolvedBotId = ResolveCurrentBotId(config, messageEvent);
+        if (ShouldSuppressPersonaMemoryDisclosureProbe(formatted))
+        {
+            WriteQChatDiagnostic("persona-memory-probe-blocked", "Blocked an inbound persona-memory disclosure probe.", new {
+                messageEvent.MessageType,
+                messageEvent.UserId,
+                messageEvent.GroupId
+            });
+            return;
+        }
         if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken))
             return;
 
