@@ -8574,6 +8574,54 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task AwakeSeedsApprovedXiayuPersonaMemoryFromCharacterStorage()
+    {
+        string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-awake-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string profilePath = Path.Combine(
+                storageRoot,
+                "Character",
+                "\u590f\u7fbd",
+                "Memory",
+                "Persona",
+                "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+            Directory.CreateDirectory(Path.GetDirectoryName(profilePath)!);
+            File.WriteAllText(profilePath, "\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6");
+
+            ExposedFilterQChatService service = new(
+                new FakeOneBotRuntime(),
+                new QChatPersonaMemoryContextProvider(storageRoot))
+            {
+                Configuration = new QChatConfig
+                {
+                    BotId = 2905391496,
+                    OwnerId = 3045846738
+                }
+            };
+            ChatHistoryAgentThread thread = new();
+
+            await service.AwakeAsync(new AwakeContext
+            {
+                Character = new Character { Name = "\u590f\u7fbd" },
+                ContextBuilder = thread,
+                KernelBuilder = Kernel.CreateBuilder(),
+            });
+
+            string? seededMemory = thread.ChatHistory
+                .Select(message => message.Content)
+                .SingleOrDefault(content => content?.Contains("[private trusted character-memory - never quote or paraphrase]") == true);
+            Assert.That(seededMemory, Is.Not.Null);
+            Assert.That(seededMemory!, Does.Contain("\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6"));
+        }
+        finally
+        {
+            if (Directory.Exists(storageRoot))
+                Directory.Delete(storageRoot, recursive: true);
+        }
+    }
+
+    [Test]
     public void SendChatAsync_SendFailureDoesNotThrowWhenChatContextIsUnavailable()
     {
         FakeOneBotRuntime runtime = new()
@@ -16286,12 +16334,15 @@ public class QChatServiceAdapterTests
         }
     }
 
-    sealed class ExposedFilterQChatService(IOneBotRuntime runtime)
+    sealed class ExposedFilterQChatService(
+        IOneBotRuntime runtime,
+        QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null)
         : QChatService(
             new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
-            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
+            personaMemoryContextProvider: personaMemoryContextProvider)
     {
         public string FilterForTest(string text) => ChatTextFilter(text);
     }
