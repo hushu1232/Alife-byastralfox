@@ -22,33 +22,51 @@ public class ChatActivitySystem
 
     public IEnumerable<ChatActivity> GetAllChatActivities()
     {
-        return activities.Values;
+        lock (activationGate)
+            return activities.Values.ToArray();
     }
 
     public bool IsActivated(Character character)
     {
-        return activities.ContainsKey(character.Name);
+        lock (activationGate)
+            return activities.ContainsKey(character.Name);
     }
 
     public ChatActivity? GetChatActivity(Character character)
     {
-        return activities.GetValueOrDefault(character.Name);
+        lock (activationGate)
+            return activities.GetValueOrDefault(character.Name);
     }
 
     public async Task ActivateAutoActivateCharacters()
     {
-        List<Character> startingCharacters = characterSystem.GetAllCharacters()
-            .Where(c => c.AutoActivate && !IsActivated(c))
-            .ToList();
+        List<Character> startingCharacters;
+        lock (activationGate)
+        {
+            startingCharacters = characterSystem.GetAllCharacters()
+                .Where(c => c.AutoActivate && TryReserveActivation(c))
+                .ToList();
+        }
 
         foreach (Character startingCharacter in startingCharacters)
-            await Activate(startingCharacter);
+            await ActivateReserved(startingCharacter);
     }
 
     /// <summary>
     /// 激活角色。UI 应通过订阅 Activating/Activated/ActivationFailed 事件来感知流程。
     /// </summary>
     public async Task Activate(Character character)
+    {
+        lock (activationGate)
+        {
+            if (!TryReserveActivation(character))
+                return;
+        }
+
+        await ActivateReserved(character);
+    }
+
+    async Task ActivateReserved(Character character)
     {
         try
         {
@@ -76,7 +94,8 @@ public class ChatActivitySystem
             );
             ActivatingCreated?.Invoke(chatActivity);
             await chatActivity.Launch(progress);
-            activities.Add(character.Name, chatActivity);
+            lock (activationGate)
+                activities.Add(character.Name, chatActivity);
             WriteActivationDiagnostic(character, "activation-succeeded", "Character activation completed.");
             Activated?.Invoke(chatActivity);
         }
@@ -85,6 +104,11 @@ public class ChatActivitySystem
             WriteActivationDiagnostic(character, "activation-failed", ex.Message, ex);
             ActivationFailed?.Invoke(character, ex);
         }
+        finally
+        {
+            lock (activationGate)
+                activatingCharacters.Remove(character.Name);
+        }
     }
 
     /// <summary>
@@ -92,12 +116,17 @@ public class ChatActivitySystem
     /// </summary>
     public async Task Deactivate(Character character)
     {
-        if (!activities.TryGetValue(character.Name, out ChatActivity? chatActivity))
-            return;
+        ChatActivity? chatActivity;
+        lock (activationGate)
+        {
+            if (!activities.TryGetValue(character.Name, out chatActivity))
+                return;
+        }
 
         Destroying?.Invoke(chatActivity);
         await chatActivity.DisposeAsync();
-        activities.Remove(character.Name);
+        lock (activationGate)
+            activities.Remove(character.Name);
         Destroyed?.Invoke(chatActivity);
     }
 
@@ -124,6 +153,16 @@ public class ChatActivitySystem
     readonly StorageSystem storageSystem;
     readonly List<object> appendObjects = new();
     readonly Dictionary<string, ChatActivity> activities = new();
+    readonly HashSet<string> activatingCharacters = new(StringComparer.Ordinal);
+    readonly object activationGate = new();
+
+    bool TryReserveActivation(Character character)
+    {
+        if (activities.ContainsKey(character.Name))
+            return false;
+
+        return activatingCharacters.Add(character.Name);
+    }
 
     IEnumerable<string> GetMissingCharacterModules(Character character)
     {
