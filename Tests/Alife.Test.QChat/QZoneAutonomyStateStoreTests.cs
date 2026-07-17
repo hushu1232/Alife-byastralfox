@@ -70,11 +70,59 @@ public sealed class QZoneAutonomyStateStoreTests
     }
 
     [Test]
-    public void DefaultStorePathEndsUnderStorageQZoneAutonomy()
+    public void ExplicitStorePathDoesNotCreateTheTemporaryDirectoryUntilStateIsSaved()
     {
-        QZoneAutonomyStateStore store = new();
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
 
-        Assert.That(store.DirectoryPath, Does.EndWith(Path.Combine("Storage", "QZoneAutonomy")));
+        Assert.Multiple(() =>
+        {
+            Assert.That(store.DirectoryPath, Is.EqualTo(directory));
+            Assert.That(Directory.Exists(directory), Is.False);
+        });
+    }
+
+    [Test]
+    public void OverwritingAnExistingStateAtomicallyReturnsTheSecondSafeStateWithoutTemporaryFiles()
+    {
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10002);
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyState firstState = QZoneAutonomyState.Create(agentKey) with {
+            LastAuditId = "audit-first",
+            NextPostCandidateAt = now.AddHours(24),
+            ContentHashes = [Hash("content-first")]
+        };
+        QZoneAutonomyState secondState = firstState with {
+            LastSuccessfulPostAt = now,
+            NextPostCandidateAt = now.AddHours(42),
+            PostsToday = 1,
+            LastAuditId = "audit-second",
+            LastFailureKind = "transport-unavailable",
+            ContentHashes = [Hash("content-second")]
+        };
+
+        store.Save(firstState);
+        store.Save(secondState);
+
+        QZoneAutonomyState loaded = store.Load(agentKey);
+        string[] persistedFiles = Directory.GetFiles(directory, "*.json");
+        string persistedJson = File.ReadAllText(persistedFiles.Single());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded.LastSuccessfulPostAt, Is.EqualTo(secondState.LastSuccessfulPostAt));
+            Assert.That(loaded.NextPostCandidateAt, Is.EqualTo(secondState.NextPostCandidateAt));
+            Assert.That(loaded.PostsToday, Is.EqualTo(secondState.PostsToday));
+            Assert.That(loaded.LastAuditId, Is.EqualTo("audit-second"));
+            Assert.That(loaded.LastFailureKind, Is.EqualTo("transport-unavailable"));
+            Assert.That(loaded.ContentHashes, Is.EqualTo(secondState.ContentHashes));
+            Assert.That(Directory.GetFiles(directory, "*.tmp"), Is.Empty);
+            Assert.That(persistedJson, Does.Not.Contain("cookie").IgnoreCase);
+            Assert.That(persistedJson, Does.Not.Contain("prompt").IgnoreCase);
+            Assert.That(persistedJson, Does.Not.Contain("draft").IgnoreCase);
+        });
     }
 
     string CreateTemporaryDirectory()
