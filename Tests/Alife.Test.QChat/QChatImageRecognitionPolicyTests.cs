@@ -43,18 +43,22 @@ public sealed class QChatImageRecognitionPolicyTests
     }
 
     [Test]
-    public void NonOwnerPassiveGroupImageIsSkippedByDefault()
+    public void NonOwnerPassiveGroupImageIsAnalyzedByDefaultWithoutMention()
     {
-        QChatImageRecognitionPolicyDecision decision = Decide(
-            QChatSenderRole.GroupMember,
-            OneBotMessageType.Group,
-            isMentionedOrWoken: false,
-            isPassiveGroupMessage: true);
+        QChatConfig config = new() { EnableImageRecognition = true };
+        QChatImageRecognitionPolicyDecision decision = QChatImageRecognitionPolicy.Decide(
+            new QChatImageRecognitionPolicyContext(
+                config,
+                QChatSenderRole.GroupMember,
+                OneBotMessageType.Group,
+                IsMentionedOrWoken: false,
+                IsPassiveGroupMessage: true,
+                ImageCount: 1));
 
         Assert.Multiple(() =>
         {
-            Assert.That(decision.Action, Is.EqualTo(QChatImageRecognitionAction.Skip));
-            Assert.That(decision.Reason, Is.EqualTo("passive_group_image_disabled"));
+            Assert.That(decision.Action, Is.EqualTo(QChatImageRecognitionAction.Analyze));
+            Assert.That(decision.Reason, Is.EqualTo("passive_group_image"));
         });
     }
 

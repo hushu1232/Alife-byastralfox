@@ -80,7 +80,7 @@ public record QChatConfig
     public bool AnalyzeOwnerGroupImages { get; set; } = true;
     public bool AnalyzePrivateGuestImages { get; set; } = true;
     public bool AnalyzeMentionedGroupImages { get; set; } = true;
-    public bool AnalyzePassiveGroupImages { get; set; }
+    public bool AnalyzePassiveGroupImages { get; set; } = true;
     public bool EnableInternetAccess { get; set; } = false;
     public string InternetAllowedAgentIds { get; set; } = "xiayu";
     public bool EnablePublicInternetSearch { get; set; } = false;
