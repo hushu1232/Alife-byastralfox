@@ -52,7 +52,13 @@ public sealed class QChatGrokImageRecognitionClient(
             stream = false
         };
 
-        using HttpRequestMessage httpRequest = new(HttpMethod.Post, ResolveEndpoint(request.ApiEndpoint));
+        if (TryResolveEndpoint(request.ApiEndpoint, out Uri? resolvedEndpoint) == false)
+        {
+            return QChatImageRecognitionProviderResult.Fail(
+                ProviderName, model, QChatImageRecognitionFailureKind.InvalidResponse, "invalid_endpoint");
+        }
+
+        using HttpRequestMessage httpRequest = new(HttpMethod.Post, resolvedEndpoint);
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
         httpRequest.Content = JsonContent.Create(payload, options: JsonOptions);
 
@@ -89,12 +95,20 @@ public sealed class QChatGrokImageRecognitionClient(
         }
     }
 
-    Uri ResolveEndpoint(string? requestEndpoint)
+    bool TryResolveEndpoint(string? requestEndpoint, out Uri? resolvedEndpoint)
     {
         string configured = string.IsNullOrWhiteSpace(requestEndpoint)
             ? (string.IsNullOrWhiteSpace(endpoint) ? DefaultEndpoint : endpoint.Trim())
             : requestEndpoint.Trim();
-        return new Uri(configured, UriKind.Absolute);
+        if (Uri.TryCreate(configured, UriKind.Absolute, out Uri? absolute) &&
+            (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps))
+        {
+            resolvedEndpoint = absolute;
+            return true;
+        }
+
+        resolvedEndpoint = null;
+        return false;
     }
 
     static string? ExtractContent(string body)

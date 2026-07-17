@@ -76,13 +76,32 @@ public sealed class QChatGrokImageRecognitionClientTests
         });
     }
 
+    [Test]
+    public async Task InvalidEndpointFailsWithoutSendingRequest()
+    {
+        RecordingHandler handler = new("unused");
+        QChatGrokImageRecognitionClient client = new(new HttpClient(handler), () => "test-key", "not a valid endpoint");
+
+        QChatImageRecognitionProviderResult result = await client.AnalyzeAsync(new QChatImageRecognitionProviderRequest(
+            "https://example.invalid/screenshot.jpg", "Read it.", "grok-4.5", 80));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.FailureKind, Is.EqualTo(QChatImageRecognitionFailureKind.InvalidResponse));
+            Assert.That(result.FailureReason, Is.EqualTo("invalid_endpoint"));
+            Assert.That(handler.CallCount, Is.Zero);
+        });
+    }
+
     sealed class RecordingHandler(string responseBody, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
     {
+        public int CallCount { get; private set; }
         public string? Authorization { get; private set; }
         public string RequestBody { get; private set; } = "";
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            CallCount++;
             Authorization = request.Headers.Authorization?.ToString();
             RequestBody = request.Content == null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(statusCode) { Content = new StringContent(responseBody) };
