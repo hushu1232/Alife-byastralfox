@@ -2,6 +2,38 @@ using System;
 
 namespace Alife.Function.QChat;
 
+public enum QChatFollowUpIntent
+{
+    None,
+    WarmCoda,
+    PracticalAddendum,
+    EmotionalAfterthought,
+    DoNotInterrupt
+}
+
+public sealed record QChatFollowUpPresence(QChatFollowUpIntent Intent)
+{
+    public static QChatFollowUpPresence None { get; } = new(QChatFollowUpIntent.None);
+    public static QChatFollowUpPresence DoNotInterrupt { get; } = new(QChatFollowUpIntent.DoNotInterrupt);
+}
+
+public sealed record QChatFollowUpPresenceContext(
+    string AgentId,
+    OneBotMessageType MessageType,
+    QChatSenderRole SenderRole,
+    string SourceText,
+    string ReplyText,
+    bool IsRiskConversation,
+    bool IsDeterministicTask,
+    bool HasPendingMedia,
+    bool IsQuiet,
+    bool ModelReplyWasBlocked,
+    bool IsTimerState,
+    bool IsHighConversationPressure)
+{
+    public bool IsOwnerPrivate => MessageType == OneBotMessageType.Private && SenderRole == QChatSenderRole.Owner;
+}
+
 public readonly record struct QChatFollowUpSessionKey(string Value)
 {
     public static QChatFollowUpSessionKey Create(string agentId, long botId, long peerUserId)
