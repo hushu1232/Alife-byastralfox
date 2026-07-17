@@ -15,12 +15,13 @@ public interface IQZoneEphemeralCookieProvider
     Task<string> GetCookieAsync(CancellationToken cancellationToken = default);
 }
 
-public sealed class QZoneCookieRuntime : IQZoneRuntime
+public sealed class QZoneCookieRuntime : IQZoneRuntime, IDisposable
 {
     const string WritesUnavailableMessage = "QZone writes are unavailable in first phase.";
 
     readonly IQZoneEphemeralCookieProvider cookieProvider;
     readonly HttpClient httpClient;
+    bool isDisposed;
 
     public QZoneCookieRuntime(IQZoneEphemeralCookieProvider cookieProvider, HttpMessageHandler handler)
     {
@@ -36,6 +37,7 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
 
     public async Task<QZonePostSnapshot?> GetLatestPost(long targetId)
     {
+        ThrowIfDisposed();
         using HttpRequestMessage request = await CreateRequestAsync($"latest-post?targetId={targetId}");
         using HttpResponseMessage response = await httpClient.SendAsync(request);
         if (!response.IsSuccessStatusCode)
@@ -55,6 +57,7 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
 
     public async Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count)
     {
+        ThrowIfDisposed();
         string escapedPostId = Uri.EscapeDataString(postId);
         using HttpRequestMessage request = await CreateRequestAsync(
             $"comments?targetId={targetId}&postId={escapedPostId}&count={count}");
@@ -83,6 +86,15 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
     public Task LikePost(long targetId, string postId) => throw WriteUnavailable();
 
     public string GetAuditSafeState() => "QZoneCookieRuntime: read-only first phase.";
+
+    public void Dispose()
+    {
+        if (isDisposed)
+            return;
+
+        isDisposed = true;
+        httpClient.Dispose();
+    }
 
     async Task<HttpRequestMessage> CreateRequestAsync(string relativeUri)
     {
@@ -131,6 +143,7 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
         data = default;
         return root.ValueKind == JsonValueKind.Object
             && root.TryGetProperty("code", out JsonElement code)
+            && code.ValueKind == JsonValueKind.Number
             && code.TryGetInt32(out int status)
             && status == 0
             && root.TryGetProperty("data", out data)
@@ -143,7 +156,8 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
         [NotNullWhen(true)] out string? value)
     {
         value = null;
-        return element.TryGetProperty(propertyName, out JsonElement property)
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out JsonElement property)
             && property.ValueKind == JsonValueKind.String
             && (value = property.GetString()) is not null;
     }
@@ -151,7 +165,11 @@ public sealed class QZoneCookieRuntime : IQZoneRuntime
     static bool TryGetInt64(JsonElement element, string propertyName, out long value)
     {
         value = default;
-        return element.TryGetProperty(propertyName, out JsonElement property)
+        return element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out JsonElement property)
+            && property.ValueKind == JsonValueKind.Number
             && property.TryGetInt64(out value);
     }
+
+    void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(isDisposed, this);
 }
