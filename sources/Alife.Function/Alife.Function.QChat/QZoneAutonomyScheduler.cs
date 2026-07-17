@@ -41,7 +41,17 @@ public sealed record QZoneAutonomyState(
     IReadOnlyList<string> ContentHashes)
 {
     const int MaximumContentHashes = 8;
-    const int MaximumMetadataLength = 256;
+    static readonly HashSet<string> AllowedFailureKinds = new(StringComparer.Ordinal) {
+        "missed_window",
+        "dry_run",
+        "disabled",
+        "paused",
+        "outside_window",
+        "daily_limit",
+        "minimum_interval",
+        "retry_backoff",
+        "not_due"
+    };
 
     public static QZoneAutonomyState Create(QZoneAutonomyAgentKey agentKey) =>
         new(
@@ -79,41 +89,16 @@ public sealed record QZoneAutonomyState(
 
     internal static string? NormalizeAuditId(string? value)
     {
-        if (string.IsNullOrEmpty(value)
-            || value.Length > MaximumMetadataLength
-            || value.All(IsSafeAuditIdCharacter) == false)
-            return null;
-
-        return value;
+        return value is { Length: 36 }
+            && Guid.TryParseExact(value, "D", out Guid auditId)
+            ? auditId.ToString("D")
+            : null;
     }
 
     internal static string? NormalizeFailureKind(string? value)
     {
-        if (string.IsNullOrEmpty(value)
-            || value.Length > MaximumMetadataLength
-            || value.All(IsSafeFailureKindCharacter) == false)
-        {
-            return null;
-        }
-
-        return value;
+        return value is not null && AllowedFailureKinds.Contains(value) ? value : null;
     }
-
-    static bool IsSafeAuditIdCharacter(char value) =>
-        value is >= 'A' and <= 'Z'
-            or >= 'a' and <= 'z'
-            or >= '0' and <= '9'
-            or '.'
-            or '_'
-            or ':'
-            or '-';
-
-    static bool IsSafeFailureKindCharacter(char value) =>
-        value is >= 'a' and <= 'z'
-            or >= '0' and <= '9'
-            or '.'
-            or '_'
-            or '-';
 }
 
 public sealed class QZoneAutonomyScheduler
@@ -216,15 +201,15 @@ public sealed class QZoneAutonomyScheduler
             if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
                 return Skip(QZoneAutonomyReasonCode.NotDue);
 
-            if (IsWithinPostWindow(nextCandidate, context.Settings) == false)
-            {
-                SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: false));
-                return Skip(QZoneAutonomyReasonCode.NotDue);
-            }
-
             if (IsMissedCandidate(nextCandidate, now))
             {
                 SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: true));
+                return Skip(QZoneAutonomyReasonCode.NotDue);
+            }
+
+            if (IsWithinPostWindow(nextCandidate, context.Settings) == false)
+            {
+                SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: false));
                 return Skip(QZoneAutonomyReasonCode.NotDue);
             }
 
@@ -286,8 +271,8 @@ public sealed class QZoneAutonomyScheduler
         if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
             return false;
 
-        return IsWithinPostWindow(nextCandidate, settings) == false
-            || IsMissedCandidate(nextCandidate, now);
+        return IsMissedCandidate(nextCandidate, now)
+            || IsWithinPostWindow(nextCandidate, settings) == false;
     }
 
     static bool IsMissedCandidate(DateTimeOffset? candidate, DateTimeOffset now) =>
