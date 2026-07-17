@@ -24,6 +24,13 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 {
     public bool IsIdle => executor.IsInactive;
     public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
+    public bool IsTextOnlyResponseScopeActive => textOnlyResponseDepth.Value > 0;
+
+    public IDisposable UseTextOnlyResponseScope()
+    {
+        textOnlyResponseDepth.Value++;
+        return new TextOnlyResponseScope(textOnlyResponseDepth);
+    }
 
     public ToolRouteDecision? RecentToolRouteDecision
     {
@@ -241,6 +248,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     readonly XmlHandlerTable handlerTable = new();
     readonly ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
     readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
+    readonly AsyncLocal<int> textOnlyResponseDepth = new();
     readonly object dataAgentRouteGate = new();
     readonly object recentToolRouteGate = new();
     readonly object dataAgentEvidenceDiagnosticsGate = new();
@@ -384,6 +392,9 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     async void OnChatSent(string _)
     {
+        if (IsTextOnlyResponseScopeActive)
+            return;
+
         try
         {
             await ChatBot.RequestChatAsync();
@@ -411,6 +422,9 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     void OnChatReceived(string obj)
     {
+        if (IsTextOnlyResponseScopeActive)
+            return;
+
         executor.Feed(obj);
     }
 
@@ -442,6 +456,20 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
                 return;
 
             target.Value = previous;
+            disposed = true;
+        }
+    }
+
+    sealed class TextOnlyResponseScope(AsyncLocal<int> target) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            target.Value = Math.Max(0, target.Value - 1);
             disposed = true;
         }
     }

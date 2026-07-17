@@ -6,6 +6,22 @@ using Microsoft.Extensions.Logging.Abstractions;
 public class XmlFunctionPolicyTests
 {
     [Test]
+    public void TextOnlyResponseScopeIsNestableAndRestoresState()
+    {
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+
+        Assert.That(caller.IsTextOnlyResponseScopeActive, Is.False);
+        using (caller.UseTextOnlyResponseScope())
+        {
+            Assert.That(caller.IsTextOnlyResponseScopeActive, Is.True);
+            using (caller.UseTextOnlyResponseScope())
+                Assert.That(caller.IsTextOnlyResponseScopeActive, Is.True);
+        }
+
+        Assert.That(caller.IsTextOnlyResponseScopeActive, Is.False);
+    }
+
+    [Test]
     public void FunctionCallerRegistersImplicitHandlerDocumentTrigger()
     {
         XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
