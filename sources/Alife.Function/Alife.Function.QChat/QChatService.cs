@@ -107,6 +107,14 @@ public record QChatConfig
     public int GroupSettleMilliseconds { get; set; } = 1500;
     public int RecallGraceMilliseconds { get; set; } = 2000;
     public int MaxSettleMilliseconds { get; set; } = 3500;
+    public bool EnableConversationFollowUp { get; set; }
+    public bool ConversationFollowUpOwnerPrivateOnly { get; set; } = true;
+    public bool AllowConversationFollowUpInGroups { get; set; }
+    public int FollowUpDelayMinSeconds { get; set; } = 8;
+    public int FollowUpDelayMaxSeconds { get; set; } = 20;
+    public int MaxFollowUpsPerTurn { get; set; } = 1;
+    public int FollowUpSessionCooldownMinutes { get; set; } = 15;
+    public int FollowUpDailyLimitPerSession { get; set; } = 6;
     public bool EnableReplyTimingDelay { get; set; }
     public bool EnableTaskProgressFeedback { get; set; } = true;
     public int TaskProgressFeedbackMilliseconds { get; set; } = 2000;
