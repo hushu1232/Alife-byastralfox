@@ -288,10 +288,16 @@ public class QZoneService :
             now);
 
         if (config.EnableQZone == false)
+        {
+            CancelPausedServiceCandidate(context);
             return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("disabled"), "disabled"));
+        }
 
         if (config.EnableQZoneAutonomy == false)
+        {
+            CancelPausedServiceCandidate(context);
             return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("autonomy_disabled"), "autonomy_disabled"));
+        }
 
         if (config.DryRunExternalActions == false)
             return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("dry_run_required"), "dry_run_required"));
@@ -546,6 +552,12 @@ public class QZoneService :
             clock,
             autonomyRandom,
             autonomyStateStore ?? new QZoneAutonomyStateStore()));
+
+    void CancelPausedServiceCandidate(QZoneAutonomyContext context)
+    {
+        if (context.Paused && context.IsDryRun)
+            GetAutonomyScheduler().EvaluatePostCandidate(context);
+    }
 
     QZoneAutonomyRunResult CompleteAutonomy(
         QZoneAutonomyContext context,

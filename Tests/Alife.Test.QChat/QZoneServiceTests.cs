@@ -350,6 +350,109 @@ public class QZoneServiceTests
         });
     }
 
+    [TestCase(false, true, "disabled")]
+    [TestCase(true, false, "autonomy_disabled")]
+    public async Task AutonomyServicePausedGateCancelsPersistedCandidateBeforeEarlyDisabledReturn(
+        bool enableQZone,
+        bool enableAutonomy,
+        string expectedReason)
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        string stateDirectory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore stateStore = new(stateDirectory);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        stateStore.Save(QZoneAutonomyState.Create(agentKey) with
+        {
+            DailyCountDate = DateOnly.FromDateTime(now.DateTime),
+            NextPostCandidateAt = now.AddMinutes(-1)
+        });
+        AlwaysPostPersonaPolicy policy = new();
+        FakeQZoneRuntime runtime = new();
+        QZoneService pausedService = QZoneService.CreateForAutonomyWithStateStore(
+            runtime,
+            policy,
+            null,
+            () => now,
+            stateStore,
+            () => 0d);
+        pausedService.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = enableQZone,
+            EnableQZoneAutonomy = enableAutonomy,
+            QZoneAutonomyPaused = true,
+            DryRunExternalActions = true
+        };
+
+        QZoneAutonomyRunResult pausedResult = await pausedService.RunAutonomyOnceAsync(MixuAutonomyRequest());
+        QZoneAutonomyState cancelled = new QZoneAutonomyScheduler(() => now, () => 0d, stateStore).GetState(agentKey);
+        QZoneService resumedService = QZoneService.CreateForAutonomyWithStateStore(
+            runtime,
+            policy,
+            null,
+            () => now,
+            stateStore,
+            () => 0d);
+        resumedService.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyPaused = false,
+            DryRunExternalActions = true
+        };
+
+        QZoneAutonomyRunResult resumedResult = await resumedService.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pausedResult.Executed, Is.False);
+            Assert.That(pausedResult.ReasonCode, Is.EqualTo(expectedReason));
+            Assert.That(cancelled.NextPostCandidateAt, Is.Null);
+            Assert.That(resumedResult.Executed, Is.False);
+            Assert.That(resumedResult.ReasonCode, Is.EqualTo("initial_scheduled"));
+            Assert.That(policy.EvaluateCalls, Is.Zero);
+            Assert.That(runtime.Posts, Is.Empty);
+            Assert.That(runtime.Comments, Is.Empty);
+            Assert.That(runtime.Replies, Is.Empty);
+            Assert.That(runtime.Likes, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task AutonomyServicePausedDisabledGateWithoutCandidateDoesNotCreateStateStore()
+    {
+        string stateDirectory = CreateTemporaryDirectory();
+        AlwaysPostPersonaPolicy policy = new();
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForAutonomyWithStateStore(
+            runtime,
+            policy,
+            null,
+            () => DateTimeOffset.UtcNow,
+            new QZoneAutonomyStateStore(stateDirectory),
+            () => 0d);
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = false,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyPaused = true,
+            DryRunExternalActions = true
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("disabled"));
+            Assert.That(policy.EvaluateCalls, Is.Zero);
+            Assert.That(Directory.Exists(stateDirectory), Is.False);
+            Assert.That(runtime.Posts, Is.Empty);
+            Assert.That(runtime.Comments, Is.Empty);
+            Assert.That(runtime.Replies, Is.Empty);
+            Assert.That(runtime.Likes, Is.Empty);
+        });
+    }
+
     [Test]
     public async Task QZoneComment_CallsRuntimeForAllowedTarget()
     {
