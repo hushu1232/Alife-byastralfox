@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,46 @@ namespace Alife.Function.QChat;
 
 public sealed class QZoneAutonomyStateStore
 {
+    sealed class PersistedState
+    {
+        public DateTimeOffset? LastSuccessfulPostAt { get; set; }
+        public DateTimeOffset? LastSuccessfulCommentAt { get; set; }
+        public DateTimeOffset? NextPostCandidateAt { get; set; }
+        public DateOnly DailyCountDate { get; set; }
+        public int PostsToday { get; set; }
+        public int CommentsToday { get; set; }
+        public DateTimeOffset? CooldownUntil { get; set; }
+        public string? LastFailureKind { get; set; }
+        public string? LastAuditId { get; set; }
+        public string[] ContentHashes { get; set; } = [];
+
+        public static PersistedState From(QZoneAutonomyState state) => new() {
+            LastSuccessfulPostAt = state.LastSuccessfulPostAt,
+            LastSuccessfulCommentAt = state.LastSuccessfulCommentAt,
+            NextPostCandidateAt = state.NextPostCandidateAt,
+            DailyCountDate = state.DailyCountDate,
+            PostsToday = state.PostsToday,
+            CommentsToday = state.CommentsToday,
+            CooldownUntil = state.CooldownUntil,
+            LastFailureKind = state.LastFailureKind,
+            LastAuditId = state.LastAuditId,
+            ContentHashes = (state.ContentHashes ?? []).ToArray()
+        };
+
+        public QZoneAutonomyState ToState(QZoneAutonomyAgentKey agentKey) => new(
+            agentKey,
+            LastSuccessfulPostAt,
+            LastSuccessfulCommentAt,
+            NextPostCandidateAt,
+            DailyCountDate,
+            PostsToday,
+            CommentsToday,
+            CooldownUntil,
+            LastFailureKind,
+            LastAuditId,
+            ContentHashes ?? []);
+    }
+
     static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true
@@ -39,11 +80,11 @@ public sealed class QZoneAutonomyStateStore
         try
         {
             string json = File.ReadAllText(path);
-            QZoneAutonomyState? state = JsonSerializer.Deserialize<QZoneAutonomyState>(json, JsonOptions);
-            if (state == null || state.AgentKey != agentKey)
+            PersistedState? persistedState = JsonSerializer.Deserialize<PersistedState>(json, JsonOptions);
+            if (persistedState == null)
                 return QZoneAutonomyState.Create(agentKey);
 
-            return state.NormalizeForPersistence();
+            return persistedState.ToState(agentKey).NormalizeForPersistence();
         }
         catch (JsonException)
         {
@@ -73,7 +114,9 @@ public sealed class QZoneAutonomyStateStore
 
         try
         {
-            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(safeState, JsonOptions));
+            File.WriteAllText(
+                temporaryPath,
+                JsonSerializer.Serialize(PersistedState.From(safeState), JsonOptions));
             if (File.Exists(destinationPath))
                 File.Replace(temporaryPath, destinationPath, destinationBackupFileName: null);
             else

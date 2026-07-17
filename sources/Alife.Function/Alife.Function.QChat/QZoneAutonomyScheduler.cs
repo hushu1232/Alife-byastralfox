@@ -242,7 +242,7 @@ public sealed class QZoneAutonomyScheduler
                         state,
                         now,
                         context.Settings,
-                        IsMissedPostTarget(state, now));
+                        IsStaleCandidate(state, state.NextPostCandidateAt, now));
                     SaveUnsafe(state);
                 }
 
@@ -264,7 +264,7 @@ public sealed class QZoneAutonomyScheduler
             if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
                 return Skip(QZoneAutonomyReasonCode.NotDue);
 
-            if (IsMissedPostTarget(state, now))
+            if (IsStaleCandidate(state, nextCandidate, now))
             {
                 SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: true));
                 return Skip(QZoneAutonomyReasonCode.NotDue);
@@ -354,9 +354,17 @@ public sealed class QZoneAutonomyScheduler
         if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
             return false;
 
-        return IsMissedPostTarget(state, now)
+        return IsStaleCandidate(state, nextCandidate, now)
             || IsWithinPostWindow(nextCandidate, settings) == false;
     }
+
+    static bool IsStaleCandidate(
+        QZoneAutonomyState state,
+        DateTimeOffset? candidate,
+        DateTimeOffset now) =>
+        IsMissedPostTarget(state, now)
+        || candidate is { } scheduledAt
+        && DateOnly.FromDateTime(scheduledAt.DateTime) < DateOnly.FromDateTime(now.DateTime);
 
     static bool IsMissedPostTarget(QZoneAutonomyState state, DateTimeOffset now) =>
         state.LastSuccessfulPostAt is { } lastSuccessfulPostAt

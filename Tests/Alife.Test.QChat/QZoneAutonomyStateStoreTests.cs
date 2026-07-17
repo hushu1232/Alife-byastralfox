@@ -236,6 +236,57 @@ public sealed class QZoneAutonomyStateStoreTests
         });
     }
 
+    [Test]
+    public void PersistedStateOmitsSecretLikeAgentIdentityAndReattachesCallerKeyOnLoad()
+    {
+        const string agentId = "agent-cookie-secret-identity";
+        const string botId = "999";
+        const string agentKeyValue = "qzone:agent-cookie-secret-identity:999";
+        const string contentHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
+        QZoneAutonomyAgentKey agentKey = new(agentKeyValue);
+        DateTimeOffset now = new(2026, 7, 18, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            LastSuccessfulPostAt = now,
+            LastSuccessfulCommentAt = now.AddHours(-1),
+            NextPostCandidateAt = now.AddHours(33),
+            DailyCountDate = DateOnly.FromDateTime(now.DateTime),
+            PostsToday = 1,
+            CommentsToday = 2,
+            CooldownUntil = now.AddMinutes(15),
+            LastFailureKind = "missed_window",
+            LastAuditId = "11111111-1111-4111-8111-111111111111",
+            ContentHashes = [contentHash]
+        };
+
+        store.Save(state);
+
+        QZoneAutonomyState loaded = store.Load(agentKey);
+        string persistedJson = File.ReadAllText(Directory.GetFiles(directory, "*.json").Single());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded.AgentKey, Is.EqualTo(agentKey));
+            Assert.That(loaded.LastSuccessfulPostAt, Is.EqualTo(state.LastSuccessfulPostAt));
+            Assert.That(loaded.LastSuccessfulCommentAt, Is.EqualTo(state.LastSuccessfulCommentAt));
+            Assert.That(loaded.NextPostCandidateAt, Is.EqualTo(state.NextPostCandidateAt));
+            Assert.That(loaded.DailyCountDate, Is.EqualTo(state.DailyCountDate));
+            Assert.That(loaded.PostsToday, Is.EqualTo(state.PostsToday));
+            Assert.That(loaded.CommentsToday, Is.EqualTo(state.CommentsToday));
+            Assert.That(loaded.CooldownUntil, Is.EqualTo(state.CooldownUntil));
+            Assert.That(loaded.LastFailureKind, Is.EqualTo(state.LastFailureKind));
+            Assert.That(loaded.LastAuditId, Is.EqualTo(state.LastAuditId));
+            Assert.That(loaded.ContentHashes, Is.EqualTo(state.ContentHashes));
+            Assert.That(persistedJson, Does.Not.Contain(agentKeyValue));
+            Assert.That(persistedJson, Does.Not.Contain(agentId));
+            Assert.That(persistedJson, Does.Not.Contain(botId));
+            Assert.That(persistedJson, Does.Not.Contain("cookie").IgnoreCase);
+            Assert.That(persistedJson, Does.Not.Contain("prompt").IgnoreCase);
+            Assert.That(persistedJson, Does.Not.Contain("draft").IgnoreCase);
+        });
+    }
+
     string CreateTemporaryDirectory()
     {
         string directory = Path.Combine(Path.GetTempPath(), "Alife.QZoneAutonomy.Tests", Guid.NewGuid().ToString("N"));
