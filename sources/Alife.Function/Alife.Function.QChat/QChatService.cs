@@ -406,14 +406,14 @@ public partial class QChatService(
             {
                 clients[providerId] = new QChatAgnesImageRecognitionClient(
                     new HttpClient(),
-                    ResolveAgnesVisionApiKey,
+                    () => ResolveAgnesVisionApiKey(provider.ApiKeyEnvironmentVariable),
                     string.IsNullOrWhiteSpace(provider.ApiEndpoint) ? config.AgnesVisionApiEndpoint : provider.ApiEndpoint);
             }
             else if (string.Equals(providerId, "grok", StringComparison.OrdinalIgnoreCase))
             {
                 clients[providerId] = new QChatGrokImageRecognitionClient(
                     new HttpClient(),
-                    ResolveGrokVisionApiKey,
+                    () => ResolveGrokVisionApiKey(provider.ApiKeyEnvironmentVariable),
                     provider.ApiEndpoint);
             }
         }
@@ -424,12 +424,20 @@ public partial class QChatService(
             WriteQChatDiagnostic);
     }
 
-    string? ResolveAgnesVisionApiKey()
+    string? ResolveAgnesVisionApiKey(string? environmentVariableName = null)
     {
-        return QChatAgnesVisionApiKeyResolver.Resolve(Configuration?.AgnesVisionApiKey);
+        return QChatAgnesVisionApiKeyResolver.Resolve(
+            Configuration?.AgnesVisionApiKey,
+            string.IsNullOrWhiteSpace(environmentVariableName)
+                ? QChatAgnesVisionApiKeyResolver.DefaultEnvironmentVariableName
+                : environmentVariableName.Trim());
     }
 
-    static string? ResolveGrokVisionApiKey() => QChatGrokVisionApiKeyResolver.Resolve();
+    static string? ResolveGrokVisionApiKey(string? environmentVariableName = null) =>
+        QChatGrokVisionApiKeyResolver.Resolve(
+            string.IsNullOrWhiteSpace(environmentVariableName)
+                ? QChatGrokVisionApiKeyResolver.DefaultEnvironmentVariableName
+                : environmentVariableName.Trim());
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";

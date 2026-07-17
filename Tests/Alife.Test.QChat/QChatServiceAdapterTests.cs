@@ -9408,6 +9408,46 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task PassiveGroupImageIsObservedWithoutMentionAndDoesNotForceQqReply()
+    {
+        FakeOneBotRuntime runtime = new();
+        ObservedImageRecognitionClient imageClient = new("a neutral image");
+        CapturingQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            imageRecognitionService: new QChatImageRecognitionService(imageClient))
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableImageRecognition = true,
+                AnalyzePassiveGroupImages = true,
+                EnableBalancedTextStreaming = false,
+                AllowedGroupIds = "2001"
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            GroupId = 2001,
+            UserId = 2002,
+            RawMessage = "[CQ:image,file=normal.jpg,url=https://example.invalid/normal.jpg]"
+        });
+        await imageClient.WaitForCallAsync();
+        await Task.Delay(50);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(imageClient.Calls, Is.EqualTo(1));
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task OwnerPrivateImageRecognitionWaitsUntilConversationSettleWindowDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -16765,6 +16805,25 @@ public class QChatServiceAdapterTests
             CancellationToken cancellationToken = default)
         {
             Calls++;
+            return Task.FromResult(QChatImageRecognitionProviderResult.Ok("agnes", request.Model, content));
+        }
+    }
+
+    sealed class ObservedImageRecognitionClient(string content) : IQChatImageRecognitionClient
+    {
+        readonly TaskCompletionSource<object?> called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string ProviderName => "agnes";
+        public int Calls { get; private set; }
+
+        public Task WaitForCallAsync() => called.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public Task<QChatImageRecognitionProviderResult> AnalyzeAsync(
+            QChatImageRecognitionProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            called.TrySetResult(null);
             return Task.FromResult(QChatImageRecognitionProviderResult.Ok("agnes", request.Model, content));
         }
     }
