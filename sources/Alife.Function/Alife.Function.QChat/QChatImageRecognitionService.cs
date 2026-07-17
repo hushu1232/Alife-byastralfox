@@ -1,16 +1,38 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Alife.Function.QChat;
 
-public sealed class QChatImageRecognitionService(
-    IQChatImageRecognitionClient client,
-    Action<string, string, object?, Exception?>? diagnosticWriter = null)
+public sealed class QChatImageRecognitionService
 {
+    readonly IQChatImageRecognitionClient? directClient;
+    readonly QChatVisionExecutionCoordinator? coordinator;
+    readonly QChatVisionProviderCatalog? providerCatalog;
+    readonly Action<string, string, object?, Exception?>? diagnosticWriter;
+
+    public QChatImageRecognitionService(
+        IQChatImageRecognitionClient client,
+        Action<string, string, object?, Exception?>? diagnosticWriter = null)
+    {
+        directClient = client ?? throw new ArgumentNullException(nameof(client));
+        this.diagnosticWriter = diagnosticWriter;
+    }
+
+    public QChatImageRecognitionService(
+        QChatVisionExecutionCoordinator coordinator,
+        QChatVisionProviderCatalog providerCatalog,
+        Action<string, string, object?, Exception?>? diagnosticWriter = null)
+    {
+        this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
+        this.providerCatalog = providerCatalog ?? throw new ArgumentNullException(nameof(providerCatalog));
+        this.diagnosticWriter = diagnosticWriter;
+    }
+
     public async Task<string?> BuildPromptAsync(
         QChatImageRecognitionContext context,
         CancellationToken cancellationToken = default)
@@ -30,13 +52,19 @@ public sealed class QChatImageRecognitionService(
         if (decision.Action != QChatImageRecognitionAction.Analyze)
             return null;
 
+        QChatVisionProfile effectiveProfile = context.VisionProfile ?? CreateLegacyProfile(effectiveConfig);
+        QChatVisionRoutePlan route = QChatVisionRoutePlanner.Plan(
+            effectiveProfile,
+            context.MessageEvent.RawMessage,
+            providerCatalog,
+            TimeSpan.FromMilliseconds(Math.Max(1000, effectiveConfig.ImageRecognitionTimeoutMilliseconds)));
         List<(QChatImageCandidate Candidate, QChatImageRecognitionProviderResult Result)> results = [];
         foreach (QChatImageCandidate image in images.Take(decision.MaxImages))
         {
             if (image.SourceKind != QChatImageSourceKind.PublicUrl || string.IsNullOrWhiteSpace(image.Url))
             {
                 results.Add((image, QChatImageRecognitionProviderResult.Fail(
-                    client.ProviderName,
+                    route.PrimaryProvider,
                     effectiveConfig.AgnesVisionModel,
                     QChatImageRecognitionFailureKind.MissingPublicUrl,
                     "public_url_unavailable")));
@@ -49,7 +77,16 @@ public sealed class QChatImageRecognitionService(
                 effectiveConfig.AgnesVisionModel,
                 effectiveConfig.ImageRecognitionMaxTokens,
                 effectiveConfig.AgnesVisionApiEndpoint);
-            QChatImageRecognitionProviderResult result = await client.AnalyzeAsync(request, cancellationToken);
+            QChatImageRecognitionProviderResult result = coordinator == null
+                ? await directClient!.AnalyzeAsync(request, cancellationToken)
+                : await coordinator.AnalyzeAsync(
+                    ResolveBotId(context, effectiveProfile),
+                    context.SenderRole == QChatSenderRole.Owner,
+                    ComputeImageKey(image.Url),
+                    route,
+                    request,
+                    providerId => BuildProviderRequest(providerId, request),
+                    cancellationToken);
             results.Add((image, result));
         }
 
@@ -65,7 +102,7 @@ public sealed class QChatImageRecognitionService(
 
         return context.Config with
         {
-            ImageRecognitionProvider = Normalize(profile.Provider, context.Config.ImageRecognitionProvider),
+            ImageRecognitionProvider = Normalize(profile.PrimaryProvider, profile.Provider, context.Config.ImageRecognitionProvider),
             AgnesVisionModel = Normalize(profile.Model, context.Config.AgnesVisionModel),
             AgnesVisionApiEndpoint = Normalize(profile.ApiEndpoint, context.Config.AgnesVisionApiEndpoint),
             MaxImagesPerMessage = Math.Max(1, profile.MaxImagesPerMessage)
@@ -75,6 +112,48 @@ public sealed class QChatImageRecognitionService(
     static string Normalize(string? value, string fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    }
+
+    static string Normalize(string? preferred, string? fallback, string defaultValue)
+    {
+        return string.IsNullOrWhiteSpace(preferred)
+            ? Normalize(fallback, defaultValue)
+            : preferred.Trim();
+    }
+
+    static QChatVisionProfile CreateLegacyProfile(QChatConfig config) => new()
+    {
+        Provider = config.ImageRecognitionProvider,
+        PrimaryProvider = config.ImageRecognitionProvider,
+        Model = config.AgnesVisionModel,
+        ApiEndpoint = config.AgnesVisionApiEndpoint,
+        MaxImagesPerMessage = config.MaxImagesPerMessage
+    };
+
+    QChatImageRecognitionProviderRequest BuildProviderRequest(
+        string providerId,
+        QChatImageRecognitionProviderRequest defaultRequest)
+    {
+        QChatVisionProviderSettings? provider = providerCatalog?.Find(providerId);
+        if (provider == null)
+            return defaultRequest;
+
+        string model = Normalize(provider.Model, defaultRequest.Model);
+        string? endpoint = string.IsNullOrWhiteSpace(provider.ApiEndpoint) ? defaultRequest.ApiEndpoint : provider.ApiEndpoint.Trim();
+        return defaultRequest with { Model = model, ApiEndpoint = endpoint };
+    }
+
+    static long ResolveBotId(QChatImageRecognitionContext context, QChatVisionProfile profile)
+    {
+        if (context.MessageEvent.SelfId > 0)
+            return context.MessageEvent.SelfId;
+        return profile.BotId > 0 ? profile.BotId : context.Config.BotId;
+    }
+
+    static string ComputeImageKey(string imageUrl)
+    {
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(imageUrl));
+        return Convert.ToHexString(bytes);
     }
 
     static string BuildProviderPrompt(QChatImageRecognitionContext context)
@@ -93,7 +172,9 @@ public sealed class QChatImageRecognitionService(
     {
         StringBuilder builder = new();
         builder.AppendLine("[qchat image analysis]");
-        builder.AppendLine($"provider={effectiveConfig.ImageRecognitionProvider}");
+        string provider = results.Select(item => item.Result.ProviderName)
+            .FirstOrDefault(value => string.IsNullOrWhiteSpace(value) == false) ?? effectiveConfig.ImageRecognitionProvider;
+        builder.AppendLine($"provider={provider}");
         builder.AppendLine($"policy_reason={decision.Reason}");
         builder.AppendLine($"image_count={results.Count}");
 
@@ -150,8 +231,10 @@ public sealed class QChatImageRecognitionService(
             "QChat image recognition token usage was recorded without image URLs, credentials, summaries, or raw provider responses.",
             new
             {
-                Provider = client.ProviderName,
-                Model = effectiveConfig.AgnesVisionModel,
+                Provider = results.Select(item => item.Result.ProviderName)
+                    .FirstOrDefault(value => string.IsNullOrWhiteSpace(value) == false) ?? effectiveConfig.ImageRecognitionProvider,
+                Model = results.Select(item => item.Result.Model)
+                    .FirstOrDefault(value => string.IsNullOrWhiteSpace(value) == false) ?? effectiveConfig.AgnesVisionModel,
                 MessageType = context.MessageEvent.MessageType.ToString(),
                 SenderRole = context.SenderRole.ToString(),
                 PolicyReason = decision.Reason,

@@ -65,6 +65,53 @@ public sealed class QChatImageRecognitionServiceTests
     }
 
     [Test]
+    public async Task BuildPromptAsync_UsesGrokFallbackWithItsOwnProviderSettings()
+    {
+        FailingFakeImageRecognitionClient agnes = new(QChatImageRecognitionProviderResult.Fail(
+            "agnes", "agnes-2.0-flash", QChatImageRecognitionFailureKind.Timeout, "timeout"));
+        NamedFakeImageRecognitionClient grok = new("grok", "screenshot text");
+        QChatVisionProviderCatalog catalog = new()
+        {
+            Providers =
+            [
+                new QChatVisionProviderSettings { ProviderId = "agnes", Model = "agnes-2.0-flash", ApiEndpoint = "https://agnes.example.invalid/v1" },
+                new QChatVisionProviderSettings { ProviderId = "grok", Model = "grok-4.5", ApiEndpoint = "https://grok.example.invalid/v1" }
+            ]
+        };
+        QChatImageRecognitionService service = new(
+            new QChatVisionExecutionCoordinator(new Dictionary<string, IQChatImageRecognitionClient>
+            {
+                ["agnes"] = agnes,
+                ["grok"] = grok
+            }),
+            catalog);
+        QChatVisionProfile profile = new()
+        {
+            PrimaryProvider = "agnes",
+            FallbackProvider = "grok",
+            ComplexRequestProvider = "grok"
+        };
+
+        string? prompt = await service.BuildPromptAsync(new QChatImageRecognitionContext(
+            EnabledConfig(),
+            Message("[CQ:image,file=screen.jpg,url=https://example.invalid/screen.jpg]", OneBotMessageType.Private),
+            QChatSenderRole.Owner,
+            IsMentionedOrWoken: false,
+            IsPassiveGroupMessage: false,
+            VisionProfile: profile));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("provider=grok"));
+            Assert.That(prompt, Does.Contain("image_1_summary=screenshot text"));
+            Assert.That(agnes.Calls, Is.EqualTo(1));
+            Assert.That(grok.Calls, Is.EqualTo(1));
+            Assert.That(grok.Requests.Single().Model, Is.EqualTo("grok-4.5"));
+            Assert.That(grok.Requests.Single().ApiEndpoint, Is.EqualTo("https://grok.example.invalid/v1"));
+        });
+    }
+
+    [Test]
     public async Task SkipsWhenPolicySkipsPassiveGroupImage()
     {
         FakeImageRecognitionClient client = new("unused");
@@ -257,6 +304,22 @@ public sealed class QChatImageRecognitionServiceTests
         {
             Calls++;
             return Task.FromResult(result);
+        }
+    }
+
+    sealed class NamedFakeImageRecognitionClient(string providerName, string content) : IQChatImageRecognitionClient
+    {
+        public string ProviderName { get; } = providerName;
+        public int Calls { get; private set; }
+        public List<QChatImageRecognitionProviderRequest> Requests { get; } = [];
+
+        public Task<QChatImageRecognitionProviderResult> AnalyzeAsync(
+            QChatImageRecognitionProviderRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Requests.Add(request);
+            return Task.FromResult(QChatImageRecognitionProviderResult.Ok(ProviderName, request.Model, content));
         }
     }
 }

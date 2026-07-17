@@ -128,6 +128,32 @@ public sealed class QChatVisionExecutionCoordinatorTests
         });
     }
 
+    [Test]
+    public async Task FallbackUsesRequestFactoryForItsOwnModelAndEndpoint()
+    {
+        RecordingClient agnes = RecordingClient.Fail("agnes", QChatImageRecognitionFailureKind.Timeout);
+        RecordingClient grok = RecordingClient.Success("grok", "fallback");
+        QChatVisionExecutionCoordinator coordinator = new(new Dictionary<string, IQChatImageRecognitionClient>
+        {
+            ["agnes"] = agnes,
+            ["grok"] = grok
+        });
+        QChatImageRecognitionProviderRequest request = Request("route");
+
+        await coordinator.AnalyzeAsync(
+            1, false, "route", new("agnes", "grok", "default_image", TimeSpan.FromSeconds(12)), request,
+            providerId => providerId == "grok"
+                ? request with { Model = "grok-4.5", ApiEndpoint = "https://vision.example.invalid/grok" }
+                : request);
+
+        QChatImageRecognitionProviderRequest grokRequest = grok.Requests.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(grokRequest.Model, Is.EqualTo("grok-4.5"));
+            Assert.That(grokRequest.ApiEndpoint, Is.EqualTo("https://vision.example.invalid/grok"));
+        });
+    }
+
     static QChatImageRecognitionProviderRequest Request(string label) => new(
         "https://example.invalid/" + label + ".jpg", label, "agnes-2.0-flash", 80);
 
@@ -145,6 +171,7 @@ public sealed class QChatVisionExecutionCoordinatorTests
         public string ProviderName { get; }
         public int Calls { get; private set; }
         public ConcurrentQueue<string> RequestLabels { get; } = new();
+        public ConcurrentQueue<QChatImageRecognitionProviderRequest> Requests { get; } = new();
 
         public static RecordingClient Success(string providerName, string content) => new(providerName, request =>
             Task.FromResult(QChatImageRecognitionProviderResult.Ok(providerName, request.Model, content)));
@@ -170,6 +197,7 @@ public sealed class QChatVisionExecutionCoordinatorTests
         {
             Calls++;
             RequestLabels.Enqueue(request.Prompt);
+            Requests.Enqueue(request);
             firstCall.TrySetResult(null);
             return await handler(request);
         }

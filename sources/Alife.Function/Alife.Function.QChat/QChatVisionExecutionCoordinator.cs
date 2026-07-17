@@ -41,6 +41,18 @@ public sealed class QChatVisionExecutionCoordinator
         QChatImageRecognitionProviderRequest request,
         CancellationToken cancellationToken = default)
     {
+        return AnalyzeAsync(botId, ownerPriority, imageKey, route, request, requestFactory: null, cancellationToken: cancellationToken);
+    }
+
+    public Task<QChatImageRecognitionProviderResult> AnalyzeAsync(
+        long botId,
+        bool ownerPriority,
+        string imageKey,
+        QChatVisionRoutePlan route,
+        QChatImageRecognitionProviderRequest request,
+        Func<string, QChatImageRecognitionProviderRequest>? requestFactory,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(route);
         ArgumentNullException.ThrowIfNull(request);
 
@@ -73,7 +85,7 @@ public sealed class QChatVisionExecutionCoordinator
             }
 
             TaskCompletionSource<QChatImageRecognitionProviderResult> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            PendingRequest pending = new(normalizedImageKey, route, request, completion, cancellationToken);
+            PendingRequest pending = new(normalizedImageKey, route, request, requestFactory, completion, cancellationToken);
             if (ownerPriority)
                 state.OwnerQueue.Enqueue(pending);
             else
@@ -114,7 +126,7 @@ public sealed class QChatVisionExecutionCoordinator
             QChatImageRecognitionProviderResult result;
             try
             {
-                result = await ExecuteAsync(state, pending.Route, pending.Request, pending.CancellationToken);
+                result = await ExecuteAsync(state, pending.Route, pending.Request, pending.RequestFactory, pending.CancellationToken);
             }
             catch (Exception)
             {
@@ -133,6 +145,7 @@ public sealed class QChatVisionExecutionCoordinator
         BotState state,
         QChatVisionRoutePlan route,
         QChatImageRecognitionProviderRequest request,
+        Func<string, QChatImageRecognitionProviderRequest>? requestFactory,
         CancellationToken cancellationToken)
     {
         using CancellationTokenSource timeout = new(route.TotalTimeout <= TimeSpan.Zero
@@ -150,14 +163,15 @@ public sealed class QChatVisionExecutionCoordinator
                     primaryProvider, request.Model, QChatImageRecognitionFailureKind.Disabled, "provider_circuit_open");
             }
 
-            return await CallProviderAsync(state, fallbackProvider, request, linked.Token);
+            return await CallProviderAsync(state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), linked.Token);
         }
 
-        QChatImageRecognitionProviderResult primary = await CallProviderAsync(state, primaryProvider, request, linked.Token);
+        QChatImageRecognitionProviderResult primary = await CallProviderAsync(
+            state, primaryProvider, CreateRequest(primaryProvider, request, requestFactory), linked.Token);
         if (primary.Success || fallbackProvider == null || QChatVisionRoutePlanner.ShouldFallback(primary.FailureKind) == false)
             return primary;
 
-        return await CallProviderAsync(state, fallbackProvider, request, linked.Token);
+        return await CallProviderAsync(state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), linked.Token);
     }
 
     async Task<QChatImageRecognitionProviderResult> CallProviderAsync(
@@ -264,6 +278,14 @@ public sealed class QChatVisionExecutionCoordinator
                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
     }
 
+    static QChatImageRecognitionProviderRequest CreateRequest(
+        string providerId,
+        QChatImageRecognitionProviderRequest defaultRequest,
+        Func<string, QChatImageRecognitionProviderRequest>? requestFactory)
+    {
+        return requestFactory?.Invoke(providerId) ?? defaultRequest;
+    }
+
     sealed class BotState
     {
         public object Gate { get; } = new();
@@ -278,6 +300,7 @@ public sealed class QChatVisionExecutionCoordinator
         string ImageKey,
         QChatVisionRoutePlan Route,
         QChatImageRecognitionProviderRequest Request,
+        Func<string, QChatImageRecognitionProviderRequest>? RequestFactory,
         TaskCompletionSource<QChatImageRecognitionProviderResult> Completion,
         CancellationToken CancellationToken);
 

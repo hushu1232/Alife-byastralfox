@@ -386,23 +386,50 @@ public partial class QChatService(
                 return injectedImageRecognitionService;
             if (Configuration?.EnableImageRecognition != true)
                 return null;
-            if (string.Equals(Configuration.ImageRecognitionProvider, "agnes", StringComparison.OrdinalIgnoreCase) == false)
-                return null;
 
-            resolvedImageRecognitionService ??= new QChatImageRecognitionService(
-                new QChatAgnesImageRecognitionClient(
-                    new HttpClient(),
-                    ResolveAgnesVisionApiKey,
-                    Configuration.AgnesVisionApiEndpoint),
-                WriteQChatDiagnostic);
+            resolvedImageRecognitionService ??= CreateVisionRecognitionService(Configuration);
             return resolvedImageRecognitionService;
         }
+    }
+
+    QChatImageRecognitionService CreateVisionRecognitionService(QChatConfig config)
+    {
+        QChatVisionProviderCatalog catalog = config.VisionProviders ?? QChatVisionProviderCatalog.CreateDefault();
+        Dictionary<string, IQChatImageRecognitionClient> clients = new(StringComparer.OrdinalIgnoreCase);
+        foreach (QChatVisionProviderSettings provider in catalog.Providers ?? [])
+        {
+            if (provider.Enabled == false || string.IsNullOrWhiteSpace(provider.ProviderId))
+                continue;
+
+            string providerId = provider.ProviderId.Trim();
+            if (string.Equals(providerId, "agnes", StringComparison.OrdinalIgnoreCase))
+            {
+                clients[providerId] = new QChatAgnesImageRecognitionClient(
+                    new HttpClient(),
+                    ResolveAgnesVisionApiKey,
+                    string.IsNullOrWhiteSpace(provider.ApiEndpoint) ? config.AgnesVisionApiEndpoint : provider.ApiEndpoint);
+            }
+            else if (string.Equals(providerId, "grok", StringComparison.OrdinalIgnoreCase))
+            {
+                clients[providerId] = new QChatGrokImageRecognitionClient(
+                    new HttpClient(),
+                    ResolveGrokVisionApiKey,
+                    provider.ApiEndpoint);
+            }
+        }
+
+        return new QChatImageRecognitionService(
+            new QChatVisionExecutionCoordinator(clients),
+            catalog,
+            WriteQChatDiagnostic);
     }
 
     string? ResolveAgnesVisionApiKey()
     {
         return QChatAgnesVisionApiKeyResolver.Resolve(Configuration?.AgnesVisionApiKey);
     }
+
+    static string? ResolveGrokVisionApiKey() => QChatGrokVisionApiKeyResolver.Resolve();
 
     const string QuietModeSleepFallbackAcknowledgement = "好，我先安静下来。";
     const string QuietModeWakeFallbackAcknowledgement = "我在。";
