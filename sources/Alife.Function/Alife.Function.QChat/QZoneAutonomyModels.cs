@@ -28,6 +28,7 @@ public sealed record QZoneAutonomySettings(
 {
     static readonly TimeOnly DefaultPostWindowStart = new(9, 30);
     static readonly TimeOnly DefaultPostWindowEnd = new(22, 30);
+    static readonly int MaxPostMinimumIntervalHours = (int)Math.Floor(TimeSpan.MaxValue.TotalHours);
 
     public static QZoneAutonomySettings From(QZoneServiceConfig config)
     {
@@ -44,7 +45,10 @@ public sealed record QZoneAutonomySettings(
             config.QZoneAutonomyDryRunOnly,
             postWindowStart,
             postWindowEnd,
-            TimeSpan.FromHours(PositiveOrDefault(config.AutonomyPostMinimumIntervalHours, 12)),
+            TimeSpan.FromHours(PositiveWithinOrDefault(
+                config.AutonomyPostMinimumIntervalHours,
+                12,
+                MaxPostMinimumIntervalHours)),
             PositiveOrDefault(config.AutonomyMaxPostsPerDay, 2),
             PositiveOrDefault(config.XiayuAutonomyMaxCommentsPerDay, 2),
             PositiveOrDefault(config.MixuAutonomyMaxCommentsPerDay, 3));
@@ -54,4 +58,7 @@ public sealed record QZoneAutonomySettings(
         TimeOnly.TryParse(value, out TimeOnly parsed) ? parsed : fallback;
 
     static int PositiveOrDefault(int value, int fallback) => value > 0 ? value : fallback;
+
+    static int PositiveWithinOrDefault(int value, int fallback, int maximum) =>
+        value > 0 && value <= maximum ? value : fallback;
 }
