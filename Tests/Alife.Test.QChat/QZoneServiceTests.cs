@@ -32,6 +32,102 @@ public class QZoneServiceTests
     }
 
     [Test]
+    public async Task AutonomyServiceRecordsDryRunWithoutCallingRuntimeWrite()
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        QZoneAutonomyScheduler scheduler = CreateDueAutonomyScheduler(now, agentKey);
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(
+            runtime,
+            clock: () => now,
+            scheduler: scheduler,
+            personaPolicy: new QZoneAutonomyPersonaPolicy())
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                EnableQZoneAutonomy = true,
+                QZoneAutonomyDryRunOnly = true,
+                DryRunExternalActions = true
+            }
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("dry_run"));
+            Assert.That(runtime.Posts, Is.Empty);
+            Assert.That(runtime.Comments, Is.Empty);
+            Assert.That(runtime.Replies, Is.Empty);
+            Assert.That(runtime.Likes, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task AutonomyServiceDisabledGateBeatsPostPolicy()
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        AlwaysPostPersonaPolicy policy = new();
+        QZoneService service = new(
+            new FakeQZoneRuntime(),
+            clock: () => now,
+            scheduler: CreateDueAutonomyScheduler(now, agentKey),
+            personaPolicy: policy)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = false,
+                EnableQZoneAutonomy = true,
+                DryRunExternalActions = true
+            }
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("disabled"));
+            Assert.That(policy.EvaluateCalls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task AutonomyServicePausedGateBeatsPostPolicy()
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        AlwaysPostPersonaPolicy policy = new();
+        QZoneService service = new(
+            new FakeQZoneRuntime(),
+            clock: () => now,
+            scheduler: CreateDueAutonomyScheduler(now, agentKey),
+            personaPolicy: policy)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                EnableQZoneAutonomy = true,
+                QZoneAutonomyPaused = true,
+                DryRunExternalActions = true
+            }
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("paused"));
+            Assert.That(policy.EvaluateCalls, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task QZoneComment_CallsRuntimeForAllowedTarget()
     {
         FakeQZoneRuntime runtime = new();
@@ -315,6 +411,20 @@ public class QZoneServiceTests
         }
     }
 
+    sealed class AlwaysPostPersonaPolicy : IQZoneAutonomyPersonaPolicy
+    {
+        public int EvaluateCalls { get; private set; }
+
+        public QZoneAutonomyDecision Evaluate(QZoneAutonomyContext context)
+        {
+            EvaluateCalls++;
+            return new QZoneAutonomyDecision(
+                QZoneAutonomyAction.Post,
+                QZoneAutonomyReasonCode.Due,
+                QZoneAutonomyContentEnvelope.MixuWarmBright);
+        }
+    }
+
     sealed class FakeActionInvoker : IOneBotActionInvoker
     {
         public List<(string Action, string Json)> Calls { get; } = new();
@@ -369,6 +479,22 @@ public class QZoneServiceTests
             chatBot,
             [])).GetAwaiter().GetResult();
     }
+
+    static QZoneAutonomyScheduler CreateDueAutonomyScheduler(DateTimeOffset now, QZoneAutonomyAgentKey agentKey)
+    {
+        QZoneAutonomyScheduler scheduler = new(() => now, () => 0d);
+        scheduler.RecordPostSucceeded(agentKey, now.AddHours(-24).AddMinutes(-1));
+        return scheduler;
+    }
+
+    static QZoneAutonomyRunRequest MixuAutonomyRequest() =>
+        new(
+            "mixu",
+            10001,
+            new QZoneAutonomyPersonaSignals(
+                QZoneAutonomyPersona.Mixu,
+                new QZoneAutonomyXiaYuSignals(),
+                new QZoneAutonomyMixuSignals(IsRelationshipSafe: true, PrefersWarmBright: true)));
 
     static string GetPendingPokeText(QZoneService service)
     {

@@ -21,11 +21,15 @@ public sealed record QZoneAutonomyContext(
     QZoneAutonomyAgentKey AgentKey,
     QZoneAutonomySettings Settings,
     bool Paused,
-    bool IsDryRun);
+    bool IsDryRun,
+    QZoneAutonomyPersonaSignals? PersonaSignals = null,
+    DateTimeOffset? ObservedAt = null);
 
 public sealed record QZoneAutonomyDecision(
     QZoneAutonomyAction Action,
-    QZoneAutonomyReasonCode ReasonCode);
+    QZoneAutonomyReasonCode ReasonCode,
+    QZoneAutonomyContentEnvelope? ContentEnvelope = null,
+    string? SafeReasonCode = null);
 
 public sealed record QZoneAutonomyState(
     QZoneAutonomyAgentKey AgentKey,

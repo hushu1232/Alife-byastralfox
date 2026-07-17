@@ -62,6 +62,28 @@ public sealed record QZoneQueryResult(
     QZonePostSnapshot? Post,
     IReadOnlyList<QZoneCommentSnapshot> Comments);
 
+public sealed record QZoneAutonomyRunRequest(
+    string AgentId,
+    long BotId,
+    QZoneAutonomyPersonaSignals PersonaSignals)
+{
+    public QZoneAutonomyAgentKey CreateAgentKey()
+    {
+        if (string.IsNullOrWhiteSpace(AgentId))
+            throw new ArgumentNullException(nameof(AgentId));
+        if (BotId <= 0)
+            throw new ArgumentOutOfRangeException(nameof(BotId));
+        ArgumentNullException.ThrowIfNull(PersonaSignals);
+
+        return QZoneAutonomyAgentKey.Create(AgentId, BotId);
+    }
+}
+
+public sealed record QZoneAutonomyRunResult(
+    bool Executed,
+    string ReasonCode,
+    QZoneAutonomyDecision Decision);
+
 [Module("QQ空间", """
                 提供QQ空间互动能力的安全外壳。默认使用 dry-run，真实适配器接入前不会向外部空间发帖、评论、回复或点赞。
                 点赞只面向配置中的私聊联系人池随机发生；评论回复默认更积极，但仍受目标白名单和概率限制。
@@ -75,7 +97,9 @@ public class QZoneService(
     ILifeEventPublisher? lifeEventPublisher = null,
     AgentProactiveBehaviorService? proactiveBehavior = null,
     AgentAuditLogService? auditLog = null,
-    Func<DateTimeOffset>? clock = null) :
+    Func<DateTimeOffset>? clock = null,
+    QZoneAutonomyScheduler? scheduler = null,
+    IQZoneAutonomyPersonaPolicy? personaPolicy = null) :
     InteractiveModule<QZoneService>,
     IConfigurable<QZoneServiceConfig>,
     IEmbodiedCapability,
@@ -87,6 +111,9 @@ public class QZoneService(
     readonly AgentProactiveBehaviorService? proactiveBehavior = proactiveBehavior;
     readonly AgentAuditLogService? auditLog = auditLog;
     readonly Func<DateTimeOffset> clock = clock ?? (() => DateTimeOffset.Now);
+    readonly QZoneAutonomyScheduler autonomyScheduler = scheduler
+        ?? new QZoneAutonomyScheduler(clock ?? (() => DateTimeOffset.Now), () => Random.Shared.NextDouble());
+    readonly IQZoneAutonomyPersonaPolicy autonomyPersonaPolicy = personaPolicy ?? new QZoneAutonomyPersonaPolicy();
     readonly Dictionary<long, DateTimeOffset> lastTargetInteractions = new();
     readonly Dictionary<long, List<DateTimeOffset>> targetInteractionHistory = new();
     public QZoneServiceConfig? Configuration { get; set; } = new();
@@ -167,6 +194,50 @@ public class QZoneService(
         connection.Token = config.Token;
         await connection.ConnectAsync();
         createdRuntime = CreateOneBotRuntime(connection, config);
+    }
+
+    public Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        QZoneServiceConfig config = GetConfig();
+        QZoneAutonomySettings settings = QZoneAutonomySettings.From(config);
+        DateTimeOffset now = clock();
+        QZoneAutonomyContext context = new(
+            request.CreateAgentKey(),
+            settings,
+            config.QZoneAutonomyPaused,
+            IsDryRun: true,
+            request.PersonaSignals,
+            now);
+
+        if (config.EnableQZone == false)
+            return Task.FromResult(SkipAutonomy("disabled"));
+
+        if (config.QZoneAutonomyPaused)
+        {
+            autonomyScheduler.EvaluatePostCandidate(context);
+            return Task.FromResult(SkipAutonomy("paused"));
+        }
+
+        if (config.EnableQZoneAutonomy == false)
+            return Task.FromResult(SkipAutonomy("autonomy_disabled"));
+
+        QZoneAutonomyDecision scheduledDecision = autonomyScheduler.EvaluatePostCandidate(context);
+        if (scheduledDecision.Action != QZoneAutonomyAction.Post)
+            return Task.FromResult(new QZoneAutonomyRunResult(false, GetSafeReasonCode(scheduledDecision), scheduledDecision));
+
+        QZoneAutonomyDecision personaDecision = autonomyPersonaPolicy.Evaluate(context);
+        if (personaDecision.Action != QZoneAutonomyAction.Post)
+            return Task.FromResult(new QZoneAutonomyRunResult(false, GetSafeReasonCode(personaDecision), personaDecision));
+
+        autonomyScheduler.RecordDryRunOutcome(
+            context.AgentKey,
+            now,
+            Guid.NewGuid().ToString("D"),
+            "dry_run",
+            TimeSpan.FromMinutes(30));
+        return Task.FromResult(new QZoneAutonomyRunResult(false, "dry_run", personaDecision));
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
@@ -376,6 +447,31 @@ public class QZoneService(
     QZoneServiceConfig GetConfig()
     {
         return Configuration ?? throw new InvalidOperationException("QQ Zone configuration is unavailable.");
+    }
+
+    static QZoneAutonomyRunResult SkipAutonomy(string reasonCode) =>
+        new(
+            false,
+            reasonCode,
+            new QZoneAutonomyDecision(QZoneAutonomyAction.Skip, QZoneAutonomyReasonCode.Disabled, null, reasonCode));
+
+    static string GetSafeReasonCode(QZoneAutonomyDecision decision)
+    {
+        return decision.SafeReasonCode is "xiayu_silent_or_vigilant" or "mixu_relationship_not_safe" or "persona_signals_unavailable"
+            ? decision.SafeReasonCode
+            : decision.ReasonCode switch
+            {
+                QZoneAutonomyReasonCode.Disabled => "disabled",
+                QZoneAutonomyReasonCode.Paused => "paused",
+                QZoneAutonomyReasonCode.DryRunDisabled => "dry_run_disabled",
+                QZoneAutonomyReasonCode.OutsidePostWindow => "outside_post_window",
+                QZoneAutonomyReasonCode.DailyPostLimitReached => "daily_post_limit_reached",
+                QZoneAutonomyReasonCode.MinimumPostInterval => "minimum_post_interval",
+                QZoneAutonomyReasonCode.RetryBackoff => "retry_backoff",
+                QZoneAutonomyReasonCode.NotDue => "not_due",
+                QZoneAutonomyReasonCode.Due => "due",
+                _ => "not_due"
+            };
     }
 
     IQZoneRuntime GetRuntime()
