@@ -21,15 +21,43 @@ public sealed record QZoneAutonomyContext(
     QZoneAutonomyAgentKey AgentKey,
     QZoneAutonomySettings Settings,
     bool Paused,
-    bool IsDryRun,
-    QZoneAutonomyPersonaSignals? PersonaSignals = null,
-    DateTimeOffset? ObservedAt = null);
+    bool IsDryRun)
+{
+    public QZoneAutonomyPersonaSignals? PersonaSignals { get; init; }
+    public DateTimeOffset? ObservedAt { get; init; }
+
+    public QZoneAutonomyContext(
+        QZoneAutonomyAgentKey AgentKey,
+        QZoneAutonomySettings Settings,
+        bool Paused,
+        bool IsDryRun,
+        QZoneAutonomyPersonaSignals? PersonaSignals,
+        DateTimeOffset? ObservedAt = null)
+        : this(AgentKey, Settings, Paused, IsDryRun)
+    {
+        this.PersonaSignals = PersonaSignals;
+        this.ObservedAt = ObservedAt;
+    }
+}
 
 public sealed record QZoneAutonomyDecision(
     QZoneAutonomyAction Action,
-    QZoneAutonomyReasonCode ReasonCode,
-    QZoneAutonomyContentEnvelope? ContentEnvelope = null,
-    string? SafeReasonCode = null);
+    QZoneAutonomyReasonCode ReasonCode)
+{
+    public QZoneAutonomyContentEnvelope? ContentEnvelope { get; init; }
+    public string? SafeReasonCode { get; init; }
+
+    public QZoneAutonomyDecision(
+        QZoneAutonomyAction action,
+        QZoneAutonomyReasonCode reasonCode,
+        QZoneAutonomyContentEnvelope? contentEnvelope,
+        string? safeReasonCode = null)
+        : this(action, reasonCode)
+    {
+        ContentEnvelope = contentEnvelope;
+        SafeReasonCode = safeReasonCode;
+    }
+}
 
 public sealed record QZoneAutonomyState(
     QZoneAutonomyAgentKey AgentKey,
@@ -139,18 +167,41 @@ public sealed class QZoneAutonomyScheduler
         lock (syncRoot)
         {
             QZoneAutonomyState current = ResetDailyCounts(GetStateUnsafe(agentKey), now);
-            double sample = Math.Clamp(random(), 0d, 1d);
-            TimeSpan delay = MinimumCandidateDelay + TimeSpan.FromTicks(
-                (long)((MaximumCandidateDelay - MinimumCandidateDelay).Ticks * sample));
             QZoneAutonomyState updated = current with {
                 LastSuccessfulPostAt = now,
-                NextPostCandidateAt = now + delay,
+                NextPostCandidateAt = CreateInitialCandidateAt(now),
                 PostsToday = current.PostsToday + 1,
                 CooldownUntil = null,
                 LastFailureKind = null
             };
             SaveUnsafe(updated);
             return CreateSnapshot(GetStateUnsafe(agentKey));
+        }
+    }
+
+    public bool EnsureInitialPostCandidate(QZoneAutonomyContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        lock (syncRoot)
+        {
+            if (context.Settings.Enabled == false
+                || context.Paused
+                || (context.Settings.DryRunOnly && context.IsDryRun == false))
+            {
+                return false;
+            }
+
+            QZoneAutonomyState current = GetStateUnsafe(context.AgentKey);
+            if (current.LastSuccessfulPostAt != null || current.NextPostCandidateAt != null)
+                return false;
+
+            DateTimeOffset now = clock();
+            QZoneAutonomyState initialized = ResetDailyCounts(current, now) with {
+                NextPostCandidateAt = CreateInitialCandidateAt(now)
+            };
+            SaveUnsafe(initialized);
+            return true;
         }
     }
 
@@ -259,6 +310,14 @@ public sealed class QZoneAutonomyScheduler
         state = stateStore?.Load(agentKey) ?? QZoneAutonomyState.Create(agentKey);
         states.Add(agentKey, state);
         return state;
+    }
+
+    DateTimeOffset CreateInitialCandidateAt(DateTimeOffset now)
+    {
+        double sample = Math.Clamp(random(), 0d, 1d);
+        TimeSpan delay = MinimumCandidateDelay + TimeSpan.FromTicks(
+            (long)((MaximumCandidateDelay - MinimumCandidateDelay).Ticks * sample));
+        return now + delay;
     }
 
     void SaveUnsafe(QZoneAutonomyState state)

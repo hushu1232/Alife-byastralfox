@@ -52,6 +52,25 @@ public sealed class QZoneAutonomySchedulerTests
     }
 
     [Test]
+    public void EnsureInitialPostCandidatePersistsCandidateWithoutRecordingSuccessOrCounts()
+    {
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0d, stateStore);
+
+        bool scheduled = scheduler.EnsureInitialPostCandidate(CreateContext(agentKey: agentKey));
+        QZoneAutonomyState persisted = new QZoneAutonomyScheduler(() => Now, () => 0d, stateStore).GetState(agentKey);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(scheduled, Is.True);
+            Assert.That(persisted.LastSuccessfulPostAt, Is.Null);
+            Assert.That(persisted.PostsToday, Is.Zero);
+            Assert.That(persisted.NextPostCandidateAt, Is.EqualTo(Now.AddHours(24)));
+        });
+    }
+
+    [Test]
     public void DisabledBeatsAnOverdueCandidate()
     {
         QZoneAutonomyScheduler scheduler = CreateOverdueScheduler();

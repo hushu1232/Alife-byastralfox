@@ -61,4 +61,69 @@ public sealed class QZoneAutonomyPersonaPolicyTests
             Assert.That(mixuWithQuietXiaYu.ContentEnvelope.MaximumLength, Is.GreaterThan(0));
         });
     }
+
+    [TestCase(double.NaN)]
+    [TestCase(double.PositiveInfinity)]
+    [TestCase(double.NegativeInfinity)]
+    public void XiayuNonFiniteVigilanceFailsClosed(double vigilance)
+    {
+        QZoneAutonomyDecision decision = new QZoneAutonomyPersonaPolicy().Evaluate(new QZoneAutonomyContext(
+            QZoneAutonomyAgentKey.Create("xiayu", 10001),
+            Settings(),
+            Paused: false,
+            IsDryRun: true,
+            PersonaSignals: new QZoneAutonomyPersonaSignals(
+                QZoneAutonomyPersona.XiaYu,
+                new QZoneAutonomyXiaYuSignals(Vigilance: vigilance),
+                new QZoneAutonomyMixuSignals(IsRelationshipSafe: true))));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(decision.SafeReasonCode, Is.EqualTo("persona_signals_unavailable"));
+        });
+    }
+
+    [Test]
+    public void MissingSelectedPersonaSignalsFailClosedWithoutThrowing()
+    {
+        QZoneAutonomyPersonaPolicy policy = new();
+        QZoneAutonomyDecision xiayuDecision = policy.Evaluate(new QZoneAutonomyContext(
+            QZoneAutonomyAgentKey.Create("xiayu", 10001),
+            Settings(),
+            Paused: false,
+            IsDryRun: true,
+            PersonaSignals: new QZoneAutonomyPersonaSignals(
+                QZoneAutonomyPersona.XiaYu,
+                null!,
+                new QZoneAutonomyMixuSignals(IsRelationshipSafe: true))));
+        QZoneAutonomyDecision mixuDecision = policy.Evaluate(new QZoneAutonomyContext(
+            QZoneAutonomyAgentKey.Create("mixu", 10001),
+            Settings(),
+            Paused: false,
+            IsDryRun: true,
+            PersonaSignals: new QZoneAutonomyPersonaSignals(
+                QZoneAutonomyPersona.Mixu,
+                new QZoneAutonomyXiaYuSignals(),
+                null!)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiayuDecision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(xiayuDecision.SafeReasonCode, Is.EqualTo("persona_signals_unavailable"));
+            Assert.That(mixuDecision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(mixuDecision.SafeReasonCode, Is.EqualTo("persona_signals_unavailable"));
+        });
+    }
+
+    static QZoneAutonomySettings Settings() =>
+        new(
+            Enabled: true,
+            DryRunOnly: true,
+            PostWindowStart: new TimeOnly(9, 30),
+            PostWindowEnd: new TimeOnly(22, 30),
+            PostHardMinimumInterval: TimeSpan.FromHours(12),
+            MaxPostsPerDay: 2,
+            XiayuMaxCommentsPerDay: 2,
+            MixuMaxCommentsPerDay: 3);
 }

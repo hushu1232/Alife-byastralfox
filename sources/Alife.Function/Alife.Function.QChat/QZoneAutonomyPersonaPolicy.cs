@@ -73,16 +73,23 @@ public sealed class QZoneAutonomyPersonaPolicy : IQZoneAutonomyPersonaPolicy
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        return context.PersonaSignals?.Persona switch
+        QZoneAutonomyPersonaSignals? personaSignals = context.PersonaSignals;
+        if (personaSignals == null)
+            return Skip("persona_signals_unavailable");
+
+        return personaSignals.Persona switch
         {
-            QZoneAutonomyPersona.XiaYu => EvaluateXiaYu(context.PersonaSignals.XiaYu),
-            QZoneAutonomyPersona.Mixu => EvaluateMixu(context.PersonaSignals.Mixu),
+            QZoneAutonomyPersona.XiaYu when personaSignals.XiaYu != null => EvaluateXiaYu(personaSignals.XiaYu),
+            QZoneAutonomyPersona.Mixu when personaSignals.Mixu != null => EvaluateMixu(personaSignals.Mixu),
             _ => Skip("persona_signals_unavailable")
         };
     }
 
     static QZoneAutonomyDecision EvaluateXiaYu(QZoneAutonomyXiaYuSignals signals)
     {
+        if (double.IsFinite(signals.Vigilance) == false)
+            return Skip("persona_signals_unavailable");
+
         if (signals.Vigilance >= XiaYuVigilanceThreshold
             || signals.IsSilent
             || signals.IsHighPressure
