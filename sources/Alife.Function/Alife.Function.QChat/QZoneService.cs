@@ -44,6 +44,15 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public string LikeAction { get; set; } = "send_like";
     public string LatestPostAction { get; set; } = "get_qzone_latest_post";
     public string LatestCommentsAction { get; set; } = "get_qzone_comments";
+    public bool EnableQZoneAutonomy { get; set; } = false;
+    public bool QZoneAutonomyDryRunOnly { get; set; } = true;
+    public bool QZoneAutonomyPaused { get; set; } = false;
+    public string AutonomyPostWindowStart { get; set; } = "09:30";
+    public string AutonomyPostWindowEnd { get; set; } = "22:30";
+    public int AutonomyMaxPostsPerDay { get; set; } = 2;
+    public int AutonomyPostMinimumIntervalHours { get; set; } = 12;
+    public int XiayuAutonomyMaxCommentsPerDay { get; set; } = 2;
+    public int MixuAutonomyMaxCommentsPerDay { get; set; } = 3;
 }
 
 public sealed record QZoneActionResult(string Action, bool Executed, string Reason);
