@@ -60,8 +60,8 @@ public sealed record QZoneAutonomyState(
     internal QZoneAutonomyState NormalizeForPersistence() => this with {
         PostsToday = Math.Max(0, PostsToday),
         CommentsToday = Math.Max(0, CommentsToday),
-        LastFailureKind = NormalizeMetadata(LastFailureKind),
-        LastAuditId = NormalizeMetadata(LastAuditId),
+        LastFailureKind = NormalizeFailureKind(LastFailureKind),
+        LastAuditId = NormalizeAuditId(LastAuditId),
         ContentHashes = (ContentHashes ?? [])
             .Where(IsSha256Hash)
             .Select(hash => hash.ToLowerInvariant())
@@ -77,19 +77,51 @@ public sealed record QZoneAutonomyState(
         return value.All(Uri.IsHexDigit);
     }
 
-    internal static string? NormalizeMetadata(string? value)
+    internal static string? NormalizeAuditId(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (string.IsNullOrEmpty(value)
+            || value.Length > MaximumMetadataLength
+            || value.All(IsSafeAuditIdCharacter) == false)
             return null;
 
-        return value.Trim()[..Math.Min(value.Trim().Length, MaximumMetadataLength)];
+        return value;
     }
+
+    internal static string? NormalizeFailureKind(string? value)
+    {
+        if (string.IsNullOrEmpty(value)
+            || value.Length > MaximumMetadataLength
+            || value.All(IsSafeFailureKindCharacter) == false)
+        {
+            return null;
+        }
+
+        return value;
+    }
+
+    static bool IsSafeAuditIdCharacter(char value) =>
+        value is >= 'A' and <= 'Z'
+            or >= 'a' and <= 'z'
+            or >= '0' and <= '9'
+            or '.'
+            or '_'
+            or ':'
+            or '-';
+
+    static bool IsSafeFailureKindCharacter(char value) =>
+        value is >= 'a' and <= 'z'
+            or >= '0' and <= '9'
+            or '.'
+            or '_'
+            or '-';
 }
 
 public sealed class QZoneAutonomyScheduler
 {
     static readonly TimeSpan MinimumCandidateDelay = TimeSpan.FromHours(24);
     static readonly TimeSpan MaximumCandidateDelay = TimeSpan.FromHours(42);
+    static readonly TimeSpan MissedCandidateDelay = TimeSpan.FromHours(48);
+    const string MissedWindowFailureKind = "missed_window";
 
     readonly object syncRoot = new();
     readonly Func<DateTimeOffset> clock;
@@ -110,7 +142,7 @@ public sealed class QZoneAutonomyScheduler
     public QZoneAutonomyState GetState(QZoneAutonomyAgentKey agentKey)
     {
         lock (syncRoot)
-            return GetStateUnsafe(agentKey);
+            return CreateSnapshot(GetStateUnsafe(agentKey));
     }
 
     public QZoneAutonomyState RecordPostSucceeded(QZoneAutonomyAgentKey agentKey, DateTimeOffset now)
@@ -129,7 +161,7 @@ public sealed class QZoneAutonomyScheduler
                 LastFailureKind = null
             };
             SaveUnsafe(updated);
-            return updated;
+            return CreateSnapshot(GetStateUnsafe(agentKey));
         }
     }
 
@@ -149,12 +181,25 @@ public sealed class QZoneAutonomyScheduler
             if (context.Settings.DryRunOnly && context.IsDryRun == false)
                 return Skip(QZoneAutonomyReasonCode.DryRunDisabled);
 
-            if (IsWithinPostWindow(now, context.Settings) == false)
-                return Skip(QZoneAutonomyReasonCode.OutsidePostWindow);
-
-            QZoneAutonomyState state = ResetDailyCounts(GetStateUnsafe(context.AgentKey), now);
-            if (state.DailyCountDate != GetStateUnsafe(context.AgentKey).DailyCountDate)
+            QZoneAutonomyState originalState = GetStateUnsafe(context.AgentKey);
+            QZoneAutonomyState state = ResetDailyCounts(originalState, now);
+            if (state.DailyCountDate != originalState.DailyCountDate)
                 SaveUnsafe(state);
+
+            if (IsWithinPostWindow(now, context.Settings) == false)
+            {
+                if (ShouldDeferCandidate(state, now, context.Settings))
+                {
+                    state = DeferCandidate(
+                        state,
+                        now,
+                        context.Settings,
+                        IsMissedCandidate(state.NextPostCandidateAt, now));
+                    SaveUnsafe(state);
+                }
+
+                return Skip(QZoneAutonomyReasonCode.OutsidePostWindow);
+            }
 
             if (state.PostsToday >= context.Settings.MaxPostsPerDay)
                 return Skip(QZoneAutonomyReasonCode.DailyPostLimitReached);
@@ -171,6 +216,18 @@ public sealed class QZoneAutonomyScheduler
             if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
                 return Skip(QZoneAutonomyReasonCode.NotDue);
 
+            if (IsWithinPostWindow(nextCandidate, context.Settings) == false)
+            {
+                SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: false));
+                return Skip(QZoneAutonomyReasonCode.NotDue);
+            }
+
+            if (IsMissedCandidate(nextCandidate, now))
+            {
+                SaveUnsafe(DeferCandidate(state, now, context.Settings, missed: true));
+                return Skip(QZoneAutonomyReasonCode.NotDue);
+            }
+
             return new QZoneAutonomyDecision(QZoneAutonomyAction.Post, QZoneAutonomyReasonCode.Due);
         }
     }
@@ -186,14 +243,14 @@ public sealed class QZoneAutonomyScheduler
         {
             QZoneAutonomyState current = GetStateUnsafe(agentKey);
             QZoneAutonomyState updated = current with {
-                LastAuditId = QZoneAutonomyState.NormalizeMetadata(auditId),
-                LastFailureKind = QZoneAutonomyState.NormalizeMetadata(failureKind),
+                LastAuditId = QZoneAutonomyState.NormalizeAuditId(auditId),
+                LastFailureKind = QZoneAutonomyState.NormalizeFailureKind(failureKind),
                 CooldownUntil = cooldown is { } duration && duration > TimeSpan.Zero
                     ? now + duration
                     : null
             };
             SaveUnsafe(updated);
-            return updated;
+            return CreateSnapshot(GetStateUnsafe(agentKey));
         }
     }
 
@@ -213,6 +270,70 @@ public sealed class QZoneAutonomyScheduler
         states[safeState.AgentKey] = safeState;
         stateStore?.Save(safeState);
     }
+
+    QZoneAutonomyState DeferCandidate(
+        QZoneAutonomyState state,
+        DateTimeOffset now,
+        QZoneAutonomySettings settings,
+        bool missed) =>
+        state with {
+            NextPostCandidateAt = CreateRandomWindowCandidate(now, settings),
+            LastFailureKind = missed ? MissedWindowFailureKind : state.LastFailureKind
+        };
+
+    bool ShouldDeferCandidate(QZoneAutonomyState state, DateTimeOffset now, QZoneAutonomySettings settings)
+    {
+        if (state.NextPostCandidateAt is not { } nextCandidate || now < nextCandidate)
+            return false;
+
+        return IsWithinPostWindow(nextCandidate, settings) == false
+            || IsMissedCandidate(nextCandidate, now);
+    }
+
+    static bool IsMissedCandidate(DateTimeOffset? candidate, DateTimeOffset now) =>
+        candidate is { } scheduledAt && now - scheduledAt >= MissedCandidateDelay;
+
+    DateTimeOffset CreateRandomWindowCandidate(DateTimeOffset now, QZoneAutonomySettings settings)
+    {
+        DateOnly candidateDate = DateOnly.FromDateTime(now.DateTime);
+        DateTimeOffset windowStart;
+        DateTimeOffset windowEnd;
+        TimeOnly currentTime = TimeOnly.FromDateTime(now.DateTime);
+        if (currentTime < settings.PostWindowStart)
+        {
+            windowStart = AtLocalTime(candidateDate, settings.PostWindowStart, now.Offset);
+            windowEnd = AtLocalTime(candidateDate, settings.PostWindowEnd, now.Offset);
+        }
+        else if (currentTime >= settings.PostWindowEnd)
+        {
+            candidateDate = candidateDate.AddDays(1);
+            windowStart = AtLocalTime(candidateDate, settings.PostWindowStart, now.Offset);
+            windowEnd = AtLocalTime(candidateDate, settings.PostWindowEnd, now.Offset);
+        }
+        else
+        {
+            windowStart = now;
+            windowEnd = AtLocalTime(candidateDate, settings.PostWindowEnd, now.Offset);
+        }
+
+        if (windowEnd - windowStart <= TimeSpan.FromTicks(2))
+        {
+            candidateDate = candidateDate.AddDays(1);
+            windowStart = AtLocalTime(candidateDate, settings.PostWindowStart, now.Offset);
+            windowEnd = AtLocalTime(candidateDate, settings.PostWindowEnd, now.Offset);
+        }
+
+        long selectableTicks = (windowEnd - windowStart).Ticks - 2;
+        long offsetTicks = 1 + (long)(selectableTicks * Math.Clamp(random(), 0d, 1d));
+        return windowStart.AddTicks(offsetTicks);
+    }
+
+    static DateTimeOffset AtLocalTime(DateOnly date, TimeOnly time, TimeSpan offset) =>
+        new(date.ToDateTime(time), offset);
+
+    static QZoneAutonomyState CreateSnapshot(QZoneAutonomyState state) => state with {
+        ContentHashes = (state.ContentHashes ?? []).ToArray()
+    };
 
     static QZoneAutonomyState ResetDailyCounts(QZoneAutonomyState state, DateTimeOffset now)
     {

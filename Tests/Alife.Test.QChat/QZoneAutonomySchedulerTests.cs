@@ -141,7 +141,7 @@ public sealed class QZoneAutonomySchedulerTests
     [Test]
     public void DueCandidateReturnsPostOnlyAfterHigherPriorityGatesAllowIt()
     {
-        QZoneAutonomyScheduler scheduler = CreateOverdueScheduler();
+        QZoneAutonomyScheduler scheduler = CreateOverdueScheduler(nextCandidateAt: Now.AddMinutes(-1));
 
         QZoneAutonomyDecision decision = scheduler.EvaluatePostCandidate(CreateContext());
 
@@ -170,10 +170,116 @@ public sealed class QZoneAutonomySchedulerTests
         });
     }
 
+    [Test]
+    public void RecordDryRunOutcomeRejectsUnsafeAuditMetadata()
+    {
+        const string fakeCookie = "pt_key=opaque-cookie-value";
+        const string fakePrompt = "SYSTEM PROMPT: do-not-persist";
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0d);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+
+        scheduler.RecordDryRunOutcome(
+            agentKey,
+            Now,
+            $"audit:{fakeCookie}",
+            $"transport-{fakePrompt}",
+            TimeSpan.FromMinutes(30));
+
+        QZoneAutonomyState state = scheduler.GetState(agentKey);
+        Assert.Multiple(() =>
+        {
+            Assert.That(state.LastAuditId, Is.Null);
+            Assert.That(state.LastFailureKind, Is.Null);
+            Assert.That(state.CooldownUntil, Is.EqualTo(Now.AddMinutes(30)));
+        });
+    }
+
+    [Test]
+    public void OffWindowRawCandidatesAreIndependentlyDeferredToRandomInteriorWindowSlotsWithoutCatchUpPosting()
+    {
+        DateTimeOffset current = new(2026, 7, 17, 6, 0, 0, TimeSpan.Zero);
+        Queue<double> samples = new([0d, 0d, 0.2d, 0.8d]);
+        QZoneAutonomyScheduler scheduler = new(() => current, () => samples.Dequeue());
+        QZoneAutonomyAgentKey xiayu = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyAgentKey mixu = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        QZoneAutonomyContext xiayuContext = CreateContext(agentKey: xiayu);
+        QZoneAutonomyContext mixuContext = CreateContext(agentKey: mixu);
+
+        scheduler.RecordPostSucceeded(xiayu, current.AddHours(-24));
+        scheduler.RecordPostSucceeded(mixu, current.AddHours(-24));
+
+        QZoneAutonomyDecision xiayuDecision = scheduler.EvaluatePostCandidate(xiayuContext);
+        QZoneAutonomyDecision mixuDecision = scheduler.EvaluatePostCandidate(mixuContext);
+        QZoneAutonomyState xiayuState = scheduler.GetState(xiayu);
+        QZoneAutonomyState mixuState = scheduler.GetState(mixu);
+        current = new DateTimeOffset(2026, 7, 17, 9, 30, 0, TimeSpan.Zero);
+        QZoneAutonomyDecision openingDecision = scheduler.EvaluatePostCandidate(xiayuContext);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(xiayuDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.OutsidePostWindow));
+            Assert.That(mixuDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.OutsidePostWindow));
+            Assert.That(xiayuState.NextPostCandidateAt, Is.GreaterThan(new DateTimeOffset(2026, 7, 17, 9, 30, 0, TimeSpan.Zero)));
+            Assert.That(xiayuState.NextPostCandidateAt, Is.LessThan(new DateTimeOffset(2026, 7, 17, 22, 30, 0, TimeSpan.Zero)));
+            Assert.That(mixuState.NextPostCandidateAt, Is.GreaterThan(new DateTimeOffset(2026, 7, 17, 9, 30, 0, TimeSpan.Zero)));
+            Assert.That(mixuState.NextPostCandidateAt, Is.LessThan(new DateTimeOffset(2026, 7, 17, 22, 30, 0, TimeSpan.Zero)));
+            Assert.That(xiayuState.NextPostCandidateAt, Is.Not.EqualTo(mixuState.NextPostCandidateAt));
+            Assert.That(xiayuState.PostsToday, Is.EqualTo(0));
+            Assert.That(mixuState.PostsToday, Is.EqualTo(0));
+            Assert.That(openingDecision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(openingDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.NotDue));
+        });
+    }
+
+    [Test]
+    public void MissedFortyEightHourCandidateIsDeferredWithSafeReasonWithoutPostingOrResettingTodayCount()
+    {
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
+            PostsToday = 1,
+            NextPostCandidateAt = Now.AddHours(-48)
+        };
+        stateStore.Save(state);
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0.5d, stateStore);
+
+        QZoneAutonomyDecision decision = scheduler.EvaluatePostCandidate(CreateContext(agentKey: agentKey));
+
+        QZoneAutonomyState deferredState = scheduler.GetState(agentKey);
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(decision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.NotDue));
+            Assert.That(deferredState.PostsToday, Is.EqualTo(1));
+            Assert.That(deferredState.LastFailureKind, Is.EqualTo("missed_window"));
+            Assert.That(deferredState.NextPostCandidateAt, Is.GreaterThan(Now));
+            Assert.That(deferredState.NextPostCandidateAt, Is.LessThan(new DateTimeOffset(2026, 7, 17, 22, 30, 0, TimeSpan.Zero)));
+        });
+    }
+
+    [Test]
+    public void GetStateReturnsAContentHashSnapshotThatCannotMutateTheCachedState()
+    {
+        const string originalHash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const string mutatedHash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        stateStore.Save(QZoneAutonomyState.Create(agentKey) with { ContentHashes = [originalHash] });
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0d, stateStore);
+
+        QZoneAutonomyState exposedState = scheduler.GetState(agentKey);
+        ((IList<string>)exposedState.ContentHashes)[0] = mutatedHash;
+
+        QZoneAutonomyState laterState = scheduler.GetState(agentKey);
+        Assert.That(laterState.ContentHashes, Is.EqualTo(new[] { originalHash }));
+    }
+
     QZoneAutonomyScheduler CreateOverdueScheduler(
         int postsToday = 0,
         DateTimeOffset? lastSuccessfulPostAt = null,
-        DateTimeOffset? cooldownUntil = null)
+        DateTimeOffset? cooldownUntil = null,
+        DateTimeOffset? nextCandidateAt = null)
     {
         QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
         QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
@@ -181,7 +287,7 @@ public sealed class QZoneAutonomySchedulerTests
             DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
             PostsToday = postsToday,
             LastSuccessfulPostAt = lastSuccessfulPostAt,
-            NextPostCandidateAt = Now.AddHours(-48),
+            NextPostCandidateAt = nextCandidateAt ?? Now.AddHours(-48),
             CooldownUntil = cooldownUntil
         };
         stateStore.Save(state);
@@ -189,10 +295,11 @@ public sealed class QZoneAutonomySchedulerTests
     }
 
     static QZoneAutonomyContext CreateContext(
+        QZoneAutonomyAgentKey? agentKey = null,
         QZoneAutonomySettings? settings = null,
         bool paused = false,
         bool isDryRun = true) =>
-        new(QZoneAutonomyAgentKey.Create("xiayu", 10001), settings ?? Settings(), paused, isDryRun);
+        new(agentKey ?? QZoneAutonomyAgentKey.Create("xiayu", 10001), settings ?? Settings(), paused, isDryRun);
 
     static QZoneAutonomySettings Settings() =>
         new(

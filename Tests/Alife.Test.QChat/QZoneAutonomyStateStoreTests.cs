@@ -125,6 +125,82 @@ public sealed class QZoneAutonomyStateStoreTests
         });
     }
 
+    [Test]
+    public void ValidNonsecretAuditMetadataRoundTripsExactly()
+    {
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            LastAuditId = "audit:xiayu-10001.20260717",
+            LastFailureKind = "transport.timeout-v2"
+        };
+
+        store.Save(state);
+
+        QZoneAutonomyState loaded = store.Load(agentKey);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded.LastAuditId, Is.EqualTo("audit:xiayu-10001.20260717"));
+            Assert.That(loaded.LastFailureKind, Is.EqualTo("transport.timeout-v2"));
+        });
+    }
+
+    [Test]
+    public void UnsafeAuditMetadataIsRejectedAndOpaqueCookiePromptAndChatTextNeverPersist()
+    {
+        const string fakeCookie = "pt_key=opaque-cookie-value";
+        const string fakePrompt = "SYSTEM PROMPT: do-not-persist";
+        const string fakeChat = "raw chat message: hello";
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            LastAuditId = $"audit:{fakeCookie}:{fakePrompt}",
+            LastFailureKind = $"transport-{fakeChat}-{fakeCookie}"
+        };
+
+        store.Save(state);
+
+        QZoneAutonomyState loaded = store.Load(agentKey);
+        string persistedJson = File.ReadAllText(Directory.GetFiles(directory, "*.json").Single());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded.LastAuditId, Is.Null);
+            Assert.That(loaded.LastFailureKind, Is.Null);
+            Assert.That(persistedJson, Does.Not.Contain(fakeCookie));
+            Assert.That(persistedJson, Does.Not.Contain(fakePrompt));
+            Assert.That(persistedJson, Does.Not.Contain(fakeChat));
+        });
+    }
+
+    [Test]
+    public void OverlongOtherwiseSafeAuditMetadataIsRejectedRatherThanTruncated()
+    {
+        string directory = CreateTemporaryDirectory();
+        QZoneAutonomyStateStore store = new(directory);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        string overlongValue = new('a', 257);
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            LastAuditId = overlongValue,
+            LastFailureKind = overlongValue
+        };
+
+        store.Save(state);
+
+        QZoneAutonomyState loaded = store.Load(agentKey);
+        string persistedJson = File.ReadAllText(Directory.GetFiles(directory, "*.json").Single());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(loaded.LastAuditId, Is.Null);
+            Assert.That(loaded.LastFailureKind, Is.Null);
+            Assert.That(persistedJson, Does.Not.Contain(overlongValue));
+        });
+    }
+
     string CreateTemporaryDirectory()
     {
         string directory = Path.Combine(Path.GetTempPath(), "Alife.QZoneAutonomy.Tests", Guid.NewGuid().ToString("N"));
