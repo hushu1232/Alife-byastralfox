@@ -34,6 +34,32 @@ public sealed record QChatFollowUpPresenceContext(
     public bool IsOwnerPrivate => MessageType == OneBotMessageType.Private && SenderRole == QChatSenderRole.Owner;
 }
 
+public enum QChatFollowUpExecutionKind
+{
+    Eligible,
+    CancelledByNewInput,
+    DroppedRevision,
+    DroppedPresence,
+    DroppedDisabled,
+    DroppedIneligible,
+    DroppedPending,
+    DroppedTurnLimit,
+    DroppedCooldown,
+    DroppedDailyLimit
+}
+
+public sealed record QChatFollowUpScheduleRequest(
+    QChatFollowUpSessionKey SessionKey,
+    QChatFollowUpSettings Settings,
+    bool IsOwnerPrivate,
+    QChatFollowUpIntent Intent);
+
+public sealed record QChatFollowUpExecutionResult(
+    QChatFollowUpExecutionKind Kind,
+    QChatFollowUpSessionKey SessionKey,
+    QChatFollowUpSettings Settings,
+    long Revision);
+
 public readonly record struct QChatFollowUpSessionKey(string Value)
 {
     public static QChatFollowUpSessionKey Create(string agentId, long botId, long peerUserId)
