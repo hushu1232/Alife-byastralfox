@@ -166,7 +166,7 @@ public sealed class QChatPersonaMemoryContextProvider
 
     void CacheProtectedProfile(string document)
     {
-        string normalized = NormalizeForComparison(document);
+        string normalized = NormalizeForComparison(ExcludeYamlFrontMatter(document));
         HashSet<string> runs = new(StringComparer.Ordinal);
         for (int index = 0; index + MinimumDisclosureRunLength <= normalized.Length; index++)
             runs.Add(normalized.Substring(index, MinimumDisclosureRunLength));
@@ -178,6 +178,18 @@ public sealed class QChatPersonaMemoryContextProvider
             protectedNumberTokens = numbers;
             disclosureTails = new Dictionary<string, string>(StringComparer.Ordinal);
         }
+    }
+
+    static string ExcludeYamlFrontMatter(string document)
+    {
+        string normalizedLineEndings = document.ReplaceLineEndings("\n");
+        if (normalizedLineEndings.StartsWith("---\n", StringComparison.Ordinal) == false)
+            return document;
+
+        int closingDelimiter = normalizedLineEndings.IndexOf("\n---\n", 4, StringComparison.Ordinal);
+        return closingDelimiter < 0
+            ? document
+            : normalizedLineEndings[(closingDelimiter + "\n---\n".Length)..];
     }
 
     static bool ContainsReparsePoint(string root, string candidate)
