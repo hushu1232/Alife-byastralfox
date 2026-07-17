@@ -74,6 +74,33 @@ public sealed class QZoneAutonomySchedulerTests
     }
 
     [Test]
+    public void OwnerPauseCancelsDueCandidateAndResumingDoesNotPostIt()
+    {
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        stateStore.Save(QZoneAutonomyState.Create(agentKey) with {
+            DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
+            NextPostCandidateAt = Now.AddMinutes(-1)
+        });
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0.5d, stateStore);
+
+        QZoneAutonomyDecision pausedDecision = scheduler.EvaluatePostCandidate(CreateContext(agentKey: agentKey, paused: true));
+        QZoneAutonomyState pausedState = scheduler.GetState(agentKey);
+        QZoneAutonomyScheduler resumedScheduler = new(() => Now, () => 0.5d, stateStore);
+        QZoneAutonomyDecision resumedDecision = resumedScheduler.EvaluatePostCandidate(CreateContext(agentKey: agentKey));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pausedDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.Paused));
+            Assert.That(pausedState.NextPostCandidateAt, Is.Null);
+            Assert.That(pausedState.LastFailureKind, Is.EqualTo("paused"));
+            Assert.That(resumedDecision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(resumedDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.NotDue));
+            Assert.That(resumedScheduler.GetState(agentKey).PostsToday, Is.EqualTo(0));
+        });
+    }
+
+    [Test]
     public void DryRunDisabledBeatsAnOverdueCandidate()
     {
         QZoneAutonomyScheduler scheduler = CreateOverdueScheduler();
@@ -244,7 +271,8 @@ public sealed class QZoneAutonomySchedulerTests
         QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
             DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
             PostsToday = 1,
-            NextPostCandidateAt = Now.AddHours(-48)
+            LastSuccessfulPostAt = Now.AddHours(-48),
+            NextPostCandidateAt = Now.AddMinutes(-1)
         };
         stateStore.Save(state);
         QZoneAutonomyScheduler scheduler = new(() => Now, () => 0.5d, stateStore);
@@ -272,6 +300,7 @@ public sealed class QZoneAutonomySchedulerTests
         QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
             DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
             PostsToday = 1,
+            LastSuccessfulPostAt = Now.AddHours(-61),
             NextPostCandidateAt = originalCandidate
         };
         stateStore.Save(state);
@@ -288,6 +317,33 @@ public sealed class QZoneAutonomySchedulerTests
             Assert.That(deferredState.PostsToday, Is.EqualTo(1));
             Assert.That(deferredState.LastFailureKind, Is.EqualTo("missed_window"));
             Assert.That(deferredState.NextPostCandidateAt, Is.GreaterThan(Now));
+        });
+    }
+
+    [Test]
+    public void LastSuccessfulPostOlderThanFortyEightHoursDefersDueCandidateWithoutPostingOrResettingCount()
+    {
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        QZoneAutonomyState state = QZoneAutonomyState.Create(agentKey) with {
+            DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
+            PostsToday = 1,
+            LastSuccessfulPostAt = Now.AddHours(-48).AddTicks(-1),
+            NextPostCandidateAt = Now.AddMinutes(-1)
+        };
+        stateStore.Save(state);
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0.5d, stateStore);
+
+        QZoneAutonomyDecision decision = scheduler.EvaluatePostCandidate(CreateContext(agentKey: agentKey));
+
+        QZoneAutonomyState deferredState = scheduler.GetState(agentKey);
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(decision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.NotDue));
+            Assert.That(deferredState.LastFailureKind, Is.EqualTo("missed_window"));
+            Assert.That(deferredState.NextPostCandidateAt, Is.GreaterThan(Now));
+            Assert.That(deferredState.PostsToday, Is.EqualTo(1));
         });
     }
 
