@@ -36,6 +36,22 @@ public sealed class QChatVisionProfileRouterTests
         });
     }
 
+    [TestCase("xiayu", 2905391496)]
+    [TestCase("mixu", 3340947887)]
+    public void Resolve_DefaultProfilesUseAgnesWithGrokFallback(string agentId, long botId)
+    {
+        QChatVisionProfileDecision decision = QChatVisionProfileRouter.Resolve(
+            QChatVisionProfileConfig.CreateDefault(), agentId, botId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatVisionProfileDecisionKind.Allow));
+            Assert.That(decision.Profile!.PrimaryProvider, Is.EqualTo("agnes"));
+            Assert.That(decision.Profile.FallbackProvider, Is.EqualTo("grok"));
+            Assert.That(decision.Profile.ComplexRequestProvider, Is.EqualTo("grok"));
+        });
+    }
+
     [Test]
     public void Resolve_FallsBackToAgentId()
     {

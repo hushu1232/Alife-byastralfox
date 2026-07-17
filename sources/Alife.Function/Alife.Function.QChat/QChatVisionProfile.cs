@@ -20,6 +20,9 @@ public sealed class QChatVisionProfileConfig
                     AgentId = "xiayu",
                     BotId = 2905391496,
                     Provider = "agnes",
+                    PrimaryProvider = "agnes",
+                    FallbackProvider = "grok",
+                    ComplexRequestProvider = "grok",
                     Model = "agnes-2.0-flash",
                     ApiEndpoint = "https://apihub.agnes-ai.com/v1/chat/completions",
                     MaxImagesPerMessage = 2,
@@ -30,6 +33,9 @@ public sealed class QChatVisionProfileConfig
                     AgentId = "mixu",
                     BotId = 3340947887,
                     Provider = "agnes",
+                    PrimaryProvider = "agnes",
+                    FallbackProvider = "grok",
+                    ComplexRequestProvider = "grok",
                     Model = "agnes-2.0-flash",
                     ApiEndpoint = "https://apihub.agnes-ai.com/v1/chat/completions",
                     MaxImagesPerMessage = 2,
@@ -45,6 +51,9 @@ public sealed class QChatVisionProfile
     public string AgentId { get; set; } = "";
     public long BotId { get; set; }
     public string Provider { get; set; } = "agnes";
+    public string PrimaryProvider { get; set; } = "";
+    public string FallbackProvider { get; set; } = "";
+    public string ComplexRequestProvider { get; set; } = "";
     public string Model { get; set; } = "agnes-2.0-flash";
     public string ApiEndpoint { get; set; } = "https://apihub.agnes-ai.com/v1/chat/completions";
     public int MaxImagesPerMessage { get; set; } = 2;

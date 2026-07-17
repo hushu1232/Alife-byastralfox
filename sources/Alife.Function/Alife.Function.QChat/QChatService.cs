@@ -75,6 +75,7 @@ public record QChatConfig
     public int ImageRecognitionMaxTokens { get; set; } = 220;
     public int MaxImagesPerMessage { get; set; } = 2;
     public QChatVisionProfileConfig VisionProfiles { get; set; } = QChatVisionProfileConfig.CreateDefault();
+    public QChatVisionProviderCatalog VisionProviders { get; set; } = QChatVisionProviderCatalog.CreateDefault();
     public bool AnalyzeOwnerPrivateImages { get; set; } = true;
     public bool AnalyzeOwnerGroupImages { get; set; } = true;
     public bool AnalyzePrivateGuestImages { get; set; } = true;
