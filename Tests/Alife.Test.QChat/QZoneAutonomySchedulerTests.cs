@@ -101,6 +101,45 @@ public sealed class QZoneAutonomySchedulerTests
     }
 
     [Test]
+    public void PausedConfigDisablesDecisionButStillClearsPersistedCandidateBeforeResume()
+    {
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("xiayu", 10001);
+        QZoneAutonomyStateStore stateStore = new(CreateTemporaryDirectory());
+        stateStore.Save(QZoneAutonomyState.Create(agentKey) with {
+            DailyCountDate = DateOnly.FromDateTime(Now.DateTime),
+            NextPostCandidateAt = Now.AddMinutes(-1)
+        });
+        QZoneServiceConfig config = new() {
+            EnableQZone = true,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyPaused = true,
+            QZoneAutonomyDryRunOnly = false
+        };
+        QZoneAutonomySettings pausedSettings = QZoneAutonomySettings.From(config);
+        QZoneAutonomyScheduler scheduler = new(() => Now, () => 0.5d, stateStore);
+
+        QZoneAutonomyDecision pausedDecision = scheduler.EvaluatePostCandidate(
+            new QZoneAutonomyContext(agentKey, pausedSettings, config.QZoneAutonomyPaused, IsDryRun: false));
+        QZoneAutonomyState pausedState = scheduler.GetState(agentKey);
+        config.QZoneAutonomyPaused = false;
+        QZoneAutonomySettings resumedSettings = QZoneAutonomySettings.From(config);
+        QZoneAutonomyScheduler resumedScheduler = new(() => Now, () => 0.5d, stateStore);
+        QZoneAutonomyDecision resumedDecision = resumedScheduler.EvaluatePostCandidate(
+            new QZoneAutonomyContext(agentKey, resumedSettings, config.QZoneAutonomyPaused, IsDryRun: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(pausedSettings.Enabled, Is.False);
+            Assert.That(pausedDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.Disabled));
+            Assert.That(pausedState.NextPostCandidateAt, Is.Null);
+            Assert.That(pausedState.LastFailureKind, Is.EqualTo("paused"));
+            Assert.That(resumedSettings.Enabled, Is.True);
+            Assert.That(resumedDecision.Action, Is.EqualTo(QZoneAutonomyAction.Skip));
+            Assert.That(resumedDecision.ReasonCode, Is.EqualTo(QZoneAutonomyReasonCode.NotDue));
+        });
+    }
+
+    [Test]
     public void DryRunDisabledBeatsAnOverdueCandidate()
     {
         QZoneAutonomyScheduler scheduler = CreateOverdueScheduler();

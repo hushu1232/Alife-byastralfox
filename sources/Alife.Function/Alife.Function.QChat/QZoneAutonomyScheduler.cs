@@ -158,19 +158,16 @@ public sealed class QZoneAutonomyScheduler
         {
             DateTimeOffset now = clock();
             if (context.Settings.Enabled == false)
+            {
+                if (context.Paused)
+                    CancelPausedCandidateUnsafe(context.AgentKey);
+
                 return Skip(QZoneAutonomyReasonCode.Disabled);
+            }
 
             if (context.Paused)
             {
-                QZoneAutonomyState pausedState = GetStateUnsafe(context.AgentKey);
-                if (pausedState.NextPostCandidateAt is not null)
-                {
-                    SaveUnsafe(pausedState with {
-                        NextPostCandidateAt = null,
-                        LastFailureKind = "paused"
-                    });
-                }
-
+                CancelPausedCandidateUnsafe(context.AgentKey);
                 return Skip(QZoneAutonomyReasonCode.Paused);
             }
 
@@ -265,6 +262,18 @@ public sealed class QZoneAutonomyScheduler
         QZoneAutonomyState safeState = state.NormalizeForPersistence();
         states[safeState.AgentKey] = safeState;
         stateStore?.Save(safeState);
+    }
+
+    void CancelPausedCandidateUnsafe(QZoneAutonomyAgentKey agentKey)
+    {
+        QZoneAutonomyState pausedState = GetStateUnsafe(agentKey);
+        if (pausedState.NextPostCandidateAt is null)
+            return;
+
+        SaveUnsafe(pausedState with {
+            NextPostCandidateAt = null,
+            LastFailureKind = "paused"
+        });
     }
 
     QZoneAutonomyState DeferCandidate(
