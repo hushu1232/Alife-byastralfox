@@ -60,6 +60,13 @@ public sealed record QChatFollowUpExecutionResult(
     QChatFollowUpSettings Settings,
     long Revision);
 
+public sealed record QChatFollowUpGenerationRequest(
+    QChatFollowUpSessionKey SessionKey,
+    string AgentId,
+    QChatFollowUpIntent Intent,
+    string SourceText,
+    string ReplyText);
+
 public readonly record struct QChatFollowUpSessionKey(string Value)
 {
     public static QChatFollowUpSessionKey Create(string agentId, long botId, long peerUserId)

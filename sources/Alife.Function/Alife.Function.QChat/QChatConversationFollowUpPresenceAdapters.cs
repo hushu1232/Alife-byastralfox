@@ -39,3 +39,8 @@ public sealed class MixuFollowUpPresenceAdapter : IQChatFollowUpPresenceAdapter
             : new QChatFollowUpPresence(QChatFollowUpIntent.WarmCoda);
     }
 }
+
+sealed class NoConversationFollowUpPresenceAdapter : IQChatFollowUpPresenceAdapter
+{
+    public QChatFollowUpPresence Evaluate(QChatFollowUpPresenceContext context) => QChatFollowUpPresence.None;
+}

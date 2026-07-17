@@ -330,7 +330,8 @@ public partial class QChatService(
     AgentBrowserMediaOutputService? browserMediaOutputService = null,
     XiaYuSelfStateStore? xiaYuSelfStateStore = null,
     Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
-    QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null) :
+    QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
+    QChatConversationFollowUpScheduler? followUpScheduler = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -342,6 +343,8 @@ public partial class QChatService(
 {
     const string DesktopControlAgentId = "xiayu";
     readonly QChatPersonaMemoryContextProvider personaMemoryContext = personaMemoryContextProvider ?? new();
+    readonly QChatConversationFollowUpScheduler conversationFollowUpScheduler = followUpScheduler ?? new();
+    readonly QChatFollowUpPresencePolicy conversationFollowUpPresencePolicy = new();
     bool approvedPersonaMemorySeeded;
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
     readonly DesktopActionGateway? injectedDesktopActionGateway = desktopActionGateway;
@@ -672,6 +675,7 @@ public partial class QChatService(
 
             if (result.Succeeded)
             {
+                TryScheduleConversationFollowUpAfterNormalReply(message, type, targetId);
                 WriteQChatDiagnostic("qchat-sent", "QChat XML tool sent a QQ message.", new {
                     type,
                     targetId,
@@ -2811,6 +2815,7 @@ public partial class QChatService(
     }
     public async ValueTask DisposeAsync()
     {
+        await conversationFollowUpScheduler.DisposeAsync();
         if (voiceWarmupCoordinator != null)
         {
             await voiceWarmupCoordinator.StopAsync();
@@ -8485,6 +8490,7 @@ public partial class QChatService(
 
     Task DispatchInboundChatAsync(QChatInboundMessage message)
     {
+        ObserveConversationFollowUpInbound(message);
         if (ShouldUseConversationSettleWindow(message))
         {
             ScheduleSettledDispatch(message);
@@ -9050,6 +9056,7 @@ public partial class QChatService(
                     return;
 
                 await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
+                TryScheduleConversationFollowUpAfterNormalReply(fallbackMessage);
                 WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
                     message.MessageType,
                     message.TargetId,
@@ -9103,6 +9110,160 @@ public partial class QChatService(
             DateTimeOffset.UtcNow);
 
         return response;
+    }
+
+    void ObserveConversationFollowUpInbound(QChatInboundMessage message)
+    {
+        if (message.MessageType != OneBotMessageType.Private)
+            return;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        conversationFollowUpScheduler.ObserveInbound(QChatFollowUpSessionKey.Create(
+            ResolveCurrentAgentId(config),
+            message.ResolvedBotId > 0 ? message.ResolvedBotId : config.BotId,
+            message.TargetId));
+    }
+
+    void TryScheduleConversationFollowUpAfterNormalReply(
+        string replyText,
+        OneBotMessageType? sentType = null,
+        long sentTargetId = 0)
+    {
+        QChatReplySession? session = currentReplySession.Value;
+        QChatConfig config = Configuration ?? new QChatConfig();
+        if (session is not { MessageType: OneBotMessageType.Private, SenderRole: QChatSenderRole.Owner } ||
+            string.IsNullOrWhiteSpace(replyText))
+            return;
+        if (sentType is { } type && (type != session.MessageType || sentTargetId != session.TargetId))
+            return;
+
+        string agentId = ResolveCurrentAgentId(config);
+        QChatFollowUpSessionKey key = QChatFollowUpSessionKey.Create(
+            agentId,
+            session.ResolvedBotId > 0 ? session.ResolvedBotId : config.BotId,
+            session.TargetId);
+        QChatFollowUpPresenceContext context = BuildConversationFollowUpPresenceContext(agentId, session, replyText);
+        QChatFollowUpPresence presence = EvaluateConversationFollowUpPresence(context);
+        if (presence.Intent is QChatFollowUpIntent.None or QChatFollowUpIntent.DoNotInterrupt)
+            return;
+
+        QChatFollowUpScheduleRequest request = new(
+            key,
+            QChatFollowUpSettings.From(config),
+            IsOwnerPrivate: true,
+            presence.Intent);
+        conversationFollowUpScheduler.ObserveNormalReply(key);
+        _ = ExecuteScheduledConversationFollowUpAsync(request, context);
+    }
+
+    QChatFollowUpPresenceContext BuildConversationFollowUpPresenceContext(
+        string agentId,
+        QChatReplySession session,
+        string replyText) => new(
+        agentId,
+        session.MessageType,
+        session.SenderRole,
+        session.SourceText,
+        replyText,
+        IsRiskConversation: false,
+        IsDeterministicTask: false,
+        HasPendingMedia: session.SourceText.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase) ||
+                         session.SourceText.Contains("[CQ:record", StringComparison.OrdinalIgnoreCase),
+        IsQuiet: ShouldSuppressOutgoingForQuietMode(session.MessageType, session.TargetId, "conversation-follow-up"),
+        ModelReplyWasBlocked: false,
+        IsTimerState: false,
+        IsHighConversationPressure: false);
+
+    QChatFollowUpPresence EvaluateConversationFollowUpPresence(QChatFollowUpPresenceContext context)
+    {
+        IQChatFollowUpPresenceAdapter adapter = context.AgentId.Equals("xiayu", StringComparison.OrdinalIgnoreCase)
+            ? new XiaYuFollowUpPresenceAdapter(
+                selfStateStore.LoadOrCreate("xiayu", DateTimeOffset.Now),
+                new XiaYuReplyStrategy(XiaYuReplyStance.Tender, "short", "extreme", "normal", false, false))
+            : context.AgentId.Equals("mixu", StringComparison.OrdinalIgnoreCase)
+                ? new MixuFollowUpPresenceAdapter()
+                : new NoConversationFollowUpPresenceAdapter();
+        return conversationFollowUpPresencePolicy.Evaluate(context, adapter);
+    }
+
+    async Task ExecuteScheduledConversationFollowUpAsync(
+        QChatFollowUpScheduleRequest request,
+        QChatFollowUpPresenceContext initialContext)
+    {
+        QChatFollowUpExecutionResult result = await conversationFollowUpScheduler.ScheduleAsync(
+            request,
+            () => EvaluateConversationFollowUpPresence(initialContext).Intent == request.Intent);
+        if (result.Kind != QChatFollowUpExecutionKind.Eligible)
+            return;
+
+        bool sent = false;
+        try
+        {
+            string generated = await GenerateConversationFollowUpAsync(new QChatFollowUpGenerationRequest(
+                request.SessionKey,
+                initialContext.AgentId,
+                request.Intent,
+                initialContext.SourceText,
+                initialContext.ReplyText), CancellationToken.None);
+            if (TryNormalizeConversationFollowUp(generated, out string text) == false ||
+                ShouldSuppressOutgoingForQuietMode(OneBotMessageType.Private, ParseFollowUpPeerId(request.SessionKey), "conversation-follow-up-send"))
+                return;
+
+            long targetId = ParseFollowUpPeerId(request.SessionKey);
+            if (personaMemoryContext.IsOutgoingPersonaDisclosure(OneBotMessageType.Private, targetId, text))
+                return;
+
+            long versionBefore = Volatile.Read(ref outboundMessageVersion);
+            await SendTextOrMediaMessageAsync(
+                OneBotMessageType.Private,
+                targetId,
+                text,
+                streamText: false,
+                personaDisclosureChecked: true,
+                personaDisclosureCandidate: text);
+            sent = Volatile.Read(ref outboundMessageVersion) > versionBefore;
+        }
+        catch (Exception ex)
+        {
+            WriteQChatDiagnostic("qchat-follow-up-failed", ex.Message, new { request.SessionKey, request.Intent }, ex);
+        }
+        finally
+        {
+            conversationFollowUpScheduler.Complete(request.SessionKey, result, sent);
+        }
+    }
+
+    protected virtual async Task<string> GenerateConversationFollowUpAsync(
+        QChatFollowUpGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        using IDisposable textOnly = functionService.UseTextOnlyResponseScope();
+        using IDisposable route = functionService.UseToolRouteState(ToolRouteState.Empty);
+        return await ChatBot.ChatAsync($"""
+            [qchat optional follow-up]
+            Send exactly [skip], or one natural Chinese follow-up under 20 characters.
+            Do not use XML, CQ, URLs, tools, timers, tasks, new facts, or pressure questions.
+            intent={request.Intent}
+            last_user={request.SourceText}
+            last_reply={request.ReplyText}
+            """, AuthorRole.System);
+    }
+
+    static bool TryNormalizeConversationFollowUp(string? generated, out string text)
+    {
+        text = generated?.Trim() ?? string.Empty;
+        return text.Length is > 0 and <= 20 &&
+               text.Equals("[skip]", StringComparison.OrdinalIgnoreCase) == false &&
+               text.Contains('<') == false && text.Contains('>') == false &&
+               text.Contains("[CQ:", StringComparison.OrdinalIgnoreCase) == false &&
+               text.Contains("http://", StringComparison.OrdinalIgnoreCase) == false &&
+               text.Contains("https://", StringComparison.OrdinalIgnoreCase) == false;
+    }
+
+    static long ParseFollowUpPeerId(QChatFollowUpSessionKey key)
+    {
+        string[] parts = key.Value.Split(':');
+        return parts.Length == 5 && long.TryParse(parts[4], out long peerId) ? peerId : 0;
     }
 
     string GetRecentToolRouteTrace()

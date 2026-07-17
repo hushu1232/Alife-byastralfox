@@ -16214,6 +16214,41 @@ public class QChatServiceAdapterTests
         return service;
     }
 
+    [Test]
+    public async Task MixuOwnerPrivateClosingReplySendsOneTextOnlyFollowUp()
+    {
+        FakeOneBotRuntime runtime = new();
+        await using FollowUpReplyQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            mainReply: "早点休息",
+            followUpReply: "我会记得")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableConversationFollowUp = true,
+                FollowUpDelayMinSeconds = 1,
+                FollowUpDelayMaxSeconds = 1
+            }
+        };
+        StartService(service, "咪绪");
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "晚安"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2, TimeSpan.FromSeconds(3));
+
+        Assert.That(runtime.PrivateMessages.Select(message => message.Message),
+            Is.EqualTo(new[] { "早点休息", "我会记得" }));
+    }
+
     static string CreateTempRiskRoot()
     {
         return Path.Combine(Path.GetTempPath(), "alife-qchat-risk-service-tests", Guid.NewGuid().ToString("N"));
@@ -16706,6 +16741,24 @@ public class QChatServiceAdapterTests
             dispatchCompletion.TrySetResult();
             return Task.FromResult(reply);
         }
+    }
+
+    sealed class FollowUpReplyQChatService(
+        XmlFunctionCaller functionCaller,
+        IOneBotRuntime runtime,
+        string mainReply,
+        string followUpReply) : QChatService(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+    {
+        protected override Task<string> DispatchToModelAsync(QChatInboundMessage message) =>
+            Task.FromResult(mainReply);
+
+        protected override Task<string> GenerateConversationFollowUpAsync(
+            QChatFollowUpGenerationRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(followUpReply);
     }
 
     sealed class ExposedFilterQChatService(
