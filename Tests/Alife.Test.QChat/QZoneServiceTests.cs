@@ -49,6 +49,109 @@ public class QZoneServiceTests
     }
 
     [Test]
+    public async Task QZoneDeleteOwnPost_DryRunDoesNotCallRuntime()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = true
+            }
+        };
+        QZonePostSnapshot post = new("post-a", 10001, "test post", "10001_post-a", "feed-key", 42);
+
+        QZoneActionResult result = await service.QZoneDeleteOwnPost(post);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.Action, Is.EqualTo("delete_own_post"));
+            Assert.That(result.Reason, Is.EqualTo("dry-run: would delete QQ Zone post"));
+            Assert.That(runtime.DeletedPosts, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task QZoneDeleteOwnPost_LiveDispatchesCompleteOwnPostSnapshot()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false
+            }
+        };
+        QZonePostSnapshot post = new("post-a", 10001, "test post", "10001_post-a", "feed-key", 42);
+
+        QZoneActionResult result = await service.QZoneDeleteOwnPost(post);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new QZoneActionResult("delete_own_post", true, "deleted own QQ Zone post")));
+            Assert.That(runtime.DeletedPosts, Is.EqualTo(new[] { post }));
+        });
+    }
+
+    [Test]
+    public async Task QZoneDeleteOwnPost_LiveRejectsIncompleteMetadataWithoutCallingRuntime()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false
+            }
+        };
+        QZonePostSnapshot[] incompletePosts =
+        [
+            new("post-a", 10001, "test post", null, "feed-key", 42),
+            new("post-a", 10001, "test post", "10001_post-a", null, 42),
+            new("post-a", 10001, "test post", "10001_post-a", "feed-key", null),
+        ];
+
+        QZoneActionResult[] results = await Task.WhenAll(incompletePosts.Select(service.QZoneDeleteOwnPost));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(results, Is.All.EqualTo(new QZoneActionResult("delete_own_post", false, "qzone_delete_metadata_unavailable")));
+            Assert.That(runtime.DeletedPosts, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void QZoneDeleteOwnPost_PropagatesRuntimeOwnershipRejection()
+    {
+        FakeQZoneRuntime runtime = new()
+        {
+            DeleteException = new InvalidOperationException("qzone_delete_metadata_unavailable")
+        };
+        QZoneService service = new(runtime)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false
+            }
+        };
+        QZonePostSnapshot post = new("post-a", 20002, "other account post", "20002_post-a", "feed-key", 42);
+
+        InvalidOperationException exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await service.QZoneDeleteOwnPost(post))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Message, Is.EqualTo("qzone_delete_metadata_unavailable"));
+            Assert.That(runtime.DeletedPosts, Is.Empty);
+        });
+    }
+
+    [Test]
     public async Task QZonePostImage_DryRunDoesNotResolveOrCallRuntime()
     {
         FakeQZoneRuntime runtime = new();
@@ -1022,6 +1125,7 @@ public class QZoneServiceTests
     sealed class FakeQZoneRuntime : IQZoneRuntime
     {
         public Exception? PublishException { get; init; }
+        public Exception? DeleteException { get; init; }
         public List<string> Posts { get; } = new();
         public List<QZoneImageUpload> ImageUploads { get; } = new();
         public List<(string Content, IReadOnlyList<QZoneUploadedImage> Images)> ImagePosts { get; } = new();
@@ -1029,6 +1133,7 @@ public class QZoneServiceTests
         public List<(long TargetId, string PostId, string Content)> Comments { get; } = new();
         public List<(long TargetId, string PostId, string CommentId, string Content)> Replies { get; } = new();
         public List<(long TargetId, string PostId)> Likes { get; } = new();
+        public List<QZonePostSnapshot> DeletedPosts { get; } = new();
         public List<long> LatestPostRequests { get; } = new();
         public List<(long TargetId, string PostId, int Count)> LatestCommentRequests { get; } = new();
         public QZonePostSnapshot? LatestPost { get; init; }
@@ -1072,6 +1177,15 @@ public class QZoneServiceTests
         public Task LikePost(long targetId, string postId)
         {
             Likes.Add((targetId, postId));
+            return Task.CompletedTask;
+        }
+
+        public Task DeletePost(QZonePostSnapshot post)
+        {
+            if (DeleteException != null)
+                return Task.FromException(DeleteException);
+
+            DeletedPosts.Add(post);
             return Task.CompletedTask;
         }
 

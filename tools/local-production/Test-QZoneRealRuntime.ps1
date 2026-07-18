@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Read','Post','Comment','Like','Image')]
+    [ValidateSet('Read','Post','Comment','Like','Image','Delete')]
     [string]$Operation = 'Read',
     [ValidateSet(3001,3002)]
     [int]$Port,

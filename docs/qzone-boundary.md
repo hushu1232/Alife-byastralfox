@@ -112,7 +112,7 @@ Cookie, BKN, OneBot token, QZone API key, browser-session value, and any equival
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\Test-QZoneRealRuntime.ps1 -Operation Read -Port 3001
 ```
 
-The result has `execute:false` and only tells the operator to add `-Execute`. `Post`, `Comment`, `Like`, and `Image` consequently cannot execute without that explicit switch. `Image` additionally requires an existing local `-ImagePath`; a missing path returns a fixed safe reason without echoing the caller's path.
+The result has `execute:false` and only tells the operator to add `-Execute`. `Post`, `Comment`, `Like`, `Image`, and `Delete` consequently cannot execute without that explicit switch. `Image` additionally requires an existing local `-ImagePath`; a missing path returns a fixed safe reason without echoing the caller's path.
 
 With `-Execute`, the script selects the established variable name for port `3001` or `3002`, but never reads or prints the token. It never starts QQ/NapCat and has no direct external HTTP call. This checkout has no explicitly configured local QZone operator endpoint, so execution safely returns `local_qzone_runtime_unavailable` and a nonzero exit status rather than inventing an endpoint, using credentials, or claiming success. A future endpoint integration must be separately reviewed; it may call only an already-running local service and must report success only from that service's explicit success result.
 
@@ -120,10 +120,18 @@ With `-Execute`, the script selects the established variable name for port `3001
 
 Do not run this matrix from automated tests, CI, or an unattended agent. After the production conditions are met and the owner authorizes the live action, perform the following sequence exactly once for **each** account. Use Account A (`3001`) and Account B (`3002`) independently; do not reuse one account's content or result as evidence for the other.
 
+After the local owner-controlled service has read back a complete snapshot of that same account's test post or image, request cleanup with the guarded operator command:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\Test-QZoneRealRuntime.ps1 -Operation Delete -Port 3001 -Execute
+```
+
+Use the identical command with `-Port 3002` for Account B. `Delete` is only for the selected account's own test post or image; the service checks complete deletion metadata and the session-aware runtime independently verifies that the target belongs to the active account. Without a separately reviewed local endpoint, this command continues to return `local_qzone_runtime_unavailable` and performs no deletion.
+
 | Account | Exact ordered checks (one each) | Required confirmation |
 |---|---|---|
-| Account A / `3001` | `Read`; one uniquely labelled short text `Post`; one `Comment` **or** `Like` on that account's own new post; one local-file `Image`; `Delete` the account's own test item | The observed item/action belongs to Account A, the service reports an explicit success result, and the created post/image/comment is removed. |
-| Account B / `3002` | `Read`; one uniquely labelled short text `Post`; one `Comment` **or** `Like` on that account's own new post; one local-file `Image`; `Delete` the account's own test item | The observed item/action belongs to Account B, the service reports an explicit success result, and the created post/image/comment is removed. |
+| Account A / `3001` | `Read`; one uniquely labelled short text `Post`; one `Comment` **or** `Like` on that account's own new post; one local-file `Image`; `Delete` that account's own test post or image | Every observed item/action belongs to Account A, each action has an explicit service result, and the own test post/image is removed. |
+| Account B / `3002` | `Read`; one uniquely labelled short text `Post`; one `Comment` **or** `Like` on that account's own new post; one local-file `Image`; `Delete` that account's own test post or image | Every observed item/action belongs to Account B, each action has an explicit service result, and the own test post/image is removed. |
 
 Use a different short text label for each account so the two runs are distinguishable without recording account identifiers or secrets. If any operation reports an unavailable, failed, ambiguous, or non-explicit result, stop that account's matrix, leave autonomous live posting disabled, and investigate through the owner-controlled local service without collecting secrets.
 

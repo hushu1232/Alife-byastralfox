@@ -23,6 +23,22 @@ Assert-Equal $defaultResult.port 3001
 Assert-Equal $defaultResult.execute $false
 Assert-True ($defaultResult.message -match 'Add -Execute') 'Default preview must explain that execution was not requested.'
 
+$deletePreview = Invoke-Operator @('-Operation', 'Delete', '-Port', '3001')
+Assert-Equal $deletePreview.ExitCode 0
+$deletePreviewResult = ($deletePreview.Output -join [Environment]::NewLine) | ConvertFrom-Json
+Assert-Equal $deletePreviewResult.operation 'Delete'
+Assert-Equal $deletePreviewResult.port 3001
+Assert-Equal $deletePreviewResult.execute $false
+Assert-True ($deletePreviewResult.message -match 'Add -Execute') 'Delete preview must remain inert until execution is explicitly requested.'
+
+$deleteUnavailable = Invoke-Operator @('-Operation', 'Delete', '-Port', '3001', '-Execute')
+Assert-Equal $deleteUnavailable.ExitCode 1
+$deleteUnavailableResult = ($deleteUnavailable.Output -join [Environment]::NewLine) | ConvertFrom-Json
+Assert-Equal $deleteUnavailableResult.operation 'Delete'
+Assert-Equal $deleteUnavailableResult.port 3001
+Assert-Equal $deleteUnavailableResult.execute $true
+Assert-Equal $deleteUnavailableResult.message 'local_qzone_runtime_unavailable'
+
 $unavailable = Invoke-Operator @('-Operation', 'Read', '-Port', '3002', '-Execute')
 Assert-Equal $unavailable.ExitCode 1
 $unavailableResult = ($unavailable.Output -join [Environment]::NewLine) | ConvertFrom-Json

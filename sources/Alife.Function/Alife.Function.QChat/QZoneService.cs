@@ -459,6 +459,30 @@ public class QZoneService :
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
+    [Description("Delete only the current account's own QQ Zone post. The runtime verifies the post owner before sending a deletion request.")]
+    public async Task<QZoneActionResult> QZoneDeleteOwnPost(QZonePostSnapshot post)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+
+        QZoneServiceConfig config = GetConfig();
+        QZoneActionResult? skipped = BeforeAction("delete_own_post", config);
+        if (skipped != null)
+            return Report(skipped);
+
+        if (config.DryRunExternalActions)
+            return Report(new QZoneActionResult("delete_own_post", false, "dry-run: would delete QQ Zone post"));
+
+        if (string.IsNullOrWhiteSpace(post.TopicId)
+            || string.IsNullOrWhiteSpace(post.FeedsKey)
+            || post.CreatedAtUnixSeconds is null)
+            return Report(new QZoneActionResult("delete_own_post", false, "qzone_delete_metadata_unavailable"));
+
+        IQZoneRuntime liveRuntime = GetRuntime();
+        await liveRuntime.DeletePost(post);
+        return Report(new QZoneActionResult("delete_own_post", true, "deleted own QQ Zone post"));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
     [Description("Publish one owner-supplied or generated image to the owner's QQ Zone.")]
     public async Task<QZoneActionResult> QZonePostImage(string content, string sourceKind, string sourceValue)
     {
