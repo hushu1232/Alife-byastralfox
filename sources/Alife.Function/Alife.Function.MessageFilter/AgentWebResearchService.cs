@@ -12,7 +12,7 @@ public sealed class AgentWebResearchService(
     AgentPublicSearchService? searchService = null,
     AgentWebAccessService? webAccessService = null,
     AgentBrowserSiteExperienceStore? siteExperienceStore = null,
-    AgentWebResearchControlState? controlState = null)
+    AgentWebResearchControlState? controlState = null) : IAgentWebResearchService
 {
     readonly AgentPublicSearchService? searchService = searchService;
     readonly AgentWebAccessService? webAccessService = webAccessService;
