@@ -14,8 +14,10 @@ public sealed class QZoneAutonomyModelsTests
         Assert.Multiple(() =>
         {
             Assert.That(config.QZoneAutonomyPaused, Is.False);
+            Assert.That(config.EnableQZoneAutonomyLivePosting, Is.False);
             Assert.That(settings.Enabled, Is.False);
             Assert.That(settings.DryRunOnly, Is.True);
+            Assert.That(settings.LivePostingEnabled, Is.False);
             Assert.That(settings.PostWindowStart, Is.EqualTo(new TimeOnly(9, 30)));
             Assert.That(settings.PostWindowEnd, Is.EqualTo(new TimeOnly(22, 30)));
             Assert.That(settings.PostHardMinimumInterval, Is.EqualTo(TimeSpan.FromHours(12)));

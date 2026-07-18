@@ -283,7 +283,7 @@ public class QZoneServiceTests
     }
 
     [Test]
-    public async Task AutonomyServiceRequiresDryRunBeforeSchedulerPersonaOrStateMutation()
+    public async Task LiveAutonomyRequiresQZoneAutonomyDryRunOnlyToBeDisabled()
     {
         DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
         QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
@@ -306,7 +306,7 @@ public class QZoneServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(result.Executed, Is.False);
-            Assert.That(result.ReasonCode, Is.EqualTo("dry_run_required"));
+            Assert.That(result.ReasonCode, Is.EqualTo("dry_run_disabled"));
             Assert.That(policy.EvaluateCalls, Is.Zero);
             Assert.That(after.LastSuccessfulPostAt, Is.EqualTo(before.LastSuccessfulPostAt));
             Assert.That(after.NextPostCandidateAt, Is.EqualTo(before.NextPostCandidateAt));
@@ -318,7 +318,134 @@ public class QZoneServiceTests
             Assert.That(runtime.Replies, Is.Empty);
             Assert.That(runtime.Likes, Is.Empty);
         });
-        AssertSingleSafeAutonomyAudit(audit, "skip", "dry_run_required", "mixu");
+        AssertSingleSafeAutonomyAudit(audit, "skip", "dry_run_disabled", "mixu");
+    }
+
+    [Test]
+    public async Task LiveAutonomyDisabled_DoesNotGenerateDraftOrCallRuntime()
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        FixedDraftGenerator generator = new("draft must not be used");
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForAutonomy(
+            runtime,
+            CreateDueAutonomyScheduler(now, agentKey),
+            new QZoneAutonomyPersonaPolicy(),
+            generator,
+            clock: () => now);
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyDryRunOnly = false,
+            DryRunExternalActions = false,
+            EnableQZoneAutonomyLivePosting = false
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo("live_autonomy_disabled"));
+            Assert.That(generator.Calls, Is.Zero);
+            Assert.That(runtime.Posts, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task LiveAutonomyEnabled_GeneratesOneNormalizedDraftAndPublishesOnce()
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        QZoneAutonomyScheduler scheduler = CreateDueAutonomyScheduler(now, agentKey);
+        FixedDraftGenerator generator = new("  晚风轻轻，今天也值得微笑。  ");
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForAutonomy(
+            runtime,
+            scheduler,
+            new QZoneAutonomyPersonaPolicy(),
+            generator,
+            clock: () => now);
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyDryRunOnly = false,
+            DryRunExternalActions = false,
+            EnableQZoneAutonomyLivePosting = true
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+        QZoneAutonomyState state = scheduler.GetState(agentKey);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.True);
+            Assert.That(result.ReasonCode, Is.EqualTo("live_published"));
+            Assert.That(generator.Calls, Is.EqualTo(1));
+            Assert.That(runtime.Posts, Is.EqualTo(new[] { "晚风轻轻，今天也值得微笑。" }));
+            Assert.That(state.LastSuccessfulPostAt, Is.EqualTo(now));
+            Assert.That(state.PostsToday, Is.EqualTo(1));
+            Assert.That(state.CooldownUntil, Is.Null);
+            Assert.That(state.LastFailureKind, Is.Null);
+        });
+    }
+
+    [TestCase("draft")]
+    [TestCase("publish")]
+    public async Task LiveAutonomyFailure_RecordsSafeReasonCooldownWithoutDraftText(string failureStage)
+    {
+        DateTimeOffset now = new(2026, 7, 17, 12, 0, 0, TimeSpan.Zero);
+        string stateDirectory = CreateTemporaryDirectory();
+        QZoneAutonomyAgentKey agentKey = QZoneAutonomyAgentKey.Create("mixu", 10001);
+        QZoneAutonomyStateStore stateStore = new(stateDirectory);
+        QZoneAutonomyScheduler scheduler = new(() => now, () => 0d, stateStore);
+        scheduler.RecordPostSucceeded(agentKey, now.AddHours(-24).AddMinutes(-1));
+        const string draftText = "private draft text must never persist";
+        const string failureText = "private failure detail must never persist";
+        FixedDraftGenerator generator = failureStage == "draft"
+            ? new FixedDraftGenerator(new InvalidOperationException(failureText))
+            : new FixedDraftGenerator(draftText);
+        FakeQZoneRuntime runtime = new()
+        {
+            PublishException = failureStage == "publish"
+                ? new InvalidOperationException(failureText)
+                : null
+        };
+        QZoneService service = QZoneService.CreateForAutonomy(
+            runtime,
+            scheduler,
+            new QZoneAutonomyPersonaPolicy(),
+            generator,
+            clock: () => now);
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            EnableQZoneAutonomy = true,
+            QZoneAutonomyDryRunOnly = false,
+            DryRunExternalActions = false,
+            EnableQZoneAutonomyLivePosting = true
+        };
+
+        QZoneAutonomyRunResult result = await service.RunAutonomyOnceAsync(MixuAutonomyRequest());
+        QZoneAutonomyState state = scheduler.GetState(agentKey);
+        string persistedJson = File.ReadAllText(Directory.GetFiles(stateDirectory, "*.json").Single());
+        string expectedReason = failureStage == "draft" ? "draft_failed" : "publish_failed";
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.ReasonCode, Is.EqualTo(expectedReason));
+            Assert.That(state.LastFailureKind, Is.EqualTo(expectedReason));
+            Assert.That(state.CooldownUntil, Is.EqualTo(now.AddMinutes(30)));
+            Assert.That(state.ContentHashes, Is.Empty);
+            Assert.That(persistedJson, Does.Not.Contain(draftText));
+            Assert.That(persistedJson, Does.Not.Contain(failureText));
+            Assert.That(persistedJson, Does.Not.Contain("Cookie").IgnoreCase);
+            Assert.That(runtime.Posts, Has.Count.EqualTo(failureStage == "draft" ? 0 : 0));
+        });
     }
 
     [Test]
@@ -894,6 +1021,7 @@ public class QZoneServiceTests
 
     sealed class FakeQZoneRuntime : IQZoneRuntime
     {
+        public Exception? PublishException { get; init; }
         public List<string> Posts { get; } = new();
         public List<QZoneImageUpload> ImageUploads { get; } = new();
         public List<(string Content, IReadOnlyList<QZoneUploadedImage> Images)> ImagePosts { get; } = new();
@@ -908,6 +1036,9 @@ public class QZoneServiceTests
 
         public Task PublishPost(string content)
         {
+            if (PublishException != null)
+                return Task.FromException(PublishException);
+
             Posts.Add(content);
             return Task.CompletedTask;
         }
@@ -988,6 +1119,32 @@ public class QZoneServiceTests
     {
         public QZoneAutonomyDecision Evaluate(QZoneAutonomyContext context) =>
             new(QZoneAutonomyAction.Post, QZoneAutonomyReasonCode.Due);
+    }
+
+    sealed class FixedDraftGenerator : IQZoneDraftGenerator
+    {
+        readonly string? draft;
+        readonly Exception? exception;
+
+        public FixedDraftGenerator(string draft)
+        {
+            this.draft = draft;
+        }
+
+        public FixedDraftGenerator(Exception exception)
+        {
+            this.exception = exception;
+        }
+
+        public int Calls { get; private set; }
+
+        public Task<string> GenerateAsync(QZoneDraftRequest request, CancellationToken ct = default)
+        {
+            Calls++;
+            return exception is null
+                ? Task.FromResult(draft!)
+                : Task.FromException<string>(exception);
+        }
     }
 
     sealed class FakeActionInvoker : IOneBotActionInvoker

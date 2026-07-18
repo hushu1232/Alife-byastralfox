@@ -11,6 +11,7 @@ using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.QChat;
 
@@ -101,6 +102,7 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public string LatestCommentsAction { get; set; } = "get_qzone_comments";
     public bool EnableQZoneAutonomy { get; set; } = false;
     public bool QZoneAutonomyDryRunOnly { get; set; } = true;
+    public bool EnableQZoneAutonomyLivePosting { get; set; } = false;
     public bool QZoneAutonomyPaused { get; set; } = false;
     public string AutonomyPostWindowStart { get; set; } = "09:30";
     public string AutonomyPostWindowEnd { get; set; } = "22:30";
@@ -165,8 +167,10 @@ public class QZoneService :
     readonly IQZoneAutonomyPersonaPolicy autonomyPersonaPolicy;
     readonly QZoneAutonomyStateStore? autonomyStateStore;
     readonly Func<double> autonomyRandom;
+    readonly IQZoneDraftGenerator? injectedDraftGenerator;
     Func<QZoneImageSourceResolver> imageSourceResolverFactory = CreateDefaultImageSourceResolver;
     QZoneAutonomyScheduler? lazyAutonomyScheduler;
+    IQZoneDraftGenerator? kernelDraftGenerator;
     IQZoneRuntime? createdRuntime;
     IOneBotActionConnection? ownedConnection;
     readonly Dictionary<long, DateTimeOffset> lastTargetInteractions = new();
@@ -193,7 +197,8 @@ public class QZoneService :
             scheduler: null,
             personaPolicy: null,
             stateStore: null,
-            random: null)
+            random: null,
+            draftGenerator: null)
     {
     }
 
@@ -209,7 +214,8 @@ public class QZoneService :
         QZoneAutonomyScheduler? scheduler,
         IQZoneAutonomyPersonaPolicy? personaPolicy,
         QZoneAutonomyStateStore? stateStore,
-        Func<double>? random)
+        Func<double>? random,
+        IQZoneDraftGenerator? draftGenerator)
     {
         this.runtime = runtime;
         this.actionInvoker = actionInvoker;
@@ -223,6 +229,7 @@ public class QZoneService :
         autonomyPersonaPolicy = personaPolicy ?? new QZoneAutonomyPersonaPolicy();
         autonomyStateStore = stateStore;
         autonomyRandom = random ?? (() => Random.Shared.NextDouble());
+        injectedDraftGenerator = draftGenerator;
     }
 
     public static QZoneService CreateForAutonomy(
@@ -234,7 +241,21 @@ public class QZoneService :
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(personaPolicy);
-        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null, null);
+    }
+
+    public static QZoneService CreateForAutonomy(
+        IQZoneRuntime? runtime,
+        QZoneAutonomyScheduler scheduler,
+        IQZoneAutonomyPersonaPolicy personaPolicy,
+        IQZoneDraftGenerator draftGenerator,
+        AgentAuditLogService? auditLog = null,
+        Func<DateTimeOffset>? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(scheduler);
+        ArgumentNullException.ThrowIfNull(personaPolicy);
+        ArgumentNullException.ThrowIfNull(draftGenerator);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null, draftGenerator);
     }
 
     public static QZoneService CreateForAutonomyWithStateStore(
@@ -248,7 +269,7 @@ public class QZoneService :
         ArgumentNullException.ThrowIfNull(personaPolicy);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(stateStore);
-        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, null, personaPolicy, stateStore, random);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, null, personaPolicy, stateStore, random, null);
     }
 
     public static QZoneService CreateForImagePosting(
@@ -310,6 +331,13 @@ public class QZoneService :
     {
         await base.StartAsync(kernel, chatActivity);
 
+        if (injectedDraftGenerator == null && ReferenceEquals(chatActivity.Character, Character))
+        {
+            IChatCompletionService? service = kernel.Services.GetService(typeof(IChatCompletionService)) as IChatCompletionService;
+            if (service != null)
+                kernelDraftGenerator = new QZoneSemanticKernelDraftGenerator(service);
+        }
+
         QZoneServiceConfig config = GetConfig();
         if (config.EnableQZone && config.DryRunExternalActions == false && config.AutoConnect)
             await ConnectAsync();
@@ -340,7 +368,7 @@ public class QZoneService :
         createdRuntime = CreateRuntime(connection, config);
     }
 
-    public Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
+    public async Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -358,51 +386,56 @@ public class QZoneService :
         if (config.EnableQZone == false)
         {
             CancelPausedServiceCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("disabled"), "disabled"));
+            return CompleteAutonomy(context, SkipAutonomy("disabled"), "disabled");
         }
 
         if (config.EnableQZoneAutonomy == false)
         {
             CancelPausedServiceCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("autonomy_disabled"), "autonomy_disabled"));
+            return CompleteAutonomy(context, SkipAutonomy("autonomy_disabled"), "autonomy_disabled");
         }
-
-        if (config.DryRunExternalActions == false)
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("dry_run_required"), "dry_run_required"));
 
         QZoneAutonomyScheduler scheduler = GetAutonomyScheduler();
 
         if (config.QZoneAutonomyPaused)
         {
             scheduler.EvaluatePostCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("paused"), "paused"));
+            return CompleteAutonomy(context, SkipAutonomy("paused"), "paused");
         }
 
         if (scheduler.EnsureInitialPostCandidate(context))
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("initial_scheduled"), "initial_scheduled"));
+            return CompleteAutonomy(context, SkipAutonomy("initial_scheduled"), "initial_scheduled");
 
         QZoneAutonomyDecision scheduledDecision = scheduler.EvaluatePostCandidate(context);
         if (scheduledDecision.Action != QZoneAutonomyAction.Post)
-            return Task.FromResult(CompleteAutonomy(context, scheduledDecision, GetSafeReasonCode(scheduledDecision)));
+            return CompleteAutonomy(context, scheduledDecision, GetSafeReasonCode(scheduledDecision));
 
         QZoneAutonomyDecision personaDecision = autonomyPersonaPolicy.Evaluate(context);
         if (personaDecision.Action != QZoneAutonomyAction.Post)
-            return Task.FromResult(CompleteAutonomy(context, personaDecision, GetSafeReasonCode(personaDecision)));
+            return CompleteAutonomy(context, personaDecision, GetSafeReasonCode(personaDecision));
 
         if (HasSafeContentEnvelope(personaDecision) == false)
-            return Task.FromResult(CompleteAutonomy(
+            return CompleteAutonomy(
                 context,
                 SkipAutonomy("persona_content_envelope_unavailable"),
-                "persona_content_envelope_unavailable"));
+                "persona_content_envelope_unavailable");
+
+        if (config.DryRunExternalActions == false && settings.LivePostingEnabled == false)
+            return CompleteAutonomy(context, personaDecision, "live_autonomy_disabled");
 
         string correlationId = Guid.NewGuid().ToString("D");
-        scheduler.RecordDryRunOutcome(
-            context.AgentKey,
-            now,
-            correlationId,
-            "dry_run",
-            TimeSpan.FromMinutes(30));
-        return Task.FromResult(CompleteAutonomy(context, personaDecision, "dry_run", correlationId));
+        if (config.DryRunExternalActions)
+        {
+            scheduler.RecordDryRunOutcome(
+                context.AgentKey,
+                now,
+                correlationId,
+                "dry_run",
+                TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, personaDecision, "dry_run", correlationId);
+        }
+
+        return await PublishAutonomyDraftAsync(context, personaDecision, scheduler, now, correlationId);
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
@@ -639,6 +672,11 @@ public class QZoneService :
             autonomyRandom,
             autonomyStateStore ?? new QZoneAutonomyStateStore()));
 
+    IQZoneDraftGenerator GetDraftGenerator() =>
+        injectedDraftGenerator
+        ?? kernelDraftGenerator
+        ?? throw new InvalidOperationException("qzone_draft_generator_unavailable");
+
     void CancelPausedServiceCandidate(QZoneAutonomyContext context)
     {
         if (context.Paused && context.IsDryRun)
@@ -649,7 +687,8 @@ public class QZoneService :
         QZoneAutonomyContext context,
         QZoneAutonomyDecision decision,
         string reasonCode,
-        string? correlationId = null)
+        string? correlationId = null,
+        bool executed = false)
     {
         correlationId ??= Guid.NewGuid().ToString("D");
         auditLog?.Record(
@@ -657,8 +696,45 @@ public class QZoneService :
             "agent",
             $"correlation={correlationId}; action={GetSafeAction(decision.Action)}; reason={reasonCode}; persona={GetSafePersona(context.PersonaSignals)}",
             AgentAuditRiskLevel.High,
-            succeeded: false);
-        return new QZoneAutonomyRunResult(false, reasonCode, decision);
+            succeeded: executed);
+        return new QZoneAutonomyRunResult(executed, reasonCode, decision);
+    }
+
+    async Task<QZoneAutonomyRunResult> PublishAutonomyDraftAsync(
+        QZoneAutonomyContext context,
+        QZoneAutonomyDecision decision,
+        QZoneAutonomyScheduler scheduler,
+        DateTimeOffset now,
+        string correlationId)
+    {
+        QZoneAutonomyContentEnvelope envelope = decision.ContentEnvelope!;
+        string draft;
+        try
+        {
+            draft = await GetDraftGenerator().GenerateAsync(new QZoneDraftRequest(
+                GetSafePersona(context.PersonaSignals),
+                envelope,
+                scheduler.GetState(context.AgentKey).ContentHashes));
+            draft = NormalizeAutonomyDraft(GetConfig(), envelope, draft);
+        }
+        catch (Exception)
+        {
+            scheduler.RecordPostFailure(context.AgentKey, now, "draft_failed", TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, SkipAutonomy("draft_failed"), "draft_failed", correlationId);
+        }
+
+        try
+        {
+            await GetRuntime().PublishPost(draft);
+        }
+        catch (Exception)
+        {
+            scheduler.RecordPostFailure(context.AgentKey, now, "publish_failed", TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, SkipAutonomy("publish_failed"), "publish_failed", correlationId);
+        }
+
+        scheduler.RecordPostSucceeded(context.AgentKey, now);
+        return CompleteAutonomy(context, decision, "live_published", correlationId, executed: true);
     }
 
     static QZoneAutonomyDecision SkipAutonomy(string reasonCode) =>
@@ -673,6 +749,21 @@ public class QZoneService :
                && envelope.MaximumLength > 0
                && envelope.DefaultDailyCandidateMinimum >= 0
                && envelope.DefaultDailyCandidateMaximum >= envelope.DefaultDailyCandidateMinimum;
+    }
+
+    static string NormalizeAutonomyDraft(
+        QZoneServiceConfig config,
+        QZoneAutonomyContentEnvelope envelope,
+        string draft)
+    {
+        string normalized = NormalizeContent(config, draft);
+        if (normalized.Length > envelope.MaximumLength)
+            normalized = normalized[..envelope.MaximumLength].TrimEnd();
+
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new InvalidOperationException("qzone_draft_empty");
+
+        return normalized;
     }
 
     static string GetSafeAction(QZoneAutonomyAction action) => action switch

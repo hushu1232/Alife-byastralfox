@@ -82,7 +82,9 @@ public sealed record QZoneAutonomyState(
         "daily_limit",
         "minimum_interval",
         "retry_backoff",
-        "not_due"
+        "not_due",
+        "draft_failed",
+        "publish_failed"
     };
 
     public static QZoneAutonomyState Create(QZoneAutonomyAgentKey agentKey) =>
@@ -292,6 +294,26 @@ public sealed class QZoneAutonomyScheduler
             QZoneAutonomyState current = GetStateUnsafe(agentKey);
             QZoneAutonomyState updated = current with {
                 LastAuditId = QZoneAutonomyState.NormalizeAuditId(auditId),
+                LastFailureKind = QZoneAutonomyState.NormalizeFailureKind(failureKind),
+                CooldownUntil = cooldown is { } duration && duration > TimeSpan.Zero
+                    ? now + duration
+                    : null
+            };
+            SaveUnsafe(updated);
+            return CreateSnapshot(GetStateUnsafe(agentKey));
+        }
+    }
+
+    public QZoneAutonomyState RecordPostFailure(
+        QZoneAutonomyAgentKey agentKey,
+        DateTimeOffset now,
+        string? failureKind,
+        TimeSpan? cooldown)
+    {
+        lock (syncRoot)
+        {
+            QZoneAutonomyState current = GetStateUnsafe(agentKey);
+            QZoneAutonomyState updated = current with {
                 LastFailureKind = QZoneAutonomyState.NormalizeFailureKind(failureKind),
                 CooldownUntil = cooldown is { } duration && duration > TimeSpan.Zero
                     ? now + duration
