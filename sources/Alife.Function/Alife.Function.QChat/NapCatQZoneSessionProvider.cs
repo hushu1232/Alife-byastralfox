@@ -8,6 +8,7 @@ public sealed class NapCatQZoneSessionProvider(IOneBotActionInvoker invoker) : I
 {
     public async Task<QZoneSession> GetSessionAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         NapCatQZoneCookieResponse? response = await invoker.CallActionAsync<NapCatQZoneCookieResponse>(
             "get_cookies", new { domain = "qzone.qq.com" });
         string cookies = response?.Cookies?.Trim() ?? "";

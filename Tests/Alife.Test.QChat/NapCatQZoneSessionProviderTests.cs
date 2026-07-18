@@ -61,6 +61,48 @@ public sealed class NapCatQZoneSessionProviderTests
         Assert.That(session.AccountId, Is.EqualTo(123));
     }
 
+    [Test]
+    public async Task GetSessionAsync_AcceptsNapCatLowercaseCookiePayload()
+    {
+        NapCatQZoneCookieResponse? response = JsonSerializer.Deserialize<NapCatQZoneCookieResponse>(
+            """{"cookies":"uin=o10001; p_uin=o10001;","bkn":"701234"}""");
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(response);
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(10001));
+        Assert.That(session.Bkn, Is.EqualTo("701234"));
+    }
+
+    [Test]
+    public void GetSessionAsync_PreCancelledTokenDoesNotInvokeNapCat()
+    {
+        FakeActionInvoker invoker = new();
+
+        Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await new NapCatQZoneSessionProvider(invoker).GetSessionAsync(new CancellationToken(true)));
+
+        Assert.That(invoker.Calls, Is.Empty);
+    }
+
+    [Test]
+    public void SecretBearingSessionRecords_RedactToStringValues()
+    {
+        const string cookies = "uin=o10001; p_skey=session-cookie";
+        const string bkn = "session-bkn";
+        NapCatQZoneCookieResponse response = new(cookies, bkn);
+        QZoneSession session = new(10001, cookies, bkn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.ToString(), Does.Not.Contain(cookies));
+            Assert.That(response.ToString(), Does.Not.Contain(bkn));
+            Assert.That(session.ToString(), Does.Not.Contain(cookies));
+            Assert.That(session.ToString(), Does.Not.Contain(bkn));
+        });
+    }
+
     [TestCase("uin=o0; p_skey=session-value")]
     [TestCase("p_skey=session-value")]
     [TestCase("uin=not-an-account; p_skey=session-value")]

@@ -47,9 +47,17 @@ public sealed record QZoneUploadedImage(
     int Type,
     string Url);
 
-public sealed record NapCatQZoneCookieResponse(string Cookies, string Bkn);
+public sealed record NapCatQZoneCookieResponse(
+    [property: JsonPropertyName("cookies")] string Cookies,
+    [property: JsonPropertyName("bkn")] string Bkn)
+{
+    public override string ToString() => "NapCatQZoneCookieResponse { Cookies = [redacted], Bkn = [redacted] }";
+}
 
-public sealed record QZoneSession(long AccountId, string Cookies, string Bkn);
+public sealed record QZoneSession(long AccountId, string Cookies, string Bkn)
+{
+    public override string ToString() => "QZoneSession { AccountId = [redacted], Cookies = [redacted], Bkn = [redacted] }";
+}
 
 public interface IQZoneSessionProvider
 {
