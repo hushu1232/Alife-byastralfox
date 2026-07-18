@@ -11,6 +11,23 @@ namespace Alife.Test.QChat;
 public sealed class QChatSemanticWebResearchServiceTests
 {
     [Test]
+    public void MultiSourceSearch_DefaultsToDisabledSafeBuiltInsAndPluginDetection()
+    {
+        AgentMultiSourceSearchConfig config = new();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.Enabled, Is.False);
+            Assert.That(config.ParallelBuiltInProviders, Is.True);
+            Assert.That(config.PerProviderTimeoutMilliseconds, Is.EqualTo(1500));
+            Assert.That(config.MaxMergedResults, Is.EqualTo(5));
+            Assert.That(config.FailureThreshold, Is.EqualTo(3));
+            Assert.That(config.CircuitBreakSeconds, Is.EqualTo(60));
+            Assert.That(config.DetectSmartWebSearchPlugin, Is.True);
+        });
+    }
+
+    [Test]
     public void IsEligible_AllowsEnabledOwnerPrivateMessage()
     {
         QChatSemanticWebResearchConfig config = new() { Enabled = true };

@@ -1271,6 +1271,41 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ExplicitSearch_UsesInjectedProviderWhenMultiSourceIsEnabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider provider = new(
+            new AgentPublicSearchResult("Injected Result", "https://example.test/injected", "injected snippet"));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                Enabled = true,
+                MultiSourceSearch = new AgentMultiSourceSearchConfig { Enabled = true }
+            }
+        }, publicSearchProvider: provider);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "搜一下 injected"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("https://example.test/injected"));
+        });
+    }
+
+    [Test]
     public async Task PublicSearchGroupMentionWithSearchIntentSendsSearchWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();

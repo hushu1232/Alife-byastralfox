@@ -365,6 +365,7 @@ public partial class QChatService(
     readonly AgentWebResearchControlState webResearchControlState = new();
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
+    IAgentPublicSearchProvider? resolvedResearchPublicSearchProvider;
     AgentBrowserSiteExperienceStore? resolvedBrowserSiteExperienceStore;
     QChatOwnerEventOutbox? resolvedOwnerEventOutbox;
     QChatOwnerEventDispatcher? resolvedOwnerEventDispatcher;
@@ -5681,7 +5682,7 @@ public partial class QChatService(
             return null;
 
         IAgentPublicSearchProvider provider = injectedPublicSearchProvider
-                                              ?? (resolvedPublicSearchProvider ??= CreateDefaultPublicSearchProvider());
+                                              ?? (resolvedResearchPublicSearchProvider ??= CreateResearchPublicSearchProvider(config));
         return new AgentPublicSearchService(
             new AgentPublicSearchConfig
             {
@@ -5900,6 +5901,9 @@ public partial class QChatService(
             new DuckDuckGoHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }),
             new BingHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }));
     }
+
+    static IAgentPublicSearchProvider CreateResearchPublicSearchProvider(QChatConfig config) =>
+        CreateDefaultPublicSearchProvider();
 
     async Task<bool> TryHandlePublicInternetCommandAsync(
         OneBotMessageEvent messageEvent,

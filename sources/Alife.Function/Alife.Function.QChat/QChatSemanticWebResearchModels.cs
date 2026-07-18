@@ -1,4 +1,5 @@
 using System;
+using Alife.Function.Agent;
 
 namespace Alife.Function.QChat;
 
@@ -24,6 +25,7 @@ public enum QChatSemanticWebResearchReasonCategory
 public sealed class QChatSemanticWebResearchConfig
 {
     public bool Enabled { get; set; }
+    public AgentMultiSourceSearchConfig MultiSourceSearch { get; set; } = new();
     public bool EnableOwnerPrivate { get; set; } = true;
     public bool EnableMentionedGroup { get; set; } = true;
     public bool ResearchOnUncertainty { get; set; } = true;
