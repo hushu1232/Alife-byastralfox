@@ -22,8 +22,6 @@ public static class QZoneInteractionPolicy
             return false;
         if (IsAllowedTarget(config.AllowedQZoneTargetIds, targetId) == false)
             return false;
-        if (IsListedTarget(config.PrivateChatContactIds, targetId) == false)
-            return false;
 
         return Next(random) < ClampProbability(config.PrivateContactLikeProbability);
     }
@@ -42,11 +40,6 @@ public static class QZoneInteractionPolicy
     {
         string[] ids = SplitIds(allowedIds);
         return ids.Length == 0 || ids.Contains(targetId.ToString());
-    }
-
-    static bool IsListedTarget(string ids, long targetId)
-    {
-        return SplitIds(ids).Contains(targetId.ToString());
     }
 
     static string[] SplitIds(string ids)

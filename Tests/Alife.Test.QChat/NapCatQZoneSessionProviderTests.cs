@@ -1,0 +1,169 @@
+using System.Text.Json;
+using Alife.Function.QChat;
+using NUnit.Framework;
+
+namespace Alife.Test.QChat;
+
+[TestFixture]
+public sealed class NapCatQZoneSessionProviderTests
+{
+    [Test]
+    public async Task GetSessionAsync_UsesNapCatGetCookiesAndParsesCurrentAccount()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(
+            "uin=o10001; p_uin=o10001; p_skey=session-value;", "701234"));
+        NapCatQZoneSessionProvider provider = new(invoker);
+
+        QZoneSession session = await provider.GetSessionAsync();
+
+        Assert.That(invoker.Calls.Single().Action, Is.EqualTo("get_cookies"));
+        Assert.That(invoker.Calls.Single().Json, Is.EqualTo("{\"domain\":\"qzone.qq.com\"}"));
+        Assert.That(session.AccountId, Is.EqualTo(10001));
+        Assert.That(session.Bkn, Is.EqualTo("701234"));
+    }
+
+    [TestCase("", "701234", "qzone_cookie_unavailable")]
+    [TestCase("uin=o10001", "", "qzone_bkn_unavailable")]
+    public void GetSessionAsync_RejectsIncompleteNapCatResponse(string cookies, string bkn, string reason)
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(cookies, bkn));
+
+        QZoneSessionUnavailableException exception = Assert.ThrowsAsync<QZoneSessionUnavailableException>(
+            async () => await new NapCatQZoneSessionProvider(invoker).GetSessionAsync())!;
+
+        Assert.That(exception.Message, Is.EqualTo(reason));
+        if (cookies.Length > 0)
+            Assert.That(exception.Message, Does.Not.Contain(cookies));
+    }
+
+    [Test]
+    public async Task GetSessionAsync_PrefersPUinWhenItConflictsWithUin()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(
+            "uin=o10001; p_uin=o20002; p_skey=session-value", "701234"));
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(20002));
+    }
+
+    [Test]
+    public async Task GetSessionAsync_AcceptsUinWhenPUinIsAbsent()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse("uin=o123; p_skey=session-value", "701234"));
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(123));
+    }
+
+    [Test]
+    public async Task GetSessionAsync_AcceptsNapCatLowercaseCookiePayload()
+    {
+        NapCatQZoneCookieResponse? response = JsonSerializer.Deserialize<NapCatQZoneCookieResponse>(
+            """{"cookies":"uin=o10001; p_uin=o10001;","bkn":"701234"}""");
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(response);
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(10001));
+        Assert.That(session.Bkn, Is.EqualTo("701234"));
+    }
+
+    [Test]
+    public void GetSessionAsync_PreCancelledTokenDoesNotInvokeNapCat()
+    {
+        FakeActionInvoker invoker = new();
+
+        Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await new NapCatQZoneSessionProvider(invoker).GetSessionAsync(new CancellationToken(true)));
+
+        Assert.That(invoker.Calls, Is.Empty);
+    }
+
+    [Test]
+    public async Task GetSessionAsync_CancelsInFlightNapCatRequest()
+    {
+        BlockingActionInvoker invoker = new();
+        using CancellationTokenSource cancellation = new();
+        Task<QZoneSession> sessionTask = new NapCatQZoneSessionProvider(invoker).GetSessionAsync(cancellation.Token);
+
+        await invoker.WaitForCallAsync();
+        cancellation.Cancel();
+
+        Exception exception = Assert.CatchAsync(
+            async () => await sessionTask.WaitAsync(TimeSpan.FromSeconds(1)))!;
+        Assert.That(exception, Is.InstanceOf<OperationCanceledException>());
+        Assert.That(invoker.CallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void SecretBearingSessionRecords_RedactToStringValues()
+    {
+        const string cookies = "uin=o10001; p_skey=session-cookie";
+        const string bkn = "session-bkn";
+        NapCatQZoneCookieResponse response = new(cookies, bkn);
+        QZoneSession session = new(10001, cookies, bkn);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.ToString(), Does.Not.Contain(cookies));
+            Assert.That(response.ToString(), Does.Not.Contain(bkn));
+            Assert.That(session.ToString(), Does.Not.Contain(cookies));
+            Assert.That(session.ToString(), Does.Not.Contain(bkn));
+        });
+    }
+
+    [TestCase("uin=o0; p_skey=session-value")]
+    [TestCase("p_skey=session-value")]
+    [TestCase("uin=not-an-account; p_skey=session-value")]
+    public void GetSessionAsync_RejectsUnavailableAccountWithoutExposingCookie(string cookies)
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(cookies, "701234"));
+
+        QZoneSessionUnavailableException exception = Assert.ThrowsAsync<QZoneSessionUnavailableException>(
+            async () => await new NapCatQZoneSessionProvider(invoker).GetSessionAsync())!;
+
+        Assert.That(exception.Message, Is.EqualTo("qzone_account_unavailable"));
+        Assert.That(exception.Message, Does.Not.Contain(cookies));
+    }
+
+    private sealed class FakeActionInvoker : IOneBotActionInvoker
+    {
+        public List<(string Action, string Json)> Calls { get; } = [];
+        readonly Queue<object?> responses = new();
+
+        public void Enqueue(object? response)
+        {
+            responses.Enqueue(response);
+        }
+
+        public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
+        {
+            Calls.Add((action, JsonSerializer.Serialize(parameters)));
+            return Task.FromResult(responses.Count == 0 ? default : (T?)responses.Dequeue());
+        }
+    }
+
+    private sealed class BlockingActionInvoker : IOneBotActionInvoker
+    {
+        readonly TaskCompletionSource<bool> callStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int CallCount { get; private set; }
+
+        public Task WaitForCallAsync() => callStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
+        {
+            CallCount++;
+            callStarted.TrySetResult(true);
+            return new TaskCompletionSource<T?>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
+        }
+    }
+}

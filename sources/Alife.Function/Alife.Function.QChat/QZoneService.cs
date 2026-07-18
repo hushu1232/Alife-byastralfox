@@ -2,13 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
 using Alife.Function.Interpreter;
 using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Function.QChat;
 
@@ -20,25 +23,79 @@ public interface IQZoneRuntime
     Task LikePost(long targetId, string postId);
     Task<QZonePostSnapshot?> GetLatestPost(long targetId);
     Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count);
+    Task<QZoneUploadedImage> UploadImage(QZoneImageUpload upload) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task PublishImagePost(string content, IReadOnlyList<QZoneUploadedImage> images) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeletePost(QZonePostSnapshot post) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeleteComment(long targetId, string postId, string commentId) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeleteReply(long targetId, string postId, string commentId, string replyId) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
 }
 
 public sealed record QZonePostSnapshot(
     [property: JsonPropertyName("post_id")] string PostId,
     [property: JsonPropertyName("target_uin")] long TargetId,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("topic_id")] string? TopicId = null,
+    [property: JsonPropertyName("feeds_key")] string? FeedsKey = null,
+    [property: JsonPropertyName("created_at")] long? CreatedAtUnixSeconds = null);
 
 public sealed record QZoneCommentSnapshot(
     [property: JsonPropertyName("comment_id")] string CommentId,
     [property: JsonPropertyName("user_id")] long UserId,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("topic_id")] string? TopicId = null,
+    [property: JsonPropertyName("parent_comment_id")] string? ParentCommentId = null);
+
+public sealed record QZoneUploadedImage(
+    string AlbumId,
+    string Lloc,
+    string Sloc,
+    int Width,
+    int Height,
+    int Type,
+    string Url);
+
+public enum QZoneImageOrigin
+{
+    OwnerProvided,
+    Generated,
+}
+
+public sealed record QZoneImageUpload(
+    string FileName,
+    string ContentType,
+    byte[] Bytes,
+    QZoneImageOrigin Origin);
+
+public sealed record NapCatQZoneCookieResponse(
+    [property: JsonPropertyName("cookies")] string Cookies,
+    [property: JsonPropertyName("bkn")] string Bkn)
+{
+    public override string ToString() => "NapCatQZoneCookieResponse { Cookies = [redacted], Bkn = [redacted] }";
+}
+
+public sealed record QZoneSession(long AccountId, string Cookies, string Bkn)
+{
+    public override string ToString() => "QZoneSession { AccountId = [redacted], Cookies = [redacted], Bkn = [redacted] }";
+}
+
+public interface IQZoneSessionProvider
+{
+    Task<QZoneSession> GetSessionAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class QZoneSessionUnavailableException(string message) : InvalidOperationException(message);
 
 public record QZoneServiceConfig : QZoneInteractionConfig
 {
     public string Url { get; set; } = "ws://127.0.0.1:3010";
     public string Token { get; set; } = "";
+    public string QZoneLoopbackOperatorUrl { get; set; } = "";
     public bool AutoConnect { get; set; } = true;
     public bool DryRunExternalActions { get; set; } = true;
+    public bool UseNapCatQZoneHttpRuntime { get; set; }
     public int MaxContentLength { get; set; } = 500;
+    public int MaxQZoneImageBytes { get; set; } = 10 * 1024 * 1024;
+    public int MaxQZoneImagesPerPost { get; set; } = 1;
     public string PostAction { get; set; } = "send_msg";
     public string CommentAction { get; set; } = "send_comment";
     public string LikeAction { get; set; } = "send_like";
@@ -46,6 +103,7 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public string LatestCommentsAction { get; set; } = "get_qzone_comments";
     public bool EnableQZoneAutonomy { get; set; } = false;
     public bool QZoneAutonomyDryRunOnly { get; set; } = true;
+    public bool EnableQZoneAutonomyLivePosting { get; set; } = false;
     public bool QZoneAutonomyPaused { get; set; } = false;
     public string AutonomyPostWindowStart { get; set; } = "09:30";
     public string AutonomyPostWindowEnd { get; set; } = "22:30";
@@ -96,6 +154,8 @@ public class QZoneService :
     IModuleHealthReporter,
     IAgentProactiveSuggestionExecutor
 {
+    static readonly HttpClient defaultImageHttpClient = new();
+    static readonly HttpClient defaultQZoneHttpClient = new();
     readonly IQZoneRuntime? runtime;
     readonly IOneBotActionInvoker? actionInvoker;
     readonly IOneBotActionConnection? actionConnection;
@@ -108,7 +168,10 @@ public class QZoneService :
     readonly IQZoneAutonomyPersonaPolicy autonomyPersonaPolicy;
     readonly QZoneAutonomyStateStore? autonomyStateStore;
     readonly Func<double> autonomyRandom;
+    readonly IQZoneDraftGenerator? injectedDraftGenerator;
+    Func<QZoneImageSourceResolver> imageSourceResolverFactory = CreateDefaultImageSourceResolver;
     QZoneAutonomyScheduler? lazyAutonomyScheduler;
+    IQZoneDraftGenerator? kernelDraftGenerator;
     IQZoneRuntime? createdRuntime;
     IOneBotActionConnection? ownedConnection;
     readonly Dictionary<long, DateTimeOffset> lastTargetInteractions = new();
@@ -135,7 +198,8 @@ public class QZoneService :
             scheduler: null,
             personaPolicy: null,
             stateStore: null,
-            random: null)
+            random: null,
+            draftGenerator: null)
     {
     }
 
@@ -151,7 +215,8 @@ public class QZoneService :
         QZoneAutonomyScheduler? scheduler,
         IQZoneAutonomyPersonaPolicy? personaPolicy,
         QZoneAutonomyStateStore? stateStore,
-        Func<double>? random)
+        Func<double>? random,
+        IQZoneDraftGenerator? draftGenerator)
     {
         this.runtime = runtime;
         this.actionInvoker = actionInvoker;
@@ -165,6 +230,7 @@ public class QZoneService :
         autonomyPersonaPolicy = personaPolicy ?? new QZoneAutonomyPersonaPolicy();
         autonomyStateStore = stateStore;
         autonomyRandom = random ?? (() => Random.Shared.NextDouble());
+        injectedDraftGenerator = draftGenerator;
     }
 
     public static QZoneService CreateForAutonomy(
@@ -176,7 +242,21 @@ public class QZoneService :
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(personaPolicy);
-        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null, null);
+    }
+
+    public static QZoneService CreateForAutonomy(
+        IQZoneRuntime? runtime,
+        QZoneAutonomyScheduler scheduler,
+        IQZoneAutonomyPersonaPolicy personaPolicy,
+        IQZoneDraftGenerator draftGenerator,
+        AgentAuditLogService? auditLog = null,
+        Func<DateTimeOffset>? clock = null)
+    {
+        ArgumentNullException.ThrowIfNull(scheduler);
+        ArgumentNullException.ThrowIfNull(personaPolicy);
+        ArgumentNullException.ThrowIfNull(draftGenerator);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, scheduler, personaPolicy, null, null, draftGenerator);
     }
 
     public static QZoneService CreateForAutonomyWithStateStore(
@@ -190,8 +270,18 @@ public class QZoneService :
         ArgumentNullException.ThrowIfNull(personaPolicy);
         ArgumentNullException.ThrowIfNull(clock);
         ArgumentNullException.ThrowIfNull(stateStore);
-        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, null, personaPolicy, stateStore, random);
+        return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, null, personaPolicy, stateStore, random, null);
     }
+
+    public static QZoneService CreateForImagePosting(
+        IQZoneRuntime? runtime,
+        Func<QZoneImageSourceResolver> imageSourceResolverFactory)
+    {
+        QZoneService service = new(runtime);
+        service.imageSourceResolverFactory = imageSourceResolverFactory ?? throw new ArgumentNullException(nameof(imageSourceResolverFactory));
+        return service;
+    }
+
     public QZoneServiceConfig? Configuration { get; set; } = new();
     public string Name => "QQ空间";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
@@ -242,6 +332,13 @@ public class QZoneService :
     {
         await base.StartAsync(kernel, chatActivity);
 
+        if (injectedDraftGenerator == null && ReferenceEquals(chatActivity.Character, Character))
+        {
+            IChatCompletionService? service = kernel.Services.GetService(typeof(IChatCompletionService)) as IChatCompletionService;
+            if (service != null)
+                kernelDraftGenerator = new QZoneSemanticKernelDraftGenerator(service);
+        }
+
         QZoneServiceConfig config = GetConfig();
         if (config.EnableQZone && config.DryRunExternalActions == false && config.AutoConnect)
             await ConnectAsync();
@@ -269,10 +366,10 @@ public class QZoneService :
         connection.Url = config.Url;
         connection.Token = config.Token;
         await connection.ConnectAsync();
-        createdRuntime = CreateOneBotRuntime(connection, config);
+        createdRuntime = CreateRuntime(connection, config);
     }
 
-    public Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
+    public async Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -290,51 +387,56 @@ public class QZoneService :
         if (config.EnableQZone == false)
         {
             CancelPausedServiceCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("disabled"), "disabled"));
+            return CompleteAutonomy(context, SkipAutonomy("disabled"), "disabled");
         }
 
         if (config.EnableQZoneAutonomy == false)
         {
             CancelPausedServiceCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("autonomy_disabled"), "autonomy_disabled"));
+            return CompleteAutonomy(context, SkipAutonomy("autonomy_disabled"), "autonomy_disabled");
         }
-
-        if (config.DryRunExternalActions == false)
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("dry_run_required"), "dry_run_required"));
 
         QZoneAutonomyScheduler scheduler = GetAutonomyScheduler();
 
         if (config.QZoneAutonomyPaused)
         {
             scheduler.EvaluatePostCandidate(context);
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("paused"), "paused"));
+            return CompleteAutonomy(context, SkipAutonomy("paused"), "paused");
         }
 
         if (scheduler.EnsureInitialPostCandidate(context))
-            return Task.FromResult(CompleteAutonomy(context, SkipAutonomy("initial_scheduled"), "initial_scheduled"));
+            return CompleteAutonomy(context, SkipAutonomy("initial_scheduled"), "initial_scheduled");
 
         QZoneAutonomyDecision scheduledDecision = scheduler.EvaluatePostCandidate(context);
         if (scheduledDecision.Action != QZoneAutonomyAction.Post)
-            return Task.FromResult(CompleteAutonomy(context, scheduledDecision, GetSafeReasonCode(scheduledDecision)));
+            return CompleteAutonomy(context, scheduledDecision, GetSafeReasonCode(scheduledDecision));
 
         QZoneAutonomyDecision personaDecision = autonomyPersonaPolicy.Evaluate(context);
         if (personaDecision.Action != QZoneAutonomyAction.Post)
-            return Task.FromResult(CompleteAutonomy(context, personaDecision, GetSafeReasonCode(personaDecision)));
+            return CompleteAutonomy(context, personaDecision, GetSafeReasonCode(personaDecision));
 
         if (HasSafeContentEnvelope(personaDecision) == false)
-            return Task.FromResult(CompleteAutonomy(
+            return CompleteAutonomy(
                 context,
                 SkipAutonomy("persona_content_envelope_unavailable"),
-                "persona_content_envelope_unavailable"));
+                "persona_content_envelope_unavailable");
+
+        if (config.DryRunExternalActions == false && settings.LivePostingEnabled == false)
+            return CompleteAutonomy(context, personaDecision, "live_autonomy_disabled");
 
         string correlationId = Guid.NewGuid().ToString("D");
-        scheduler.RecordDryRunOutcome(
-            context.AgentKey,
-            now,
-            correlationId,
-            "dry_run",
-            TimeSpan.FromMinutes(30));
-        return Task.FromResult(CompleteAutonomy(context, personaDecision, "dry_run", correlationId));
+        if (config.DryRunExternalActions)
+        {
+            scheduler.RecordDryRunOutcome(
+                context.AgentKey,
+                now,
+                correlationId,
+                "dry_run",
+                TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, personaDecision, "dry_run", correlationId);
+        }
+
+        return await PublishAutonomyDraftAsync(context, personaDecision, scheduler, now, correlationId);
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
@@ -355,6 +457,57 @@ public class QZoneService :
         await liveRuntime.PublishPost(content);
         PublishLifeEvent($"You published a QQ Zone post: {content}");
         return Report(new QZoneActionResult("post", true, "published QQ Zone post"));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
+    [Description("Delete only the current account's own QQ Zone post. The runtime verifies the post owner before sending a deletion request.")]
+    public async Task<QZoneActionResult> QZoneDeleteOwnPost(QZonePostSnapshot post)
+    {
+        ArgumentNullException.ThrowIfNull(post);
+
+        QZoneServiceConfig config = GetConfig();
+        QZoneActionResult? skipped = BeforeAction("delete_own_post", config);
+        if (skipped != null)
+            return Report(skipped);
+
+        if (config.DryRunExternalActions)
+            return Report(new QZoneActionResult("delete_own_post", false, "dry-run: would delete QQ Zone post"));
+
+        if (string.IsNullOrWhiteSpace(post.TopicId)
+            || string.IsNullOrWhiteSpace(post.FeedsKey)
+            || post.CreatedAtUnixSeconds is null)
+            return Report(new QZoneActionResult("delete_own_post", false, "qzone_delete_metadata_unavailable"));
+
+        IQZoneRuntime liveRuntime = GetRuntime();
+        await liveRuntime.DeletePost(post);
+        return Report(new QZoneActionResult("delete_own_post", true, "deleted own QQ Zone post"));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
+    [Description("Publish one owner-supplied or generated image to the owner's QQ Zone.")]
+    public async Task<QZoneActionResult> QZonePostImage(string content, string sourceKind, string sourceValue)
+    {
+        QZoneServiceConfig config = GetConfig();
+        content = NormalizeContent(config, content);
+        QZoneActionResult? skipped = BeforeAction("post_image", config);
+        if (skipped != null)
+            return Report(skipped);
+
+        if (config.DryRunExternalActions)
+            return Report(new QZoneActionResult("post_image", false, "dry-run: would publish QQ Zone image post"));
+        if (config.MaxQZoneImagesPerPost < 1)
+            return Report(new QZoneActionResult("post_image", false, "qzone_image_upload_unavailable"));
+        if (TryCreateImageSource(sourceKind, sourceValue, out QZoneImageSource? source) == false)
+            return Report(new QZoneActionResult("post_image", false, "qzone_image_source_invalid"));
+
+        QZoneImageSourceResolver resolver = imageSourceResolverFactory()
+            ?? throw new QZoneImageSourceException("qzone_image_source_unavailable");
+        QZoneImageUpload upload = await resolver.ResolveAsync(source, config.MaxQZoneImageBytes);
+        IQZoneRuntime liveRuntime = GetRuntime();
+        QZoneUploadedImage image = await liveRuntime.UploadImage(upload);
+        await liveRuntime.PublishImagePost(content, [image]);
+        PublishLifeEvent("You published a QQ Zone image post.");
+        return Report(new QZoneActionResult("post_image", true, "published QQ Zone image post"));
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
@@ -423,8 +576,6 @@ public class QZoneService :
         QZoneActionResult? skipped = BeforeTargetAction("like", config, targetId);
         if (skipped != null)
             return Report(skipped);
-        if (IsPrivateChatContact(config, targetId) == false)
-            return Report(new QZoneActionResult("like", false, "target is not in private chat contact pool"));
         if (QZoneInteractionPolicy.ShouldLikeTarget(config, targetId, random) == false)
             return Report(new QZoneActionResult("like", false, "skipped by random like probability policy"));
 
@@ -534,13 +685,6 @@ public class QZoneService :
         return ReportProactiveExecution(result, normalizedId);
     }
 
-    static bool IsPrivateChatContact(QZoneServiceConfig config, long targetId)
-    {
-        return config.PrivateChatContactIds
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Contains(targetId.ToString());
-    }
-
     QZoneServiceConfig GetConfig()
     {
         return Configuration ?? throw new InvalidOperationException("QQ Zone configuration is unavailable.");
@@ -553,6 +697,11 @@ public class QZoneService :
             autonomyRandom,
             autonomyStateStore ?? new QZoneAutonomyStateStore()));
 
+    IQZoneDraftGenerator GetDraftGenerator() =>
+        injectedDraftGenerator
+        ?? kernelDraftGenerator
+        ?? throw new InvalidOperationException("qzone_draft_generator_unavailable");
+
     void CancelPausedServiceCandidate(QZoneAutonomyContext context)
     {
         if (context.Paused && context.IsDryRun)
@@ -563,7 +712,8 @@ public class QZoneService :
         QZoneAutonomyContext context,
         QZoneAutonomyDecision decision,
         string reasonCode,
-        string? correlationId = null)
+        string? correlationId = null,
+        bool executed = false)
     {
         correlationId ??= Guid.NewGuid().ToString("D");
         auditLog?.Record(
@@ -571,8 +721,45 @@ public class QZoneService :
             "agent",
             $"correlation={correlationId}; action={GetSafeAction(decision.Action)}; reason={reasonCode}; persona={GetSafePersona(context.PersonaSignals)}",
             AgentAuditRiskLevel.High,
-            succeeded: false);
-        return new QZoneAutonomyRunResult(false, reasonCode, decision);
+            succeeded: executed);
+        return new QZoneAutonomyRunResult(executed, reasonCode, decision);
+    }
+
+    async Task<QZoneAutonomyRunResult> PublishAutonomyDraftAsync(
+        QZoneAutonomyContext context,
+        QZoneAutonomyDecision decision,
+        QZoneAutonomyScheduler scheduler,
+        DateTimeOffset now,
+        string correlationId)
+    {
+        QZoneAutonomyContentEnvelope envelope = decision.ContentEnvelope!;
+        string draft;
+        try
+        {
+            draft = await GetDraftGenerator().GenerateAsync(new QZoneDraftRequest(
+                GetSafePersona(context.PersonaSignals),
+                envelope,
+                scheduler.GetState(context.AgentKey).ContentHashes));
+            draft = NormalizeAutonomyDraft(GetConfig(), envelope, draft);
+        }
+        catch (Exception)
+        {
+            scheduler.RecordPostFailure(context.AgentKey, now, "draft_failed", TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, SkipAutonomy("draft_failed"), "draft_failed", correlationId);
+        }
+
+        try
+        {
+            await GetRuntime().PublishPost(draft);
+        }
+        catch (Exception)
+        {
+            scheduler.RecordPostFailure(context.AgentKey, now, "publish_failed", TimeSpan.FromMinutes(30));
+            return CompleteAutonomy(context, SkipAutonomy("publish_failed"), "publish_failed", correlationId);
+        }
+
+        scheduler.RecordPostSucceeded(context.AgentKey, now);
+        return CompleteAutonomy(context, decision, "live_published", correlationId, executed: true);
     }
 
     static QZoneAutonomyDecision SkipAutonomy(string reasonCode) =>
@@ -587,6 +774,21 @@ public class QZoneService :
                && envelope.MaximumLength > 0
                && envelope.DefaultDailyCandidateMinimum >= 0
                && envelope.DefaultDailyCandidateMaximum >= envelope.DefaultDailyCandidateMinimum;
+    }
+
+    static string NormalizeAutonomyDraft(
+        QZoneServiceConfig config,
+        QZoneAutonomyContentEnvelope envelope,
+        string draft)
+    {
+        string normalized = NormalizeContent(config, draft);
+        if (normalized.Length > envelope.MaximumLength)
+            normalized = normalized[..envelope.MaximumLength].TrimEnd();
+
+        if (string.IsNullOrWhiteSpace(normalized))
+            throw new InvalidOperationException("qzone_draft_empty");
+
+        return normalized;
     }
 
     static string GetSafeAction(QZoneAutonomyAction action) => action switch
@@ -632,7 +834,7 @@ public class QZoneService :
             return createdRuntime;
         if (actionConnection != null)
         {
-            createdRuntime = CreateOneBotRuntime(actionConnection, config);
+            createdRuntime = CreateRuntime(actionConnection, config);
             return createdRuntime;
         }
         if (actionInvoker == null)
@@ -641,11 +843,11 @@ public class QZoneService :
                 throw new InvalidOperationException("QQ Zone runtime is unavailable.");
 
             IOneBotActionConnection connection = GetConnection(config);
-            createdRuntime = CreateOneBotRuntime(connection, config);
+            createdRuntime = CreateRuntime(connection, config);
             return createdRuntime;
         }
 
-        createdRuntime = CreateOneBotRuntime(actionInvoker, config);
+        createdRuntime = CreateRuntime(actionInvoker, config);
         return createdRuntime;
     }
 
@@ -657,6 +859,15 @@ public class QZoneService :
         return ownedConnection ??= new OneBotClientActionConnection(new OneBotClient(config.Url, config.Token));
     }
 
+    IQZoneRuntime CreateRuntime(IOneBotActionInvoker invoker, QZoneServiceConfig config)
+    {
+        return config.UseNapCatQZoneHttpRuntime
+            ? new QZoneHttpRuntime(new NapCatQZoneSessionProvider(invoker), CreateQZoneHttpClient())
+            : CreateOneBotRuntime(invoker, config);
+    }
+
+    protected virtual HttpClient CreateQZoneHttpClient() => defaultQZoneHttpClient;
+
     static OneBotQZoneRuntime CreateOneBotRuntime(IOneBotActionInvoker invoker, QZoneServiceConfig config)
     {
         return new OneBotQZoneRuntime(invoker, new OneBotQZoneRuntimeOptions {
@@ -666,6 +877,23 @@ public class QZoneService :
             LatestPostAction = config.LatestPostAction,
             LatestCommentsAction = config.LatestCommentsAction
         });
+    }
+
+    static QZoneImageSourceResolver CreateDefaultImageSourceResolver()
+    {
+        return new QZoneImageSourceResolver(defaultImageHttpClient);
+    }
+
+    static bool TryCreateImageSource(string? sourceKind, string? sourceValue, out QZoneImageSource? source)
+    {
+        source = sourceKind switch
+        {
+            "owner_file" => QZoneImageSource.OwnerFile(sourceValue ?? string.Empty),
+            "generated_file" => QZoneImageSource.GeneratedFile(sourceValue ?? string.Empty),
+            "owner_url" when Uri.TryCreate(sourceValue, UriKind.Absolute, out Uri? url) => QZoneImageSource.OwnerUrl(url),
+            _ => null,
+        };
+        return source is not null;
     }
 
     static QZoneActionResult? BeforeAction(string action, QZoneServiceConfig config)
@@ -777,18 +1005,21 @@ public class QZoneService :
 
     QZoneActionResult Report(QZoneActionResult result)
     {
-        TryPoke(result.Executed
-            ? $"QZone action completed: {result.Reason}"
-            : $"QZone action skipped: {result.Reason}");
+        TryPoke(QZoneFeedbackFormatter.Format(ResolveFeedbackPersonaId(), result.Executed, result.Reason));
         return result;
     }
 
     QZoneQueryResult ReportQuery(QZoneQueryResult result)
     {
-        TryPoke(result.Succeeded
-            ? $"QZone query completed: {result.Reason}"
-            : $"QZone query skipped: {result.Reason}");
+        TryPoke(QZoneFeedbackFormatter.Format(ResolveFeedbackPersonaId(), result.Succeeded, result.Reason));
         return result;
+    }
+
+    string? ResolveFeedbackPersonaId()
+    {
+        return QChatAgentIdentityRegistry.CreateDefault()
+            .ResolveByCharacterName(Character?.Name)
+            ?.AgentId;
     }
 
     QZoneProactiveExecutionResult ReportProactiveExecution(QZoneProactiveExecutionResult result, string id)

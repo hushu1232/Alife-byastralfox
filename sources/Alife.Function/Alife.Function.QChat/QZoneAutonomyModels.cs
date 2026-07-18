@@ -19,6 +19,7 @@ public readonly record struct QZoneAutonomyAgentKey(string Value)
 public sealed record QZoneAutonomySettings(
     bool Enabled,
     bool DryRunOnly,
+    bool LivePostingEnabled,
     TimeOnly PostWindowStart,
     TimeOnly PostWindowEnd,
     TimeSpan PostHardMinimumInterval,
@@ -26,6 +27,28 @@ public sealed record QZoneAutonomySettings(
     int XiayuMaxCommentsPerDay,
     int MixuMaxCommentsPerDay)
 {
+    public QZoneAutonomySettings(
+        bool Enabled,
+        bool DryRunOnly,
+        TimeOnly PostWindowStart,
+        TimeOnly PostWindowEnd,
+        TimeSpan PostHardMinimumInterval,
+        int MaxPostsPerDay,
+        int XiayuMaxCommentsPerDay,
+        int MixuMaxCommentsPerDay)
+        : this(
+            Enabled,
+            DryRunOnly,
+            LivePostingEnabled: false,
+            PostWindowStart,
+            PostWindowEnd,
+            PostHardMinimumInterval,
+            MaxPostsPerDay,
+            XiayuMaxCommentsPerDay,
+            MixuMaxCommentsPerDay)
+    {
+    }
+
     static readonly TimeOnly DefaultPostWindowStart = new(9, 30);
     static readonly TimeOnly DefaultPostWindowEnd = new(22, 30);
     static readonly int MaxPostMinimumIntervalHours = (int)Math.Floor(TimeSpan.MaxValue.TotalHours);
@@ -43,6 +66,7 @@ public sealed record QZoneAutonomySettings(
         return new QZoneAutonomySettings(
             config.EnableQZoneAutonomy && config.QZoneAutonomyPaused == false,
             config.QZoneAutonomyDryRunOnly,
+            config.EnableQZoneAutonomyLivePosting,
             postWindowStart,
             postWindowEnd,
             TimeSpan.FromHours(PositiveWithinOrDefault(

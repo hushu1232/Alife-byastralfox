@@ -15,10 +15,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Alife.Framework\Alife.Framework.csproj" />
+    <ProjectReference Include="..\..\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-    <ProjectReference Include="..\..\Alife.Function\**\*.csproj" />
+    <ProjectReference Include="..\..\Alife.Function\**\*.csproj"
+                      Exclude="..\..\Alife.Function\Alife.Function.QChat\Alife.Function.QChat.csproj" />
   </ItemGroup>
 
 </Project>

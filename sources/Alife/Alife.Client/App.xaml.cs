@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Alife.Framework;
 using Alife.Components.Services;
 using Alife.Platform;
+using Alife.Function.QChat;
 using Microsoft.Extensions.Logging;
 
 namespace Alife;
@@ -60,6 +61,7 @@ public partial class App
         services.AddSingleton<ModuleSystem>();
         services.AddSingleton<CharacterSystem>();
         services.AddSingleton<ChatActivitySystem>();
+        services.AddSingleton<QZoneLoopbackOperatorLifecycleHost>();
         // 添加主窗口本身到容器，以便以后注入
         services.AddSingleton<ActivityNotifyService>();
         services.AddSingleton<ChatMessageService>();
@@ -67,6 +69,7 @@ public partial class App
 
         ServiceProvider = services.BuildServiceProvider();
         ServiceProvider.GetRequiredService<ChatMessageService>();
+        ServiceProvider.GetRequiredService<QZoneLoopbackOperatorLifecycleHost>();
         _ = Task.Run(async () => {
             try
             {
@@ -78,6 +81,22 @@ public partial class App
             }
         });
         ServiceProvider.GetRequiredService<MainWindow>().Show();
+    }
+
+    protected override void OnExit(System.Windows.ExitEventArgs e)
+    {
+        try
+        {
+            ServiceProvider.GetService<QZoneLoopbackOperatorLifecycleHost>()
+                ?.DisposeAsync()
+                .AsTask()
+                .GetAwaiter()
+                .GetResult();
+        }
+        finally
+        {
+            base.OnExit(e);
+        }
     }
 
 #if DEBUG
