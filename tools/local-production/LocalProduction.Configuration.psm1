@@ -6,6 +6,36 @@ function Get-OverallStatus {
     return 'healthy'
 }
 
+function Test-QZoneLoopbackOperatorUrl {
+    param([string]$Value)
+
+    $uri = $null
+    if ([string]::IsNullOrWhiteSpace($Value) -or
+        -not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.Scheme -ne 'http' -or
+        -not [string]::IsNullOrEmpty($uri.UserInfo) -or
+        -not [string]::IsNullOrEmpty($uri.Query) -or
+        -not [string]::IsNullOrEmpty($uri.Fragment)) {
+        return $false
+    }
+
+    $endpointHost = $uri.Host.Trim('[', ']')
+    return $endpointHost -eq '127.0.0.1' -or $endpointHost -ieq 'localhost' -or $endpointHost -eq '::1'
+}
+
+function ConvertTo-QZoneLoopbackOperatorUrl {
+    param([string]$Value)
+
+    if (-not (Test-QZoneLoopbackOperatorUrl $Value)) { return $null }
+
+    $uri = [Uri]$Value
+    if ($uri.AbsolutePath.EndsWith('/')) { return $uri.AbsoluteUri }
+
+    $builder = [UriBuilder]$uri
+    $builder.Path = $uri.AbsolutePath + '/'
+    return $builder.Uri.AbsoluteUri
+}
+
 function Read-LocalProductionPlan {
     param([string]$Json)
     $plan = $Json | ConvertFrom-Json
@@ -13,10 +43,17 @@ function Read-LocalProductionPlan {
     $ids = @($plan.accounts | ForEach-Object id | Sort-Object)
     if (($ids -join ',') -ne 'account-a,account-b') { throw 'Exactly account-a and account-b are required.' }
     $ports = @{}
+    $operatorUrls = @{}
     foreach ($slot in $plan.accounts) {
         $uri = [Uri]$slot.oneBotUrl
         if ($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1','localhost','[::1]','::1')) { throw 'OneBot URL must use loopback.' }
         if ($ports.ContainsKey($uri.Port)) { throw 'OneBot ports must be unique.' }; $ports[$uri.Port] = $true
+        $expectedOneBotPort = if ($slot.id -eq 'account-a') { 3001 } else { 3002 }
+        if ($uri.Port -ne $expectedOneBotPort) { throw 'OneBot ports must match their account roles.' }
+        $operatorUrl = ConvertTo-QZoneLoopbackOperatorUrl $slot.qZoneLoopbackOperatorUrl
+        if ($null -eq $operatorUrl) { throw 'QZone operator URL must use loopback HTTP.' }
+        if ($operatorUrls.ContainsKey($operatorUrl)) { throw 'QZone operator URLs must be unique.' }; $operatorUrls[$operatorUrl] = $true
+        $slot.qZoneLoopbackOperatorUrl = $operatorUrl
         foreach ($root in @($slot.runtimeRoot,$slot.storageRoot,$slot.tempRoot)) { if ($root -and -not [IO.Path]::IsPathRooted($root)) { throw 'Roots must be absolute.' } }
     }
     return $plan

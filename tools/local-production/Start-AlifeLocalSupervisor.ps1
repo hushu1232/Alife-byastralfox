@@ -8,7 +8,7 @@ function Start-AccountWorker($Slot,[string]$Executable,[string]$Token){
   if([IO.Path]::GetExtension($Executable)-eq'.dll'){$dotnet=if($env:ALIFE_DOTNET_PATH){$env:ALIFE_DOTNET_PATH}else{'C:\Users\hu shu\.dotnet\dotnet.exe'};if(-not(Test-Path -LiteralPath $dotnet)){throw 'User .NET runtime was not found.'};$start.FileName=$dotnet;$start.Arguments='"'+$Executable+'"'}else{$start.FileName=$Executable}
   $start.UseShellExecute=$false;$start.CreateNoWindow=$true
   $start.EnvironmentVariables['ALIFE_RUNTIME_PATH']=$Slot.runtimeRoot;$start.EnvironmentVariables['ALIFE_STORAGE_PATH']=$Slot.storageRoot;$start.EnvironmentVariables['ALIFE_TEMP_PATH']=$Slot.tempRoot
-  $start.EnvironmentVariables['ALIFE_WEBVIEW2_USER_DATA_FOLDER']=(Join-Path $Slot.runtimeRoot 'webview2');$start.EnvironmentVariables['ALIFE_ONEBOT_URL']=$Slot.oneBotUrl;$start.EnvironmentVariables['ALIFE_ONEBOT_TOKEN']=$Token
+  $start.EnvironmentVariables['ALIFE_WEBVIEW2_USER_DATA_FOLDER']=(Join-Path $Slot.runtimeRoot 'webview2');$start.EnvironmentVariables['ALIFE_ONEBOT_URL']=$Slot.oneBotUrl;$start.EnvironmentVariables['ALIFE_ONEBOT_TOKEN']=$Token;$start.EnvironmentVariables['ALIFE_QZONE_LOOPBACK_OPERATOR_URL']=$Slot.qZoneLoopbackOperatorUrl
   [Diagnostics.Process]::Start($start)
 }
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))

@@ -66,12 +66,14 @@ Before live QZone execution is enabled:
 
 These conditions are for an owner-authorized production validation only. They do not authorize a script, test, or agent to start QQ, NapCat, or a QZone service. Both account services and both NapCat instances must already be running, each OneBot URL must remain loopback-only, and each service must be pinned to its intended account:
 
-| Account | OneBot port | Existing token variable name |
-|---|---:|---|
-| Account A | `3001` | `ALIFE_ACCOUNT_A_ONEBOT_TOKEN` |
-| Account B | `3002` | `ALIFE_ACCOUNT_B_ONEBOT_TOKEN` |
+| Account | OneBot port | Existing token variable name | Character-local operator URL |
+|---|---:|---|---|
+| Account A | `3001` | `ALIFE_ACCOUNT_A_ONEBOT_TOKEN` | `http://127.0.0.1:5101/qzone/` |
+| Account B | `3002` | `ALIFE_ACCOUNT_B_ONEBOT_TOKEN` | `http://127.0.0.1:5102/qzone/` |
 
 The runtime host, not an operator script, is responsible for supplying the matching existing token value to its already-running local OneBot connection. Do not put the value in a QZone configuration file, command line, output, or test fixture. `AutoConnect=true` is required when the deployed QZone service is expected to connect itself to that already-running local OneBot service.
+
+The local-production plan must provide the matching, unique `qZoneLoopbackOperatorUrl` on each account slot. The supervisor validates the complete two-account mapping, requires absolute loopback-only `http` URLs (with no credentials, query, or fragment), normalizes an omitted trailing `/`, and supplies the normalized value to that character process as `ALIFE_QZONE_LOOPBACK_OPERATOR_URL`. `QZoneLoopbackOperatorUrl` in an explicit character configuration takes precedence; otherwise the lifecycle host consumes this supervisor value. The two endpoints remain separate and are never shared across characters.
 
 For each account, configure the following exact QZone settings before a manually authorized real validation:
 
@@ -114,7 +116,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\T
 
 The result has `execute:false` and only tells the operator to add `-Execute`. `Post`, `Comment`, `Like`, `Image`, and `Delete` consequently cannot execute without that explicit switch. `Image` additionally requires an existing local `-ImagePath`; a missing path returns a fixed safe reason without echoing the caller's path.
 
-With `-Execute`, the script selects the established variable name for port `3001` or `3002`, but never reads or prints the token. It never starts QQ/NapCat and has no direct external HTTP call. This checkout has no explicitly configured local QZone operator endpoint, so execution safely returns `local_qzone_runtime_unavailable` and a nonzero exit status rather than inventing an endpoint, using credentials, or claiming success. A future endpoint integration must be separately reviewed; it may call only an already-running local service and must report success only from that service's explicit success result.
+With `-Execute`, the script maps `3001` to the `account-a` slot and `3002` to the `account-b` slot in the supplied `-PlanPath` (or `ALIFE_LOCAL_PRODUCTION_PLAN`, which it reads only after the execute gate). It first loads the same complete two-account production-plan validation used by the supervisor, then makes one HTTP `POST` only to that selected, normalized local URL. Redirects and proxy use are disabled. The request contains only the operation and its safe required fields; it never contains Cookie, BKN, OneBot token, API key, image bytes, or a raw QZone request. It never starts QQ/NapCat or calls QZone directly. The compact operator response is read with a 4 KiB limit even when it is chunked or lacks a content length.
+
+For example, an owner-authorized local read needs an explicit target and plan:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\Test-QZoneRealRuntime.ps1 -Operation Read -Port 3001 -TargetId <target-id> -PlanPath <local-production-plan-path> -Execute
+```
+
+The script reports `local_qzone_runtime_unavailable` when the selected role has no complete valid plan, no configured endpoint, or no already-running listener. A successful result is reported only when the local operator explicitly returns its compact `Completed` result.
 
 ## Owner-Authorized Real Validation Matrix
 
@@ -123,10 +133,10 @@ Do not run this matrix from automated tests, CI, or an unattended agent. After t
 After the local owner-controlled service has read back a complete snapshot of that same account's test post or image, request cleanup with the guarded operator command:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\Test-QZoneRealRuntime.ps1 -Operation Delete -Port 3001 -Execute
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\local-production\Test-QZoneRealRuntime.ps1 -Operation Delete -Port 3001 -TargetId <own-target-id> -PostId <own-post-id> -TopicId <own-topic-id> -FeedsKey <own-feeds-key> -CreatedAtUnixSeconds <own-created-at> -PlanPath <local-production-plan-path> -Execute
 ```
 
-Use the identical command with `-Port 3002` for Account B. `Delete` is only for the selected account's own test post or image; the service checks complete deletion metadata and the session-aware runtime independently verifies that the target belongs to the active account. Without a separately reviewed local endpoint, this command continues to return `local_qzone_runtime_unavailable` and performs no deletion.
+Use the identical command with `-Port 3002` for Account B. The script refuses a delete request unless it has the complete own-post metadata shown above, then the service checks that metadata and the session-aware runtime independently verifies that the target belongs to the active account. A missing local endpoint continues to return `local_qzone_runtime_unavailable` and performs no deletion.
 
 | Account | Exact ordered checks (one each) | Required confirmation |
 |---|---|---|

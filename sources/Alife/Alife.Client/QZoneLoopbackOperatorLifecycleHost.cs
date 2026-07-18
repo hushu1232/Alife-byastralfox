@@ -42,6 +42,8 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
 
             string configuredUrl = qzoneService.Configuration?.QZoneLoopbackOperatorUrl ?? string.Empty;
             if (string.IsNullOrWhiteSpace(configuredUrl))
+                configuredUrl = Environment.GetEnvironmentVariable("ALIFE_QZONE_LOOPBACK_OPERATOR_URL") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(configuredUrl))
                 return;
             if (QZoneLoopbackOperatorEndpoint.TryCreate(
                     configuredUrl,
