@@ -1505,6 +1505,121 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SemanticWebResearch_SlowResearchSendsNarratedFeedbackBeforeModelDispatch()
+    {
+        FakeOneBotRuntime runtime = new();
+        BlockingSemanticWebResearchService research = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                Enabled = true,
+                FeedbackDelayMilliseconds = 20
+            }
+        },
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: research,
+        semanticWebResearchNarrator: new StubSemanticWebResearchNarrator("我去把这件事核实清楚。"));
+        QChatInboundMessage? dispatched = null;
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatched = inbound;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "What changed in the project today?"
+        });
+
+        await research.WaitForStartAsync();
+        await WaitUntilAsync(() => runtime.PrivateMessages.Any(message => message.Message.Contains("核实清楚")));
+
+        Assert.That(dispatched, Is.Null);
+
+        research.Complete();
+        await WaitUntilAsync(() => dispatched != null);
+
+        Assert.That(runtime.PrivateMessages.Any(message => message.Message.Contains("我去把这件事核实清楚")), Is.True);
+    }
+
+    [Test]
+    public async Task SemanticWebResearch_FastResearchDoesNotSendIntermediateFeedback()
+    {
+        FakeOneBotRuntime runtime = new();
+        RecordingSemanticWebResearchService research = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                Enabled = true,
+                FeedbackDelayMilliseconds = 1000
+            }
+        },
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: research,
+        semanticWebResearchNarrator: new StubSemanticWebResearchNarrator("不应发送的中间消息。"));
+        TaskCompletionSource dispatched = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatched.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "Please verify this information."
+        });
+
+        await dispatched.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+    }
+
+    [Test]
+    public async Task SemanticWebResearch_CancelledResearchDoesNotSendFeedback()
+    {
+        FakeOneBotRuntime runtime = new();
+        BlockingSemanticWebResearchService research = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                Enabled = true,
+                FeedbackDelayMilliseconds = 1000
+            }
+        },
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: research,
+        semanticWebResearchNarrator: new StubSemanticWebResearchNarrator("不应发送的取消消息。"));
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "Please verify this information."
+        });
+
+        await research.WaitForStartAsync();
+        await service.DisposeAsync();
+
+        Assert.That(runtime.PrivateMessages, Is.Empty);
+    }
+
+    [Test]
     public async Task WebResearchOwnerPrivateSemanticSearchReadsTopResultWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -16083,6 +16198,43 @@ public class QChatServiceAdapterTests
         }
     }
 
+    sealed class BlockingSemanticWebResearchService : IAgentWebResearchService
+    {
+        readonly TaskCompletionSource<AgentWebResearchResult> completion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task WaitForStartAsync() => started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public async Task<AgentWebResearchResult> ResearchAsync(
+            AgentWebResearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            started.TrySetResult();
+            return await completion.Task.WaitAsync(cancellationToken);
+        }
+
+        public void Complete()
+        {
+            completion.TrySetResult(new AgentWebResearchResult(
+                true,
+                "ok",
+                "latest project update",
+                "Current project details.",
+                []));
+        }
+    }
+
+    sealed class StubSemanticWebResearchNarrator(string message) : IQChatSemanticWebResearchNarrator
+    {
+        public Task<string?> CreateStartedAsync(
+            string agentId,
+            QChatSenderRole senderRole,
+            OneBotMessageType messageType,
+            string question,
+            CancellationToken cancellationToken = default) => Task.FromResult<string?>(message);
+    }
+
     sealed class FakePublicSearchService(string formattedContent) : AgentPublicSearchService
     {
         public int Calls { get; private set; }
@@ -16294,6 +16446,7 @@ public class QChatServiceAdapterTests
         AgentBrowserMediaOutputService? browserMediaOutputService = null,
         IQChatSemanticWebResearchRouter? semanticWebResearchRouter = null,
         IAgentWebResearchService? semanticWebResearchService = null,
+        IQChatSemanticWebResearchNarrator? semanticWebResearchNarrator = null,
         Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
         XmlFunctionCaller? functionCaller = null,
         QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
@@ -16331,6 +16484,7 @@ public class QChatServiceAdapterTests
             browserMediaOutputService: browserMediaOutputService,
             semanticWebResearchRouter: semanticWebResearchRouter,
             semanticWebResearchService: semanticWebResearchService,
+            semanticWebResearchNarrator: semanticWebResearchNarrator,
             voiceWarmupEndpointProbe: voiceWarmupEndpointProbe,
             personaMemoryContextProvider: personaMemoryContextProvider)
         {

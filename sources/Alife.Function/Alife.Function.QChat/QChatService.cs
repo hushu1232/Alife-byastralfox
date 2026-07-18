@@ -331,6 +331,7 @@ public partial class QChatService(
     AgentBrowserMediaOutputService? browserMediaOutputService = null,
     IQChatSemanticWebResearchRouter? semanticWebResearchRouter = null,
     IAgentWebResearchService? semanticWebResearchService = null,
+    IQChatSemanticWebResearchNarrator? semanticWebResearchNarrator = null,
     XiaYuSelfStateStore? xiaYuSelfStateStore = null,
     Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
     QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
@@ -360,6 +361,7 @@ public partial class QChatService(
     readonly AgentBrowserSiteExperienceStore? injectedBrowserSiteExperienceStore = browserSiteExperienceStore;
     readonly IQChatSemanticWebResearchRouter? injectedSemanticWebResearchRouter = semanticWebResearchRouter;
     readonly IAgentWebResearchService? injectedSemanticWebResearchService = semanticWebResearchService;
+    readonly IQChatSemanticWebResearchNarrator? injectedSemanticWebResearchNarrator = semanticWebResearchNarrator;
     readonly AgentWebResearchControlState webResearchControlState = new();
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
@@ -370,6 +372,7 @@ public partial class QChatService(
     QChatVoiceWarmupCoordinator? voiceWarmupCoordinator;
     IQChatSemanticWebResearchRouter? resolvedSemanticWebResearchRouter;
     QChatSemanticWebResearchService? resolvedSemanticWebResearchService;
+    IQChatSemanticWebResearchNarrator? resolvedSemanticWebResearchNarrator;
     QChatOwnerEventOutbox OwnerEventOutbox => resolvedOwnerEventOutbox ??= new QChatOwnerEventOutbox(Path.Combine(
         AlifePath.StorageFolderPath,
         "AgentWorkspace",
@@ -2640,7 +2643,9 @@ public partial class QChatService(
 
     void ConfigureSemanticWebResearchFromKernel(Kernel kernel)
     {
-        if (Configuration?.SemanticWebResearch.Enabled != true || injectedSemanticWebResearchRouter != null)
+        if (Configuration?.SemanticWebResearch.Enabled != true)
+            return;
+        if (injectedSemanticWebResearchRouter != null && injectedSemanticWebResearchNarrator != null)
             return;
 
         IChatCompletionService? chatCompletionService =
@@ -2648,8 +2653,17 @@ public partial class QChatService(
         if (chatCompletionService == null)
             return;
 
-        resolvedSemanticWebResearchRouter = new QChatLlmSemanticWebResearchRouter(
-            new QChatSemanticKernelWebResearchModel(chatCompletionService));
+        if (injectedSemanticWebResearchRouter == null)
+        {
+            resolvedSemanticWebResearchRouter = new QChatLlmSemanticWebResearchRouter(
+                new QChatSemanticKernelWebResearchModel(chatCompletionService));
+        }
+
+        if (injectedSemanticWebResearchNarrator == null)
+        {
+            resolvedSemanticWebResearchNarrator = new QChatSemanticKernelWebResearchNarrator(
+                chatCompletionService);
+        }
     }
 
     QChatSemanticWebResearchService? ResolveSemanticWebResearchService(QChatConfig config)
@@ -2667,6 +2681,72 @@ public partial class QChatService(
             return null;
 
         return resolvedSemanticWebResearchService ??= new QChatSemanticWebResearchService(router, researchService);
+    }
+
+    async Task<QChatSemanticWebResearchEvidence> ExecuteSemanticWebResearchWithFeedbackAsync(
+        QChatSemanticWebResearchService researchService,
+        QChatSemanticWebResearchRequest request,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        CancellationToken cancellationToken)
+    {
+        Task<QChatSemanticWebResearchEvidence> researchTask = researchService.ExecuteAsync(request, cancellationToken);
+        Task feedbackDelay = Task.Delay(
+            Math.Max(0, request.Config.FeedbackDelayMilliseconds),
+            cancellationToken);
+        Task completed = await Task.WhenAny(researchTask, feedbackDelay);
+        if (completed == feedbackDelay && feedbackDelay.IsCompletedSuccessfully && researchTask.IsCompleted == false)
+            await TrySendSemanticWebResearchFeedbackAsync(request, messageEvent, senderRole, cancellationToken);
+
+        return await researchTask;
+    }
+
+    async Task TrySendSemanticWebResearchFeedbackAsync(
+        QChatSemanticWebResearchRequest request,
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        CancellationToken cancellationToken)
+    {
+        IQChatSemanticWebResearchNarrator? narrator = injectedSemanticWebResearchNarrator
+            ?? resolvedSemanticWebResearchNarrator;
+        if (narrator == null || cancellationToken.IsCancellationRequested)
+            return;
+
+        OneBotMessageType targetType = messageEvent.MessageType;
+        long targetId = targetType == OneBotMessageType.Group
+            ? messageEvent.GroupId
+            : messageEvent.UserId;
+        if (targetId <= 0)
+            return;
+
+        try
+        {
+            using CancellationTokenSource narratorCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            narratorCancellation.CancelAfter(TimeSpan.FromMilliseconds(800));
+            string? generated = await narrator.CreateStartedAsync(
+                request.AgentId,
+                senderRole,
+                targetType,
+                request.Question,
+                narratorCancellation.Token);
+            if (cancellationToken.IsCancellationRequested || string.IsNullOrWhiteSpace(generated))
+                return;
+
+            string feedback = generated.Trim();
+            if (feedback.Length > 80)
+                feedback = feedback[..80].TrimEnd();
+            if (feedback.Length == 0)
+                return;
+
+            await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, feedback);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested == false)
+        {
+        }
+        catch (Exception)
+        {
+        }
     }
 
     readonly object permissionGate = new();
@@ -3279,15 +3359,20 @@ public partial class QChatService(
                             maxCharacters: 1200,
                             ownerUserId: config.OwnerId,
                             botUserId: config.BotId);
-                        QChatSemanticWebResearchEvidence researchEvidence = await semanticResearchService.ExecuteAsync(
-                            new QChatSemanticWebResearchRequest(
-                                ResolveCurrentAgentId(config),
+                        QChatSemanticWebResearchEvidence researchEvidence =
+                            await ExecuteSemanticWebResearchWithFeedbackAsync(
+                                semanticResearchService,
+                                new QChatSemanticWebResearchRequest(
+                                    ResolveCurrentAgentId(config),
+                                    messageEvent,
+                                    senderRole,
+                                    isExplicitBotMention,
+                                    content,
+                                    researchRecentContext,
+                                    config.SemanticWebResearch),
                                 messageEvent,
                                 senderRole,
-                                isExplicitBotMention,
-                                content,
-                                researchRecentContext,
-                                config.SemanticWebResearch));
+                                oneBotEventProcessingCancellation?.Token ?? CancellationToken.None);
                         researchEvidencePrompt = string.IsNullOrWhiteSpace(researchEvidence.ModelPrompt)
                             ? null
                             : researchEvidence.ModelPrompt;
