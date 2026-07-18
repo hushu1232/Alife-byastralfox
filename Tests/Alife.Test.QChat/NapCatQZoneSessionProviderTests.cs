@@ -38,6 +38,44 @@ public sealed class NapCatQZoneSessionProviderTests
             Assert.That(exception.Message, Does.Not.Contain(cookies));
     }
 
+    [Test]
+    public async Task GetSessionAsync_PrefersPUinWhenItConflictsWithUin()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(
+            "uin=o10001; p_uin=o20002; p_skey=session-value", "701234"));
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(20002));
+    }
+
+    [Test]
+    public async Task GetSessionAsync_AcceptsUinWhenPUinIsAbsent()
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse("uin=o123; p_skey=session-value", "701234"));
+
+        QZoneSession session = await new NapCatQZoneSessionProvider(invoker).GetSessionAsync();
+
+        Assert.That(session.AccountId, Is.EqualTo(123));
+    }
+
+    [TestCase("uin=o0; p_skey=session-value")]
+    [TestCase("p_skey=session-value")]
+    [TestCase("uin=not-an-account; p_skey=session-value")]
+    public void GetSessionAsync_RejectsUnavailableAccountWithoutExposingCookie(string cookies)
+    {
+        FakeActionInvoker invoker = new();
+        invoker.Enqueue(new NapCatQZoneCookieResponse(cookies, "701234"));
+
+        QZoneSessionUnavailableException exception = Assert.ThrowsAsync<QZoneSessionUnavailableException>(
+            async () => await new NapCatQZoneSessionProvider(invoker).GetSessionAsync())!;
+
+        Assert.That(exception.Message, Is.EqualTo("qzone_account_unavailable"));
+        Assert.That(exception.Message, Does.Not.Contain(cookies));
+    }
+
     private sealed class FakeActionInvoker : IOneBotActionInvoker
     {
         public List<(string Action, string Json)> Calls { get; } = [];
