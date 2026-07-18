@@ -127,6 +127,7 @@ public class ModuleSystem
 
         return typeof(ISystemEvent).IsAssignableFrom(type)
                || typeof(ILanguageModel).IsAssignableFrom(type)
+               || typeof(IEmbodiedCapability).IsAssignableFrom(type)
                || type.GetInterfaces().Any(IsModuleDependencyProviderInterface);
     }
     public void ReloadModules()

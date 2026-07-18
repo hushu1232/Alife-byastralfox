@@ -363,8 +363,9 @@ public class QZoneService :
             throw new InvalidOperationException("QQ Zone is in dry-run mode.");
 
         IOneBotActionConnection connection = GetConnection(config);
-        connection.Url = config.Url;
-        connection.Token = config.Token;
+        (string url, string token) = ResolveConnectionSettings(config);
+        connection.Url = url;
+        connection.Token = token;
         await connection.ConnectAsync();
         createdRuntime = CreateRuntime(connection, config);
     }
@@ -453,13 +454,12 @@ public class QZoneService :
         if (config.DryRunExternalActions)
             return Report(new QZoneActionResult("post", false, $"dry-run: would publish QQ Zone post: {content}"));
 
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         await liveRuntime.PublishPost(content);
         PublishLifeEvent($"You published a QQ Zone post: {content}");
         return Report(new QZoneActionResult("post", true, "published QQ Zone post"));
     }
 
-    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
     [Description("Delete only the current account's own QQ Zone post. The runtime verifies the post owner before sending a deletion request.")]
     public async Task<QZoneActionResult> QZoneDeleteOwnPost(QZonePostSnapshot post)
     {
@@ -478,7 +478,7 @@ public class QZoneService :
             || post.CreatedAtUnixSeconds is null)
             return Report(new QZoneActionResult("delete_own_post", false, "qzone_delete_metadata_unavailable"));
 
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         await liveRuntime.DeletePost(post);
         return Report(new QZoneActionResult("delete_own_post", true, "deleted own QQ Zone post"));
     }
@@ -503,7 +503,7 @@ public class QZoneService :
         QZoneImageSourceResolver resolver = imageSourceResolverFactory()
             ?? throw new QZoneImageSourceException("qzone_image_source_unavailable");
         QZoneImageUpload upload = await resolver.ResolveAsync(source, config.MaxQZoneImageBytes);
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         QZoneUploadedImage image = await liveRuntime.UploadImage(upload);
         await liveRuntime.PublishImagePost(content, [image]);
         PublishLifeEvent("You published a QQ Zone image post.");
@@ -525,7 +525,7 @@ public class QZoneService :
         if (config.DryRunExternalActions)
             return Report(new QZoneActionResult("comment", false, $"dry-run: would comment on {targetId}/{postId}: {content}"));
 
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         await liveRuntime.Comment(targetId, postId, content);
         MarkTargetInteraction(targetId);
         PublishLifeEvent($"You commented on QQ Zone post {targetId}/{postId}: {content}");
@@ -555,7 +555,7 @@ public class QZoneService :
         if (config.DryRunExternalActions)
             return Report(new QZoneActionResult("reply", false, $"dry-run: would reply to {targetId}/{postId}/{commentId}: {content}"));
 
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         await liveRuntime.ReplyComment(targetId, postId, commentId, content);
         MarkTargetInteraction(targetId);
         PublishLifeEvent($"You replied to QQ Zone comment {targetId}/{postId}/{commentId}: {content}");
@@ -582,7 +582,7 @@ public class QZoneService :
         if (config.DryRunExternalActions)
             return Report(new QZoneActionResult("like", false, $"dry-run: would like QQ Zone post {targetId}/{postId}"));
 
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         await liveRuntime.LikePost(targetId, postId);
         MarkTargetInteraction(targetId);
         PublishLifeEvent($"You liked QQ Zone post {targetId}/{postId}.");
@@ -599,7 +599,7 @@ public class QZoneService :
             return ReportQuery(skipped);
 
         commentCount = Math.Clamp(commentCount, 0, 50);
-        IQZoneRuntime liveRuntime = GetRuntime();
+        IQZoneRuntime liveRuntime = await GetRuntimeAsync();
         QZonePostSnapshot? post = await liveRuntime.GetLatestPost(targetId);
         if (post == null)
             return ReportQuery(new QZoneQueryResult(false, $"no latest QQ Zone post found for {targetId}", null, []));
@@ -750,7 +750,8 @@ public class QZoneService :
 
         try
         {
-            await GetRuntime().PublishPost(draft);
+            IQZoneRuntime liveRuntime = await GetRuntimeAsync();
+            await liveRuntime.PublishPost(draft);
         }
         catch (Exception)
         {
@@ -825,26 +826,23 @@ public class QZoneService :
             };
     }
 
-    IQZoneRuntime GetRuntime()
+    async Task<IQZoneRuntime> GetRuntimeAsync()
     {
         QZoneServiceConfig config = GetConfig();
         if (runtime != null)
             return runtime;
         if (createdRuntime != null)
             return createdRuntime;
-        if (actionConnection != null)
+
+        if (actionConnection != null || actionInvoker == null)
         {
-            createdRuntime = CreateRuntime(actionConnection, config);
-            return createdRuntime;
-        }
-        if (actionInvoker == null)
-        {
-            if (config.DryRunExternalActions)
+            if (actionInvoker == null && config.DryRunExternalActions)
                 throw new InvalidOperationException("QQ Zone runtime is unavailable.");
 
             IOneBotActionConnection connection = GetConnection(config);
-            createdRuntime = CreateRuntime(connection, config);
-            return createdRuntime;
+            if (connection.IsConnected == false)
+                await ConnectAsync();
+            return createdRuntime ??= CreateRuntime(connection, config);
         }
 
         createdRuntime = CreateRuntime(actionInvoker, config);
@@ -856,7 +854,17 @@ public class QZoneService :
         if (actionConnection != null)
             return actionConnection;
 
-        return ownedConnection ??= new OneBotClientActionConnection(new OneBotClient(config.Url, config.Token));
+        (string url, string token) = ResolveConnectionSettings(config);
+        return ownedConnection ??= new OneBotClientActionConnection(new OneBotClient(url, token));
+    }
+
+    static (string Url, string Token) ResolveConnectionSettings(QZoneServiceConfig config)
+    {
+        string? environmentUrl = Environment.GetEnvironmentVariable("ALIFE_ONEBOT_URL");
+        string? environmentToken = Environment.GetEnvironmentVariable("ALIFE_ONEBOT_TOKEN");
+        return (
+            string.IsNullOrWhiteSpace(environmentUrl) ? config.Url : environmentUrl,
+            string.IsNullOrWhiteSpace(environmentToken) ? config.Token : environmentToken);
     }
 
     IQZoneRuntime CreateRuntime(IOneBotActionInvoker invoker, QZoneServiceConfig config)

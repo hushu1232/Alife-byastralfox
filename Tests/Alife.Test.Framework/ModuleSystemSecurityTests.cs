@@ -5,9 +5,10 @@ namespace Alife.Test.Framework;
 public class ModuleSystemSecurityTests
 {
     [Test]
-    public void DefaultSecurityModeOnlyAllowsConcreteSystemEventModules()
+    public void DefaultSecurityModeAllowsConcreteSystemEventAndEmbodiedCapabilityModules()
     {
         Assert.That(ModuleSystem.IsModuleTypeAllowed(typeof(SafeModule)), Is.True);
+        Assert.That(ModuleSystem.IsModuleTypeAllowed(typeof(SafeEmbodiedCapabilityModule)), Is.True);
         Assert.That(ModuleSystem.IsModuleTypeAllowed(typeof(PlainAttributedType)), Is.False);
         Assert.That(ModuleSystem.IsModuleTypeAllowed(typeof(AbstractAttributedModule)), Is.False);
         Assert.That(ModuleSystem.IsModuleTypeAllowed(typeof(IAttributedModule)), Is.False);
@@ -27,6 +28,15 @@ public class ModuleSystemSecurityTests
 
     [Module("安全测试模块", "实现 ISystemEvent 的有效模块")]
     sealed class SafeModule : ISystemEvent;
+
+    [Module("具身能力测试模块", "实现 IEmbodiedCapability 的有效模块")]
+    sealed class SafeEmbodiedCapabilityModule : IEmbodiedCapability
+    {
+        public string Name => "test";
+        public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Tool;
+        public string SelfDescription => "test";
+        public string? GetCurrentState() => null;
+    }
 
     [Module("兼容测试模块", "未实现 ISystemEvent 的旧式模块")]
     sealed class PlainAttributedType;

@@ -1,6 +1,7 @@
 using Alife.Framework;
 using Alife.Function.Agent;
 using Alife.Function.FunctionCaller;
+using Alife.Function.Interpreter;
 using Alife.Function.QChat;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
@@ -26,6 +27,12 @@ public class QZoneServiceTests
             if (Directory.Exists(directory))
                 Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Test]
+    public void QZoneService_XmlHandlerRegistrationDoesNotExposeUnsupportedSnapshotParameter()
+    {
+        Assert.DoesNotThrow(() => _ = new XmlHandler(new QZoneService()));
     }
 
     [Test]
@@ -978,6 +985,45 @@ public class QZoneServiceTests
     }
 
     [Test]
+    public async Task ConnectAsync_PrefersSupervisorEnvironmentConnectionSettings()
+    {
+        const string environmentUrl = "ws://127.0.0.1:3311";
+        const string environmentToken = "unit-test-supervisor-token";
+        string? previousUrl = Environment.GetEnvironmentVariable("ALIFE_ONEBOT_URL");
+        string? previousToken = Environment.GetEnvironmentVariable("ALIFE_ONEBOT_TOKEN");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ALIFE_ONEBOT_URL", environmentUrl);
+            Environment.SetEnvironmentVariable("ALIFE_ONEBOT_TOKEN", environmentToken);
+            FakeActionConnection connection = new();
+            QZoneService service = new(actionConnection: connection)
+            {
+                Configuration = new QZoneServiceConfig
+                {
+                    EnableQZone = true,
+                    DryRunExternalActions = false,
+                    Url = "ws://127.0.0.1:3010",
+                    Token = "persisted-token-must-not-win"
+                }
+            };
+
+            await service.ConnectAsync();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(connection.Url, Is.EqualTo(environmentUrl));
+                Assert.That(connection.Token, Is.EqualTo(environmentToken));
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ALIFE_ONEBOT_URL", previousUrl);
+            Environment.SetEnvironmentVariable("ALIFE_ONEBOT_TOKEN", previousToken);
+        }
+    }
+
+    [Test]
     public async Task ConnectAsync_UsesNapCatHttpRuntimeOnlyWhenExplicitlyConfigured()
     {
         NapCatActionConnection connection = new();
@@ -1037,6 +1083,31 @@ public class QZoneServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(result, Is.EqualTo(new QZoneActionResult("post", true, "published QQ Zone post")));
+            Assert.That(connection.ConnectCalls, Is.EqualTo(1));
+            Assert.That(connection.Calls.Select(call => call.Action), Is.EqualTo(new[] { "send_msg" }));
+        });
+    }
+
+    [Test]
+    public async Task QZonePost_ConnectsInjectedActionConnectionOnFirstLiveOperation()
+    {
+        NapCatActionConnection connection = new();
+        QZoneService service = new(actionConnection: connection)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false,
+                AutoConnect = false,
+                UseNapCatQZoneHttpRuntime = false
+            }
+        };
+
+        QZoneActionResult result = await service.QZonePost("hello qzone");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.True);
             Assert.That(connection.ConnectCalls, Is.EqualTo(1));
             Assert.That(connection.Calls.Select(call => call.Action), Is.EqualTo(new[] { "send_msg" }));
         });
