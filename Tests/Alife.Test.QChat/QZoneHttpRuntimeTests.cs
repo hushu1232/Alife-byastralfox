@@ -119,6 +119,33 @@ public sealed class QZoneHttpRuntimeTests
         });
     }
 
+    [TestCase("{\"code\":\"0\"}")]
+    [TestCase("{\"code\":null}")]
+    public void NonNumericApiCode_ThrowsSafeInvalidResponseCode(string responseBody)
+    {
+        QZoneHttpRuntime runtime = new(
+            new CountingSessionProvider(),
+            new HttpClient(new RecordingHandler(CreateResponse(responseBody)), disposeHandler: false));
+
+        QZoneHttpException exception = Assert.ThrowsAsync<QZoneHttpException>(async () =>
+            await runtime.GetLatestPost(10001))!;
+
+        Assert.That(exception.Message, Is.EqualTo("qzone_api_invalid_response"));
+    }
+
+    [Test]
+    public void ArbitraryParenthesizedResponse_ThrowsSafeInvalidResponseCode()
+    {
+        QZoneHttpRuntime runtime = new(
+            new CountingSessionProvider(),
+            new HttpClient(new RecordingHandler(CreateResponse("unexpected text ({\"code\":0})")), disposeHandler: false));
+
+        QZoneHttpException exception = Assert.ThrowsAsync<QZoneHttpException>(async () =>
+            await runtime.GetLatestPost(10001))!;
+
+        Assert.That(exception.Message, Is.EqualTo("qzone_api_invalid_response"));
+    }
+
     [Test]
     public async Task GetLatestComments_MapsFeedCommentList()
     {

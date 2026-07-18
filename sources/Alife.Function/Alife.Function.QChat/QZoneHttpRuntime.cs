@@ -151,6 +151,7 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
                 || !root.TryGetProperty("code", out JsonElement code)
+                || code.ValueKind != JsonValueKind.Number
                 || !code.TryGetInt32(out int resultCode))
                 throw new QZoneHttpException("qzone_api_invalid_response");
             if (resultCode != 0)
@@ -195,15 +196,58 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
 
     static string UnwrapJsonp(string body)
     {
-        string payload = body.Trim();
-        if (payload.StartsWith("{", StringComparison.Ordinal) || payload.StartsWith("[", StringComparison.Ordinal))
-            return payload;
+        ReadOnlySpan<char> trimmedStart = body.AsSpan().TrimStart();
+        if (trimmedStart.StartsWith("{", StringComparison.Ordinal) || trimmedStart.StartsWith("[", StringComparison.Ordinal))
+            return body;
 
+        string payload = body.Trim();
         int openingParenthesis = payload.IndexOf('(');
         int closingParenthesis = payload.LastIndexOf(')');
-        return openingParenthesis >= 0 && closingParenthesis > openingParenthesis
-            ? payload[(openingParenthesis + 1)..closingParenthesis]
-            : payload;
+        if (openingParenthesis <= 0
+            || closingParenthesis <= openingParenthesis
+            || !IsJsonpCallbackPath(payload.AsSpan(0, openingParenthesis)))
+            throw new JsonException();
+
+        ReadOnlySpan<char> suffix = payload.AsSpan(closingParenthesis + 1).Trim();
+        if (!suffix.IsEmpty && !suffix.SequenceEqual(";"))
+            throw new JsonException();
+
+        return payload[(openingParenthesis + 1)..closingParenthesis];
+    }
+
+    static bool IsJsonpCallbackPath(ReadOnlySpan<char> path)
+    {
+        bool requiresIdentifierStart = true;
+        foreach (char character in path)
+        {
+            if (requiresIdentifierStart)
+            {
+                if (!IsJsonpIdentifierStart(character))
+                    return false;
+
+                requiresIdentifierStart = false;
+            }
+            else if (character == '.')
+            {
+                requiresIdentifierStart = true;
+            }
+            else if (!IsJsonpIdentifierPart(character))
+            {
+                return false;
+            }
+        }
+
+        return !requiresIdentifierStart;
+    }
+
+    static bool IsJsonpIdentifierStart(char character)
+    {
+        return char.IsLetter(character) || character is '_' or '$';
+    }
+
+    static bool IsJsonpIdentifierPart(char character)
+    {
+        return IsJsonpIdentifierStart(character) || char.IsDigit(character);
     }
 
     static QZonePostSnapshot? TryReadPost(JsonElement root)
