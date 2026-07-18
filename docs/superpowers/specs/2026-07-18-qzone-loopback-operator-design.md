@@ -1,6 +1,6 @@
 # QZone Per-Character Loopback Operator Design
 
-**Status:** Approved design, awaiting written-spec review  
+**Status:** Approved design, awaiting written-spec review
 **Scope:** Deliver the final local execution bridge from `Test-QZoneRealRuntime.ps1` to each already-running character instance's `QZoneService`.
 
 ## Decision
