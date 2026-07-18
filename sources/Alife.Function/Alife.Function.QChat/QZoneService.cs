@@ -90,6 +90,7 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public string Token { get; set; } = "";
     public bool AutoConnect { get; set; } = true;
     public bool DryRunExternalActions { get; set; } = true;
+    public bool UseNapCatQZoneHttpRuntime { get; set; }
     public int MaxContentLength { get; set; } = 500;
     public int MaxQZoneImageBytes { get; set; } = 10 * 1024 * 1024;
     public int MaxQZoneImagesPerPost { get; set; } = 1;
@@ -151,6 +152,7 @@ public class QZoneService :
     IAgentProactiveSuggestionExecutor
 {
     static readonly HttpClient defaultImageHttpClient = new();
+    static readonly HttpClient defaultQZoneHttpClient = new();
     readonly IQZoneRuntime? runtime;
     readonly IOneBotActionInvoker? actionInvoker;
     readonly IOneBotActionConnection? actionConnection;
@@ -335,7 +337,7 @@ public class QZoneService :
         connection.Url = config.Url;
         connection.Token = config.Token;
         await connection.ConnectAsync();
-        createdRuntime = CreateOneBotRuntime(connection, config);
+        createdRuntime = CreateRuntime(connection, config);
     }
 
     public Task<QZoneAutonomyRunResult> RunAutonomyOnceAsync(QZoneAutonomyRunRequest request)
@@ -516,8 +518,6 @@ public class QZoneService :
         QZoneActionResult? skipped = BeforeTargetAction("like", config, targetId);
         if (skipped != null)
             return Report(skipped);
-        if (IsPrivateChatContact(config, targetId) == false)
-            return Report(new QZoneActionResult("like", false, "target is not in private chat contact pool"));
         if (QZoneInteractionPolicy.ShouldLikeTarget(config, targetId, random) == false)
             return Report(new QZoneActionResult("like", false, "skipped by random like probability policy"));
 
@@ -627,13 +627,6 @@ public class QZoneService :
         return ReportProactiveExecution(result, normalizedId);
     }
 
-    static bool IsPrivateChatContact(QZoneServiceConfig config, long targetId)
-    {
-        return config.PrivateChatContactIds
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Contains(targetId.ToString());
-    }
-
     QZoneServiceConfig GetConfig()
     {
         return Configuration ?? throw new InvalidOperationException("QQ Zone configuration is unavailable.");
@@ -725,7 +718,7 @@ public class QZoneService :
             return createdRuntime;
         if (actionConnection != null)
         {
-            createdRuntime = CreateOneBotRuntime(actionConnection, config);
+            createdRuntime = CreateRuntime(actionConnection, config);
             return createdRuntime;
         }
         if (actionInvoker == null)
@@ -734,11 +727,11 @@ public class QZoneService :
                 throw new InvalidOperationException("QQ Zone runtime is unavailable.");
 
             IOneBotActionConnection connection = GetConnection(config);
-            createdRuntime = CreateOneBotRuntime(connection, config);
+            createdRuntime = CreateRuntime(connection, config);
             return createdRuntime;
         }
 
-        createdRuntime = CreateOneBotRuntime(actionInvoker, config);
+        createdRuntime = CreateRuntime(actionInvoker, config);
         return createdRuntime;
     }
 
@@ -749,6 +742,15 @@ public class QZoneService :
 
         return ownedConnection ??= new OneBotClientActionConnection(new OneBotClient(config.Url, config.Token));
     }
+
+    IQZoneRuntime CreateRuntime(IOneBotActionInvoker invoker, QZoneServiceConfig config)
+    {
+        return config.UseNapCatQZoneHttpRuntime
+            ? new QZoneHttpRuntime(new NapCatQZoneSessionProvider(invoker), CreateQZoneHttpClient())
+            : CreateOneBotRuntime(invoker, config);
+    }
+
+    protected virtual HttpClient CreateQZoneHttpClient() => defaultQZoneHttpClient;
 
     static OneBotQZoneRuntime CreateOneBotRuntime(IOneBotActionInvoker invoker, QZoneServiceConfig config)
     {
@@ -887,18 +889,21 @@ public class QZoneService :
 
     QZoneActionResult Report(QZoneActionResult result)
     {
-        TryPoke(result.Executed
-            ? $"QZone action completed: {result.Reason}"
-            : $"QZone action skipped: {result.Reason}");
+        TryPoke(QZoneFeedbackFormatter.Format(ResolveFeedbackPersonaId(), result.Executed, result.Reason));
         return result;
     }
 
     QZoneQueryResult ReportQuery(QZoneQueryResult result)
     {
-        TryPoke(result.Succeeded
-            ? $"QZone query completed: {result.Reason}"
-            : $"QZone query skipped: {result.Reason}");
+        TryPoke(QZoneFeedbackFormatter.Format(ResolveFeedbackPersonaId(), result.Succeeded, result.Reason));
         return result;
+    }
+
+    string? ResolveFeedbackPersonaId()
+    {
+        return QChatAgentIdentityRegistry.CreateDefault()
+            .ResolveByCharacterName(Character?.Name)
+            ?.AgentId;
     }
 
     QZoneProactiveExecutionResult ReportProactiveExecution(QZoneProactiveExecutionResult result, string id)

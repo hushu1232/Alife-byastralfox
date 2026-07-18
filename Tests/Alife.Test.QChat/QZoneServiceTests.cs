@@ -611,7 +611,7 @@ public class QZoneServiceTests
     }
 
     [Test]
-    public async Task QZoneLike_SkipsTargetsOutsidePrivateChatContactPool()
+    public async Task QZoneLike_AllowsTargetsOutsidePrivateChatContactPool()
     {
         FakeQZoneRuntime runtime = new();
         QZoneService service = new(runtime)
@@ -620,15 +620,15 @@ public class QZoneServiceTests
             {
                 EnableQZone = true,
                 PrivateChatContactIds = "1001",
-                PrivateContactLikeProbability = 1.0
+                PrivateContactLikeProbability = 1.0,
+                DryRunExternalActions = false
             }
         };
 
         QZoneActionResult result = await service.QZoneLike(2001, "post-a", () => 0.0);
 
-        Assert.That(result.Executed, Is.False);
-        Assert.That(result.Reason, Does.Contain("private chat contact"));
-        Assert.That(runtime.Likes, Is.Empty);
+        Assert.That(result.Executed, Is.True);
+        Assert.That(runtime.Likes, Is.EqualTo(new[] { (2001L, "post-a") }));
     }
 
     [Test]
@@ -748,6 +748,71 @@ public class QZoneServiceTests
     }
 
     [Test]
+    public async Task ConnectAsync_UsesNapCatHttpRuntimeOnlyWhenExplicitlyConfigured()
+    {
+        NapCatActionConnection connection = new();
+        RecordingQZoneHandler handler = new();
+        HttpClient client = new(handler, disposeHandler: false);
+        HttpClientQZoneService service = new(connection, client)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false,
+                UseNapCatQZoneHttpRuntime = true,
+                Url = "ws://127.0.0.1:3010",
+                Token = "secret"
+            }
+        };
+
+        await service.ConnectAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(connection.ConnectCalls, Is.EqualTo(1));
+            Assert.That(connection.IsConnected, Is.True);
+            Assert.That(connection.Calls, Is.Empty);
+            Assert.That(handler.Requests, Is.Empty);
+        });
+
+        QZoneActionResult result = await service.QZonePost("hello qzone");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new QZoneActionResult("post", true, "published QQ Zone post")));
+            Assert.That(connection.Calls.Select(call => call.Action), Is.EqualTo(new[] { "get_cookies" }));
+            Assert.That(handler.Requests, Has.Count.EqualTo(1));
+            Assert.That(handler.Requests[0].Uri.AbsoluteUri, Is.EqualTo(QZoneHttpRuntime.PublishUrl));
+            Assert.That(handler.Requests[0].Cookie, Is.EqualTo("uin=o10001; p_uin=o10001; p_skey=session-value"));
+        });
+    }
+
+    [Test]
+    public async Task ConnectAsync_PreservesOneBotRuntimeWhenNapCatHttpRuntimeIsNotEnabled()
+    {
+        NapCatActionConnection connection = new();
+        QZoneService service = new(actionConnection: connection)
+        {
+            Configuration = new QZoneServiceConfig
+            {
+                EnableQZone = true,
+                DryRunExternalActions = false,
+                UseNapCatQZoneHttpRuntime = false
+            }
+        };
+
+        await service.ConnectAsync();
+        QZoneActionResult result = await service.QZonePost("hello qzone");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new QZoneActionResult("post", true, "published QQ Zone post")));
+            Assert.That(connection.ConnectCalls, Is.EqualTo(1));
+            Assert.That(connection.Calls.Select(call => call.Action), Is.EqualTo(new[] { "send_msg" }));
+        });
+    }
+
+    [Test]
     public async Task QZoneLatestPostAndComments_ReadsLatestPostThenComments()
     {
         FakeQZoneRuntime runtime = new()
@@ -802,8 +867,9 @@ public class QZoneServiceTests
             Assert.That(result.Executed, Is.False);
             Assert.That(pending, Does.Not.Contain("[QQ Zone"));
             Assert.That(pending, Does.Not.Contain("qzone-"));
-            Assert.That(pending, Does.Contain("QZone action skipped"));
-            Assert.That(pending, Does.Contain("skipped by random like probability policy"));
+            Assert.That(pending, Does.Contain("\u72b6\u6001\u5982\u4e0b\u3002"));
+            Assert.That(pending, Does.Contain("QQ\u7a7a\u95f4\u64cd\u4f5c\u6ca1\u6709\u5b8c\u6210\u3002"));
+            Assert.That(pending, Does.Not.Contain("skipped by random like probability policy"));
         });
     }
 
@@ -957,6 +1023,53 @@ public class QZoneServiceTests
         public ValueTask DisposeAsync()
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    sealed class HttpClientQZoneService(IOneBotActionConnection actionConnection, HttpClient client)
+        : QZoneService(actionConnection: actionConnection)
+    {
+        protected override HttpClient CreateQZoneHttpClient() => client;
+    }
+
+    sealed class NapCatActionConnection : IOneBotActionConnection
+    {
+        public bool IsConnected { get; private set; }
+        public string Url { get; set; } = "";
+        public string Token { get; set; } = "";
+        public int ConnectCalls { get; private set; }
+        public List<(string Action, string Json)> Calls { get; } = [];
+
+        public Task ConnectAsync()
+        {
+            ConnectCalls++;
+            IsConnected = true;
+            return Task.CompletedTask;
+        }
+
+        public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
+        {
+            Calls.Add((action, JsonSerializer.Serialize(parameters)));
+            object? response = action == "get_cookies"
+                ? new NapCatQZoneCookieResponse("uin=o10001; p_uin=o10001; p_skey=session-value", "701234")
+                : null;
+            return Task.FromResult((T?)response);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    sealed class RecordingQZoneHandler : HttpMessageHandler
+    {
+        public List<(Uri Uri, string Cookie)> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add((request.RequestUri!, request.Headers.GetValues("Cookie").Single()));
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"code\":0}")
+            });
         }
     }
 

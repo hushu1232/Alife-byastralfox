@@ -7,7 +7,7 @@ namespace Alife.Test.QChat;
 public class QZoneInteractionPolicyTests
 {
     [Test]
-    public void ShouldLikeTarget_OnlyAllowsPrivateChatContactsWithinProbability()
+    public void ShouldLikeTarget_DoesNotRequirePrivateChatContactWhenWithinProbability()
     {
         QZoneInteractionConfig config = new()
         {
@@ -18,7 +18,20 @@ public class QZoneInteractionPolicyTests
 
         Assert.That(QZoneInteractionPolicy.ShouldLikeTarget(config, 1001, () => 0.10), Is.True);
         Assert.That(QZoneInteractionPolicy.ShouldLikeTarget(config, 1001, () => 0.90), Is.False);
-        Assert.That(QZoneInteractionPolicy.ShouldLikeTarget(config, 2001, () => 0.10), Is.False);
+        Assert.That(QZoneInteractionPolicy.ShouldLikeTarget(config, 2001, () => 0.10), Is.True);
+    }
+
+    [Test]
+    public void ShouldLikeTarget_BlankAllowlistAllowsTarget()
+    {
+        QZoneInteractionConfig config = new()
+        {
+            EnableQZone = true,
+            AllowedQZoneTargetIds = "",
+            PrivateContactLikeProbability = 1.0
+        };
+
+        Assert.That(QZoneInteractionPolicy.ShouldLikeTarget(config, 2001, () => 0.0), Is.True);
     }
 
     [Test]
