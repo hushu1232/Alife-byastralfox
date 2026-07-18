@@ -84,6 +84,7 @@ public record QChatConfig
     public bool EnableInternetAccess { get; set; } = false;
     public string InternetAllowedAgentIds { get; set; } = "xiayu";
     public bool EnablePublicInternetSearch { get; set; } = false;
+    public QChatSemanticWebResearchConfig SemanticWebResearch { get; set; } = new();
     public bool EnablePublicExternalRagQuery { get; set; } = false;
     public bool AllowGroupMemberPublicInternetSearch { get; set; } = true;
     public bool AllowGroupMemberPublicExternalRagQuery { get; set; } = true;
