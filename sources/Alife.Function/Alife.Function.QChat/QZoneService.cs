@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Alife.Framework;
 using Alife.Function.Agent;
@@ -25,12 +26,37 @@ public interface IQZoneRuntime
 public sealed record QZonePostSnapshot(
     [property: JsonPropertyName("post_id")] string PostId,
     [property: JsonPropertyName("target_uin")] long TargetId,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("topic_id")] string? TopicId = null,
+    [property: JsonPropertyName("feeds_key")] string? FeedsKey = null,
+    [property: JsonPropertyName("created_at")] long? CreatedAtUnixSeconds = null);
 
 public sealed record QZoneCommentSnapshot(
     [property: JsonPropertyName("comment_id")] string CommentId,
     [property: JsonPropertyName("user_id")] long UserId,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")] string Content,
+    [property: JsonPropertyName("topic_id")] string? TopicId = null,
+    [property: JsonPropertyName("parent_comment_id")] string? ParentCommentId = null);
+
+public sealed record QZoneUploadedImage(
+    string AlbumId,
+    string Lloc,
+    string Sloc,
+    int Width,
+    int Height,
+    int Type,
+    string Url);
+
+public sealed record NapCatQZoneCookieResponse(string Cookies, string Bkn);
+
+public sealed record QZoneSession(long AccountId, string Cookies, string Bkn);
+
+public interface IQZoneSessionProvider
+{
+    Task<QZoneSession> GetSessionAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class QZoneSessionUnavailableException(string message) : InvalidOperationException(message);
 
 public record QZoneServiceConfig : QZoneInteractionConfig
 {
