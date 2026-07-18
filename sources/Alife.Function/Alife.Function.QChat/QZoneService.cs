@@ -89,6 +89,7 @@ public record QZoneServiceConfig : QZoneInteractionConfig
 {
     public string Url { get; set; } = "ws://127.0.0.1:3010";
     public string Token { get; set; } = "";
+    public string QZoneLoopbackOperatorUrl { get; set; } = "";
     public bool AutoConnect { get; set; } = true;
     public bool DryRunExternalActions { get; set; } = true;
     public bool UseNapCatQZoneHttpRuntime { get; set; }

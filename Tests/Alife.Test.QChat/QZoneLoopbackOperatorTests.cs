@@ -58,6 +58,24 @@ public sealed class QZoneLoopbackOperatorTests
         });
     }
 
+    [TestCase("http://127.0.0.1:5104/qzone")]
+    [TestCase("http://localhost:5105/operator")]
+    public void EndpointTryCreate_NormalizesAcceptedPrefixWithTrailingSlash(string value)
+    {
+        bool created = QZoneLoopbackOperatorEndpoint.TryCreate(
+            value,
+            out QZoneLoopbackOperatorEndpoint? endpoint,
+            out QZoneLoopbackOperatorResultCode code);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(created, Is.True);
+            Assert.That(endpoint, Is.Not.Null);
+            Assert.That(endpoint!.Uri.AbsoluteUri, Is.EqualTo(value + "/"));
+            Assert.That(code, Is.EqualTo(QZoneLoopbackOperatorResultCode.Accepted));
+        });
+    }
+
     [TestCase("operator")]
     [TestCase("https://127.0.0.1:5101/")]
     [TestCase("http://192.168.1.10:5101/")]
