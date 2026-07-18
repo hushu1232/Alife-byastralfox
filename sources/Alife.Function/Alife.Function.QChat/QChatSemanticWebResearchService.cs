@@ -166,7 +166,6 @@ public sealed class QChatSemanticWebResearchService(
             new[]
             {
                 $"query={result.Query}",
-                $"answer={result.Answer}",
                 string.Join(Environment.NewLine, sources)
             }.Where(value => string.IsNullOrWhiteSpace(value) == false));
         return ExternalContextFormatter.WrapUntrusted("semantic-web-research", content);

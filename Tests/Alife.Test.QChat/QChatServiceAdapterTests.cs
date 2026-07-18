@@ -1620,6 +1620,85 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SemanticWebResearch_CompanionConversationDoesNotCallResearchWhenRouterDeclines()
+    {
+        FakeOneBotRuntime runtime = new();
+        RecordingSemanticWebResearchService research = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
+        },
+        semanticWebResearchRouter: new DecliningSemanticWebResearchRouter(),
+        semanticWebResearchService: research);
+        TaskCompletionSource dispatched = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatched.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "I feel tired today. Please keep me company."
+        });
+
+        await dispatched.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.That(research.Calls, Is.Zero);
+    }
+
+    [Test]
+    public async Task SemanticWebResearch_ModelInputContainsOnlyEvidenceUrls()
+    {
+        FakeOneBotRuntime runtime = new();
+        FixedSemanticWebResearchService research = new(new AgentWebResearchResult(
+            true,
+            "ok",
+            "latest release notes",
+            "A free-form answer mentions https://unverified.example and must not become a source.",
+            [new AgentWebResearchEvidence(
+                "Official release notes",
+                "https://example.test/official",
+                "Verified release details.",
+                "docs")]));
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
+        },
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: research);
+        QChatInboundMessage? dispatched = null;
+        service.InboundChatDispatcher = inbound =>
+        {
+            dispatched = inbound;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "Has this release changed recently?"
+        });
+
+        await WaitUntilAsync(() => dispatched != null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatched!.Formatted, Does.Contain("https://example.test/official"));
+            Assert.That(dispatched.Formatted, Does.Not.Contain("https://unverified.example"));
+        });
+    }
+
+    [Test]
     public async Task WebResearchOwnerPrivateSemanticSearchReadsTopResultWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
@@ -16176,6 +16255,23 @@ public class QChatServiceAdapterTests
         }
     }
 
+    sealed class DecliningSemanticWebResearchRouter : IQChatSemanticWebResearchRouter
+    {
+        public Task<QChatSemanticWebResearchDecision> RouteAsync(
+            QChatSemanticWebResearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new QChatSemanticWebResearchDecision(
+                false,
+                false,
+                "",
+                QChatSemanticWebResearchDepth.Quick,
+                1,
+                QChatSemanticWebResearchReasonCategory.Companion,
+                "companion conversation"));
+        }
+    }
+
     sealed class RecordingSemanticWebResearchService : IAgentWebResearchService
     {
         public int Calls { get; private set; }
@@ -16196,6 +16292,13 @@ public class QChatServiceAdapterTests
                     "Current release details",
                     "docs")]));
         }
+    }
+
+    sealed class FixedSemanticWebResearchService(AgentWebResearchResult result) : IAgentWebResearchService
+    {
+        public Task<AgentWebResearchResult> ResearchAsync(
+            AgentWebResearchRequest request,
+            CancellationToken cancellationToken = default) => Task.FromResult(result);
     }
 
     sealed class BlockingSemanticWebResearchService : IAgentWebResearchService
