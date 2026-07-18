@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
@@ -90,6 +91,8 @@ public record QZoneServiceConfig : QZoneInteractionConfig
     public bool AutoConnect { get; set; } = true;
     public bool DryRunExternalActions { get; set; } = true;
     public int MaxContentLength { get; set; } = 500;
+    public int MaxQZoneImageBytes { get; set; } = 10 * 1024 * 1024;
+    public int MaxQZoneImagesPerPost { get; set; } = 1;
     public string PostAction { get; set; } = "send_msg";
     public string CommentAction { get; set; } = "send_comment";
     public string LikeAction { get; set; } = "send_like";
@@ -147,6 +150,7 @@ public class QZoneService :
     IModuleHealthReporter,
     IAgentProactiveSuggestionExecutor
 {
+    static readonly HttpClient defaultImageHttpClient = new();
     readonly IQZoneRuntime? runtime;
     readonly IOneBotActionInvoker? actionInvoker;
     readonly IOneBotActionConnection? actionConnection;
@@ -159,6 +163,7 @@ public class QZoneService :
     readonly IQZoneAutonomyPersonaPolicy autonomyPersonaPolicy;
     readonly QZoneAutonomyStateStore? autonomyStateStore;
     readonly Func<double> autonomyRandom;
+    Func<QZoneImageSourceResolver> imageSourceResolverFactory = CreateDefaultImageSourceResolver;
     QZoneAutonomyScheduler? lazyAutonomyScheduler;
     IQZoneRuntime? createdRuntime;
     IOneBotActionConnection? ownedConnection;
@@ -243,6 +248,16 @@ public class QZoneService :
         ArgumentNullException.ThrowIfNull(stateStore);
         return new QZoneService(runtime, null, null, null, null, null, auditLog, clock, null, personaPolicy, stateStore, random);
     }
+
+    public static QZoneService CreateForImagePosting(
+        IQZoneRuntime? runtime,
+        Func<QZoneImageSourceResolver> imageSourceResolverFactory)
+    {
+        QZoneService service = new(runtime);
+        service.imageSourceResolverFactory = imageSourceResolverFactory ?? throw new ArgumentNullException(nameof(imageSourceResolverFactory));
+        return service;
+    }
+
     public QZoneServiceConfig? Configuration { get; set; } = new();
     public string Name => "QQ空间";
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
@@ -406,6 +421,33 @@ public class QZoneService :
         await liveRuntime.PublishPost(content);
         PublishLifeEvent($"You published a QQ Zone post: {content}");
         return Report(new QZoneActionResult("post", true, "published QQ Zone post"));
+    }
+
+    [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
+    [Description("Publish one owner-supplied or generated image to the owner's QQ Zone.")]
+    public async Task<QZoneActionResult> QZonePostImage(string content, string sourceKind, string sourceValue)
+    {
+        QZoneServiceConfig config = GetConfig();
+        content = NormalizeContent(config, content);
+        QZoneActionResult? skipped = BeforeAction("post_image", config);
+        if (skipped != null)
+            return Report(skipped);
+
+        if (config.DryRunExternalActions)
+            return Report(new QZoneActionResult("post_image", false, "dry-run: would publish QQ Zone image post"));
+        if (config.MaxQZoneImagesPerPost < 1)
+            return Report(new QZoneActionResult("post_image", false, "qzone_image_upload_unavailable"));
+        if (TryCreateImageSource(sourceKind, sourceValue, out QZoneImageSource? source) == false)
+            return Report(new QZoneActionResult("post_image", false, "qzone_image_source_invalid"));
+
+        QZoneImageSourceResolver resolver = imageSourceResolverFactory()
+            ?? throw new QZoneImageSourceException("qzone_image_source_unavailable");
+        QZoneImageUpload upload = await resolver.ResolveAsync(source, config.MaxQZoneImageBytes);
+        IQZoneRuntime liveRuntime = GetRuntime();
+        QZoneUploadedImage image = await liveRuntime.UploadImage(upload);
+        await liveRuntime.PublishImagePost(content, [image]);
+        PublishLifeEvent("You published a QQ Zone image post.");
+        return Report(new QZoneActionResult("post_image", true, "published QQ Zone image post"));
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 5)]
@@ -717,6 +759,23 @@ public class QZoneService :
             LatestPostAction = config.LatestPostAction,
             LatestCommentsAction = config.LatestCommentsAction
         });
+    }
+
+    static QZoneImageSourceResolver CreateDefaultImageSourceResolver()
+    {
+        return new QZoneImageSourceResolver(defaultImageHttpClient);
+    }
+
+    static bool TryCreateImageSource(string? sourceKind, string? sourceValue, out QZoneImageSource? source)
+    {
+        source = sourceKind switch
+        {
+            "owner_file" => QZoneImageSource.OwnerFile(sourceValue ?? string.Empty),
+            "generated_file" => QZoneImageSource.GeneratedFile(sourceValue ?? string.Empty),
+            "owner_url" when Uri.TryCreate(sourceValue, UriKind.Absolute, out Uri? url) => QZoneImageSource.OwnerUrl(url),
+            _ => null,
+        };
+        return source is not null;
     }
 
     static QZoneActionResult? BeforeAction(string action, QZoneServiceConfig config)

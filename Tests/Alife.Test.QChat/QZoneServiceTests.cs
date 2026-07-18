@@ -5,6 +5,8 @@ using Alife.Function.QChat;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using NUnit.Framework;
+using System.Net;
+using System.Net.Http;
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
@@ -44,6 +46,141 @@ public class QZoneServiceTests
         Assert.That(result.Executed, Is.False);
         Assert.That(result.Action, Is.EqualTo("post"));
         Assert.That(runtime.Posts, Is.Empty);
+    }
+
+    [Test]
+    public async Task QZonePostImage_DryRunDoesNotResolveOrCallRuntime()
+    {
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForImagePosting(runtime, () => throw new AssertionException("Resolver must not be created in dry-run."));
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            DryRunExternalActions = true
+        };
+
+        QZoneActionResult result = await service.QZonePostImage("image post", "owner_url", "https://example.invalid/owner-image.jpg");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Executed, Is.False);
+            Assert.That(result.Action, Is.EqualTo("post_image"));
+            Assert.That(result.Reason, Is.EqualTo("dry-run: would publish QQ Zone image post"));
+            Assert.That(runtime.ImageUploads, Is.Empty);
+            Assert.That(runtime.ImagePosts, Is.Empty);
+        });
+    }
+
+    [TestCase("owner_file")]
+    [TestCase("generated_file")]
+    [TestCase("owner_url")]
+    public async Task QZonePostImage_LiveAcceptsSupportedSourceKindsAndPublishesOneImage(string sourceKind)
+    {
+        string directory = CreateTemporaryDirectory();
+        Directory.CreateDirectory(directory);
+        string localPath = Path.Combine(directory, sourceKind == "owner_file" ? "owner.png" : "generated.png");
+        await File.WriteAllBytesAsync(localPath, [1, 2, 3]);
+        RecordingImageHandler handler = new();
+        int resolverFactoryCalls = 0;
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForImagePosting(runtime, () =>
+        {
+            resolverFactoryCalls++;
+            return new QZoneImageSourceResolver(new HttpClient(handler, disposeHandler: false));
+        });
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            DryRunExternalActions = false,
+            MaxQZoneImageBytes = 8,
+            MaxQZoneImagesPerPost = 1
+        };
+        string sourceValue = sourceKind == "owner_url"
+            ? "https://example.invalid/owner-image.jpg"
+            : localPath;
+
+        QZoneActionResult result = await service.QZonePostImage("image post", sourceKind, sourceValue);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new QZoneActionResult("post_image", true, "published QQ Zone image post")));
+            Assert.That(resolverFactoryCalls, Is.EqualTo(1));
+            Assert.That(handler.Requests, Has.Count.EqualTo(sourceKind == "owner_url" ? 1 : 0));
+            Assert.That(runtime.ImageUploads, Has.Count.EqualTo(1));
+            Assert.That(runtime.ImageUploads[0].Origin, Is.EqualTo(sourceKind == "generated_file"
+                ? QZoneImageOrigin.Generated
+                : QZoneImageOrigin.OwnerProvided));
+            Assert.That(runtime.ImagePosts, Has.Count.EqualTo(1));
+            Assert.That(runtime.ImagePosts[0].Content, Is.EqualTo("image post"));
+            Assert.That(runtime.ImagePosts[0].Images, Has.Count.EqualTo(1));
+            Assert.That(runtime.ImageOperations, Is.EqualTo(new[] { "upload", "publish" }));
+        });
+    }
+
+    [Test]
+    public async Task QZonePostImage_RejectsUnsupportedSourceKindWithoutResolvingOrCallingRuntime()
+    {
+        int resolverFactoryCalls = 0;
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForImagePosting(runtime, () =>
+        {
+            resolverFactoryCalls++;
+            throw new AssertionException("Unsupported source kind must not create a resolver.");
+        });
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            DryRunExternalActions = false
+        };
+
+        QZoneActionResult result = await service.QZonePostImage("image post", "web_search", "private source value");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.EqualTo(new QZoneActionResult("post_image", false, "qzone_image_source_invalid")));
+            Assert.That(result.Reason, Does.Not.Contain("private source value"));
+            Assert.That(resolverFactoryCalls, Is.Zero);
+            Assert.That(runtime.ImageUploads, Is.Empty);
+            Assert.That(runtime.ImagePosts, Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task QZonePostImage_RespectsConfiguredImageByteAndPostCountLimits()
+    {
+        string directory = CreateTemporaryDirectory();
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "generated.png");
+        await File.WriteAllBytesAsync(path, [1, 2, 3]);
+        int resolverFactoryCalls = 0;
+        FakeQZoneRuntime runtime = new();
+        QZoneService service = QZoneService.CreateForImagePosting(runtime, () =>
+        {
+            resolverFactoryCalls++;
+            return new QZoneImageSourceResolver(new HttpClient(new RecordingImageHandler(), disposeHandler: false));
+        });
+        service.Configuration = new QZoneServiceConfig
+        {
+            EnableQZone = true,
+            DryRunExternalActions = false,
+            MaxQZoneImageBytes = 2,
+            MaxQZoneImagesPerPost = 1
+        };
+
+        QZoneImageSourceException bytesException = Assert.ThrowsAsync<QZoneImageSourceException>(async () =>
+            await service.QZonePostImage("image post", "generated_file", path))!;
+        service.Configuration.MaxQZoneImageBytes = 8;
+        service.Configuration.MaxQZoneImagesPerPost = 0;
+        QZoneActionResult countResult = await service.QZonePostImage("image post", "generated_file", path);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(bytesException.Code, Is.EqualTo("qzone_image_too_large"));
+            Assert.That(resolverFactoryCalls, Is.EqualTo(1));
+            Assert.That(countResult, Is.EqualTo(new QZoneActionResult("post_image", false, "qzone_image_upload_unavailable")));
+            Assert.That(runtime.ImageUploads, Is.Empty);
+            Assert.That(runtime.ImagePosts, Is.Empty);
+        });
     }
 
     [Test]
@@ -692,6 +829,9 @@ public class QZoneServiceTests
     sealed class FakeQZoneRuntime : IQZoneRuntime
     {
         public List<string> Posts { get; } = new();
+        public List<QZoneImageUpload> ImageUploads { get; } = new();
+        public List<(string Content, IReadOnlyList<QZoneUploadedImage> Images)> ImagePosts { get; } = new();
+        public List<string> ImageOperations { get; } = new();
         public List<(long TargetId, string PostId, string Content)> Comments { get; } = new();
         public List<(long TargetId, string PostId, string CommentId, string Content)> Replies { get; } = new();
         public List<(long TargetId, string PostId)> Likes { get; } = new();
@@ -703,6 +843,20 @@ public class QZoneServiceTests
         public Task PublishPost(string content)
         {
             Posts.Add(content);
+            return Task.CompletedTask;
+        }
+
+        public Task<QZoneUploadedImage> UploadImage(QZoneImageUpload upload)
+        {
+            ImageUploads.Add(upload);
+            ImageOperations.Add("upload");
+            return Task.FromResult(new QZoneUploadedImage("album", "lloc", "sloc", 1, 1, 1, "https://photo.example.invalid/image.jpg?bo=bo"));
+        }
+
+        public Task PublishImagePost(string content, IReadOnlyList<QZoneUploadedImage> images)
+        {
+            ImagePosts.Add((content, images));
+            ImageOperations.Add("publish");
             return Task.CompletedTask;
         }
 
@@ -734,6 +888,19 @@ public class QZoneServiceTests
         {
             LatestCommentRequests.Add((targetId, postId, count));
             return Task.FromResult(LatestComments);
+        }
+    }
+
+    sealed class RecordingImageHandler : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri!);
+            ByteArrayContent content = new([9, 8, 7]);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
         }
     }
 
