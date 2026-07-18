@@ -87,6 +87,22 @@ public sealed class NapCatQZoneSessionProviderTests
     }
 
     [Test]
+    public async Task GetSessionAsync_CancelsInFlightNapCatRequest()
+    {
+        BlockingActionInvoker invoker = new();
+        using CancellationTokenSource cancellation = new();
+        Task<QZoneSession> sessionTask = new NapCatQZoneSessionProvider(invoker).GetSessionAsync(cancellation.Token);
+
+        await invoker.WaitForCallAsync();
+        cancellation.Cancel();
+
+        Exception exception = Assert.CatchAsync(
+            async () => await sessionTask.WaitAsync(TimeSpan.FromSeconds(1)))!;
+        Assert.That(exception, Is.InstanceOf<OperationCanceledException>());
+        Assert.That(invoker.CallCount, Is.EqualTo(1));
+    }
+
+    [Test]
     public void SecretBearingSessionRecords_RedactToStringValues()
     {
         const string cookies = "uin=o10001; p_skey=session-cookie";
@@ -132,6 +148,22 @@ public sealed class NapCatQZoneSessionProviderTests
         {
             Calls.Add((action, JsonSerializer.Serialize(parameters)));
             return Task.FromResult(responses.Count == 0 ? default : (T?)responses.Dequeue());
+        }
+    }
+
+    private sealed class BlockingActionInvoker : IOneBotActionInvoker
+    {
+        readonly TaskCompletionSource<bool> callStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int CallCount { get; private set; }
+
+        public Task WaitForCallAsync() => callStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        public Task<T?> CallActionAsync<T>(string action, object? parameters = null)
+        {
+            CallCount++;
+            callStarted.TrySetResult(true);
+            return new TaskCompletionSource<T?>(TaskCreationOptions.RunContinuationsAsynchronously).Task;
         }
     }
 }
