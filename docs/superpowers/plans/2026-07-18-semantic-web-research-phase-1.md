@@ -266,6 +266,7 @@ git commit -m "feat(qchat): route web research semantically"
 
 **Files:**
 - Create: `sources/Alife.Function/Alife.Function.QChat/QChatSemanticWebResearchService.cs`
+- Create: `sources/Alife.Function/Alife.Function.MessageFilter/IAgentWebResearchService.cs`
 - Modify: `sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs`
 - Modify: `Tests/Alife.Test.QChat/QChatSemanticWebResearchServiceTests.cs`
 
@@ -321,7 +322,7 @@ public sealed record QChatSemanticWebResearchEvidence(
     AgentWebResearchResult? Result,
     string ModelPrompt);
 
-public interface IQChatWebResearchService
+public interface IAgentWebResearchService
 {
     Task<AgentWebResearchResult> ResearchAsync(
         AgentWebResearchRequest request,
@@ -329,7 +330,7 @@ public interface IQChatWebResearchService
 }
 ```
 
-Make `AgentWebResearchService` implement `IQChatWebResearchService`. The executor must:
+Declare `IAgentWebResearchService` in the MessageFilter project and make `AgentWebResearchService` implement it. This interface deliberately belongs beside `AgentWebResearchService`, not in QChat: QChat already references MessageFilter, while MessageFilter must not reference QChat. The QChat executor must:
 
 1. skip ineligible requests and `ShouldResearch == false` decisions;
 2. use `Owner` for Owner private messages and `GroupMember` for mentioned groups;
@@ -346,7 +347,7 @@ Expected: PASS for mapping, cache, formatting and failed-result behavior.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add sources/Alife.Function/Alife.Function.QChat/QChatSemanticWebResearchService.cs sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs Tests/Alife.Test.QChat/QChatSemanticWebResearchServiceTests.cs
+git add sources/Alife.Function/Alife.Function.QChat/QChatSemanticWebResearchService.cs sources/Alife.Function/Alife.Function.MessageFilter/IAgentWebResearchService.cs sources/Alife.Function/Alife.Function.MessageFilter/AgentWebResearchService.cs Tests/Alife.Test.QChat/QChatSemanticWebResearchServiceTests.cs
 git commit -m "feat(qchat): execute semantic web research"
 ```
 
@@ -403,10 +404,10 @@ Expected: compilation failure because QChatService has no injected semantic exec
 
 - [ ] **Step 3: Implement QChat wiring**
 
-1. Add optional `IQChatSemanticWebResearchRouter?` and `IQChatWebResearchService?` constructor injections after browser dependencies; retain injected/resolved fields like the existing search-provider fields.
+1. Add optional `IQChatSemanticWebResearchRouter?` and `IAgentWebResearchService?` constructor injections after browser dependencies; retain injected/resolved fields like the existing search-provider fields.
 2. Add `ConfigureSemanticWebResearchFromKernel(Kernel kernel)` beside `ConfigureProfileLearningFromKernel`. When enabled without an injected router, obtain `IChatCompletionService` and construct `QChatLlmSemanticWebResearchRouter(new QChatSemanticKernelWebResearchModel(...))`.
 3. Invoke that configurator immediately after `ConfigureProfileLearningFromKernel(kernel)` in `StartAsync`.
-4. Extract the existing `TryHandlePublicInternetCommandAsync` construction into a private factory returning `IQChatWebResearchService` backed by `ResolvePublicSearchService(config)`, `AgentWebAccessService`, `injectedInternetService`, `injectedBrowserProvider` and `BrowserSiteExperienceStore`. Do not create or reference a DataAgent object.
+4. Extract the existing `TryHandlePublicInternetCommandAsync` construction into a private factory returning `IAgentWebResearchService` backed by `ResolvePublicSearchService(config)`, `AgentWebAccessService`, `injectedInternetService`, `injectedBrowserProvider` and `BrowserSiteExperienceStore`. Do not create or reference a DataAgent object.
 5. In the `OneBotMessageEvent` path, after `isMentionedOrWoken` is known and before `BuildFormattedModelInput`, build the request with `recentEventMemory.BuildRecentContextBlock(... limit: 6, maxCharacters: 1200 ...)` and await the executor when eligibility succeeds.
 6. Add nullable `researchEvidencePrompt` to `BuildFormattedModelInput` and insert it after `selfStateBlock` and before `imageBlock`. Explicit public-internet commands already return earlier and must not be researched twice.
 
