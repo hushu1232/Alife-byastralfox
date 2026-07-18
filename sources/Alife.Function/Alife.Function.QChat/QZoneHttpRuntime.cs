@@ -42,6 +42,70 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
         ]);
     }
 
+    public async Task<QZoneUploadedImage> UploadImage(QZoneImageUpload upload)
+    {
+        if (upload is null
+            || upload.Bytes is null
+            || upload.Bytes.Length == 0
+            || string.IsNullOrWhiteSpace(upload.FileName)
+            || string.IsNullOrWhiteSpace(upload.ContentType))
+            throw new QZoneHttpException("qzone_image_upload_unavailable");
+
+        QZoneSession session = await sessionProvider.GetSessionAsync();
+        if (TryGetCookieValue(session.Cookies, "skey", out string? skey) == false
+            || TryGetCookieValue(session.Cookies, "p_skey", out string? pSkey) == false)
+            throw new QZoneHttpException("qzone_image_upload_session_unavailable");
+
+        string accountId = session.AccountId.ToString();
+        List<KeyValuePair<string, string>> form =
+        [
+            new("filename", upload.FileName),
+            new("filetype", upload.ContentType),
+            new("uploadtype", "1"),
+            new("albumtype", "7"),
+            new("skey", skey),
+            new("p_skey", pSkey),
+            new("uin", accountId),
+            new("p_uin", accountId),
+            new("zzpaneluin", accountId),
+            new("refer", "shuoshuo"),
+            new("output_type", "json"),
+            new("base64", "1"),
+            new("picfile", Convert.ToBase64String(upload.Bytes)),
+        ];
+
+        using HttpRequestMessage request = CreateRequest(session, HttpMethod.Post, BuildUploadUrl(session.Bkn));
+        request.Content = new FormUrlEncodedContent(form);
+        JsonElement root = await SendQZoneRequestAsync(request);
+        return TryReadUploadedImage(root, out QZoneUploadedImage? image)
+            ? image
+            : throw new QZoneHttpException("qzone_api_invalid_response");
+    }
+
+    public async Task PublishImagePost(string content, IReadOnlyList<QZoneUploadedImage> images)
+    {
+        if (images is null || images.Count == 0)
+            throw new QZoneHttpException("qzone_image_upload_unavailable");
+
+        string richValue = BuildRichValue(images);
+        string pictureBo = BuildPictureBo(images);
+        QZoneSession session = await sessionProvider.GetSessionAsync();
+        await SendFormAsync(session, PublishUrl,
+        [
+            ("hostuin", session.AccountId.ToString()),
+            ("con", content),
+            ("feedversion", "1"),
+            ("ver", "1"),
+            ("ugc_right", "1"),
+            ("format", "json"),
+            ("qzreferrer", $"https://user.qzone.qq.com/{session.AccountId}"),
+            ("richtype", "1"),
+            ("richflag", "1"),
+            ("richval", richValue),
+            ("pic_bo", pictureBo),
+        ]);
+    }
+
     public async Task Comment(long targetId, string postId, string content)
     {
         QZoneSession session = await sessionProvider.GetSessionAsync();
@@ -192,6 +256,99 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
         return $"{FeedListUrl}?uin={Uri.EscapeDataString(targetId.ToString())}" +
             "&pos=0&num=1&replynum=20&format=json" +
             $"&g_tk={Uri.EscapeDataString(bkn)}";
+    }
+
+    static string BuildUploadUrl(string bkn) => $"{UploadUrl}?g_tk={Uri.EscapeDataString(bkn)}";
+
+    static bool TryGetCookieValue(string? cookies, string name, [NotNullWhen(true)] out string? value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(cookies))
+            return false;
+
+        foreach (string item in cookies.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int separator = item.IndexOf('=');
+            if (separator <= 0 || string.Equals(item[..separator].Trim(), name, StringComparison.Ordinal) == false)
+                continue;
+
+            string candidate = item[(separator + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(candidate) == false)
+            {
+                value = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool TryReadUploadedImage(JsonElement root, [NotNullWhen(true)] out QZoneUploadedImage? image)
+    {
+        image = null;
+        if (root.ValueKind != JsonValueKind.Object
+            || root.TryGetProperty("data", out JsonElement data) == false
+            || data.ValueKind != JsonValueKind.Object
+            || TryGetString(data, ["albumid"], out string? albumId) == false
+            || TryGetString(data, ["lloc"], out string? lloc) == false
+            || TryGetString(data, ["sloc"], out string? sloc) == false
+            || TryGetInt32(data, ["width"], out int width) == false
+            || TryGetInt32(data, ["height"], out int height) == false
+            || TryGetInt32(data, ["type"], out int type) == false
+            || TryGetString(data, ["url"], out string? url) == false
+            || string.IsNullOrWhiteSpace(albumId)
+            || string.IsNullOrWhiteSpace(lloc)
+            || string.IsNullOrWhiteSpace(sloc)
+            || string.IsNullOrWhiteSpace(url)
+            || width <= 0 || height <= 0 || type < 0)
+            return false;
+
+        image = new QZoneUploadedImage(albumId, lloc, sloc, width, height, type, url);
+        return true;
+    }
+
+    static string BuildRichValue(IReadOnlyList<QZoneUploadedImage> images)
+    {
+        return string.Join('\t', images.Select(image =>
+        {
+            EnsureUploadedImage(image);
+            return $",{image.AlbumId},{image.Lloc},{image.Sloc},{image.Type},{image.Height},{image.Width},,{image.Height},{image.Width}";
+        }));
+    }
+
+    static string BuildPictureBo(IReadOnlyList<QZoneUploadedImage> images)
+    {
+        return string.Join('\t', images.Select(image =>
+        {
+            EnsureUploadedImage(image);
+            if (Uri.TryCreate(image.Url, UriKind.Absolute, out Uri? uri) == false)
+                throw new QZoneHttpException("qzone_image_upload_unavailable");
+
+            foreach (string pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                int separator = pair.IndexOf('=');
+                string key = separator < 0 ? pair : pair[..separator];
+                if (string.Equals(Uri.UnescapeDataString(key), "bo", StringComparison.Ordinal) == false)
+                    continue;
+
+                string value = separator < 0 ? string.Empty : Uri.UnescapeDataString(pair[(separator + 1)..]);
+                if (string.IsNullOrWhiteSpace(value) == false)
+                    return value;
+            }
+
+            throw new QZoneHttpException("qzone_image_upload_unavailable");
+        }));
+    }
+
+    static void EnsureUploadedImage(QZoneUploadedImage? image)
+    {
+        if (image is null
+            || string.IsNullOrWhiteSpace(image.AlbumId)
+            || string.IsNullOrWhiteSpace(image.Lloc)
+            || string.IsNullOrWhiteSpace(image.Sloc)
+            || string.IsNullOrWhiteSpace(image.Url)
+            || image.Width <= 0 || image.Height <= 0 || image.Type < 0)
+            throw new QZoneHttpException("qzone_image_upload_unavailable");
     }
 
     static string UnwrapJsonp(string body)
@@ -367,4 +524,20 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
 
         return false;
     }
+
+    static bool TryGetInt32(JsonElement element, IReadOnlyList<string> propertyNames, out int value)
+    {
+        value = default;
+        foreach (string propertyName in propertyNames)
+        {
+            if (element.ValueKind == JsonValueKind.Object
+                && element.TryGetProperty(propertyName, out JsonElement property)
+                && property.ValueKind == JsonValueKind.Number
+                && property.TryGetInt32(out value))
+                return true;
+        }
+
+        return false;
+    }
+
 }

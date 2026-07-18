@@ -162,6 +162,124 @@ public sealed class QZoneHttpRuntimeTests
         }));
     }
 
+    [Test]
+    public async Task UploadImage_SubmitsBase64QZoneFormAndMapsUploadedImage()
+    {
+        CountingSessionProvider provider = new("uin=o10001; skey=session-skey; p_skey=session-value;");
+        RecordingHandler handler = new(CreateResponse("""
+            {"code":0,"data":{"albumid":"album-a","lloc":"lloc-a","sloc":"sloc-a","width":800,"height":600,"type":1,"url":"https://photo.example.invalid/image.jpg?bo=bo-a"}}
+            """));
+        QZoneHttpRuntime runtime = new(provider, new HttpClient(handler, disposeHandler: false));
+
+        QZoneUploadedImage image = await runtime.UploadImage(new QZoneImageUpload(
+            "generated.png",
+            "image/png",
+            [1, 2, 3],
+            QZoneImageOrigin.Generated));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(image, Is.EqualTo(new QZoneUploadedImage("album-a", "lloc-a", "sloc-a", 800, 600, 1, "https://photo.example.invalid/image.jpg?bo=bo-a")));
+            Assert.That(handler.Requests, Has.Count.EqualTo(1));
+            Assert.That(handler.Requests[0].Method, Is.EqualTo(HttpMethod.Post.Method));
+            Assert.That(handler.Requests[0].Url, Is.EqualTo($"{QZoneHttpRuntime.UploadUrl}?g_tk=701234"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("uploadtype=1"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("albumtype=7"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("skey=session-skey"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("p_skey=session-value"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("uin=10001"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("p_uin=10001"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("zzpaneluin=10001"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("refer=shuoshuo"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("output_type=json"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("base64=1"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("picfile=AQID"));
+            Assert.That(handler.Requests[0].Cookie, Is.EqualTo("uin=o10001; skey=session-skey; p_skey=session-value;"));
+            Assert.That(provider.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void UploadImage_RejectsSessionCookiesWithoutBothQZoneUploadKeys()
+    {
+        CountingSessionProvider provider = new();
+        RecordingHandler handler = new();
+        QZoneHttpRuntime runtime = new(provider, new HttpClient(handler, disposeHandler: false));
+
+        QZoneHttpException exception = Assert.ThrowsAsync<QZoneHttpException>(async () =>
+            await runtime.UploadImage(new QZoneImageUpload("image.png", "image/png", [1], QZoneImageOrigin.Generated)))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Code, Is.EqualTo("qzone_image_upload_session_unavailable"));
+            Assert.That(exception.Message, Does.Not.Contain("session-value"));
+            Assert.That(handler.Requests, Is.Empty);
+        });
+    }
+
+    [Test]
+    public void UploadImage_RejectsIncompleteUploadDataWithSafeInvalidResponseCode()
+    {
+        CountingSessionProvider provider = new("uin=o10001; skey=session-skey; p_skey=session-value;");
+        RecordingHandler handler = new(CreateResponse("""
+            {"code":0,"data":{"albumid":"","lloc":"lloc-a","sloc":"sloc-a","width":800,"height":600,"type":1,"url":"https://photo.example.invalid/private.jpg?bo=bo-a"}}
+            """));
+        QZoneHttpRuntime runtime = new(provider, new HttpClient(handler, disposeHandler: false));
+
+        QZoneHttpException exception = Assert.ThrowsAsync<QZoneHttpException>(async () =>
+            await runtime.UploadImage(new QZoneImageUpload("image.png", "image/png", [1], QZoneImageOrigin.Generated)))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Code, Is.EqualTo("qzone_api_invalid_response"));
+            Assert.That(exception.Message, Does.Not.Contain("photo.example.invalid"));
+        });
+    }
+
+    [Test]
+    public async Task PublishImagePost_UsesRichFieldsForEachUploadedImage()
+    {
+        CountingSessionProvider provider = new();
+        RecordingHandler handler = new(CreateResponse("{\"code\":0,\"data\":{}}"));
+        QZoneHttpRuntime runtime = new(provider, new HttpClient(handler, disposeHandler: false));
+        QZoneUploadedImage[] images =
+        [
+            new("album-a", "lloc-a", "sloc-a", 800, 600, 1, "https://photo.example.invalid/a.jpg?bo=bo-a"),
+            new("album-b", "lloc-b", "sloc-b", 320, 240, 2, "https://photo.example.invalid/b.jpg?bo=bo-b"),
+        ];
+
+        await runtime.PublishImagePost("hello", images);
+
+        Dictionary<string, string> form = ParseForm(handler.Requests.Single().Body);
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.Requests.Single().Url, Is.EqualTo(QZoneHttpRuntime.PublishUrl));
+            Assert.That(form["con"], Is.EqualTo("hello"));
+            Assert.That(form["richtype"], Is.EqualTo("1"));
+            Assert.That(form["richflag"], Is.EqualTo("1"));
+            Assert.That(form["richval"], Is.EqualTo(",album-a,lloc-a,sloc-a,1,600,800,,600,800\t,album-b,lloc-b,sloc-b,2,240,320,,240,320"));
+            Assert.That(form["pic_bo"], Is.EqualTo("bo-a\tbo-b"));
+            Assert.That(form["g_tk"], Is.EqualTo("701234"));
+            Assert.That(provider.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void PublishImagePost_RejectsEmptyImagesWithSafeCode()
+    {
+        RecordingHandler handler = new();
+        QZoneHttpRuntime runtime = new(new CountingSessionProvider(), new HttpClient(handler, disposeHandler: false));
+
+        QZoneHttpException exception = Assert.ThrowsAsync<QZoneHttpException>(async () =>
+            await runtime.PublishImagePost("hello", []))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception.Code, Is.EqualTo("qzone_image_upload_unavailable"));
+            Assert.That(handler.Requests, Is.Empty);
+        });
+    }
+
     static HttpResponseMessage CreateResponse(string body, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
         return new HttpResponseMessage(statusCode)
@@ -170,14 +288,23 @@ public sealed class QZoneHttpRuntimeTests
         };
     }
 
-    private sealed class CountingSessionProvider : IQZoneSessionProvider
+    static Dictionary<string, string> ParseForm(string body)
+    {
+        return body.Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .ToDictionary(
+                parts => Uri.UnescapeDataString(parts[0].Replace('+', ' ')),
+                parts => parts.Length > 1 ? Uri.UnescapeDataString(parts[1].Replace('+', ' ')) : string.Empty);
+    }
+
+    private sealed class CountingSessionProvider(string cookies = "uin=o10001; p_skey=session-value;") : IQZoneSessionProvider
     {
         public int CallCount { get; private set; }
 
         public Task<QZoneSession> GetSessionAsync(CancellationToken cancellationToken = default)
         {
             CallCount++;
-            return Task.FromResult(new QZoneSession(10001, "uin=o10001; p_skey=session-value;", "701234"));
+            return Task.FromResult(new QZoneSession(10001, cookies, "701234"));
         }
     }
 

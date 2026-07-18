@@ -52,11 +52,17 @@ public sealed record QZoneUploadedImage(
     int Type,
     string Url);
 
+public enum QZoneImageOrigin
+{
+    OwnerProvided,
+    Generated,
+}
+
 public sealed record QZoneImageUpload(
     string FileName,
     string ContentType,
     byte[] Bytes,
-    string Origin);
+    QZoneImageOrigin Origin);
 
 public sealed record NapCatQZoneCookieResponse(
     [property: JsonPropertyName("cookies")] string Cookies,
