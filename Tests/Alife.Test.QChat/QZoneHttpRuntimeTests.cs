@@ -65,6 +65,11 @@ public sealed class QZoneHttpRuntimeTests
             }));
             Assert.That(handler.Requests.Select(request => request.Method), Is.All.EqualTo(HttpMethod.Post.Method));
             Assert.That(handler.Requests[0].Body, Does.Contain("con=text"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("syn_tweet_verson=1"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("paramstr=1"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("who=1"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("to_sign=0"));
+            Assert.That(handler.Requests[0].Body, Does.Contain("code_version=1"));
             Assert.That(handler.Requests[1].Body, Does.Contain("content=comment"));
             Assert.That(handler.Requests[2].Body, Does.Contain("commentId=cid"));
             Assert.That(handler.Requests[3].Body, Does.Contain("unikey=20002_tid"));

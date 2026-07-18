@@ -32,11 +32,16 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
         QZoneSession session = await sessionProvider.GetSessionAsync();
         await SendFormAsync(session, PublishUrl,
         [
+            ("syn_tweet_verson", "1"),
+            ("paramstr", "1"),
+            ("who", "1"),
             ("hostuin", session.AccountId.ToString()),
             ("con", content),
             ("feedversion", "1"),
             ("ver", "1"),
             ("ugc_right", "1"),
+            ("to_sign", "0"),
+            ("code_version", "1"),
             ("format", "json"),
             ("qzreferrer", $"https://user.qzone.qq.com/{session.AccountId}"),
         ]);
