@@ -25,14 +25,33 @@ public sealed class QZoneHttpRuntimeTests
             Assert.That(handler.Requests[0].Method, Is.EqualTo(HttpMethod.Get.Method));
             Assert.That(handler.Requests[0].Url, Does.StartWith(QZoneHttpRuntime.FeedListUrl));
             Assert.That(handler.Requests[0].Url, Does.Contain("uin=10001"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("ftype=0"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("sort=0"));
             Assert.That(handler.Requests[0].Url, Does.Contain("pos=0"));
             Assert.That(handler.Requests[0].Url, Does.Contain("num=1"));
-            Assert.That(handler.Requests[0].Url, Does.Contain("replynum=20"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("replynum=100"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("callback=_preloadCallback"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("code_version=1"));
             Assert.That(handler.Requests[0].Url, Does.Contain("format=json"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("need_comment=1"));
+            Assert.That(handler.Requests[0].Url, Does.Contain("need_private_comment=1"));
             Assert.That(handler.Requests[0].Url, Does.Contain("g_tk=701234"));
             Assert.That(handler.Requests[0].Cookie, Is.EqualTo("uin=o10001; p_skey=session-value;"));
             Assert.That(provider.CallCount, Is.EqualTo(1));
         });
+    }
+
+    [Test]
+    public async Task GetLatestPost_ParsesNumericPostIdAndStringOwnerId()
+    {
+        CountingSessionProvider provider = new();
+        RecordingHandler handler = new(CreateResponse(
+            "{\"code\":0,\"data\":{\"msglist\":[{\"tid\":12345,\"uin\":\"10001\",\"content\":\"hello\"}]}}"));
+        QZoneHttpRuntime runtime = new(provider, new HttpClient(handler, disposeHandler: false));
+
+        QZonePostSnapshot? post = await runtime.GetLatestPost(10001);
+
+        Assert.That(post, Is.EqualTo(new QZonePostSnapshot("12345", 10001, "hello")));
     }
 
     [Test]
@@ -57,7 +76,7 @@ public sealed class QZoneHttpRuntimeTests
         {
             Assert.That(handler.Requests.Select(request => request.Url), Is.EqualTo(new[]
             {
-                QZoneHttpRuntime.PublishUrl,
+                QZoneHttpRuntime.PublishUrl + "?g_tk=701234&uin=10001",
                 QZoneHttpRuntime.CommentUrl,
                 QZoneHttpRuntime.ReplyUrl,
                 QZoneHttpRuntime.LikeUrl,
@@ -74,7 +93,8 @@ public sealed class QZoneHttpRuntimeTests
             Assert.That(handler.Requests[2].Body, Does.Contain("commentId=cid"));
             Assert.That(handler.Requests[3].Body, Does.Contain("unikey=20002_tid"));
             Assert.That(handler.Requests[4].Body, Does.Contain("feedsKey=tid"));
-            Assert.That(handler.Requests.Select(request => request.Body), Is.All.Contains("g_tk=701234"));
+            Assert.That(handler.Requests[0].Body, Does.Not.Contain("g_tk="));
+            Assert.That(handler.Requests.Skip(1).Select(request => request.Body), Is.All.Contains("g_tk=701234"));
             Assert.That(handler.Requests.Select(request => request.Cookie), Is.All.EqualTo("uin=o10001; p_skey=session-value;"));
             Assert.That(provider.CallCount, Is.EqualTo(5));
         });

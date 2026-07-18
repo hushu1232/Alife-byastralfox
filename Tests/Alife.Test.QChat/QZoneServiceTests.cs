@@ -1058,7 +1058,7 @@ public class QZoneServiceTests
             Assert.That(result, Is.EqualTo(new QZoneActionResult("post", true, "published QQ Zone post")));
             Assert.That(connection.Calls.Select(call => call.Action), Is.EqualTo(new[] { "get_cookies" }));
             Assert.That(handler.Requests, Has.Count.EqualTo(1));
-            Assert.That(handler.Requests[0].Uri.AbsoluteUri, Is.EqualTo(QZoneHttpRuntime.PublishUrl));
+            Assert.That(handler.Requests[0].Uri.AbsoluteUri, Is.EqualTo(QZoneHttpRuntime.PublishUrl + "?g_tk=701234&uin=10001"));
             Assert.That(handler.Requests[0].Cookie, Is.EqualTo("uin=o10001; p_uin=o10001; p_skey=session-value"));
         });
     }

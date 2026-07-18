@@ -30,7 +30,7 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
     public async Task PublishPost(string content)
     {
         QZoneSession session = await sessionProvider.GetSessionAsync();
-        await SendFormAsync(session, PublishUrl,
+        await SendFormAsync(session, BuildPublishUrl(session),
         [
             ("syn_tweet_verson", "1"),
             ("paramstr", "1"),
@@ -44,7 +44,7 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
             ("code_version", "1"),
             ("format", "json"),
             ("qzreferrer", $"https://user.qzone.qq.com/{session.AccountId}"),
-        ]);
+        ], includeBknInForm: false);
     }
 
     public async Task<QZoneUploadedImage> UploadImage(QZoneImageUpload upload)
@@ -237,12 +237,14 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
     async Task SendFormAsync(
         QZoneSession session,
         string url,
-        IReadOnlyList<(string Key, string Value)> fields)
+        IReadOnlyList<(string Key, string Value)> fields,
+        bool includeBknInForm = true)
     {
         List<KeyValuePair<string, string>> form = fields
             .Select(field => new KeyValuePair<string, string>(field.Key, field.Value))
             .ToList();
-        form.Add(new KeyValuePair<string, string>("g_tk", session.Bkn));
+        if (includeBknInForm)
+            form.Add(new KeyValuePair<string, string>("g_tk", session.Bkn));
 
         using HttpRequestMessage request = CreateRequest(session, HttpMethod.Post, url);
         request.Content = new FormUrlEncodedContent(form);
@@ -253,14 +255,22 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
     {
         HttpRequestMessage request = new(method, url);
         request.Headers.TryAddWithoutValidation("Cookie", session.Cookies);
+        request.Headers.Referrer = new Uri($"https://user.qzone.qq.com/{session.AccountId}");
+        request.Headers.TryAddWithoutValidation("Origin", "https://user.qzone.qq.com");
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36");
         return request;
     }
 
+    static string BuildPublishUrl(QZoneSession session) =>
+        $"{PublishUrl}?g_tk={Uri.EscapeDataString(session.Bkn)}&uin={Uri.EscapeDataString(session.AccountId.ToString())}";
+
     static string BuildFeedListUrl(long targetId, string bkn)
     {
-        return $"{FeedListUrl}?uin={Uri.EscapeDataString(targetId.ToString())}" +
-            "&pos=0&num=1&replynum=20&format=json" +
-            $"&g_tk={Uri.EscapeDataString(bkn)}";
+        return $"{FeedListUrl}?g_tk={Uri.EscapeDataString(bkn)}" +
+            $"&uin={Uri.EscapeDataString(targetId.ToString())}" +
+            "&ftype=0&sort=0&pos=0&num=1&replynum=100" +
+            "&callback=_preloadCallback&code_version=1&format=json" +
+            "&need_comment=1&need_private_comment=1";
     }
 
     static string BuildUploadUrl(string bkn) => $"{UploadUrl}?g_tk={Uri.EscapeDataString(bkn)}";
@@ -507,9 +517,11 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
         {
             if (element.ValueKind == JsonValueKind.Object
                 && element.TryGetProperty(propertyName, out JsonElement property)
-                && property.ValueKind == JsonValueKind.String
-                && (value = property.GetString()) is not null)
+                && ((property.ValueKind == JsonValueKind.String && (value = property.GetString()) is not null)
+                    || (property.ValueKind == JsonValueKind.Number && (value = property.GetRawText()).Length > 0)))
+            {
                 return true;
+            }
         }
 
         return false;
@@ -522,9 +534,11 @@ public sealed class QZoneHttpRuntime(IQZoneSessionProvider sessionProvider, Http
         {
             if (element.ValueKind == JsonValueKind.Object
                 && element.TryGetProperty(propertyName, out JsonElement property)
-                && property.ValueKind == JsonValueKind.Number
-                && property.TryGetInt64(out value))
+                && ((property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out value))
+                    || (property.ValueKind == JsonValueKind.String && long.TryParse(property.GetString(), out value))))
+            {
                 return true;
+            }
         }
 
         return false;
