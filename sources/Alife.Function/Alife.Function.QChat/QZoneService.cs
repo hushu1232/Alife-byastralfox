@@ -21,6 +21,11 @@ public interface IQZoneRuntime
     Task LikePost(long targetId, string postId);
     Task<QZonePostSnapshot?> GetLatestPost(long targetId);
     Task<IReadOnlyList<QZoneCommentSnapshot>> GetLatestComments(long targetId, string postId, int count);
+    Task<QZoneUploadedImage> UploadImage(QZoneImageUpload upload) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task PublishImagePost(string content, IReadOnlyList<QZoneUploadedImage> images) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeletePost(QZonePostSnapshot post) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeleteComment(long targetId, string postId, string commentId) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
+    Task DeleteReply(long targetId, string postId, string commentId, string replyId) => throw new NotSupportedException("qzone_runtime_operation_not_supported");
 }
 
 public sealed record QZonePostSnapshot(
@@ -46,6 +51,12 @@ public sealed record QZoneUploadedImage(
     int Height,
     int Type,
     string Url);
+
+public sealed record QZoneImageUpload(
+    string FileName,
+    string ContentType,
+    byte[] Bytes,
+    string Origin);
 
 public sealed record NapCatQZoneCookieResponse(
     [property: JsonPropertyName("cookies")] string Cookies,
