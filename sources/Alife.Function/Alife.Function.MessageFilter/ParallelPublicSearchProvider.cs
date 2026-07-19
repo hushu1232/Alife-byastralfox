@@ -18,18 +18,23 @@ public static class AgentPublicSearchResultMerger
     {
         int limit = Math.Clamp(maxResults, 1, 5);
         HashSet<string> seenUrls = new(StringComparer.Ordinal);
+        List<string> acceptedTitles = [];
         List<AgentPublicSearchResult> results = [];
 
         foreach (AgentPublicSearchCandidate candidate in candidates
                      .OrderBy(item => item.ProviderOrder)
                      .ThenBy(item => item.ResultOrder)
-                     .ThenBy(item => item.Result.Title, StringComparer.Ordinal)
+                     .ThenBy(item => NormalizeTitle(item.Result.Title), StringComparer.Ordinal)
                      .ThenBy(item => item.Result.Url, StringComparer.Ordinal))
         {
-            if (TryNormalizeUrl(candidate.Result.Url, out string url) == false || seenUrls.Add(url) == false)
-                continue;
+            string title = NormalizeTitle(candidate.Result.Title);
+            if (TryNormalizeUrl(candidate.Result.Url, out string url) == false ||
+                seenUrls.Add(url) == false ||
+                acceptedTitles.Any(accepted => IsNearDuplicateTitle(accepted, title)))
+            continue;
 
             results.Add(candidate.Result with { Url = url });
+            acceptedTitles.Add(title);
             if (results.Count == limit)
                 break;
         }
@@ -58,5 +63,38 @@ public static class AgentPublicSearchResultMerger
 
         normalized = builder.Uri.AbsoluteUri;
         return true;
+    }
+
+    internal static string NormalizeTitle(string? value) => string.Concat((value ?? "")
+        .Trim()
+        .ToLowerInvariant()
+        .Where(char.IsLetterOrDigit));
+
+    internal static bool IsNearDuplicateTitle(string left, string right)
+    {
+        if (left.Length == 0 || right.Length == 0)
+            return false;
+        if (left == right)
+            return true;
+
+        int length = Math.Max(left.Length, right.Length);
+        return length >= 5 && LevenshteinDistance(left, right) <= Math.Max(1, length / 7);
+    }
+
+    static int LevenshteinDistance(string left, string right)
+    {
+        int[] previous = Enumerable.Range(0, right.Length + 1).ToArray();
+        for (int row = 1; row <= left.Length; row++)
+        {
+            int[] current = new int[right.Length + 1];
+            current[0] = row;
+            for (int column = 1; column <= right.Length; column++)
+                current[column] = Math.Min(
+                    Math.Min(current[column - 1] + 1, previous[column] + 1),
+                    previous[column - 1] + (left[row - 1] == right[column - 1] ? 0 : 1));
+            previous = current;
+        }
+
+        return previous[right.Length];
     }
 }
