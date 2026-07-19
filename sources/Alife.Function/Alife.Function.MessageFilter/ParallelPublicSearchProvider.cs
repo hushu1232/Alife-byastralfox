@@ -200,9 +200,9 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
         CancellationToken callerCancellationToken,
         CancellationToken peerStopToken)
     {
-        using CancellationTokenSource deadlineCancellation = new();
+        CancellationTokenSource deadlineCancellation = new();
         deadlineCancellation.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, config.PerProviderTimeoutMilliseconds)));
-        using CancellationTokenSource requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+        CancellationTokenSource requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             callerCancellationToken,
             peerStopToken,
             deadlineCancellation.Token);
@@ -231,45 +231,57 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
         }
         catch (OperationCanceledException) when (callerCancellationToken.IsCancellationRequested)
         {
-            ObserveBackground(providerTask);
             ReleaseProbe(slot.Id, isHalfOpenProbe);
             throw;
         }
         catch (OperationCanceledException) when (peerStopToken.IsCancellationRequested && deadlineCancellation.IsCancellationRequested == false)
         {
-            ObserveBackground(providerTask);
             ReleaseProbe(slot.Id, isHalfOpenProbe);
             return ProviderAttempt.Cancelled(slot.Id, slot.Order);
         }
         catch (Exception)
         {
-            ObserveBackground(providerTask);
             RecordFailure(slot.Id, isHalfOpenProbe);
             return ProviderAttempt.Failed(slot.Id, slot.Order);
         }
+        finally
+        {
+            ObserveAndDispose(providerTask, requestCancellation, deadlineCancellation);
+        }
     }
 
-    static void ObserveBackground(Task? task)
+    static void ObserveAndDispose(
+        Task? providerTask,
+        CancellationTokenSource requestCancellation,
+        CancellationTokenSource deadlineCancellation)
     {
-        if (task == null)
-            return;
-        if (task.IsCompleted)
+        if (providerTask is { IsCompleted: false })
         {
-            _ = task.Exception;
+            _ = ObserveAndDisposeAsync(providerTask, requestCancellation, deadlineCancellation);
             return;
         }
 
-        _ = ObserveBackgroundAsync(task);
+        _ = providerTask?.Exception;
+        requestCancellation.Dispose();
+        deadlineCancellation.Dispose();
     }
 
-    static async Task ObserveBackgroundAsync(Task task)
+    static async Task ObserveAndDisposeAsync(
+        Task providerTask,
+        CancellationTokenSource requestCancellation,
+        CancellationTokenSource deadlineCancellation)
     {
         try
         {
-            await task.ConfigureAwait(false);
+            await providerTask.ConfigureAwait(false);
         }
         catch
         {
+        }
+        finally
+        {
+            requestCancellation.Dispose();
+            deadlineCancellation.Dispose();
         }
     }
 

@@ -304,6 +304,24 @@ public sealed class ParallelPublicSearchProviderTests
     }
 
     [Test]
+    public async Task SearchAsync_TimeoutKeepsProviderTokenUsableUntilLateTaskCompletes()
+    {
+        LateTokenUseProvider slow = new();
+        ParallelPublicSearchProvider provider = new(
+            slow,
+            new GateProvider(),
+            new AgentMultiSourceSearchConfig { Enabled = true, PerProviderTimeoutMilliseconds = 20 });
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync("query", 5)
+            .WaitAsync(TimeSpan.FromMilliseconds(250));
+        Assert.That(results, Is.Empty);
+
+        slow.AccessTokenAndComplete();
+        await slow.WaitForCompletionAsync();
+        Assert.That(slow.TokenAccessException, Is.Null);
+    }
+
+    [Test]
     public async Task SearchAsync_OpensOnlyFailingProviderCircuitThenRetriesAfterConfiguredWindow()
     {
         MutableTimeProvider clock = new(DateTimeOffset.Parse("2026-07-19T00:00:00Z"));
@@ -374,6 +392,37 @@ public sealed class ParallelPublicSearchProviderTests
         }
 
         await Task.WhenAll(firstProbe, concurrentRequest);
+    }
+
+    [Test]
+    public async Task SearchAsync_PeerCancelledHalfOpenProbeIsReleasedForNextRequest()
+    {
+        MutableTimeProvider clock = new(DateTimeOffset.Parse("2026-07-19T00:00:00Z"));
+        GateProvider duck = new(exception: new InvalidOperationException("duck failed"));
+        GateProvider bing = new([
+            new AgentPublicSearchResult("Bing", "https://example.test/bing", "ok")
+        ]);
+        ParallelPublicSearchProvider provider = new(
+            duck,
+            bing,
+            new AgentMultiSourceSearchConfig
+            {
+                Enabled = true,
+                FailureThreshold = 1,
+                CircuitBreakSeconds = 60
+            },
+            clock);
+
+        await provider.SearchAsync("first", 5);
+        duck.Exception = null;
+        duck.WaitForRelease = true;
+        clock.Advance(TimeSpan.FromSeconds(61));
+
+        await provider.SearchAsync("second", 5);
+        await duck.WaitForCancellationAsync();
+        await provider.SearchAsync("third", 5);
+
+        Assert.That(duck.Calls, Is.EqualTo(3));
     }
 
     sealed class GateProvider : IAgentPublicSearchProvider
@@ -457,6 +506,40 @@ public sealed class ParallelPublicSearchProviderTests
 
         public Task WaitForStartAsync() => started.Task.WaitAsync(TimeSpan.FromSeconds(2));
         public void Release() => release.TrySetResult();
+    }
+
+    sealed class LateTokenUseProvider : IAgentPublicSearchProvider
+    {
+        readonly TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Exception? TokenAccessException { get; private set; }
+
+        public async Task<IReadOnlyList<AgentPublicSearchResult>> SearchAsync(
+            string query,
+            int maxResults,
+            CancellationToken cancellationToken = default)
+        {
+            await release.Task;
+            try
+            {
+                using CancellationTokenRegistration registration = cancellationToken.Register(static () => { });
+                _ = cancellationToken.WaitHandle.WaitOne(0);
+            }
+            catch (Exception exception)
+            {
+                TokenAccessException = exception;
+            }
+            finally
+            {
+                completed.TrySetResult();
+            }
+
+            return [];
+        }
+
+        public void AccessTokenAndComplete() => release.TrySetResult();
+        public Task WaitForCompletionAsync() => completed.Task.WaitAsync(TimeSpan.FromSeconds(2));
     }
 
     sealed class MutableTimeProvider(DateTimeOffset initial) : TimeProvider
