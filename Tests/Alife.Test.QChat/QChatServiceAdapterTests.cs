@@ -51,6 +51,35 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public void GetHealth_WhenSmartWebSearchDetectionIsEnabled_AppendsInformationalStatusWithoutChangingConnectionHealth()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                MultiSourceSearch = new AgentMultiSourceSearchConfig
+                {
+                    DetectSmartWebSearchPlugin = true
+                }
+            }
+        });
+
+        ModuleHealth connected = service.GetHealth();
+        runtime.IsConnected = false;
+        ModuleHealth disconnected = service.GetHealth();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(connected.Status, Is.EqualTo(ModuleHealthStatus.Healthy));
+            Assert.That(disconnected.Status, Is.EqualTo(ModuleHealthStatus.Degraded));
+            Assert.That(connected.Summary, Does.Contain("smart-web-search=not_loaded"));
+            Assert.That(disconnected.Summary, Does.Contain("smart-web-search=not_loaded"));
+        });
+    }
+
+    [Test]
     public async Task NonOwnerCannotCauseVoiceSynthesis()
     {
         FakeOneBotRuntime runtime = new();

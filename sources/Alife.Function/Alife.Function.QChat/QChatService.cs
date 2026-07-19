@@ -2522,10 +2522,13 @@ public partial class QChatService(
         if (Configuration == null)
             return new ModuleHealth("QChat", ModuleHealthStatus.Unavailable, "QQ configuration is unavailable.");
 
+        string smartWebSearchDiagnostic = Configuration.SemanticWebResearch.MultiSourceSearch?.DetectSmartWebSearchPlugin == true
+            ? $"; smart-web-search={QChatSmartWebSearchPluginDetector.Detect(enabled: true).Code}"
+            : string.Empty;
         if (IsConnected)
-            return new ModuleHealth("QChat", ModuleHealthStatus.Healthy, $"OneBot is connected; bot id: {(Configuration.BotId == 0 ? "not set" : Configuration.BotId)}.");
+            return new ModuleHealth("QChat", ModuleHealthStatus.Healthy, $"OneBot is connected; bot id: {(Configuration.BotId == 0 ? "not set" : Configuration.BotId)}.{smartWebSearchDiagnostic}");
 
-        return new ModuleHealth("QChat", ModuleHealthStatus.Degraded, "OneBot is configured but disconnected.");
+        return new ModuleHealth("QChat", ModuleHealthStatus.Degraded, $"OneBot is configured but disconnected.{smartWebSearchDiagnostic}");
     }
 
     QChatConfig? configuration;
