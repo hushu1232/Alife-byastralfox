@@ -19,6 +19,39 @@ SemanticWebResearch = new QChatSemanticWebResearchConfig
 };
 ```
 
+## Phase 2：可选的多来源搜索
+
+Phase 2 不改变 QChat 对“是否需要联网研究”的语义判断，也不使用关键词白名单。它只会在请求已经通过既有的主人私聊或明确 @ Bot 群聊权限检查、并由语义路由决定研究之后，启用可选的 DuckDuckGo/Bing 并行协调器；显式 `/search` 也复用同一条 research provider 路径。
+
+请显式开启；所有字段都有安全默认值，`multiSourceSearch.enabled` 默认为 `false`：
+
+```json
+{
+  "semanticWebResearch": {
+    "enabled": true,
+    "multiSourceSearch": {
+      "enabled": true,
+      "parallelBuiltInProviders": true,
+      "perProviderTimeoutMilliseconds": 1500,
+      "maxMergedResults": 5,
+      "failureThreshold": 3,
+      "circuitBreakSeconds": 60,
+      "detectSmartWebSearchPlugin": true
+    }
+  }
+}
+```
+
+关闭 multi-source，或设置 `parallelBuiltInProviders=false` 时，QChat 保留原有串行 DuckDuckGo/Bing fallback。浏览器自动化始终走该串行 provider 路径，因此这项配置不会改变它的导航行为，也不会让 DataAgent 进入对延迟敏感的搜索关键路径。
+
+启用后，两个 HTML provider 会真正同时开始。每个 provider 的默认预算为 1,500 ms；任一可用结果集就绪时协调器会尽快返回并取消未完成的同伴。单一 provider 失败、超时或被其独立熔断时，不会丢弃同伴的可用证据。每个 provider 的熔断独立：默认连续 3 次失败后打开 60 秒，窗口结束后只允许一个半开探测请求。
+
+只接受绝对 HTTP(S) 结果。URL 会规范化和去重；完全相同或近似标题会去重；provider/结果的稳定顺序会被保留；最终结果限制为 1 至 5 条（默认 5 条）。既有 `AgentWebResearchControlState` 缓存在调用 provider 前检查，缓存命中不会重新搜索。既有不可信上下文边界保持不变：只有带 URL 的结构化证据能作为 `UNTRUSTED EXTERNAL CONTEXT` 提供给模型，绝不会作为指令。
+
+既有的自然、延迟的人设反馈仍是唯一的用户可见联网反馈——不会新增硬编码的 QQ “正在搜索”、引擎失败或引擎标签文案。没有主动/定时搜索或新闻推送；主人私聊与明确 @ Bot 群聊边界保持不变。
+
+SmartWebSearch 是单独、手动安装的原生插件。若启用 `detectSmartWebSearchPlugin`，QChat 健康信息最多显示 `smart-web-search=loaded` 或 `not_loaded` 这类诊断；它从不阻塞 QChat、调用插件 XML 函数、解析 `Poke(...)`/Markdown，或把插件输出作为研究证据。参见 [SmartWebSearch plugin operations](smart-web-search-plugin.md)。
+
 `Enabled` 默认是 `false`，因此升级后不会改变现有聊天行为。启用后，运行时还需要已有的 Semantic Kernel `IChatCompletionService`，供语义路由器和慢检索旁白使用。搜索仍使用项目现有的 DuckDuckGo/Bing 回退供应商；不必为了语义搜索单独打开显式 `/search` 命令开关。
 
 若希望主人在标准或深度研究中读取有限的公开页面，还需要保留现有的 `EnableInternetAccess = true`，并配置项目原有的网络/浏览器服务。否则所有深度都会安全地退化为搜索结果证据，而不会阻塞聊天。
