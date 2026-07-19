@@ -135,13 +135,24 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        ProviderSlot[] available = slots.Where(slot => IsCircuitClosed(slot.Id)).ToArray();
-        if (available.Length == 0)
+        List<ProviderSlotAttempt> available = [];
+        foreach (ProviderSlot slot in slots)
+        {
+            if (TryAcquireSlot(slot.Id, out bool isHalfOpenProbe))
+                available.Add(new ProviderSlotAttempt(slot, isHalfOpenProbe));
+        }
+        if (available.Count == 0)
             throw new InvalidOperationException("public_search_all_providers_failed");
 
         using CancellationTokenSource stopPeers = new();
         List<Task<ProviderAttempt>> pending = available
-            .Select(slot => ExecuteSlotAsync(slot, query, maxResults, cancellationToken, stopPeers.Token))
+            .Select(attempt => ExecuteSlotAsync(
+                attempt.Slot,
+                attempt.IsHalfOpenProbe,
+                query,
+                maxResults,
+                cancellationToken,
+                stopPeers.Token))
             .ToList();
         List<ProviderAttempt> completed = [];
         try
@@ -183,6 +194,7 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
 
     async Task<ProviderAttempt> ExecuteSlotAsync(
         ProviderSlot slot,
+        bool isHalfOpenProbe,
         string query,
         int maxResults,
         CancellationToken callerCancellationToken,
@@ -194,41 +206,76 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
             callerCancellationToken,
             peerStopToken,
             deadlineCancellation.Token);
+        Task<IReadOnlyList<AgentPublicSearchResult>>? providerTask = null;
         try
         {
-            IReadOnlyList<AgentPublicSearchResult> results = await slot.Provider.SearchAsync(
+            providerTask = slot.Provider.SearchAsync(
                 query,
                 GetMaxResults(maxResults),
                 requestCancellation.Token);
+            IReadOnlyList<AgentPublicSearchResult> results = await providerTask.WaitAsync(requestCancellation.Token);
             callerCancellationToken.ThrowIfCancellationRequested();
             if (peerStopToken.IsCancellationRequested)
+            {
+                ReleaseProbe(slot.Id, isHalfOpenProbe);
                 return ProviderAttempt.Cancelled(slot.Id, slot.Order);
+            }
             if (deadlineCancellation.IsCancellationRequested)
             {
-                RecordFailure(slot.Id);
+                RecordFailure(slot.Id, isHalfOpenProbe);
                 return ProviderAttempt.Failed(slot.Id, slot.Order);
             }
 
-            RecordSuccess(slot.Id);
+            RecordSuccess(slot.Id, isHalfOpenProbe);
             return new ProviderAttempt(slot.Id, slot.Order, results ?? [], true);
         }
         catch (OperationCanceledException) when (callerCancellationToken.IsCancellationRequested)
         {
+            ObserveBackground(providerTask);
+            ReleaseProbe(slot.Id, isHalfOpenProbe);
             throw;
         }
         catch (OperationCanceledException) when (peerStopToken.IsCancellationRequested && deadlineCancellation.IsCancellationRequested == false)
         {
+            ObserveBackground(providerTask);
+            ReleaseProbe(slot.Id, isHalfOpenProbe);
             return ProviderAttempt.Cancelled(slot.Id, slot.Order);
         }
         catch (Exception)
         {
-            RecordFailure(slot.Id);
+            ObserveBackground(providerTask);
+            RecordFailure(slot.Id, isHalfOpenProbe);
             return ProviderAttempt.Failed(slot.Id, slot.Order);
         }
     }
 
-    bool IsCircuitClosed(string providerId)
+    static void ObserveBackground(Task? task)
     {
+        if (task == null)
+            return;
+        if (task.IsCompleted)
+        {
+            _ = task.Exception;
+            return;
+        }
+
+        _ = ObserveBackgroundAsync(task);
+    }
+
+    static async Task ObserveBackgroundAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+        }
+        catch
+        {
+        }
+    }
+
+    bool TryAcquireSlot(string providerId, out bool isHalfOpenProbe)
+    {
+        isHalfOpenProbe = false;
         ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
         lock (circuit.Gate)
         {
@@ -237,27 +284,34 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
             if (openUntil > timeProvider.GetUtcNow())
                 return false;
 
-            circuit.OpenUntil = null;
-            circuit.ConsecutiveFailures = 0;
+            if (circuit.ProbeInFlight)
+                return false;
+
+            circuit.ProbeInFlight = true;
+            isHalfOpenProbe = true;
             return true;
         }
     }
 
-    void RecordSuccess(string providerId)
+    void RecordSuccess(string providerId, bool isHalfOpenProbe)
     {
         ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
         lock (circuit.Gate)
         {
+            if (isHalfOpenProbe)
+                circuit.ProbeInFlight = false;
             circuit.ConsecutiveFailures = 0;
             circuit.OpenUntil = null;
         }
     }
 
-    void RecordFailure(string providerId)
+    void RecordFailure(string providerId, bool isHalfOpenProbe)
     {
         ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
         lock (circuit.Gate)
         {
+            if (isHalfOpenProbe)
+                circuit.ProbeInFlight = false;
             circuit.ConsecutiveFailures++;
             if (circuit.ConsecutiveFailures >= Math.Max(1, config.FailureThreshold))
             {
@@ -266,17 +320,30 @@ public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
         }
     }
 
+    void ReleaseProbe(string providerId, bool isHalfOpenProbe)
+    {
+        if (isHalfOpenProbe == false)
+            return;
+
+        ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
+        lock (circuit.Gate)
+            circuit.ProbeInFlight = false;
+    }
+
     int GetMaxResults(int maxResults) => Math.Min(
         Math.Max(1, maxResults),
         Math.Clamp(config.MaxMergedResults, 1, 5));
 
     sealed record ProviderSlot(string Id, int Order, IAgentPublicSearchProvider Provider);
 
+    sealed record ProviderSlotAttempt(ProviderSlot Slot, bool IsHalfOpenProbe);
+
     sealed class ProviderCircuit
     {
         public object Gate { get; } = new();
         public int ConsecutiveFailures { get; set; }
         public DateTimeOffset? OpenUntil { get; set; }
+        public bool ProbeInFlight { get; set; }
     }
 
     sealed record ProviderAttempt(
