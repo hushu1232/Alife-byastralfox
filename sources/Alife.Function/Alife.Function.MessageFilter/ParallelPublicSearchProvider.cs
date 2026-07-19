@@ -16,12 +16,14 @@ public static class AgentPublicSearchResultMerger
         IEnumerable<AgentPublicSearchCandidate> candidates,
         int maxResults)
     {
+        ArgumentNullException.ThrowIfNull(candidates);
         int limit = Math.Clamp(maxResults, 1, 5);
         HashSet<string> seenUrls = new(StringComparer.Ordinal);
         List<string> acceptedTitles = [];
         List<AgentPublicSearchResult> results = [];
 
         foreach (AgentPublicSearchCandidate candidate in candidates
+                     .Where(static item => item is { Result: not null })
                      .OrderBy(item => item.ProviderOrder)
                      .ThenBy(item => item.ResultOrder)
                      .ThenBy(item => NormalizeTitle(item.Result.Title), StringComparer.Ordinal)
@@ -29,10 +31,11 @@ public static class AgentPublicSearchResultMerger
         {
             string title = NormalizeTitle(candidate.Result.Title);
             if (TryNormalizeUrl(candidate.Result.Url, out string url) == false ||
-                seenUrls.Add(url) == false ||
+                seenUrls.Contains(url) ||
                 acceptedTitles.Any(accepted => IsNearDuplicateTitle(accepted, title)))
-            continue;
+                continue;
 
+            seenUrls.Add(url);
             results.Add(candidate.Result with { Url = url });
             acceptedTitles.Add(title);
             if (results.Count == limit)
@@ -61,7 +64,7 @@ public static class AgentPublicSearchResultMerger
         if (builder.Path.Length > 1)
             builder.Path = builder.Path.TrimEnd('/');
 
-        normalized = builder.Uri.AbsoluteUri;
+        normalized = builder.Uri.AbsoluteUri.TrimEnd('/');
         return true;
     }
 

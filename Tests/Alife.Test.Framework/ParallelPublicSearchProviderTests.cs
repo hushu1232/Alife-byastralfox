@@ -70,6 +70,26 @@ public sealed class ParallelPublicSearchProviderTests
     }
 
     [Test]
+    public void Merge_DoesNotReserveUrlForCandidateRejectedByDuplicateTitle()
+    {
+        IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
+        [
+            new AgentPublicSearchCandidate("duckduckgo", 0, 0,
+                new AgentPublicSearchResult("Release notes", "https://example.test/a", "first")),
+            new AgentPublicSearchCandidate("bing", 1, 0,
+                new AgentPublicSearchResult("Release notes", "https://example.test/b", "duplicate title")),
+            new AgentPublicSearchCandidate("bing", 1, 1,
+                new AgentPublicSearchResult("Independent source", "https://example.test/b", "valid later result"))
+        ], maxResults: 5);
+
+        Assert.That(merged, Is.EqualTo(new[]
+        {
+            new AgentPublicSearchResult("Release notes", "https://example.test/a", "first"),
+            new AgentPublicSearchResult("Independent source", "https://example.test/b", "valid later result")
+        }));
+    }
+
+    [Test]
     public void Merge_DropsInvalidOrNonHttpUrls()
     {
         IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
@@ -79,6 +99,39 @@ public sealed class ParallelPublicSearchProviderTests
             new AgentPublicSearchCandidate("bing", 1, 0,
                 new AgentPublicSearchResult("Invalid", "not a URL", "invalid")),
             new AgentPublicSearchCandidate("bing", 1, 1,
+                new AgentPublicSearchResult("Valid", "https://example.test/valid", "valid"))
+        ], maxResults: 5);
+
+        Assert.That(merged, Is.EqualTo(new[]
+        {
+            new AgentPublicSearchResult("Valid", "https://example.test/valid", "valid")
+        }));
+    }
+
+    [Test]
+    public void Merge_NormalizesRootUrlWithoutTrailingSlash()
+    {
+        IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
+        [
+            new AgentPublicSearchCandidate("duckduckgo", 0, 0,
+                new AgentPublicSearchResult("Root", "https://Example.test:443/#top", "first")),
+            new AgentPublicSearchCandidate("bing", 1, 0,
+                new AgentPublicSearchResult("Root mirror", "https://example.test/", "second"))
+        ], maxResults: 5);
+
+        Assert.That(merged, Is.EqualTo(new[]
+        {
+            new AgentPublicSearchResult("Root", "https://example.test", "first")
+        }));
+    }
+
+    [Test]
+    public void Merge_DropsRuntimeNullResultBeforeSorting()
+    {
+        IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
+        [
+            new AgentPublicSearchCandidate("duckduckgo", 0, 0, null!),
+            new AgentPublicSearchCandidate("bing", 1, 0,
                 new AgentPublicSearchResult("Valid", "https://example.test/valid", "valid"))
         ], maxResults: 5);
 
