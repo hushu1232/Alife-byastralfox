@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Alife.Function.Agent;
 
@@ -101,5 +104,188 @@ public static class AgentPublicSearchResultMerger
         }
 
         return previous[right.Length];
+    }
+}
+
+public sealed class ParallelPublicSearchProvider : IAgentPublicSearchProvider
+{
+    readonly ProviderSlot[] slots;
+    readonly AgentMultiSourceSearchConfig config;
+    readonly TimeProvider timeProvider;
+    readonly ConcurrentDictionary<string, ProviderCircuit> circuits = new(StringComparer.Ordinal);
+
+    public ParallelPublicSearchProvider(
+        IAgentPublicSearchProvider duckDuckGo,
+        IAgentPublicSearchProvider bing,
+        AgentMultiSourceSearchConfig config,
+        TimeProvider? timeProvider = null)
+    {
+        slots =
+        [
+            new ProviderSlot("duckduckgo", 0, duckDuckGo ?? throw new ArgumentNullException(nameof(duckDuckGo))),
+            new ProviderSlot("bing", 1, bing ?? throw new ArgumentNullException(nameof(bing)))
+        ];
+        this.config = config ?? throw new ArgumentNullException(nameof(config));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    public async Task<IReadOnlyList<AgentPublicSearchResult>> SearchAsync(
+        string query,
+        int maxResults,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ProviderSlot[] available = slots.Where(slot => IsCircuitClosed(slot.Id)).ToArray();
+        if (available.Length == 0)
+            throw new InvalidOperationException("public_search_all_providers_failed");
+
+        using CancellationTokenSource stopPeers = new();
+        List<Task<ProviderAttempt>> pending = available
+            .Select(slot => ExecuteSlotAsync(slot, query, maxResults, cancellationToken, stopPeers.Token))
+            .ToList();
+        List<ProviderAttempt> completed = [];
+        try
+        {
+            while (pending.Count > 0)
+            {
+                Task<ProviderAttempt> next = await Task.WhenAny(pending).WaitAsync(cancellationToken);
+                pending.Remove(next);
+                ProviderAttempt attempt = await next;
+                completed.Add(attempt);
+                if (attempt.Results.Count == 0)
+                    continue;
+
+                completed.AddRange(pending.Where(task => task.IsCompletedSuccessfully).Select(task => task.Result));
+                IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
+                    completed.Where(item => item.Results.Count > 0)
+                        .SelectMany(item => item.Results.Select((result, index) => new AgentPublicSearchCandidate(
+                            item.ProviderId,
+                            item.ProviderOrder,
+                            index,
+                            result))),
+                    GetMaxResults(maxResults));
+                if (merged.Count == 0)
+                    continue;
+
+                stopPeers.Cancel();
+                return merged;
+            }
+        }
+        finally
+        {
+            stopPeers.Cancel();
+        }
+
+        if (completed.Any(item => item.CompletedNormally))
+            return [];
+        throw new InvalidOperationException("public_search_all_providers_failed");
+    }
+
+    async Task<ProviderAttempt> ExecuteSlotAsync(
+        ProviderSlot slot,
+        string query,
+        int maxResults,
+        CancellationToken callerCancellationToken,
+        CancellationToken peerStopToken)
+    {
+        using CancellationTokenSource deadlineCancellation = new();
+        deadlineCancellation.CancelAfter(TimeSpan.FromMilliseconds(Math.Max(1, config.PerProviderTimeoutMilliseconds)));
+        using CancellationTokenSource requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            callerCancellationToken,
+            peerStopToken,
+            deadlineCancellation.Token);
+        try
+        {
+            IReadOnlyList<AgentPublicSearchResult> results = await slot.Provider.SearchAsync(
+                query,
+                GetMaxResults(maxResults),
+                requestCancellation.Token);
+            callerCancellationToken.ThrowIfCancellationRequested();
+            if (peerStopToken.IsCancellationRequested)
+                return ProviderAttempt.Cancelled(slot.Id, slot.Order);
+            if (deadlineCancellation.IsCancellationRequested)
+            {
+                RecordFailure(slot.Id);
+                return ProviderAttempt.Failed(slot.Id, slot.Order);
+            }
+
+            RecordSuccess(slot.Id);
+            return new ProviderAttempt(slot.Id, slot.Order, results ?? [], true);
+        }
+        catch (OperationCanceledException) when (callerCancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (peerStopToken.IsCancellationRequested && deadlineCancellation.IsCancellationRequested == false)
+        {
+            return ProviderAttempt.Cancelled(slot.Id, slot.Order);
+        }
+        catch (Exception)
+        {
+            RecordFailure(slot.Id);
+            return ProviderAttempt.Failed(slot.Id, slot.Order);
+        }
+    }
+
+    bool IsCircuitClosed(string providerId)
+    {
+        ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
+        lock (circuit.Gate)
+        {
+            if (circuit.OpenUntil is not { } openUntil)
+                return true;
+            if (openUntil > timeProvider.GetUtcNow())
+                return false;
+
+            circuit.OpenUntil = null;
+            circuit.ConsecutiveFailures = 0;
+            return true;
+        }
+    }
+
+    void RecordSuccess(string providerId)
+    {
+        ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
+        lock (circuit.Gate)
+        {
+            circuit.ConsecutiveFailures = 0;
+            circuit.OpenUntil = null;
+        }
+    }
+
+    void RecordFailure(string providerId)
+    {
+        ProviderCircuit circuit = circuits.GetOrAdd(providerId, _ => new ProviderCircuit());
+        lock (circuit.Gate)
+        {
+            circuit.ConsecutiveFailures++;
+            if (circuit.ConsecutiveFailures >= Math.Max(1, config.FailureThreshold))
+            {
+                circuit.OpenUntil = timeProvider.GetUtcNow().AddSeconds(Math.Max(1, config.CircuitBreakSeconds));
+            }
+        }
+    }
+
+    int GetMaxResults(int maxResults) => Math.Min(
+        Math.Max(1, maxResults),
+        Math.Clamp(config.MaxMergedResults, 1, 5));
+
+    sealed record ProviderSlot(string Id, int Order, IAgentPublicSearchProvider Provider);
+
+    sealed class ProviderCircuit
+    {
+        public object Gate { get; } = new();
+        public int ConsecutiveFailures { get; set; }
+        public DateTimeOffset? OpenUntil { get; set; }
+    }
+
+    sealed record ProviderAttempt(
+        string ProviderId,
+        int ProviderOrder,
+        IReadOnlyList<AgentPublicSearchResult> Results,
+        bool CompletedNormally)
+    {
+        public static ProviderAttempt Failed(string id, int order) => new(id, order, [], false);
+        public static ProviderAttempt Cancelled(string id, int order) => new(id, order, [], false);
     }
 }
