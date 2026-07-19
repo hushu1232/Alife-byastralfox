@@ -28,6 +28,19 @@ public sealed class QChatSemanticWebResearchServiceTests
     }
 
     [Test]
+    public void QChatSemanticWebResearchConfig_CreatesNonNullMultiSourceSearchDefaults()
+    {
+        QChatSemanticWebResearchConfig config = new();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.MultiSourceSearch, Is.Not.Null);
+            Assert.That(config.MultiSourceSearch.Enabled, Is.False);
+            Assert.That(config.MultiSourceSearch.MaxMergedResults, Is.EqualTo(5));
+        });
+    }
+
+    [Test]
     public void IsEligible_AllowsEnabledOwnerPrivateMessage()
     {
         QChatSemanticWebResearchConfig config = new() { Enabled = true };

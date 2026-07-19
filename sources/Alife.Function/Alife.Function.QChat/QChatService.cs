@@ -335,7 +335,8 @@ public partial class QChatService(
     XiaYuSelfStateStore? xiaYuSelfStateStore = null,
     Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
     QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
-    QChatConversationFollowUpScheduler? followUpScheduler = null) :
+    QChatConversationFollowUpScheduler? followUpScheduler = null,
+    Func<AgentMultiSourceSearchConfig, IAgentPublicSearchProvider>? multiSourcePublicSearchProviderFactory = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -362,6 +363,8 @@ public partial class QChatService(
     readonly IQChatSemanticWebResearchRouter? injectedSemanticWebResearchRouter = semanticWebResearchRouter;
     readonly IAgentWebResearchService? injectedSemanticWebResearchService = semanticWebResearchService;
     readonly IQChatSemanticWebResearchNarrator? injectedSemanticWebResearchNarrator = semanticWebResearchNarrator;
+    readonly Func<AgentMultiSourceSearchConfig, IAgentPublicSearchProvider>? injectedMultiSourcePublicSearchProviderFactory =
+        multiSourcePublicSearchProviderFactory;
     readonly AgentWebResearchControlState webResearchControlState = new();
     QChatImageRecognitionService? resolvedImageRecognitionService;
     IAgentPublicSearchProvider? resolvedPublicSearchProvider;
@@ -5902,8 +5905,20 @@ public partial class QChatService(
             new BingHtmlSearchProvider(new HttpClient { Timeout = TimeSpan.FromSeconds(8) }));
     }
 
-    static IAgentPublicSearchProvider CreateResearchPublicSearchProvider(QChatConfig config) =>
-        CreateDefaultPublicSearchProvider();
+    IAgentPublicSearchProvider CreateResearchPublicSearchProvider(QChatConfig config)
+    {
+        AgentMultiSourceSearchConfig multiSource = config.SemanticWebResearch.MultiSourceSearch ?? new AgentMultiSourceSearchConfig();
+        if (multiSource.Enabled == false || multiSource.ParallelBuiltInProviders == false)
+            return CreateDefaultPublicSearchProvider();
+
+        if (injectedMultiSourcePublicSearchProviderFactory != null)
+            return injectedMultiSourcePublicSearchProviderFactory(multiSource);
+
+        return new ParallelPublicSearchProvider(
+            new DuckDuckGoHtmlSearchProvider(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
+            new BingHtmlSearchProvider(new HttpClient { Timeout = Timeout.InfiniteTimeSpan }),
+            multiSource);
+    }
 
     async Task<bool> TryHandlePublicInternetCommandAsync(
         OneBotMessageEvent messageEvent,

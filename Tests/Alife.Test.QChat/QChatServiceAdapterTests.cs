@@ -1783,6 +1783,60 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ExplicitSearch_WhenMultiSourceEnabled_UsesCoordinatorAndCapsEvidence()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider duck = new(
+            new AgentPublicSearchResult("Duck One", "https://duck.example/1", "one"),
+            new AgentPublicSearchResult("Duck Two", "https://duck.example/2", "two"),
+            new AgentPublicSearchResult("Duck Three", "https://duck.example/3", "three"));
+        FakePublicSearchProvider bing = new(
+            new AgentPublicSearchResult("Duck One mirror", "https://duck.example/1#mirror", "duplicate"),
+            new AgentPublicSearchResult("Bing unique", "https://bing.example/unique", "unique"));
+        int factoryCalls = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            PublicInternetSearchMaxResults = 5,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig
+            {
+                MultiSourceSearch = new AgentMultiSourceSearchConfig
+                {
+                    Enabled = true,
+                    MaxMergedResults = 2
+                }
+            }
+        }, multiSourcePublicSearchProviderFactory: multiSource =>
+        {
+            factoryCalls++;
+            return new ParallelPublicSearchProvider(duck, bing, multiSource);
+        });
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "搜一下 current topic"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        string reply = runtime.PrivateMessages.Single().Message;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(factoryCalls, Is.EqualTo(1));
+            Assert.That(duck.Calls, Is.EqualTo(1));
+            Assert.That(bing.Calls, Is.EqualTo(1));
+            Assert.That(reply, Does.Contain("https://duck.example/1"));
+            Assert.That(reply, Does.Contain("https://duck.example/2"));
+            Assert.That(reply, Does.Not.Contain("https://duck.example/3"));
+        });
+    }
+
+    [Test]
     public async Task WebResearchOwnerPrivateSemanticSearchUsesInjectedSiteExperienceToAvoidAntiBotRead()
     {
         FakeOneBotRuntime runtime = new();
@@ -16585,6 +16639,7 @@ public class QChatServiceAdapterTests
         IQChatSemanticWebResearchRouter? semanticWebResearchRouter = null,
         IAgentWebResearchService? semanticWebResearchService = null,
         IQChatSemanticWebResearchNarrator? semanticWebResearchNarrator = null,
+        Func<AgentMultiSourceSearchConfig, IAgentPublicSearchProvider>? multiSourcePublicSearchProviderFactory = null,
         Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
         XmlFunctionCaller? functionCaller = null,
         QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
@@ -16623,6 +16678,7 @@ public class QChatServiceAdapterTests
             semanticWebResearchRouter: semanticWebResearchRouter,
             semanticWebResearchService: semanticWebResearchService,
             semanticWebResearchNarrator: semanticWebResearchNarrator,
+            multiSourcePublicSearchProviderFactory: multiSourcePublicSearchProviderFactory,
             voiceWarmupEndpointProbe: voiceWarmupEndpointProbe,
             personaMemoryContextProvider: personaMemoryContextProvider)
         {
