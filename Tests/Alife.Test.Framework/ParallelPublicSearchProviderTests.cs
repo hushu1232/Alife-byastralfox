@@ -126,6 +126,24 @@ public sealed class ParallelPublicSearchProviderTests
     }
 
     [Test]
+    public void Merge_PreservesTrailingSlashInsideQueryValue()
+    {
+        IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(
+        [
+            new AgentPublicSearchCandidate("duckduckgo", 0, 0,
+                new AgentPublicSearchResult("Slash query", "https://Example.test/search?q=/", "slash")),
+            new AgentPublicSearchCandidate("bing", 1, 0,
+                new AgentPublicSearchResult("Empty query", "https://example.test/search?q=", "empty"))
+        ], maxResults: 5);
+
+        Assert.That(merged, Is.EqualTo(new[]
+        {
+            new AgentPublicSearchResult("Slash query", "https://example.test/search?q=/", "slash"),
+            new AgentPublicSearchResult("Empty query", "https://example.test/search?q=", "empty")
+        }));
+    }
+
+    [Test]
     public void Merge_DropsRuntimeNullResultBeforeSorting()
     {
         IReadOnlyList<AgentPublicSearchResult> merged = AgentPublicSearchResultMerger.Merge(

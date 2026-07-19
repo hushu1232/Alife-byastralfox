@@ -64,7 +64,9 @@ public static class AgentPublicSearchResultMerger
         if (builder.Path.Length > 1)
             builder.Path = builder.Path.TrimEnd('/');
 
-        normalized = builder.Uri.AbsoluteUri.TrimEnd('/');
+        normalized = builder.Uri.AbsoluteUri;
+        if (builder.Path == "/" && string.IsNullOrEmpty(builder.Query))
+            normalized = normalized.TrimEnd('/');
         return true;
     }
 
