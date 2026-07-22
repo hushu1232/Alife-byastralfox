@@ -64,6 +64,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/local-production/I
 
 The fixed mapping is account A to the `真央` instance (presented by QChat as 咪绪) and account B to the `夏羽` instance. Account A's Alife window lists only 真央 and account B's window lists only 夏羽; one window does not aggregate both accounts. The installer does not start, stop, or restart Alife, NapCat, or QQ. Restart and activation require separate owner authorization.
 
+### Local persona context
+
+Complete approved persona Markdown stays only in the matching local `Storage/Character/<character>/Memory/Persona` directory. QChat loads it for disclosure protection but never appends the complete file to `ChatHistory` or sends its path/body to QQ. When a current reply genuinely needs it, the normal model route may request one bounded approved fact category; C# validates the request, reads only that category, and asks the model for a natural final reply. Persona storage remains local runtime state and must not be committed, copied between accounts, or treated as a DataAgent/LangGraph execution input.
+
 ## Operations
 
 Read safe status with `powershell.exe -NoProfile -File tools/local-production/Get-AlifeLocalProductionStatus.ps1 -StatusPath <status-file>`. Output is restricted to slot id, pid, health, failure/restart/drain/active counters and safe reason codes. `DependencyUnavailable`, `ConfigurationRejected`, `HealthProbeFailed`, `DeadlineExceeded`, `Busy`, and `RestartRecoveryRequired` never include secrets, chat/model text, SQL, stack traces, or absolute paths.

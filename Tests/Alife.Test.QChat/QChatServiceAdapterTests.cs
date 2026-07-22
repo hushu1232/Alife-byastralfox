@@ -9044,6 +9044,9 @@ public class QChatServiceAdapterTests
             Assert.That(stablePrompt, Does.Contain("[stable character prefix]"));
             Assert.That(stablePrompt, Does.Contain("character=\u54aa\u7eea"));
             Assert.That(stablePrompt, Does.Contain("agent_id=mixu"));
+            Assert.That(stablePrompt, Does.Contain("面向 QQ 用户的内容必须通过当前会话发送能力交付"));
+            Assert.That(stablePrompt, Does.Not.Contain("先调用<GetQChatGuide/>"));
+            Assert.That(stablePrompt, Does.Not.Contain("普通文字不会自动出现在 QQ"));
             Assert.That(stablePrompt, Does.Not.Contain("character=\u590f\u7fbd"));
             Assert.That(stablePrompt, Does.Not.Contain("\u4f60\u662f\u590f\u7fbd"));
         });

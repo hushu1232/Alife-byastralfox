@@ -2831,17 +2831,7 @@ public partial class QChatService(
         RegisterRelationCacheToolsIfMissing();
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
-        Prompt($"""
-                此服务为你增加收发qq消息的能力，能够处理图片，文件，转发等各种丰富的qq功能。
-                当你需要用qq联系他人，或收到qq消息要处理时，先调用<{nameof(GetQChatGuide)}/>来学习如何使用qq工具，然后再以合适的方式回复。
-
-                收到 QQ 入站消息后，如果你决定回复，必须把面向 QQ 用户的内容发送到当前 QQ 会话：
-                - 私聊回复当前私聊：<qchat type="Private" targetId="对方QQ号">回复内容</qchat>
-                - 群聊普通回复当前群：<qchat type="Group" targetId="群号">小明，刚刚那句我听到了</qchat>
-                - 群聊强提醒当前群：<qchat type="Group" targetId="群号">[CQ:at,qq=发送者QQ号] 这件事需要你确认一下</qchat>
-                - 不要只输出普通文字来“说明你会回复”，普通文字不会自动出现在 QQ 里。
-                - 如果判断无需回复，可以保持沉默，不要输出解释。
-                """);
+        Prompt("面向 QQ 用户的内容必须通过当前会话发送能力交付；不要在 QQ 文本中解释内部工具、路由或权限。");
         RegisterStablePersonaPromptIfNeeded();
         SeedApprovedPersonaMemory();
     }
