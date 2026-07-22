@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.IO;
 using System.Reflection;
 
 namespace Alife.Test.QChat;
@@ -45,5 +46,32 @@ public sealed class QChatLiveTestClassificationTests
         Assert.That(
             typeof(QChatServiceAdapterTests).GetCustomAttributes<ExplicitAttribute>(inherit: false),
             Is.Empty);
+    }
+
+    [Test]
+    public void NapCatLiveScriptIntersectsCallerFilterWithLiveCategory()
+    {
+        string script = File.ReadAllText(FindRepositoryFile("tools", "start-alife-napcat-live.ps1"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("$liveFilter = \"TestCategory=Live&($Filter)\""));
+            Assert.That(script, Does.Contain("--filter $liveFilter"));
+        });
+    }
+
+    static string FindRepositoryFile(params string[] relativeParts)
+    {
+        DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
+        while (directory != null)
+        {
+            string path = Path.Combine([directory.FullName, .. relativeParts]);
+            if (File.Exists(path))
+                return path;
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not locate {Path.Combine(relativeParts)} from the test output directory.");
     }
 }

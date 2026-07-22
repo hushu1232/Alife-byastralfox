@@ -213,6 +213,12 @@ function Set-AlifeStoragePath {
 function Invoke-QChatLiveTest {
     param([string]$Filter)
 
+    if ([string]::IsNullOrWhiteSpace($Filter)) {
+        throw "A live-test filter is required."
+    }
+
+    $liveFilter = "TestCategory=Live&($Filter)"
+
     $env:ALIFE_QCHAT_LIVE_OWNER_NOTIFICATION = "1"
     $env:ALIFE_QCHAT_LIVE_URL = $OneBotUrl
     $env:ALIFE_QCHAT_LIVE_TOKEN = $OneBotToken
@@ -221,12 +227,12 @@ function Invoke-QChatLiveTest {
     $env:ALIFE_QCHAT_LIVE_GROUP_ID = [string]$GroupId
     $env:ALIFE_QCHAT_LIVE_PRIVATE_TEST_USER_ID = [string]$PrivateTestUserId
 
-    Write-Step "Running QChat live test filter: $Filter"
+    Write-Step "Running QChat live test filter: $liveFilter"
     if ($DryRun) {
         return
     }
 
-    & $DotNetPath test "D:\Alife\Tests\Alife.Test.QChat\Alife.Test.QChat.csproj" --no-build --no-restore -m:1 --filter $Filter
+    & $DotNetPath test "D:\Alife\Tests\Alife.Test.QChat\Alife.Test.QChat.csproj" --no-build --no-restore -m:1 --filter $liveFilter
     if ($LASTEXITCODE -ne 0) {
         if ($ContinueOnLiveTestFailure) {
             Write-Warning "QChat live test failed with exit code $LASTEXITCODE"

@@ -64,7 +64,16 @@ dotnet test Alife.slnx --no-restore
 单模块测试可以直接运行对应测试项目，例如：
 
 ```powershell
-dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore
+# 默认安全 QChat 回归：不发现或运行现场测试
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "TestCategory!=Live"
+
+# 安全组件集成回归：使用 fake/injected runtime，不连接真实 QQ、NapCat 或模型
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "TestCategory=Integration&TestCategory!=Live"
+
+# 现场回归：仅由已准备账号、NapCat 和 ALIFE_QCHAT_LIVE_* 环境变量的操作者运行
+dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "TestCategory=Live"
+
+# Live 夹具均为 Explicit，保留环境变量门控；普通开发与 CI 命令不得启用它们
 dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore
 ```
 
