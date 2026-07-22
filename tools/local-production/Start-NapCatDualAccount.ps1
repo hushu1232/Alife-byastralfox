@@ -3,6 +3,7 @@ param(
   [ValidateSet(0,3001,3002)][int]$AccountPort=0,
   [ValidateSet('Quick','Qr')][string]$LoginMode='Quick',
   [switch]$Start,
+  [switch]$Stop,
   [switch]$Interactive,
   [switch]$RestartLaunchers,
   [int]$ProbeTimeoutSeconds=5
@@ -28,9 +29,11 @@ function Get-OneBotEndpointForPort {
       if($server.PSObject.Properties.Match('enable').Count-gt0-and-not[bool]$server.enable){continue}
       try {$serverPort=[int]$server.port}catch{continue}
       if($serverPort-ne$Port){continue}
+      $quickLoginAccount=[regex]::Match($file.Name,'^onebot11_(\d+)\.json$',[Text.RegularExpressions.RegexOptions]::IgnoreCase)
+      if(-not$quickLoginAccount.Success){throw 'A role Quick-login account filename is invalid.'}
       $hostName=[string]$server.host
       if($hostName-notin @('127.0.0.1','localhost','::1')){throw 'OneBot host must use loopback.'}
-      $matches+=[pscustomobject]@{Host=$hostName;Port=$serverPort}
+      $matches+=[pscustomobject]@{Host=$hostName;Port=$serverPort;QuickLoginAccount=$quickLoginAccount.Groups[1].Value}
     }
   }
   if($matches.Count-ne1){throw 'Each role must have exactly one enabled OneBot endpoint for its manifest port.'}
@@ -68,6 +71,7 @@ function Get-NapCatDualAccountPlan {
       QrEntry=$qrEntries[0].FullName
       Host=$endpoint.Host
       Port=$endpoint.Port
+      QuickLoginAccount=$endpoint.QuickLoginAccount
       TokenEnvironmentName=$tokenEnvironmentName
     }
   }
@@ -85,6 +89,44 @@ function Test-NapCatHost {
       Where-Object{$_.ExecutablePath-eq$Slot.LaunchPath}|
       Select-Object -First 1)
   }catch{return $false}
+}
+
+function Sync-NapCatQuickLauncher {
+  param([Parameter(Mandatory)][object]$Slot)
+
+  $bytes=[IO.File]::ReadAllBytes($Slot.QuickEntry)
+  $offset=0
+  if($bytes.Length-ge2-and$bytes[0]-eq0xff-and$bytes[1]-eq0xfe){$encoding=[Text.Encoding]::Unicode;$offset=2}
+  elseif($bytes.Length-ge2-and$bytes[0]-eq0xfe-and$bytes[1]-eq0xff){$encoding=[Text.Encoding]::BigEndianUnicode;$offset=2}
+  elseif($bytes.Length-ge3-and$bytes[0]-eq0xef-and$bytes[1]-eq0xbb-and$bytes[2]-eq0xbf){$encoding=[Text.UTF8Encoding]::new($true);$offset=3}
+  else{
+    $utf8=[Text.UTF8Encoding]::new($false,$true)
+    try{$current=$utf8.GetString($bytes);$encoding=[Text.UTF8Encoding]::new($false)}
+    catch{$encoding=[Text.Encoding]::Default;$current=$encoding.GetString($bytes)}
+  }
+  if($null-eq$current){$current=$encoding.GetString($bytes,$offset,$bytes.Length-$offset)}
+  $pattern='(?m)^\.\\NapCatWinBootMain\.exe[^\r\n]*'
+  $matches=[regex]::Matches($current,$pattern)
+  if($matches.Count-ne1){throw 'A role Quick launcher must contain exactly one NapCat command.'}
+  $expected='.\NapCatWinBootMain.exe '+$Slot.QuickLoginAccount
+  if($matches[0].Value-eq$expected){return $false}
+  $replacement=$current.Substring(0,$matches[0].Index)+$expected+$current.Substring($matches[0].Index+$matches[0].Length)
+  $temporary=$Slot.QuickEntry+'.alife-sync'
+  [IO.File]::WriteAllText($temporary,$replacement,$encoding)
+  Move-Item -LiteralPath $temporary -Destination $Slot.QuickEntry -Force
+  return $true
+}
+
+function Stop-NapCatRoleProcesses {
+  param([Parameter(Mandatory)][object]$Slot)
+
+  Get-CimInstance Win32_Process|
+    Where-Object{
+      $_.Name-in @('QQ.exe','NapCatWinBootMain.exe')-and
+      $_.ExecutablePath-and
+      (Test-PathWithin -Path $_.ExecutablePath -Root $Slot.RoleRoot)
+    }|
+    ForEach-Object{Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}
 }
 
 function Test-OneBotPort {
@@ -148,7 +190,10 @@ if($MyInvocation.InvocationName-ne'.'){
     $slots=@($slots|Where-Object Port -eq $AccountPort)
     if($slots.Count-ne1){throw 'Requested account port was not found.'}
   }
-  if($LoginMode-eq'Qr' -and($AccountPort-eq0-or-not$Interactive)){throw 'QR login requires -AccountPort 3001 or 3002 and -Interactive.'}
+  if($Stop-and($Start-or$RestartLaunchers)){throw '-Stop cannot be combined with -Start or -RestartLaunchers.'}
+  if($Start-and$LoginMode-eq'Qr' -and($AccountPort-eq0-or-not$Interactive)){throw 'QR login requires -AccountPort 3001 or 3002 and -Interactive.'}
+  if($Stop){foreach($slot in $slots){Stop-NapCatRoleProcesses -Slot $slot}}
+  if($Start-and$LoginMode-eq'Quick'){foreach($slot in $slots){Sync-NapCatQuickLauncher -Slot $slot|Out-Null}}
   if($RestartLaunchers){
     if(-not$Start){throw '-RestartLaunchers requires -Start.'}
     foreach($slot in $slots){
@@ -164,5 +209,5 @@ if($MyInvocation.InvocationName-ne'.'){
     }
   }
   $accounts=if($Start){@($slots|ForEach-Object{Get-NapCatSlotStatus -Slot $_ -TimeoutSeconds $ProbeTimeoutSeconds -LoginMode $LoginMode -QrRequested ($LoginMode-eq'Qr')})}else{@()}
-  [pscustomobject]@{accountCount=$slots.Count;ports=@($slots.Port);started=[bool]$Start;loginMode=$LoginMode;accounts=$accounts}|ConvertTo-Json -Depth 4
+  [pscustomobject]@{accountCount=$slots.Count;ports=@($slots.Port);started=[bool]$Start;stopped=[bool]$Stop;loginMode=$LoginMode;accounts=$accounts}|ConvertTo-Json -Depth 4
 }

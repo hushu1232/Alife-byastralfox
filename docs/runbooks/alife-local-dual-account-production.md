@@ -22,13 +22,21 @@ powershell.exe -NoProfile -File tools/local-production/Start-NapCatDualAccount.p
 
 The discovery result must show `accountCount=2`, ports `3001` and `3002`, and `started=false`. It never starts a QQ or NapCat process.
 
+Stop only the two manifest-bound local role instances:
+
+```powershell
+powershell.exe -NoProfile -File tools/local-production/Start-NapCatDualAccount.ps1 -NapCatRoot D:\NapCat -Stop
+```
+
+`-Stop` is limited to `QQ.exe` and `NapCatWinBootMain.exe` under the selected role roots. It does not terminate the system QQ installation, remove cached login state, or change OneBot configuration.
+
 Use cached-session recovery for both roles:
 
 ```powershell
 powershell.exe -NoProfile -File tools/local-production/Start-NapCatDualAccount.ps1 -NapCatRoot D:\NapCat -Start -LoginMode Quick
 ```
 
-Add `-AccountPort 3001` or `-AccountPort 3002` to recover one role only. Quick mode requests the existing role-local quick launcher; it does not itself prove that QQ is logged in.
+Add `-AccountPort 3001` or `-AccountPort 3002` to recover one role only. Before Quick mode requests the existing role-local quick launcher, it synchronizes only that wrapper's `NapCatWinBootMain.exe` argument from the matching role-local enabled OneBot configuration. The command never returns the resolved account, token, cookie, or chat data. Quick mode does not itself prove that QQ is logged in.
 
 Request one visible QR login flow:
 
