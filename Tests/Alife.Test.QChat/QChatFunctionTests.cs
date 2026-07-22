@@ -12,6 +12,7 @@ namespace Alife.Test.QChat;
 [TestFixture]
 [Explicit("Integration test: requires a running OneBot service at ws://127.0.0.1:3001 and manual message-box verification.")]
 [Category("Integration")]
+[Category("Live")]
 public class QChatFunctionTests
 {
     [OneTimeSetUp]

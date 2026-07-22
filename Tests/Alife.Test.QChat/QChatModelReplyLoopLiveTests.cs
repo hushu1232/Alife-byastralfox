@@ -13,6 +13,8 @@ namespace Alife.Test.QChat;
 
 [TestFixture]
 [Category("Integration")]
+[Category("Live")]
+[Explicit("Operator-selected live validation; requires the fixture's ALIFE_QCHAT_LIVE_* environment gate.")]
 public class QChatModelReplyLoopLiveTests
 {
     [Test]

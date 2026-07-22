@@ -23,6 +23,7 @@ using System.Threading.Channels;
 namespace Alife.Test.QChat;
 
 [TestFixture]
+[Category("Integration")]
 public class QChatServiceAdapterTests
 {
     [Test]
