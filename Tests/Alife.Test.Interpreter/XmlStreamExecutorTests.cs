@@ -75,6 +75,28 @@ public class XmlStreamExecutorTests
     }
 
     [Test]
+    public async Task CompletedOneShotReportsSafeToolOutcome()
+    {
+        TestHandler handler = new TestHandler();
+        XmlHandlerTable table = new XmlHandlerTable();
+        table.Register(new XmlHandler(handler));
+        XmlStreamParser parser = new XmlStreamParser();
+        await using XmlStreamExecutor executor = new XmlStreamExecutor(parser, table, [], 100);
+        List<(string Name, bool Succeeded)> outcomes = [];
+        System.Reflection.EventInfo? eventInfo = typeof(XmlStreamExecutor).GetEvent("ToolCompleted");
+
+        Assert.That(eventInfo, Is.Not.Null, "Completed tool calls must report a model-safe outcome.");
+        eventInfo!.AddEventHandler(executor, (Action<string, bool>)((name, succeeded) => outcomes.Add((name, succeeded))));
+
+        executor.Feed("<oneshot />");
+        executor.Flush();
+        while (executor.IsInactive == false)
+            await Task.Delay(20);
+
+        Assert.That(outcomes, Is.EqualTo([("oneshot", true)]));
+    }
+
+    [Test]
     public async Task TestNestedTags()
     {
         TestHandler handler = new TestHandler();

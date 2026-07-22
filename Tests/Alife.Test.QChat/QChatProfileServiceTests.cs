@@ -9,7 +9,7 @@ namespace Alife.Test.QChat;
 public class QChatProfileServiceTests
 {
     [Test]
-    public void XiaYuProfileIsSeventeenYearOldGirlWithProjectToolsAndOwnerAddressName()
+    public void XiaYuProfileIsNineteenYearOldGirlWithProjectToolsAndOwnerAddressName()
     {
         QChatProfileService service = QChatProfileService.CreateDefault();
 
@@ -23,10 +23,12 @@ public class QChatProfileServiceTests
             Assert.That(profile.MemoryScope, Is.EqualTo("qchat/xiayu"));
             Assert.That(profile.Model, Is.EqualTo("deepseek-v4-flash"));
             Assert.That(profile.OwnerAddressName, Is.EqualTo("\u672f\u672f"));
-            Assert.That(profile.PersonaTags, Does.Contain("17-year-old-girl"));
-            Assert.That(profile.PersonaTags, Does.Contain("high-intelligence"));
-            Assert.That(profile.PersonaTags, Does.Contain("cold-to-others"));
-            Assert.That(profile.PersonaTags, Does.Contain("warm-to-owner"));
+            Assert.That(profile.PersonaTags, Does.Contain("19-year-old-girl"));
+            Assert.That(profile.PersonaTags, Does.Contain("lively-high-intelligence"));
+            Assert.That(profile.PersonaTags, Does.Contain("polite-to-others"));
+            Assert.That(profile.PersonaTags, Does.Contain("family-warm-to-owner"));
+            Assert.That(profile.PersonaTags, Does.Not.Contain("17-year-old-girl"));
+            Assert.That(profile.PersonaTags, Does.Not.Contain("cold-to-others"));
             Assert.That(profile.PersonaTags, Does.Not.Contain("catgirl"));
             Assert.That(profile.Capabilities.AllowComputerFileTools, Is.True);
             Assert.That(profile.Capabilities.AllowProjectModification, Is.True);

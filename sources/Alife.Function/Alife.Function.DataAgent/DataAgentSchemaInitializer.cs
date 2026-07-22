@@ -92,6 +92,16 @@ public static class DataAgentSchemaInitializer
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS qchat_latency_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                conversation_kind TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                elapsed_ms INTEGER NOT NULL,
+                first_content_ms INTEGER NULL,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS langgraph_shadow_artifact (
                 artifact_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,

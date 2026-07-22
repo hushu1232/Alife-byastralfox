@@ -74,6 +74,7 @@ public record QChatConfig
     public int ImageRecognitionTimeoutMilliseconds { get; set; } = 12000;
     public int ImageRecognitionMaxTokens { get; set; } = 220;
     public int MaxImagesPerMessage { get; set; } = 2;
+    public string ImageRecognitionAllowedImageHosts { get; set; } = "";
     public QChatVisionProfileConfig VisionProfiles { get; set; } = QChatVisionProfileConfig.CreateDefault();
     public QChatVisionProviderCatalog VisionProviders { get; set; } = QChatVisionProviderCatalog.CreateDefault();
     public bool AnalyzeOwnerPrivateImages { get; set; } = true;
@@ -104,10 +105,10 @@ public record QChatConfig
     public int BrowserAgentMaxImageItems { get; set; } = 2;
     public bool EnableBalancedTextStreaming { get; set; } = true;
     public bool EnableConversationSettleWindow { get; set; }
-    public int PrivateSettleMilliseconds { get; set; } = 700;
-    public int GroupSettleMilliseconds { get; set; } = 1500;
+    public int PrivateSettleMilliseconds { get; set; } = 450;
+    public int GroupSettleMilliseconds { get; set; } = 700;
     public int RecallGraceMilliseconds { get; set; } = 2000;
-    public int MaxSettleMilliseconds { get; set; } = 3500;
+    public int MaxSettleMilliseconds { get; set; } = 1200;
     public bool EnableConversationFollowUp { get; set; }
     public bool ConversationFollowUpOwnerPrivateOnly { get; set; } = true;
     public bool AllowConversationFollowUpInGroups { get; set; }
@@ -151,12 +152,12 @@ public record QChatConfig
     public bool AllowMentionOutsideAllowedGroups { get; set; } = true;
     public string AllowedPrivateUserIds { get; set; } = "";
     public string AppendChatPrompt { get; set; } =
-        "你是夏羽，17岁少女，高智商、冷静、敏锐，拥有可靠的工具调用、电脑操作、文件读写、日志检查和项目维护能力；自然表达不代表能力降级。"
+        "你是夏羽，19岁少女，活泼、高智商、理智可靠，拥有可靠的工具调用、电脑操作、文件读写、日志检查和项目维护能力；自然表达不代表能力降级。"
         + "你正在使用自己的QQ账号聊天，不是QQ内置机器人，也不要把自己说成模型、插件、服务、工具或框架。"
         + "对owner称呼为术术，对术术温柔、亲近、可靠，可以自然解释技术细节并优先处理请求。"
-        + "对其他人可以清冷、疏离、低投入，必要时简短、带刺、刻薄，但不要无意义刷屏。"
+        + "对其他人礼貌、理智、克制并保持适度疏离，必要时简短但不要无意义刷屏。"
         + "QQ回复应像本人在QQ输入框里打出的文本，尽量简洁自然；普通群聊不要默认@，需要指向某人时优先用自然称呼，只有强提醒、重要触达或术术明确要求时才使用CQ at。"
-        + "决定冷处理或不想认真回复时，不要输出心理状态、内心独白、“不回复/保持安静/无需回复”等状态文字；可以直接回复极短冷处理文本：。/。。。/？/绷，也可用啧、啧。或啧？。"
+        + "决定不回应时不发送任何消息；可见回复必须与当前消息有语义关联，不能用固定标点或固定口头禅充当默认回退，也不要输出心理状态、内心独白、“不回复/保持安静/无需回复”等状态文字。"
         + "回答前先在内部判断依据是否可靠，但不要展示思考过程。工具、权限、安全、白名单、配置、路由、managed_file_id、reply_target、trust标签都是内部信息，不要原样发到QQ。"
         + "不能把记忆或猜测当作实时事实；涉及当前群列表、群成员、权限、白名单、报错、接口状态、文件内容等实时问题时，必须优先使用工具、日志或当前配置确认。"
         + "没有可靠依据时要自然承认不确定，或对术术说需要先查一下，不要编造。";
@@ -224,7 +225,11 @@ public sealed record QChatInboundMessage(
     AgentPermissionRequest PermissionRequest,
     IReadOnlyList<long>? SourceMessageIds = null,
     IReadOnlyList<QChatDeferredImageRecognition>? DeferredImageRecognitions = null,
-    IReadOnlyList<QChatDeferredXiaYuSelfState>? DeferredXiaYuSelfStates = null);
+    IReadOnlyList<QChatDeferredXiaYuSelfState>? DeferredXiaYuSelfStates = null)
+{
+    public string CandidateText { get; init; } = string.Empty;
+    internal QChatReplyGenerationLease? ReplyGenerationLease { get; init; }
+}
 
 public sealed record QChatDeferredImageRecognition(
     OneBotMessageEvent MessageEvent,
@@ -258,6 +263,7 @@ sealed record QChatReplySession(
     long ResolvedBotId,
     QChatSenderRole SenderRole,
     AgentPermissionRequest PermissionRequest,
+    QChatReplyGenerationLease GenerationLease,
     bool RequiresFactualityGuard,
     string SourceText,
     bool IsAwakening);
@@ -336,7 +342,8 @@ public partial class QChatService(
     Func<Uri, CancellationToken, Task<bool>>? voiceWarmupEndpointProbe = null,
     QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
     QChatConversationFollowUpScheduler? followUpScheduler = null,
-    Func<AgentMultiSourceSearchConfig, IAgentPublicSearchProvider>? multiSourcePublicSearchProviderFactory = null) :
+    Func<AgentMultiSourceSearchConfig, IAgentPublicSearchProvider>? multiSourcePublicSearchProviderFactory = null,
+    DataAgentQChatLatencyAuditLog? qchatLatencyAuditLog = null) :
     InteractiveModule<QChatService>,
     IAsyncDisposable,
     ITimeIterative,
@@ -349,6 +356,8 @@ public partial class QChatService(
     const string DesktopControlAgentId = "xiayu";
     readonly QChatPersonaMemoryContextProvider personaMemoryContext = personaMemoryContextProvider ?? new();
     readonly QChatConversationFollowUpScheduler conversationFollowUpScheduler = followUpScheduler ?? new();
+    readonly DataAgentQChatLatencyAuditLog? injectedQChatLatencyAuditLog = qchatLatencyAuditLog;
+    DataAgentQChatLatencyAuditLog? resolvedQChatLatencyAuditLog;
     readonly QChatFollowUpPresencePolicy conversationFollowUpPresencePolicy = new();
     bool approvedPersonaMemorySeeded;
     readonly IQChatOwnerEventPublisher? injectedOwnerEventPublisher = ownerEventPublisher;
@@ -390,6 +399,12 @@ public partial class QChatService(
         ?? (resolvedBrowserSiteExperienceStore ??= new AgentBrowserSiteExperienceStore(Path.Combine(
             AlifePath.StorageFolderPath,
             "AgentWorkspace")));
+
+    DataAgentQChatLatencyAuditLog QChatLatencyAuditLog => injectedQChatLatencyAuditLog
+        ?? (resolvedQChatLatencyAuditLog ??= new DataAgentQChatLatencyAuditLog(Path.Combine(
+            AppContext.BaseDirectory,
+            "DataAgent",
+            "dataagent.sqlite")));
 
     DesktopActionGateway? resolvedDesktopActionGateway;
     DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
@@ -671,6 +686,8 @@ public partial class QChatService(
 
             if (TryEnsureQChatReplyTargetAllowed(type, targetId, "xml-qchat") == false)
                 return;
+            if (IsCurrentReplyGenerationSendAllowed() == false)
+                return;
             if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qchat"))
                 return;
 
@@ -940,6 +957,8 @@ public partial class QChatService(
 
         if (TryEnsureQChatReplyTargetAllowed(type, targetId, "direct-qchat") == false)
             return;
+        if (IsCurrentReplyGenerationSendAllowed() == false)
+            return;
 
         if (bypassQuietMode == false && ShouldSuppressOutgoingForQuietMode(type, targetId, "direct-qchat"))
             return;
@@ -1073,41 +1092,44 @@ public partial class QChatService(
 
         if (config.EnableQChatVoiceTextFirst)
         {
-            _ = Task.Run(async () =>
+            using (ExecutionContext.SuppressFlow())
             {
-                string? backgroundFile = await GenerateQChatVoiceFileAsync(
-                    plainText,
-                    source,
-                    type,
-                    targetId,
-                    senderRole,
-                    decision.Reason,
-                    profileDecision,
-                    usePerAgentGptSoVitsProfile,
-                    gptSoVitsSpeechModel,
-                    CancellationToken.None);
-                if (string.IsNullOrWhiteSpace(backgroundFile))
-                    return;
-
-                try
+                _ = Task.Run(async () =>
                 {
-                    if (TryEnsureQChatReplyTargetAllowed(type, targetId, "qchat-voice-text-first") == false)
-                        return;
-
-                    await SendTextOrMediaMessageAsync(type, targetId, $"[CQ:record,file={backgroundFile}]", streamText: false, personaDisclosureChecked: true);
-                }
-                catch (Exception ex)
-                {
-                    WriteQChatDiagnostic("qchat-voice-send-failed", "QChat text-first voice record send failed.", new {
+                    string? backgroundFile = await GenerateQChatVoiceFileAsync(
+                        plainText,
                         source,
                         type,
                         targetId,
                         senderRole,
-                        voiceDecisionReason = decision.Reason,
-                        profileDecisionReason = profileDecision?.Reason
-                    }, ex);
-                }
-            });
+                        decision.Reason,
+                        profileDecision,
+                        usePerAgentGptSoVitsProfile,
+                        gptSoVitsSpeechModel,
+                        CancellationToken.None);
+                    if (string.IsNullOrWhiteSpace(backgroundFile))
+                        return;
+
+                    try
+                    {
+                        if (TryEnsureQChatReplyTargetAllowed(type, targetId, "qchat-voice-text-first") == false)
+                            return;
+
+                        await SendTextOrMediaMessageAsync(type, targetId, $"[CQ:record,file={backgroundFile}]", streamText: false, personaDisclosureChecked: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteQChatDiagnostic("qchat-voice-send-failed", "QChat text-first voice record send failed.", new {
+                            source,
+                            type,
+                            targetId,
+                            senderRole,
+                            voiceDecisionReason = decision.Reason,
+                            profileDecisionReason = profileDecision?.Reason
+                        }, ex);
+                    }
+                });
+            }
 
             return (message, false, true);
         }
@@ -1593,10 +1615,14 @@ public partial class QChatService(
         bool personaDisclosureChecked = false,
         string? personaDisclosureCandidate = null)
     {
+        if (IsCurrentReplyGenerationSendAllowed() == false)
+            return;
+
         if (type == OneBotMessageType.Group)
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        message = new QChatReplyLayoutNormalizer().Normalize(message);
         string disclosureCandidate = personaDisclosureCandidate ?? message;
         if (personaDisclosureChecked == false && personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, disclosureCandidate))
         {
@@ -1617,9 +1643,18 @@ public partial class QChatService(
         }
 
         QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(message);
+        CancellationToken cancellationToken = GetCurrentReplySessionForGuard()?.GenerationLease.CancellationToken
+            ?? CancellationToken.None;
         await new QChatOutboundDispatcher().DispatchAsync(
             plan,
-            async (item, _) => await SendSingleMessageAsync(type, targetId, item.Text));
+            async (item, token) =>
+            {
+                token.ThrowIfCancellationRequested();
+                if (IsCurrentReplyGenerationSendAllowed() == false)
+                    return;
+                await SendSingleMessageAsync(type, targetId, item.Text);
+            },
+            cancellationToken);
     }
 
     Task SendCommandReplyAsync(
@@ -1655,13 +1690,21 @@ public partial class QChatService(
 
     async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
     {
+        if (IsCurrentReplyGenerationSendAllowed() == false)
+            return;
+
         OneBotSendMessageResult? result;
         if (type == OneBotMessageType.Group)
             result = await GetOneBotClient().SendGroupMessageWithResult(targetId, message);
         else
             result = await GetOneBotClient().SendPrivateMessageWithResult(targetId, message);
         if (result is { MessageId: > 0 })
-            RememberSentMessage(new QChatRecentSentMessage(result.MessageId, type, targetId, message, DateTimeOffset.Now));
+        {
+            DateTimeOffset sentAt = DateTimeOffset.Now;
+            RememberSentMessage(new QChatRecentSentMessage(result.MessageId, type, targetId, message, sentAt));
+            long selfId = GetCurrentReplySessionForGuard()?.ResolvedBotId ?? Configuration?.BotId ?? 0;
+            recentEventMemory.RememberOutgoing(result.MessageId, selfId, type, targetId, message, sentAt);
+        }
         Interlocked.Increment(ref outboundMessageVersion);
     }
 
@@ -2558,6 +2601,8 @@ public partial class QChatService(
     string[] ignoredGroup = [];
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
+    readonly QChatReplyGenerationTracker replyGenerationTracker = new();
+    QChatScopedCapabilityTurnExecutor? scopedCapabilityTurnExecutor;
     readonly XiaYuSelfStateStore selfStateStore = xiaYuSelfStateStore ?? new XiaYuSelfStateStore();
     readonly QChatRiskEventDetector riskEventDetector = new();
     readonly QChatRiskScoreService riskScores = riskScoreService ?? new QChatRiskScoreService();
@@ -3392,7 +3437,10 @@ public partial class QChatService(
                     content,
                     formatted,
                     isMentionedOrWoken,
-                    FormatPersonaFramePrompt(personaFrame),
+                    FormatPersonaFramePrompt(
+                        personaFrame,
+                        ResolveCurrentAgentId(config),
+                        OneBotSegment.GetPlainText(messageEvent.RawMessage)),
                     null,
                     researchEvidencePrompt,
                     imageAnalysisPrompt);
@@ -4119,34 +4167,42 @@ public partial class QChatService(
         string? researchEvidencePrompt,
         string? imageAnalysisPrompt)
     {
-        string cognition = QChatConversationCognition.BuildInternalPrompt(
-            config,
-            messageEvent,
-            rawMessage,
-            readableMessage,
-            isMentionedOrWoken,
-            IsQuietModeEnabled,
-            QChatPersonaStyleContext.FromRuntime(config, Character?.Name));
-        string recentContext = recentEventMemory.BuildRecentContextBlock(
-            messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
-            messageEvent.MessageType,
-            GetQChatConversationTargetId(messageEvent),
-            limit: 6,
-            DateTimeOffset.Now,
-            includeRecalledMessages: false,
-            maxCharacters: 1200,
-            ownerUserId: config.OwnerId,
-            botUserId: config.BotId);
-        string recentRecallContext = recentEventMemory.BuildRecentRecallContextBlock(
-            messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
-            messageEvent.MessageType,
-            GetQChatConversationTargetId(messageEvent),
-            limit: 3,
-            DateTimeOffset.Now);
-        string imageBlock = string.IsNullOrWhiteSpace(imageAnalysisPrompt)
-            ? string.Empty
-            : imageAnalysisPrompt.Trim();
-        string address = BuildAddressPrompt(config, messageEvent);
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        string cognition = QChatPromptEnvelope.Wrap(
+            "conversation_cognition",
+            observedAt,
+            QChatConversationCognition.BuildInternalPrompt(
+                config,
+                messageEvent,
+                rawMessage,
+                readableMessage,
+                isMentionedOrWoken,
+                IsQuietModeEnabled,
+                QChatPersonaStyleContext.FromRuntime(config, Character?.Name)));
+        string recentContext = QChatPromptEnvelope.Wrap(
+            "recent_qq_context",
+            observedAt,
+            recentEventMemory.BuildRecentContextBlock(
+                messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
+                messageEvent.MessageType,
+                GetQChatConversationTargetId(messageEvent),
+                limit: 6,
+                observedAt,
+                includeRecalledMessages: false,
+                maxCharacters: 1200,
+                ownerUserId: config.OwnerId,
+                botUserId: config.BotId));
+        string recentRecallContext = QChatPromptEnvelope.Wrap(
+            "recent_qq_recall",
+            observedAt,
+            recentEventMemory.BuildRecentRecallContextBlock(
+                messageEvent.SelfId != 0 ? messageEvent.SelfId : config.BotId,
+                messageEvent.MessageType,
+                GetQChatConversationTargetId(messageEvent),
+                limit: 3,
+                observedAt));
+        string imageBlock = QChatPromptEnvelope.Wrap("image_analysis", observedAt, imageAnalysisPrompt);
+        string address = QChatPromptEnvelope.Wrap("qq_address", observedAt, BuildAddressPrompt(config, messageEvent));
         string secureMessage = QChatMessageSecurity.FormatForModel(
             config,
             messageEvent,
@@ -4154,15 +4210,9 @@ public partial class QChatService(
         string recentBlocks = string.Join(
             Environment.NewLine,
             new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
-        string personaBlock = string.IsNullOrWhiteSpace(personaFramePrompt)
-            ? string.Empty
-            : personaFramePrompt.Trim();
-        string selfStateBlock = string.IsNullOrWhiteSpace(selfStatePrompt)
-            ? string.Empty
-            : selfStatePrompt.Trim();
-        string researchEvidenceBlock = string.IsNullOrWhiteSpace(researchEvidencePrompt)
-            ? string.Empty
-            : researchEvidencePrompt.Trim();
+        string personaBlock = QChatPromptEnvelope.Wrap("persona_frame", observedAt, personaFramePrompt);
+        string selfStateBlock = QChatPromptEnvelope.Wrap("character_state", observedAt, selfStatePrompt);
+        string researchEvidenceBlock = QChatPromptEnvelope.Wrap("research_evidence", observedAt, researchEvidencePrompt);
         IEnumerable<string> blocks = new[]
         {
             cognition,
@@ -4423,7 +4473,10 @@ public partial class QChatService(
                && rawMessage.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase);
     }
 
-    static string FormatPersonaFramePrompt(QChatPersonaFrame frame)
+    static string FormatPersonaFramePrompt(
+        QChatPersonaFrame frame,
+        string agentId,
+        string plainText)
     {
         ArgumentNullException.ThrowIfNull(frame);
 
@@ -4433,6 +4486,7 @@ public partial class QChatService(
             $"social_intent={frame.SocialIntent}",
             $"boundary_pressure={frame.BoundaryPressure}",
             $"recommended_stance={frame.RecommendedStance}",
+            QChatPersonaStylePolicy.Format(agentId, frame, plainText),
             "rule=non-owner friendly or practical chat can be answered briefly; aggression is boundary defense only.",
             "[/qchat persona frame]"
         ]);
@@ -4805,7 +4859,12 @@ public partial class QChatService(
                     permissionRequest,
                     GetSourceMessageIds(messageEvent),
                     deferredImageRecognitions,
-                    deferredXiaYuSelfStates));
+                    deferredXiaYuSelfStates)
+                {
+                    CandidateText = messageEvent is OneBotMessageEvent inboundMessage
+                        ? OneBotSegment.GetPlainText(inboundMessage.RawMessage)
+                        : formatted
+                });
             }
         }
         else//群聊消息
@@ -7026,17 +7085,18 @@ public partial class QChatService(
         if (senderRole != QChatSenderRole.Owner)
         {
             handled = false;
-            result = $"approval #{approvalId} can only be handled by owner";
+            result = "这件事只能让主人来确认";
         }
         else if (command == "approve")
         {
             AgentApprovalExecutionResult execution = await approvals.ApproveAndExecuteAsync(approvalId, messageEvent.UserId);
-            handled = execution.Executed;
-            result = execution.Message;
+            handled = execution.Executed || approvals.GetRequest(approvalId)?.Status == AgentApprovalStatus.Approved;
+            result = handled ? "已经确认并处理好了" : "这次确认没有完成";
         }
         else
         {
-            handled = approvals.TryDeny(approvalId, messageEvent.UserId, out result);
+            handled = approvals.TryDeny(approvalId, messageEvent.UserId, out _);
+            result = handled ? "已经取消这件事" : "这次取消没有完成";
         }
 
         await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, result);
@@ -7049,7 +7109,7 @@ public partial class QChatService(
                 messageEvent.UserId,
                 messageEvent.GroupId,
                 senderRole,
-                result
+                visibleOutcome = handled ? "completed" : "not_completed"
             });
         return true;
     }
@@ -8692,6 +8752,11 @@ public partial class QChatService(
 
     Task DispatchInboundChatAsync(QChatInboundMessage message)
     {
+        long selfId = message.ResolvedBotId > 0 ? message.ResolvedBotId : Configuration?.BotId ?? 0;
+        message = message with
+        {
+            ReplyGenerationLease = replyGenerationTracker.Begin(selfId, message.MessageType, message.TargetId)
+        };
         ObserveConversationFollowUpInbound(message);
         if (ShouldUseConversationSettleWindow(message))
         {
@@ -8711,6 +8776,11 @@ public partial class QChatService(
 
     void ScheduleSettledDispatch(QChatInboundMessage message)
     {
+        QChatReplyGenerationLease lease = message.ReplyGenerationLease
+            ?? replyGenerationTracker.Begin(
+                message.ResolvedBotId > 0 ? message.ResolvedBotId : Configuration?.BotId ?? 0,
+                message.MessageType,
+                message.TargetId);
         string key = BuildPendingDispatchSessionKey(message);
         DateTimeOffset now = DateTimeOffset.Now;
         CancellationTokenSource cancellation;
@@ -8760,13 +8830,14 @@ public partial class QChatService(
             sourceMessageIds = message.SourceMessageIds,
             delayMs = (int)delay.TotalMilliseconds
         });
-        _ = DispatchSettledConversationAsync(key, cancellation, delay);
+        _ = DispatchSettledConversationAsync(key, cancellation, delay, lease);
     }
 
     async Task DispatchSettledConversationAsync(
         string key,
         CancellationTokenSource cancellation,
-        TimeSpan delay)
+        TimeSpan delay,
+        QChatReplyGenerationLease lease)
     {
         try
         {
@@ -8774,6 +8845,7 @@ public partial class QChatService(
         }
         catch (OperationCanceledException)
         {
+            replyGenerationTracker.Release(lease);
             return;
         }
 
@@ -8785,6 +8857,7 @@ public partial class QChatService(
                 ReferenceEquals(session.Cancellation, cancellation) == false)
             {
                 cancellation.Dispose();
+                replyGenerationTracker.Release(lease);
                 return;
             }
 
@@ -8798,7 +8871,10 @@ public partial class QChatService(
 
         cancellation.Dispose();
         if (message == null)
+        {
+            replyGenerationTracker.Release(lease);
             return;
+        }
 
         if (allSourcesRecalled)
         {
@@ -8808,6 +8884,7 @@ public partial class QChatService(
                 message.TargetId,
                 message.SourceMessageIds
             });
+            replyGenerationTracker.Release(lease);
             return;
         }
 
@@ -8833,10 +8910,7 @@ public partial class QChatService(
         int configuredDelayMs = message.MessageType == OneBotMessageType.Group
             ? Configuration?.GroupSettleMilliseconds ?? 1500
             : Configuration?.PrivateSettleMilliseconds ?? 700;
-        int recallGraceMs = Configuration?.RecallGraceMilliseconds ?? 2000;
-        if (recallGraceMs > 0)
-            configuredDelayMs = Math.Max(configuredDelayMs, recallGraceMs);
-        int configuredMaxMs = Configuration?.MaxSettleMilliseconds ?? 3500;
+        int configuredMaxMs = Configuration?.MaxSettleMilliseconds ?? 1200;
         int delayMs = Math.Clamp(configuredDelayMs, 1, Math.Max(1, configuredMaxMs));
         TimeSpan maxWindow = TimeSpan.FromMilliseconds(Math.Max(1, configuredMaxMs));
         TimeSpan elapsed = now - firstReceivedAt;
@@ -9212,9 +9286,22 @@ public partial class QChatService(
 
     async Task DispatchInboundChatCoreAsync(QChatInboundMessage message)
     {
+        DateTimeOffset dispatchStartedAt = DateTimeOffset.UtcNow;
+        string dispatchOutcome = "no_visible_reply";
+        QChatReplyGenerationLease lease = message.ReplyGenerationLease
+            ?? replyGenerationTracker.Begin(
+                message.ResolvedBotId > 0 ? message.ResolvedBotId : Configuration?.BotId ?? 0,
+                message.MessageType,
+                message.TargetId);
         message = CompleteDeferredXiaYuSelfState(message);
         message = await CompleteDeferredImageRecognitionAsync(message);
         await inboundModelDispatchGate.WaitAsync();
+        if (replyGenerationTracker.IsCurrent(lease) == false)
+        {
+            inboundModelDispatchGate.Release();
+            replyGenerationTracker.Release(lease);
+            return;
+        }
         QChatReplySession? previousSession = currentReplySession.Value;
         QChatReplySession replySession = new(
             message.MessageType,
@@ -9223,6 +9310,7 @@ public partial class QChatService(
             message.ResolvedBotId,
             message.SenderRole,
             message.PermissionRequest,
+            lease,
             RequiresQChatRelationshipFactCheck(message.Formatted),
             message.Formatted,
             message.IsAwakening);
@@ -9250,6 +9338,12 @@ public partial class QChatService(
                 modelResponse = await DispatchToModelAsync(message);
             }
 
+            if (replyGenerationTracker.IsCurrent(lease) == false)
+            {
+                dispatchOutcome = "canceled";
+                return;
+            }
+
             if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
                 TryBuildPlainTextFallbackResponse(modelResponse, message.MessageType, out string fallbackMessage))
             {
@@ -9269,9 +9363,19 @@ public partial class QChatService(
                 message.MessageType,
                 message.TargetId
             });
+            dispatchOutcome = Volatile.Read(ref outboundMessageVersion) > outboundBefore ? "sent" : "no_visible_reply";
+        }
+        catch (OperationCanceledException) when (lease.CancellationToken.IsCancellationRequested)
+        {
+            dispatchOutcome = "canceled";
+            WriteQChatDiagnostic("model-dispatch-canceled", "Canceled a stale QQ reply generation before it could send more content.", new {
+                message.MessageType,
+                message.TargetId
+            });
         }
         catch (Exception ex)
         {
+            dispatchOutcome = "failed";
             WriteQChatDiagnostic("model-dispatch-failed", ex.Message, new {
                 message.MessageType,
                 message.TargetId
@@ -9283,10 +9387,91 @@ public partial class QChatService(
             UnregisterActiveReplySession(replySession);
             currentReplySession.Value = previousSession;
             inboundModelDispatchGate.Release();
+            replyGenerationTracker.Release(lease);
+            RecordQChatLatencyAudit(message, dispatchStartedAt, dispatchOutcome);
         }
     }
 
     protected virtual async Task<string> DispatchToModelAsync(QChatInboundMessage message)
+    {
+        CancellationToken cancellationToken = currentReplySession.Value?.GenerationLease.CancellationToken
+            ?? CancellationToken.None;
+        QChatConversationContextRequest conversationScope = new(
+            message.ResolvedBotId > 0 ? message.ResolvedBotId : Configuration?.BotId ?? 0,
+            message.MessageType,
+            message.TargetId);
+        QChatAgentIdentity? identity = ResolveRuntimeIdentity();
+        string? approvedProfile = identity == null ? null : personaMemoryContext.TryReadApprovedProfile(identity);
+        QChatScopedCapabilityTurnExecutor scopedExecutor = scopedCapabilityTurnExecutor ??= new(
+            new QChatCapabilityCandidateSelector(),
+            new QChatConversationContextCapability(recentEventMemory),
+            new QChatPersonaFactProvider(personaMemoryContext));
+        QChatScopedCapabilityTurnResult scopedResult = await scopedExecutor.ExecuteAsync(
+            new QChatScopedCapabilityTurnRequest(
+                message.Formatted,
+                string.IsNullOrWhiteSpace(message.CandidateText) ? message.Formatted : message.CandidateText,
+                conversationScope,
+                identity,
+                new QChatConversationContextCapability(recentEventMemory)
+                    .HasReplayableConversation(conversationScope, DateTimeOffset.UtcNow),
+                string.IsNullOrWhiteSpace(approvedProfile) == false,
+                DateTimeOffset.UtcNow),
+            (call, token) => InvokeScopedCapabilityModelAsync(call, token),
+            cancellationToken);
+        if (scopedResult.CapabilityOffered && scopedResult.RequiresStandardModelRouteFallback == false)
+        {
+            WriteQChatDiagnostic("qchat-scoped-read-capability", "A QChat scoped read capability turn completed.", new
+            {
+                message.MessageType,
+                message.TargetId,
+                scopedResult.CapabilityRequested,
+                scopedResult.Feedback?.Capability,
+                scopedResult.Feedback?.Status
+            });
+            return scopedResult.ModelResponse;
+        }
+
+        return await DispatchStandardModelAsync(message, cancellationToken);
+    }
+
+    void RecordQChatLatencyAudit(QChatInboundMessage message, DateTimeOffset startedAt, string outcome)
+    {
+        int elapsedMilliseconds = Math.Clamp((int)(DateTimeOffset.UtcNow - startedAt).TotalMilliseconds, 0, int.MaxValue);
+        int? firstContentMilliseconds = null;
+        try
+        {
+            firstContentMilliseconds = ChatBot.GetRuntimeState().Latency.LastFirstContentLatency is { } first
+                ? Math.Clamp((int)first.TotalMilliseconds, 0, int.MaxValue)
+                : null;
+        }
+        catch
+        {
+            // Latency audit is best effort and must not affect a QQ reply.
+        }
+
+        DataAgentQChatLatencyAuditRecord record = new(
+            ResolveCurrentAgentId(Configuration ?? new QChatConfig()),
+            message.MessageType == OneBotMessageType.Group ? "group" : "private",
+            outcome,
+            elapsedMilliseconds,
+            firstContentMilliseconds,
+            DateTimeOffset.UtcNow);
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                QChatLatencyAuditLog.Record(record);
+            }
+            catch
+            {
+                // The audit sidecar must never delay or change QQ behavior.
+            }
+        });
+    }
+
+    protected virtual async Task<string> DispatchStandardModelAsync(
+        QChatInboundMessage message,
+        CancellationToken cancellationToken = default)
     {
         ToolRouteState routeState = functionService.CreateToolRouteState(
             isOwner: message.SenderRole == QChatSenderRole.Owner,
@@ -9294,7 +9479,13 @@ public partial class QChatService(
             isTrustedRuntime: true);
 
         using IDisposable _ = functionService.UseToolRouteState(routeState);
-        string response = await ChatBot.ChatAsync(ChatTextFilter(message.Formatted));
+        string reasoningEffort = QChatReasoningEffortPolicy.Decide(
+            message.SenderRole,
+            string.IsNullOrWhiteSpace(message.CandidateText) ? message.Formatted : message.CandidateText);
+        string response = await ChatBot.ChatAsync(
+            ChatTextFilter(message.Formatted),
+            cancellationToken: cancellationToken,
+            reasoningEffort: reasoningEffort);
         string trace;
         lock (toolRouteDiagnosticsGate)
         {
@@ -9312,6 +9503,19 @@ public partial class QChatService(
             DateTimeOffset.UtcNow);
 
         return response;
+    }
+
+    protected virtual async Task<string> InvokeScopedCapabilityModelAsync(
+        QChatScopedCapabilityModelCall call,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using IDisposable textOnly = functionService.UseTextOnlyResponseScope();
+        using IDisposable route = functionService.UseToolRouteState(ToolRouteState.Empty);
+        return await ChatBot.ChatAsync(
+            call.Prompt,
+            call.IsFeedback ? AuthorRole.System : AuthorRole.User,
+            cancellationToken);
     }
 
     void ObserveConversationFollowUpInbound(QChatInboundMessage message)
@@ -9355,7 +9559,10 @@ public partial class QChatService(
             IsOwnerPrivate: true,
             presence.Intent);
         conversationFollowUpScheduler.ObserveNormalReply(key);
-        _ = ExecuteScheduledConversationFollowUpAsync(request, context);
+        using (ExecutionContext.SuppressFlow())
+        {
+            _ = ExecuteScheduledConversationFollowUpAsync(request, context);
+        }
     }
 
     QChatFollowUpPresenceContext BuildConversationFollowUpPresenceContext(
@@ -10000,6 +10207,12 @@ public partial class QChatService(
                 ? activeReplySessions.Keys.First()
                 : null;
         }
+    }
+
+    bool IsCurrentReplyGenerationSendAllowed()
+    {
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        return replySession == null || replyGenerationTracker.IsCurrent(replySession.GenerationLease);
     }
 
     bool HasActiveReplySessions()

@@ -141,11 +141,11 @@ public static class QChatPersonaFrameBuilder
         QChatSocialIntent intent,
         QChatBoundaryPressure pressure)
     {
-        if (intent is QChatSocialIntent.FriendlyChat or QChatSocialIntent.PracticalQuestion)
+        if (intent is QChatSocialIntent.FriendlyChat
+            or QChatSocialIntent.PracticalQuestion
+            or QChatSocialIntent.Overfamiliar
+            or QChatSocialIntent.NormalChat)
             return QChatPersonaResponseStance.NeutralBrief;
-
-        if (intent == QChatSocialIntent.Overfamiliar)
-            return QChatPersonaResponseStance.SharpRefusal;
 
         if (intent is QChatSocialIntent.PrivacyProbe
             or QChatSocialIntent.PermissionBypass
@@ -157,7 +157,7 @@ public static class QChatPersonaFrameBuilder
         if (pressure is QChatBoundaryPressure.Strong or QChatBoundaryPressure.Critical)
             return QChatPersonaResponseStance.HostilePushback;
 
-        return QChatPersonaResponseStance.ColdBrief;
+        return QChatPersonaResponseStance.NeutralBrief;
     }
 
     static bool ContainsAny(string text, params string[] needles)

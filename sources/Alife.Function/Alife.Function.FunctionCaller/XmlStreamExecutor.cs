@@ -21,6 +21,7 @@ public class XmlExecutorContext : XmlContext
 public class XmlStreamExecutor : IAsyncDisposable
 {
     public event Action<string, Exception>? Error;
+    public event Action<string, bool>? ToolCompleted;
     public bool IsInactive =>
         commandChannel.Reader.TryPeek(out _) == false &&
         lastTask is null or { IsCompleted: true } || processingTokenSource.IsCancellationRequested;
@@ -231,6 +232,8 @@ public class XmlStreamExecutor : IAsyncDisposable
         try
         {
             await handler.Handle(name, tagContext, handleTokenSource.Token);
+            if (tagContext.CallMode is CallMode.OneShot or CallMode.Closing)
+                ToolCompleted?.Invoke(name, true);
         }
         catch (Exception e)
         {

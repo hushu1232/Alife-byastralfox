@@ -53,6 +53,14 @@ public sealed class QChatPersonaMemoryContextProvider
         return true;
     }
 
+    internal string? TryReadApprovedProfile(QChatAgentIdentity? identity)
+    {
+        if (identity == null || ProfileDefinitions.TryGetValue(identity.AgentId, out PersonaProfileDefinition? profile) == false)
+            return null;
+
+        return TryReadApprovedProfile(profile);
+    }
+
     public bool IsOutgoingPersonaDisclosure(string? message)
     {
         return IsOutgoingPersonaDisclosure("default", message);

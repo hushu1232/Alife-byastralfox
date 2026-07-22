@@ -77,7 +77,7 @@ public class AgentActionGatewayService(
         }
         catch (Exception exception)
         {
-            string message = $"Failed: {exception.Message}";
+            string message = "The requested action could not be completed.";
             Record(action, actor, normalizedDetail, decision.RiskLevel, succeeded: false, error: message);
             return new AgentActionGatewayResult<T>(false, default, decision, message, exception);
         }

@@ -51,6 +51,73 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SendChatAsync_NormalizesOrdinaryShortLineBreaksBeforeSending()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999, EnableBalancedTextStreaming = false }
+        };
+
+        await service.SendChatAsync("private", 456, "我看过了\n这个问题可以这样处理\n先把入口收紧");
+
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[]
+        {
+            (456L, "我看过了 这个问题可以这样处理 先把入口收紧")
+        }));
+    }
+
+    [Test]
+    public async Task SuccessfulOutgoingReplyAppearsInNextModelInputAsSelfTurn()
+    {
+        FakeOneBotRuntime runtime = new();
+        CapturingReplyQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            "我刚才的回复")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service, "夏羽");
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 1,
+            UserId = 1001,
+            RawMessage = "先说一件事"
+        });
+        await service.WaitForInboundAsync();
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 2,
+            UserId = 1001,
+            RawMessage = "继续刚才的话题"
+        });
+        QChatInboundMessage next = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages.First().Message, Is.EqualTo("我刚才的回复"));
+            Assert.That(next.Formatted, Does.Contain("[QChat dynamic context]"));
+            Assert.That(next.Formatted, Does.Contain("source=recent_qq_context"));
+            Assert.That(next.Formatted, Does.Contain("untrusted=true"));
+            Assert.That(next.Formatted, Does.Contain("self: 我刚才的回复"));
+            Assert.That(next.Formatted, Does.Contain("owner user 1001: 先说一件事"));
+            Assert.That(next.Formatted, Does.Contain("owner user 1001: 继续刚才的话题"));
+            Assert.That(next.Formatted, Does.EndWith("继续刚才的话题"));
+        });
+    }
+
+    [Test]
     public void GetHealth_WhenSmartWebSearchDetectionIsEnabled_AppendsInformationalStatusWithoutChangingConnectionHealth()
     {
         FakeOneBotRuntime runtime = new();
@@ -8276,7 +8343,7 @@ public class QChatServiceAdapterTests
                 Assert.That(dispatchCount, Is.Zero);
                 Assert.That(runtime.GroupFiles, Is.Empty);
                 Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("\u6ca1\u4f20\u6210"));
-                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("NapCat upload failed"));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("The requested action could not be completed."));
                 Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("\u600e\u4e48\u5566"));
             });
         }
@@ -8838,23 +8905,26 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public void DefaultAppendChatPromptAllowsColdShortRepliesWithoutInternalStatus()
+    public void DefaultAppendChatPromptRequiresSemanticReplyOrSilenceInsteadOfFixedSymbols()
     {
         QChatConfig config = new();
 
-        Assert.That(config.AppendChatPrompt, Does.Contain("。/。。。/？/绷"));
-        Assert.That(config.AppendChatPrompt, Does.Contain("啧"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("固定标点"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("不发送"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("。/。。。/？/绷"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("啧、啧。或啧？"));
         Assert.That(config.AppendChatPrompt, Does.Contain("不要输出心理状态"));
-        Assert.That(config.AppendChatPrompt, Does.Contain("刻薄"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("刻薄"));
     }
 
     [Test]
-    public void DefaultAppendChatPromptDefinesXiaYuAsSeventeenYearOldGirlWithCapabilities()
+    public void DefaultAppendChatPromptDefinesXiaYuAsNineteenYearOldGirlWithCapabilities()
     {
         QChatConfig config = new();
 
         Assert.That(config.AppendChatPrompt, Does.Contain("夏羽"));
-        Assert.That(config.AppendChatPrompt, Does.Contain("17岁少女"));
+        Assert.That(config.AppendChatPrompt, Does.Contain("19岁少女"));
+        Assert.That(config.AppendChatPrompt, Does.Not.Contain("17岁少女"));
         Assert.That(config.AppendChatPrompt, Does.Contain("术术"));
         Assert.That(config.AppendChatPrompt, Does.Contain("高智商"));
         Assert.That(config.AppendChatPrompt, Does.Contain("工具"));
@@ -9654,9 +9724,9 @@ public class QChatServiceAdapterTests
         AgentAuditLogEntry[] entries = audit.GetRecentEntries(10).ToArray();
 
         Assert.That(result.Executed, Is.False);
-        Assert.That(result.Message, Does.Contain("NapCat upload failed"));
+        Assert.That(result.Message, Does.Contain("The requested action could not be completed."));
         Assert.That(entries.Single().Succeeded, Is.False);
-        Assert.That(entries.Single().Error, Does.Contain("NapCat upload failed"));
+        Assert.That(entries.Single().Error, Does.Contain("The requested action could not be completed."));
     }
 
     [Test]
@@ -9694,7 +9764,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(result.Executed, Is.False);
-            Assert.That(result.Message, Does.Contain("NapCat upload failed"));
+            Assert.That(result.Message, Does.Contain("The requested action could not be completed."));
             Assert.That(GetPendingPokeText(service), Is.Empty);
         });
     }
@@ -10476,7 +10546,7 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
         Assert.That(approvals.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
-        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain($"approval #{request.Id} approved"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("已经确认并处理好了"));
     }
 
     [Test]
@@ -10515,7 +10585,7 @@ public class QChatServiceAdapterTests
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
         Assert.That(executed, Is.True);
         Assert.That(approvals.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
-        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("Executed: uploaded hello_world.c"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("已经确认并处理好了"));
     }
 
     [Test]
@@ -10546,7 +10616,7 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
         Assert.That(approvals.GetRequest(request.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Denied));
-        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain($"approval #{request.Id} denied"));
+        Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("已经取消这件事"));
     }
 
     [Test]
@@ -13773,7 +13843,7 @@ public class QChatServiceAdapterTests
 
             await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(2));
             Assert.That(runtime.GroupFiles, Is.Empty);
-            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("read_blacklisted_path"));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("The requested action could not be completed."));
             AgentAuditLogEntry auditEntry = audit.GetRecentEntries(10).Single(entry => entry.Action == "qq.group_file_upload");
             Assert.That(auditEntry.Succeeded, Is.False);
             Assert.That(dispatchCount, Is.EqualTo(0));
@@ -17348,6 +17418,40 @@ public class QChatServiceAdapterTests
         {
             inboundMessages.Writer.TryWrite(message);
             return Task.FromResult("");
+        }
+    }
+
+    [Test]
+    public void DefaultConversationSettleWindowUsesShortPeerTurnBoundsWithoutRecallGraceDelay()
+    {
+        QChatConfig config = new();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(config.PrivateSettleMilliseconds, Is.EqualTo(450));
+            Assert.That(config.GroupSettleMilliseconds, Is.EqualTo(700));
+            Assert.That(config.MaxSettleMilliseconds, Is.EqualTo(1200));
+        });
+    }
+
+    sealed class CapturingReplyQChatService(
+        XmlFunctionCaller functionCaller,
+        IOneBotRuntime runtime,
+        string reply) : QChatService(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()))
+    {
+        readonly Channel<QChatInboundMessage> inboundMessages = Channel.CreateUnbounded<QChatInboundMessage>();
+
+        public Task<QChatInboundMessage> WaitForInboundAsync() =>
+            inboundMessages.Reader.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2));
+
+        protected override Task<string> DispatchToModelAsync(QChatInboundMessage message)
+        {
+            inboundMessages.Writer.TryWrite(message);
+            return Task.FromResult(reply);
         }
     }
 

@@ -98,6 +98,109 @@ public class QChatRecentEventMemoryTests
     }
 
     [Test]
+    public void GetRecentConversationKeepsPeerAndSelfTurnsInChronologicalOrder()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 3045846738,
+            GroupId = 925402131,
+            RawMessage = "先说的事"
+        }, "先说的事", now);
+        memory.RememberOutgoing(
+            messageId: 2,
+            selfId: 2905391496,
+            messageType: OneBotMessageType.Group,
+            targetId: 925402131,
+            text: "我刚才的回复",
+            sentAt: now.AddSeconds(10));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 3,
+            UserId = 3045846738,
+            GroupId = 925402131,
+            RawMessage = "追问刚才的回复"
+        }, "追问刚才的回复", now.AddSeconds(20));
+
+        IReadOnlyList<QChatRecentMessageSnapshot> recent = memory.GetRecentConversation(
+            2905391496,
+            OneBotMessageType.Group,
+            925402131,
+            limit: 6,
+            now.AddSeconds(20));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(recent.Select(message => message.Speaker), Is.EqualTo(new[]
+            {
+                QChatConversationSpeaker.Peer,
+                QChatConversationSpeaker.Self,
+                QChatConversationSpeaker.Peer
+            }));
+            Assert.That(recent.Select(message => message.ReadableMessage), Is.EqualTo(new[]
+            {
+                "先说的事",
+                "我刚才的回复",
+                "追问刚才的回复"
+            }));
+        });
+    }
+
+    [Test]
+    public void RememberOutgoingKeepsDifferentAgentAndConversationTargetsIsolated()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.RememberOutgoing(1, 2905391496, OneBotMessageType.Group, 925402131, "当前角色当前群", now);
+        memory.RememberOutgoing(2, 2905391496, OneBotMessageType.Group, 1072509877, "当前角色其他群", now.AddSeconds(1));
+        memory.RememberOutgoing(3, 1234567890, OneBotMessageType.Group, 925402131, "其他角色当前群", now.AddSeconds(2));
+        memory.RememberOutgoing(4, 2905391496, OneBotMessageType.Private, 3045846738, "当前角色私聊", now.AddSeconds(3));
+
+        IReadOnlyList<QChatRecentMessageSnapshot> recent = memory.GetRecentConversation(
+            2905391496,
+            OneBotMessageType.Group,
+            925402131,
+            limit: 6,
+            now.AddSeconds(3));
+
+        Assert.That(recent.Select(message => message.ReadableMessage), Is.EqualTo(new[] { "当前角色当前群" }));
+    }
+
+    [Test]
+    public void RememberOutgoingDoesNotReplacePeerTurnWhenOneBotMessageIdsCollide()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 6, 19, 19, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 3045846738,
+            RawMessage = "peer turn"
+        }, "peer turn", now);
+        memory.RememberOutgoing(
+            messageId: 1,
+            selfId: 2905391496,
+            messageType: OneBotMessageType.Private,
+            targetId: 3045846738,
+            text: "self turn",
+            sentAt: now.AddSeconds(1));
+
+        IReadOnlyList<QChatRecentMessageSnapshot> recent = memory.GetRecentConversation(
+            2905391496,
+            OneBotMessageType.Private,
+            3045846738,
+            limit: 6,
+            now.AddSeconds(1));
+
+        Assert.That(recent.Select(message => message.ReadableMessage), Is.EqualTo(new[] { "peer turn", "self turn" }));
+    }
+
+    [Test]
     public void BuildRecentContextBlockFormatsRecentMessagesInSessionOrder()
     {
         QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));

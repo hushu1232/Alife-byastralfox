@@ -12,7 +12,6 @@ public class QChatVisibleReplyPolicyTests
     const string PsychologicalStateLabel = "\u5FC3\u7406\u72B6\u6001";
     const string InnerMonologueLabel = "\u5185\u5FC3\u72EC\u767D";
     const string StateLabel = "\u72B6\u6001";
-    const string Dot = "\u3002";
 
     [Test]
     public void SelectsPrivateOwnerSectionWithoutSendingGroupSection()
@@ -123,9 +122,9 @@ public class QChatVisibleReplyPolicyTests
     }
 
     [Test]
-    public void BlocksInternalStateAndUsesShortReactionWhenGroupShouldNotReply()
+    public void BlocksInternalStateAndSendsNothingWhenGroupShouldNotReply()
     {
-        QChatVisibleReplyPolicy policy = new([Dot]);
+        QChatVisibleReplyPolicy policy = new();
 
         QChatVisibleReplyResult result = policy.Normalize(
             $"{PsychologicalStateLabel}\uFF1A\u4E0D\u60F3\u7406\u3002\n{InnerMonologueLabel}\uFF1A\u8FD9\u53E5\u4E0D\u80FD\u53D1\u3002",
@@ -134,8 +133,8 @@ public class QChatVisibleReplyPolicyTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.ShouldSend, Is.True);
-            Assert.That(result.Text, Is.EqualTo(Dot));
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
             Assert.That(result.Text, Does.Not.Contain(PsychologicalStateLabel));
             Assert.That(result.Text, Does.Not.Contain(InnerMonologueLabel));
         });
@@ -161,9 +160,9 @@ public class QChatVisibleReplyPolicyTests
     }
 
     [Test]
-    public void GroupNoReplyCanUseModelProvidedAggressiveColdReply()
+    public void GroupNoReplyDoesNotSendModelText()
     {
-        QChatVisibleReplyPolicy policy = new([Dot]);
+        QChatVisibleReplyPolicy policy = new();
 
         QChatVisibleReplyResult result = policy.Normalize(
             "\u522B\u70E6\u3002",
@@ -172,16 +171,16 @@ public class QChatVisibleReplyPolicyTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.ShouldSend, Is.True);
-            Assert.That(result.Text, Is.EqualTo("\u522B\u70E6\u3002"));
-            Assert.That(result.Reason, Does.Contain("model visible"));
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+            Assert.That(result.Reason, Does.Contain("no-reply"));
         });
     }
 
     [Test]
-    public void GroupNoReplyFallsBackToReactionWhenModelTextIsHiddenState()
+    public void GroupNoReplyWithHiddenStateSendsNothing()
     {
-        QChatVisibleReplyPolicy policy = new([Dot]);
+        QChatVisibleReplyPolicy policy = new();
 
         QChatVisibleReplyResult result = policy.Normalize(
             "\uFF08\u4E0D\u56DE\u590D\uFF0C\u4FDD\u6301\u5B89\u9759\uFF09",
@@ -190,9 +189,9 @@ public class QChatVisibleReplyPolicyTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.ShouldSend, Is.True);
-            Assert.That(result.Text, Is.EqualTo(Dot));
-            Assert.That(result.Reason, Does.Contain("group no-reply reaction"));
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+            Assert.That(result.Reason, Does.Contain("no-reply"));
         });
     }
 
@@ -265,6 +264,23 @@ public class QChatVisibleReplyPolicyTests
     }
 
     [Test]
+    public void BlocksToolOutcomeFeedbackMarkersFromVisibleOutput()
+    {
+        QChatVisibleReplyPolicy policy = new();
+
+        QChatVisibleReplyResult result = policy.Normalize(
+            "[tool outcome]\nstatus=completed\ntool=qq.group_file_upload\nuser_safe_hint=The requested action is complete.\n[/tool outcome]",
+            QChatConversationKind.Private,
+            shouldReply: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+        });
+    }
+
+    [Test]
     public void BlocksImageAnalysisRuntimeMarkersFromVisibleOutput()
     {
         QChatVisibleReplyPolicy policy = new();
@@ -322,10 +338,10 @@ public class QChatVisibleReplyPolicyTests
     }
 
     [Test]
-    public void SharedPolicyInstanceCanSelectNoReplyReactionsConcurrently()
+    public void SharedPolicyInstanceKeepsNoReplySilentConcurrently()
     {
-        QChatVisibleReplyPolicy policy = new([Dot]);
-        ConcurrentBag<string> reactions = [];
+        QChatVisibleReplyPolicy policy = new();
+        ConcurrentBag<QChatVisibleReplyResult> results = [];
 
         Parallel.For(0, 100, _ =>
         {
@@ -333,13 +349,14 @@ public class QChatVisibleReplyPolicyTests
                 null,
                 QChatConversationKind.Group,
                 shouldReply: false);
-            reactions.Add(result.Text);
+            results.Add(result);
         });
 
         Assert.Multiple(() =>
         {
-            Assert.That(reactions, Has.Count.EqualTo(100));
-            Assert.That(reactions, Is.All.EqualTo(Dot));
+            Assert.That(results, Has.Count.EqualTo(100));
+            Assert.That(results.Select(result => result.ShouldSend), Is.All.False);
+            Assert.That(results.Select(result => result.Text), Is.All.Empty);
         });
     }
 

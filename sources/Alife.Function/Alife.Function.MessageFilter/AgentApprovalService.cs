@@ -102,7 +102,7 @@ public sealed class AgentApprovalService
             return new AgentApprovalExecutionResult(false, message);
 
         if (executors.TryRemove(id, out Func<Task<string>>? execute) == false)
-            return new AgentApprovalExecutionResult(false, $"approval #{id} approved but no executable action was registered");
+            return new AgentApprovalExecutionResult(false, $"approval #{id} is no longer available");
 
         try
         {
@@ -111,7 +111,7 @@ public sealed class AgentApprovalService
         }
         catch (Exception ex)
         {
-            return new AgentApprovalExecutionResult(false, $"approval #{id} execution failed: {ex.Message}", ex);
+            return new AgentApprovalExecutionResult(false, $"approval #{id} could not be completed", ex);
         }
     }
 
@@ -141,7 +141,12 @@ public sealed class AgentApprovalService
             return false;
         }
 
-        requests[id] = request with { Status = status };
+        AgentApprovalRequest updated = request with { Status = status };
+        if (requests.TryUpdate(id, updated, request) == false)
+        {
+            message = $"approval #{id} has already changed";
+            return false;
+        }
         if (status == AgentApprovalStatus.Denied)
             executors.TryRemove(id, out _);
         message = $"approval #{id} {statusText}";

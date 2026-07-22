@@ -326,6 +326,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             ["，", "。", "！", "？", "......", "~", "…"],
             minBreakingLength: 9
         );
+        executor.ToolCompleted += OnToolCompleted;
         handlerTable.ExecutionPolicy.ResetTurnBudget();
         handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
         chatActivity.ChatBot.ChatSend += OnChatSend;
@@ -367,6 +368,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         if (ChatBot != null)
             ChatBot.ChatSend -= OnChatSend;
 
+        executor.ToolCompleted -= OnToolCompleted;
         await executor.WaitToInactive();
         await executor.DisposeAsync();
 
@@ -430,8 +432,14 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     void OnError(string tag, Exception exception)
     {
-        Poke($"执行{tag}标签出错：{exception.Message}");
+        Poke(XmlToolOutcomeFeedback.Format(tag, succeeded: false));
         logger.LogWarning(exception, $"执行{tag}标签出错");
+    }
+
+    void OnToolCompleted(string toolName, bool succeeded)
+    {
+        if (succeeded)
+            Poke(XmlToolOutcomeFeedback.Format(toolName, succeeded: true));
     }
 
     static string? ReadContextValue(string context, string prefix)

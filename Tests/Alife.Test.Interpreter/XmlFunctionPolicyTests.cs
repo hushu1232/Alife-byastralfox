@@ -58,6 +58,29 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void ToolOutcomeFeedbackIsBoundedAndDoesNotExposeExecutionDetails()
+    {
+        Type? formatterType = typeof(XmlFunctionCaller).Assembly.GetType(
+            "Alife.Function.FunctionCaller.XmlToolOutcomeFeedback");
+        Assert.That(formatterType, Is.Not.Null, "Tool outcomes need a dedicated model-feedback formatter.");
+        System.Reflection.MethodInfo? format = formatterType!.GetMethod("Format");
+        Assert.That(format, Is.Not.Null);
+
+        string handled = (string)format!.Invoke(null, ["qchat_file_upload", true])!;
+        string failed = (string)format.Invoke(null, ["qchat_file_upload", false])!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handled, Does.Contain("[tool outcome]"));
+            Assert.That(handled, Does.Contain("status=handled"));
+            Assert.That(handled, Does.Contain("tool=qchat_file_upload"));
+            Assert.That(failed, Does.Contain("status=failed"));
+            Assert.That(failed, Does.Not.Contain("exception"));
+            Assert.That(failed, Does.Not.Contain("path="));
+        });
+    }
+
+    [Test]
     public void Handle_BlocksHighRiskFunctionByDefault()
     {
         PolicyHandler handler = new();

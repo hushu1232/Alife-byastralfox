@@ -153,6 +153,54 @@ public sealed class QChatImageRecognitionServiceTests
     }
 
     [Test]
+    public async Task PrivateImageUrlIsRejectedBeforeCallingVisionProvider()
+    {
+        FakeImageRecognitionClient client = new("should not be analyzed");
+        QChatImageRecognitionService service = new(client);
+
+        string? prompt = await service.BuildPromptAsync(new QChatImageRecognitionContext(
+            EnabledConfig(),
+            Message("[CQ:image,file=private.jpg,url=https://127.0.0.1/private.jpg]", OneBotMessageType.Private),
+            QChatSenderRole.Owner,
+            IsMentionedOrWoken: false,
+            IsPassiveGroupMessage: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("image_1_status=failed"));
+            Assert.That(prompt, Does.Contain("image_1_error=PolicySkipped"));
+            Assert.That(prompt, Does.Contain("image_url_not_allowed"));
+            Assert.That(prompt, Does.Not.Contain("127.0.0.1"));
+            Assert.That(client.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task ConfiguredImageHostAllowlistRejectsOtherPublicHosts()
+    {
+        FakeImageRecognitionClient client = new("should not be analyzed");
+        QChatImageRecognitionService service = new(client);
+        QChatConfig config = EnabledConfig();
+        System.Reflection.PropertyInfo? allowedHosts = typeof(QChatConfig).GetProperty("ImageRecognitionAllowedImageHosts");
+        Assert.That(allowedHosts, Is.Not.Null, "Vision image hosts must be configurable as an allowlist.");
+        allowedHosts!.SetValue(config, "cdn.qq.com");
+
+        string? prompt = await service.BuildPromptAsync(new QChatImageRecognitionContext(
+            config,
+            Message("[CQ:image,file=public.jpg,url=https://example.invalid/public.jpg]", OneBotMessageType.Private),
+            QChatSenderRole.Owner,
+            IsMentionedOrWoken: false,
+            IsPassiveGroupMessage: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompt, Does.Contain("image_url_not_allowed"));
+            Assert.That(prompt, Does.Not.Contain("example.invalid"));
+            Assert.That(client.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task BuildPromptAsync_LocalImageWithoutPublicUrlReportsUnavailable()
     {
         FakeImageRecognitionClient client = new("unused");

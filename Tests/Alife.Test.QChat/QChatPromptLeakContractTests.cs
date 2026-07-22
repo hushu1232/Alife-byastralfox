@@ -27,21 +27,21 @@ public sealed class QChatPromptLeakContractTests
     }
 
     [Test]
-    public void GroupNoReplyFallsBackToReactionInsteadOfLeakingInternalState()
+    public void GroupNoReplyStaysSilentInsteadOfLeakingInternalState()
     {
-        QChatVisibleReplyPolicy policy = new(["\u3002"]);
+        QChatVisibleReplyPolicy policy = new();
 
         QChatVisibleReplyResult result = policy.Normalize(
-            "\u5FC3\u7406\u72B6\u6001\uFF1A\u6C89\u9ED8\u65C1\u89C2\u3002",
+            "心理状态：沉默旁观。",
             QChatConversationKind.Group,
             shouldReply: false);
 
         Assert.Multiple(() =>
         {
-            Assert.That(result.ShouldSend, Is.True);
-            Assert.That(result.Text, Is.EqualTo("\u3002"));
-            Assert.That(result.Text, Does.Not.Contain("\u5FC3\u7406\u72B6\u6001"));
-            Assert.That(result.Reason, Does.Contain("group no-reply reaction"));
+            Assert.That(result.ShouldSend, Is.False);
+            Assert.That(result.Text, Is.Empty);
+            Assert.That(result.Text, Does.Not.Contain("心理状态"));
+            Assert.That(result.Reason, Does.Contain("no-reply"));
         });
     }
 

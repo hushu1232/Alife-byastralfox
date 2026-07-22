@@ -71,6 +71,19 @@ public sealed class QChatImageRecognitionService
                 continue;
             }
 
+            QChatVisionMediaDecision mediaDecision = QChatVisionMediaPolicy.CheckImageUrl(
+                image.Url,
+                effectiveConfig.ImageRecognitionAllowedImageHosts);
+            if (mediaDecision.Allowed == false)
+            {
+                results.Add((image, QChatImageRecognitionProviderResult.Fail(
+                    route.PrimaryProvider,
+                    effectiveConfig.AgnesVisionModel,
+                    QChatImageRecognitionFailureKind.PolicySkipped,
+                    mediaDecision.Reason)));
+                continue;
+            }
+
             QChatImageRecognitionProviderRequest request = new(
                 image.Url,
                 BuildProviderPrompt(context),

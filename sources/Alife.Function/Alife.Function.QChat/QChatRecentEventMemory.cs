@@ -5,6 +5,12 @@ using System.Text;
 
 namespace Alife.Function.QChat;
 
+public enum QChatConversationSpeaker
+{
+    Peer,
+    Self
+}
+
 public sealed record QChatRecentMessageSnapshot(
     long MessageId,
     long SelfId,
@@ -14,7 +20,8 @@ public sealed record QChatRecentMessageSnapshot(
     string RawMessage,
     string ReadableMessage,
     DateTimeOffset ReceivedAt,
-    bool IsRecalled = false);
+    bool IsRecalled = false,
+    QChatConversationSpeaker Speaker = QChatConversationSpeaker.Peer);
 
 public sealed record QChatRecallSnapshot(
     long SelfId,
@@ -41,7 +48,7 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
     readonly TimeSpan retention = retention ?? TimeSpan.FromMinutes(60);
     readonly LinkedList<QChatRecentMessageSnapshot> messages = new();
     readonly LinkedList<QChatRecentRecallEventSnapshot> recalls = new();
-    readonly Dictionary<(long SelfId, long MessageId), LinkedListNode<QChatRecentMessageSnapshot>> byMessageId = new();
+    readonly Dictionary<(long SelfId, long MessageId, QChatConversationSpeaker Speaker), LinkedListNode<QChatRecentMessageSnapshot>> byMessageId = new();
 
     public void Remember(OneBotMessageEvent messageEvent, string readable, DateTimeOffset now)
     {
@@ -49,7 +56,8 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
             return;
 
         Prune(now);
-        (long SelfId, long MessageId) key = (messageEvent.SelfId, messageEvent.MessageId);
+        (long SelfId, long MessageId, QChatConversationSpeaker Speaker) key =
+            (messageEvent.SelfId, messageEvent.MessageId, QChatConversationSpeaker.Peer);
         if (byMessageId.TryGetValue(key, out LinkedListNode<QChatRecentMessageSnapshot>? existing))
         {
             messages.Remove(existing);
@@ -64,7 +72,45 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
             messageEvent.GroupId,
             messageEvent.RawMessage,
             readable,
-            now);
+            now,
+            Speaker: QChatConversationSpeaker.Peer);
+        LinkedListNode<QChatRecentMessageSnapshot> node = messages.AddLast(snapshot);
+        byMessageId[key] = node;
+        TrimToMaxMessages();
+    }
+
+    public void RememberOutgoing(
+        long messageId,
+        long selfId,
+        OneBotMessageType messageType,
+        long targetId,
+        string text,
+        DateTimeOffset sentAt)
+    {
+        if (messageId <= 0 || selfId <= 0 || targetId <= 0)
+            return;
+
+        Prune(sentAt);
+        (long SelfId, long MessageId, QChatConversationSpeaker Speaker) key =
+            (selfId, messageId, QChatConversationSpeaker.Self);
+        if (byMessageId.TryGetValue(key, out LinkedListNode<QChatRecentMessageSnapshot>? existing))
+        {
+            messages.Remove(existing);
+            byMessageId.Remove(key);
+        }
+
+        long userId = messageType == OneBotMessageType.Private ? targetId : selfId;
+        long groupId = messageType == OneBotMessageType.Group ? targetId : 0;
+        QChatRecentMessageSnapshot snapshot = new(
+            messageId,
+            selfId,
+            messageType,
+            userId,
+            groupId,
+            text,
+            text,
+            sentAt,
+            Speaker: QChatConversationSpeaker.Self);
         LinkedListNode<QChatRecentMessageSnapshot> node = messages.AddLast(snapshot);
         byMessageId[key] = node;
         TrimToMaxMessages();
@@ -72,7 +118,15 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
 
     public QChatRecallSnapshot BuildRecall(OneBotNoticeEvent noticeEvent)
     {
-        byMessageId.TryGetValue((noticeEvent.SelfId, noticeEvent.MessageId), out LinkedListNode<QChatRecentMessageSnapshot>? messageNode);
+        byMessageId.TryGetValue(
+            (noticeEvent.SelfId, noticeEvent.MessageId, QChatConversationSpeaker.Peer),
+            out LinkedListNode<QChatRecentMessageSnapshot>? messageNode);
+        if (messageNode == null)
+        {
+            byMessageId.TryGetValue(
+                (noticeEvent.SelfId, noticeEvent.MessageId, QChatConversationSpeaker.Self),
+                out messageNode);
+        }
         return new QChatRecallSnapshot(
             noticeEvent.SelfId,
             noticeEvent.NoticeType ?? "",
@@ -86,8 +140,16 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
     public QChatRecallSnapshot RememberRecall(OneBotNoticeEvent noticeEvent, DateTimeOffset now)
     {
         Prune(now);
-        (long SelfId, long MessageId) key = (noticeEvent.SelfId, noticeEvent.MessageId);
-        if (byMessageId.TryGetValue(key, out LinkedListNode<QChatRecentMessageSnapshot>? messageNode))
+        byMessageId.TryGetValue(
+            (noticeEvent.SelfId, noticeEvent.MessageId, QChatConversationSpeaker.Peer),
+            out LinkedListNode<QChatRecentMessageSnapshot>? messageNode);
+        if (messageNode == null)
+        {
+            byMessageId.TryGetValue(
+                (noticeEvent.SelfId, noticeEvent.MessageId, QChatConversationSpeaker.Self),
+                out messageNode);
+        }
+        if (messageNode != null)
             messageNode.Value = messageNode.Value with { IsRecalled = true };
 
         QChatRecallSnapshot recall = BuildRecall(noticeEvent);
@@ -242,7 +304,7 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
                now - first.Value.ReceivedAt > retention)
         {
             messages.RemoveFirst();
-            byMessageId.Remove((first.Value.SelfId, first.Value.MessageId));
+            byMessageId.Remove((first.Value.SelfId, first.Value.MessageId, first.Value.Speaker));
         }
 
         while (recalls.First is { } first &&
@@ -269,18 +331,21 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
     static string BuildRecentContextLine(QChatRecentMessageSnapshot message, int maxLength, long ownerUserId = 0, long botUserId = 0)
     {
         string recalled = message.IsRecalled ? " recalled" : "";
-        string role = ResolveSpeakerRole(message.UserId, ownerUserId, botUserId);
-        string prefix = $"- {message.ReceivedAt:HH:mm} {role} user {message.UserId}{recalled}: ";
+        string speaker = message.Speaker == QChatConversationSpeaker.Self
+            ? "self"
+            : ResolvePeerRole(message.UserId, ownerUserId);
+        string subject = message.Speaker == QChatConversationSpeaker.Self
+            ? speaker
+            : $"{speaker} user {message.UserId}";
+        string prefix = $"- {message.ReceivedAt:HH:mm} {subject}{recalled}: ";
         string readable = Truncate(CollapseWhitespace(message.ReadableMessage), Math.Max(0, maxLength - prefix.Length));
         return prefix + readable;
     }
 
-    static string ResolveSpeakerRole(long userId, long ownerUserId, long botUserId)
+    static string ResolvePeerRole(long userId, long ownerUserId)
     {
         if (ownerUserId > 0 && userId == ownerUserId)
             return "owner";
-        if (botUserId > 0 && userId == botUserId)
-            return "self";
 
         return "other";
     }
@@ -306,7 +371,7 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         while (messages.Count > maxMessages && messages.First is { } first)
         {
             messages.RemoveFirst();
-            byMessageId.Remove((first.Value.SelfId, first.Value.MessageId));
+            byMessageId.Remove((first.Value.SelfId, first.Value.MessageId, first.Value.Speaker));
         }
 
         while (recalls.Count > maxMessages)

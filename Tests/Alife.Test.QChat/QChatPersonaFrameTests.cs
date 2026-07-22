@@ -60,7 +60,7 @@ public sealed class QChatPersonaFrameTests
     [TestCase("小羽宝贝，陪我聊")]
     [TestCase("老婆")]
     [TestCase("亲爱的")]
-    public void NonOwnerOverfamiliarMessageUsesSharpRefusal(string text)
+    public void NonOwnerOverfamiliarMessageUsesNeutralBriefStance(string text)
     {
         QChatPersonaFrame frame = Build(QChatSenderRole.PrivateGuest, text);
 
@@ -68,7 +68,7 @@ public sealed class QChatPersonaFrameTests
         {
             Assert.That(frame.SocialIntent, Is.EqualTo(QChatSocialIntent.Overfamiliar));
             Assert.That(frame.BoundaryPressure, Is.EqualTo(QChatBoundaryPressure.Mild));
-            Assert.That(frame.RecommendedStance, Is.EqualTo(QChatPersonaResponseStance.SharpRefusal));
+            Assert.That(frame.RecommendedStance, Is.EqualTo(QChatPersonaResponseStance.NeutralBrief));
         });
     }
 
@@ -148,7 +148,7 @@ public sealed class QChatPersonaFrameTests
     }
 
     [Test]
-    public void NonOwnerNormalMessageUsesColdBriefStance()
+    public void NonOwnerNormalMessageUsesNeutralBriefStance()
     {
         QChatPersonaFrame frame = Build(QChatSenderRole.GroupMember, "今天下雨了");
 
@@ -156,7 +156,7 @@ public sealed class QChatPersonaFrameTests
         {
             Assert.That(frame.SocialIntent, Is.EqualTo(QChatSocialIntent.NormalChat));
             Assert.That(frame.BoundaryPressure, Is.EqualTo(QChatBoundaryPressure.None));
-            Assert.That(frame.RecommendedStance, Is.EqualTo(QChatPersonaResponseStance.ColdBrief));
+            Assert.That(frame.RecommendedStance, Is.EqualTo(QChatPersonaResponseStance.NeutralBrief));
         });
     }
 

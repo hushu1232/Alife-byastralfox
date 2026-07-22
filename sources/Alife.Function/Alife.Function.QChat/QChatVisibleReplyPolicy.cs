@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Text.RegularExpressions;
 
 namespace Alife.Function.QChat;
@@ -10,15 +9,6 @@ public sealed record QChatVisibleReplyResult(bool ShouldSend, string Text, strin
 
 public sealed class QChatVisibleReplyPolicy
 {
-    static readonly string[] DefaultNoReplyReactions =
-    [
-        "\u3002",
-        "\u3002\u3002\u3002",
-        "\uFF1F",
-        "\u7EF7",
-        "\u5567"
-    ];
-
     static readonly string PrivateOwnerLabel = "\u79C1\u804A\u4E3B\u4EBA";
     static readonly string GroupReplyLabel = "\u7FA4\u91CC\u56DE\u590D";
 
@@ -44,6 +34,8 @@ public sealed class QChatVisibleReplyPolicy
         "[/qchat persona frame]",
         "[qchat image analysis]",
         "[/qchat image analysis]",
+        "[tool outcome]",
+        "[/tool outcome]",
         "/qchat",
         "internal_action=",
         "tool_call=",
@@ -75,16 +67,6 @@ public sealed class QChatVisibleReplyPolicy
         "no-reply"
     ];
 
-    readonly IReadOnlyList<string> noReplyReactions;
-    int reactionIndex;
-
-    public QChatVisibleReplyPolicy(IReadOnlyList<string>? noReplyReactions = null)
-    {
-        this.noReplyReactions = noReplyReactions is { Count: > 0 }
-            ? noReplyReactions
-            : DefaultNoReplyReactions;
-    }
-
     public QChatVisibleReplyResult Normalize(
         string? modelText,
         QChatConversationKind conversationKind,
@@ -95,22 +77,12 @@ public sealed class QChatVisibleReplyPolicy
             ? string.Empty
             : QChatVisibleTextPolicy.SanitizeVisibleText(selected);
 
-        if (shouldReply == false && conversationKind == QChatConversationKind.Group)
-        {
-            return string.IsNullOrEmpty(sanitized)
-                ? new QChatVisibleReplyResult(true, NextReaction(), "group no-reply reaction")
-                : new QChatVisibleReplyResult(true, sanitized, "group no-reply model visible reaction accepted");
-        }
+        if (shouldReply == false)
+            return new QChatVisibleReplyResult(false, string.Empty, "no-reply decision");
 
         return string.IsNullOrEmpty(sanitized)
             ? new QChatVisibleReplyResult(false, string.Empty, "empty or unsafe visible text")
             : new QChatVisibleReplyResult(true, sanitized, "visible reply accepted");
-    }
-
-    string NextReaction()
-    {
-        int index = Interlocked.Increment(ref reactionIndex) - 1;
-        return noReplyReactions[index % noReplyReactions.Count];
     }
 
     static string SelectConversationSection(string text, QChatConversationKind kind)

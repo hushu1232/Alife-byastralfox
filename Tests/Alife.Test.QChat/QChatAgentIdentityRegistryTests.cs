@@ -20,6 +20,12 @@ public class QChatAgentIdentityRegistryTests
             Assert.That(xiayu.Profile.DisplayName, Is.EqualTo("\u590f\u7fbd"));
             Assert.That(xiayu.Profile.OwnerAddressName, Is.EqualTo("\u672f\u672f"));
             Assert.That(xiayu.Profile.MemoryScope, Is.EqualTo("qchat/xiayu"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Contain("19-year-old-girl"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Contain("lively-high-intelligence"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Contain("polite-to-others"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Contain("family-warm-to-owner"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Not.Contain("17-year-old-girl"));
+            Assert.That(xiayu.Profile.PersonaTags, Does.Not.Contain("cold-to-others"));
 
             Assert.That(mixu.AgentId, Is.EqualTo("mixu"));
             Assert.That(mixu.Profile.DisplayName, Is.EqualTo("\u54aa\u7eea"));

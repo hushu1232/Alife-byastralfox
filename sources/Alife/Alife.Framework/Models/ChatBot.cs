@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -9,6 +10,7 @@ using Alife.Platform;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
 using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 using OpenAI.Chat;
 using ChatMessageContent=Microsoft.SemanticKernel.ChatMessageContent;
 
@@ -70,19 +72,28 @@ public class ChatBot : IAsyncDisposable
         RecordRuntimeEvent("ChatLockReleased", "Chat lock released.");
     }
 
-    public async IAsyncEnumerable<string> ChatStreamingAsync(string message, AuthorRole? role = null)
+    public async IAsyncEnumerable<string> ChatStreamingAsync(
+        string message,
+        AuthorRole? role = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default,
+        string? reasoningEffort = null)
     {
+        long generation = Interlocked.Increment(ref activeGeneration);
         if (IsChatting)//打断上一次的聊天
-        {
             await chatBreakSource.CancelAsync();
-        }
 
-        await RequestChatAsync();
+        await RequestChatAsync(cancellationToken);
         try
         {
+            if (IsCurrentGeneration(generation) == false)
+                yield break;
+
             MarkChatStart();
             RecordRuntimeEvent("ChatStart", "Chat streaming started.");
             chatBreakSource = new CancellationTokenSource();
+            using CancellationTokenSource linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                chatBreakSource.Token,
+                cancellationToken);
             if (llmAgent == null)
             {
                 InvalidOperationException exception = new("Chat completion agent is unavailable.");
@@ -101,16 +112,20 @@ public class ChatBot : IAsyncDisposable
 
             message = message.Trim();
             llmAgentThread.ChatHistory.AddMessage(role ?? AuthorRole.User, message);
-
             ChaseChatHistory();
-
             ChatSent?.Invoke(message);
-            string? error = null;
-            StringBuilder cleanResponseBuilder = new();// 用于存储不含思考过程的最终回复
 
-            await using IAsyncEnumerator<AgentResponseItem<StreamingChatMessageContent>> enumerator = llmAgent
-                .InvokeStreamingAsync(llmAgentThread, cancellationToken: chatBreakSource.Token)
-                .GetAsyncEnumerator();
+            string? error = null;
+            bool cancelled = false;
+            StringBuilder cleanResponseBuilder = new();// 用于存储不含思考过程的最终回复
+            ChatStreamChunkClassifier chunkClassifier = new(ThinkContentPrefix);
+            int generatedHistoryStartIndex = llmAgentThread.ChatHistory.Count;
+
+            AgentInvokeOptions? invokeOptions = CreateInvokeOptions(reasoningEffort);
+            IAsyncEnumerable<AgentResponseItem<StreamingChatMessageContent>> stream = invokeOptions == null
+                ? llmAgent.InvokeStreamingAsync(llmAgentThread, cancellationToken: linkedCancellation.Token)
+                : llmAgent.InvokeStreamingAsync(llmAgentThread, invokeOptions, linkedCancellation.Token);
+            await using IAsyncEnumerator<AgentResponseItem<StreamingChatMessageContent>> enumerator = stream.GetAsyncEnumerator();
             while (true)
             {
                 try
@@ -120,6 +135,7 @@ public class ChatBot : IAsyncDisposable
                 }
                 catch (OperationCanceledException)
                 {
+                    cancelled = true;
                     break;
                 }
                 catch (Exception e)
@@ -129,28 +145,22 @@ public class ChatBot : IAsyncDisposable
                 }
 
                 string? content = enumerator.Current.Message.Content;
-                if (content != null)
+                if (content != null && IsCurrentGeneration(generation))
                 {
-                    //前置报文会对思考内容进行特殊处理，以便兼容思考模式
-                    if (content.StartsWith(ThinkContentPrefix))
-                    {
-                        string reasoningPart = content.Substring(ThinkContentPrefix.Length);
-                        if (!string.IsNullOrEmpty(reasoningPart))
-                        {
-                            ReasoningReceived?.Invoke(reasoningPart);
-                        }
-                    }
-                    else
+                    ChatStreamChunkClassification classified = chunkClassifier.Push(content);
+                    if (string.IsNullOrEmpty(classified.ReasoningText) == false)
+                        ReasoningReceived?.Invoke(classified.ReasoningText);
+                    if (string.IsNullOrEmpty(classified.VisibleText) == false)
                     {
                         MarkFirstContent();
-                        yield return content;
-                        ChatReceived?.Invoke(content);
-                        cleanResponseBuilder.Append(content);
+                        yield return classified.VisibleText;
+                        ChatReceived?.Invoke(classified.VisibleText);
+                        cleanResponseBuilder.Append(classified.VisibleText);
                     }
                 }
 
                 IReadOnlyDictionary<string, object?>? metaData = enumerator.Current.Message.Metadata;
-                if (metaData != null)
+                if (metaData != null && IsCurrentGeneration(generation))
                 {
                     // 尝试从元数据中提取思考过程 (支持原生支持此字段的 SDK)
                     if (metaData.TryGetValue("ReasoningContent", out object? reasoning) ||
@@ -158,57 +168,92 @@ public class ChatBot : IAsyncDisposable
                     {
                         string? reasoningStr = reasoning?.ToString();
                         if (!string.IsNullOrEmpty(reasoningStr))
-                        {
                             ReasoningReceived?.Invoke(reasoningStr);
-                        }
                     }
 
-                    if (metaData.TryGetValue("Usage", out object? usage))
+                    if (metaData.TryGetValue("Usage", out object? usage) && usage is ChatTokenUsage chatTokenUsage)
                     {
-                        if (usage is ChatTokenUsage chatTokenUsage)
-                        {
-                            AlifeTerminal.LogInfo("[ChatBot]" + KernelPrinter.ToTokenLog(metaData));
-                            TokenUsed?.Invoke(chatTokenUsage);
-                        }
+                        AlifeTerminal.LogInfo("[ChatBot]" + KernelPrinter.ToTokenLog(metaData));
+                        TokenUsed?.Invoke(chatTokenUsage);
                     }
                 }
             }
 
-            // 在同步历史记录前，清洗掉可能存入 ChatHistory 的思考内容（防止污染上下文）
-            string aiMessage = cleanResponseBuilder.ToString();
-            if (llmAgentThread.ChatHistory.Count > 0)
+            if (IsCurrentGeneration(generation))
             {
-                ChatMessageContent lastMsg = llmAgentThread.ChatHistory[^1];
-                if (lastMsg.Role == AuthorRole.Assistant && (lastMsg.Content?.Contains(ThinkContentPrefix) ?? false))
-                    lastMsg.Content = aiMessage;
+                ChatStreamChunkClassification trailing = chunkClassifier.Flush();
+                if (string.IsNullOrEmpty(trailing.VisibleText) == false)
+                {
+                    MarkFirstContent();
+                    yield return trailing.VisibleText;
+                    ChatReceived?.Invoke(trailing.VisibleText);
+                    cleanResponseBuilder.Append(trailing.VisibleText);
+                }
+
+                if (cancelled)
+                {
+                    RemoveGeneratedHistory(generatedHistoryStartIndex);
+                    ChatOver?.Invoke();
+                }
+                else
+                {
+                    // 在同步历史记录前，清洗掉可能存入 ChatHistory 的思考内容（防止污染上下文）
+                    string aiMessage = cleanResponseBuilder.ToString();
+                    if (llmAgentThread.ChatHistory.Count > 0)
+                    {
+                        ChatMessageContent lastMsg = llmAgentThread.ChatHistory[^1];
+                        if (lastMsg.Role == AuthorRole.Assistant && (lastMsg.Content?.Contains(ThinkContentPrefix) ?? false))
+                            lastMsg.Content = aiMessage;
+                    }
+
+                    ChatFinished?.Invoke(message, aiMessage);
+                    ChatOver?.Invoke();
+                    ChaseChatHistory();
+                }
+
+                if (error != null)
+                    RecordError(error);
             }
-
-            ChatFinished?.Invoke(message, aiMessage);
-            ChatOver?.Invoke();
-
-            ChaseChatHistory();
-
-            if (error != null)
+            else
             {
-                RecordError(error);
-                llmAgentThread.ChatHistory.AddMessage(AuthorRole.System, error);
-                yield return error;
+                RemoveGeneratedHistory(generatedHistoryStartIndex);
             }
         }
         finally
         {
-            MarkChatEnd();
-            RecordRuntimeEvent("ChatEnd", "Chat streaming ended.");
+            if (IsCurrentGeneration(generation))
+            {
+                MarkChatEnd();
+                RecordRuntimeEvent("ChatEnd", "Chat streaming ended.");
+            }
             ReleaseChat();
         }
     }
 
-    public async Task<string> ChatAsync(string message, AuthorRole? role = null)
+    public async Task<string> ChatAsync(
+        string message,
+        AuthorRole? role = null,
+        CancellationToken cancellationToken = default,
+        string? reasoningEffort = null)
     {
         StringBuilder stringBuilder = new StringBuilder();
-        await foreach (string content in ChatStreamingAsync(message, role))
+        await foreach (string content in ChatStreamingAsync(message, role, cancellationToken, reasoningEffort))
             stringBuilder.Append(content);
         return stringBuilder.ToString();
+    }
+
+    static AgentInvokeOptions? CreateInvokeOptions(string? reasoningEffort)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningEffort))
+            return null;
+
+        return new AgentInvokeOptions
+        {
+            KernelArguments = new KernelArguments(new OpenAIPromptExecutionSettings
+            {
+                ReasoningEffort = reasoningEffort.Trim()
+            })
+        };
     }
 
     public void Chat(string content, AuthorRole? role = null)
@@ -269,6 +314,7 @@ public class ChatBot : IAsyncDisposable
     readonly ConcurrentQueue<ChatRuntimeEvent> runtimeEvents = new();
     readonly SemaphoreSlim chatSemaphore;
     CancellationTokenSource chatBreakSource = new();
+    long activeGeneration;
     string? lastError;
     DateTimeOffset? lastChatStartedAt;
     DateTimeOffset? lastFirstContentAt;
@@ -379,6 +425,18 @@ public class ChatBot : IAsyncDisposable
     {
         for (; lastContentIndex < ChatHistory.Count; lastContentIndex++)
             ChatHistoryAdd?.Invoke(ChatHistory[lastContentIndex]);
+    }
+
+    bool IsCurrentGeneration(long generation) => Volatile.Read(ref activeGeneration) == generation;
+
+    void RemoveGeneratedHistory(int generatedHistoryStartIndex)
+    {
+        for (int index = ChatHistory.Count - 1; index >= generatedHistoryStartIndex; index--)
+        {
+            AuthorRole role = ChatHistory[index].Role;
+            if (role == AuthorRole.Assistant || role == AuthorRole.Tool)
+                ChatHistory.RemoveAt(index);
+        }
     }
 
     void RecordError(string error)

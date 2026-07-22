@@ -42,7 +42,7 @@ public sealed class QChatAgentIdentityRegistry
             "qchat/xiayu",
             "deepseek-v4-flash",
             "\u672f\u672f",
-            ["17-year-old-girl", "high-intelligence", "cold-to-others", "warm-to-owner"],
+            ["19-year-old-girl", "lively-high-intelligence", "polite-to-others", "family-warm-to-owner"],
             defaultCapabilities);
         QChatAgentProfile mixu = new(
             "mixu",
