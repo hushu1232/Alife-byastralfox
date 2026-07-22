@@ -10,7 +10,7 @@ Make the local two-role launcher report real per-role startup state instead of t
 - Bind every role's root, launch path, OneBot port, and login entrypoint to the same manifest root.
 - Keep quick recovery and QR login as explicit modes.
 - Report host process, loopback port, and authenticated OneBot `get_status` separately for each role.
-- Keep access tokens in existing user environment variables; never print, persist, or return them.
+- Read access tokens only from existing process or user environment variables; never print, write, or return them. The existing token initializer remains responsible for keeping the matching OneBot server configuration.
 
 ## Non-goals
 
@@ -41,7 +41,7 @@ After a start request, each slot is reported independently:
 | `oneBotStatus` | `online`, `offline`, or `unknown`, from authenticated OneBot `get_status`; missing token, timeout, or invalid response is `unknown`. |
 | `ready` | True only when `hostRunning`, `portReachable`, and `oneBotStatus=online`. |
 
-The OneBot probe reads only the existing account-specific user environment token. It uses it only in the local WebSocket authorization request, never emits it, and returns a safe status code when authentication or the protocol probe fails.
+The OneBot probe reads only the existing account-specific process or user environment token. It uses it only in the local WebSocket authorization request, never emits or writes it, and returns a safe status code when authentication or the protocol probe fails.
 
 ## Tests
 
