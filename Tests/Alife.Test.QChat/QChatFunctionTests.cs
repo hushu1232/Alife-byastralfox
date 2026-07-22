@@ -18,6 +18,9 @@ public class QChatFunctionTests
     [OneTimeSetUp]
     public async Task Setup()
     {
+        if (Environment.GetEnvironmentVariable("ALIFE_QCHAT_LIVE_MANUAL") != "1")
+            Assert.Ignore("Set ALIFE_QCHAT_LIVE_MANUAL=1 to run manual OneBot validation.");
+
         client = new OneBotClient(TestUrl);
         await client.ConnectAsync();
     }

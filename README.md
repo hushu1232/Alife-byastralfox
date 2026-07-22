@@ -73,7 +73,7 @@ dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter
 # 现场回归：仅由已准备账号、NapCat 和 ALIFE_QCHAT_LIVE_* 环境变量的操作者运行
 dotnet test Tests\Alife.Test.QChat\Alife.Test.QChat.csproj --no-restore --filter "TestCategory=Live"
 
-# Live 夹具均为 Explicit，保留环境变量门控；普通开发与 CI 命令不得启用它们
+# Live 夹具均为 Explicit，并保留各自的 ALIFE_QCHAT_LIVE_* 门控（手动 OneBot 夹具使用 ALIFE_QCHAT_LIVE_MANUAL=1）；普通开发与 CI 命令不得启用它们
 dotnet test Tests\Alife.Test.Framework\Alife.Test.Framework.csproj --no-restore
 ```
 

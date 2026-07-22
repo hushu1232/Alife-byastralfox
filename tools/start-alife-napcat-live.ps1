@@ -22,6 +22,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$testProject = Join-Path $projectRoot "Tests\Alife.Test.QChat\Alife.Test.QChat.csproj"
 
 function Resolve-DotNetPath {
     param([string]$Candidate)
@@ -232,7 +234,7 @@ function Invoke-QChatLiveTest {
         return
     }
 
-    & $DotNetPath test "D:\Alife\Tests\Alife.Test.QChat\Alife.Test.QChat.csproj" --no-build --no-restore -m:1 --filter $liveFilter
+    & $DotNetPath test $testProject --no-build --no-restore -m:1 --filter $liveFilter
     if ($LASTEXITCODE -ne 0) {
         if ($ContinueOnLiveTestFailure) {
             Write-Warning "QChat live test failed with exit code $LASTEXITCODE"

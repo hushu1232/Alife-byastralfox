@@ -60,6 +60,33 @@ public sealed class QChatLiveTestClassificationTests
         });
     }
 
+    [Test]
+    public void NapCatLiveScriptResolvesTheTestProjectFromItsOwnCheckout()
+    {
+        string script = File.ReadAllText(FindRepositoryFile("tools", "start-alife-napcat-live.ps1"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(script, Does.Contain("$projectRoot = Split-Path -Parent $PSScriptRoot"));
+            Assert.That(script, Does.Contain("$testProject = Join-Path $projectRoot \"Tests\\Alife.Test.QChat\\Alife.Test.QChat.csproj\""));
+            Assert.That(script, Does.Contain("test $testProject --no-build --no-restore"));
+            Assert.That(script, Does.Not.Contain("D:\\Alife\\Tests\\Alife.Test.QChat\\Alife.Test.QChat.csproj"));
+        });
+    }
+
+    [Test]
+    public void ManualOneBotFixtureRequiresAnExplicitLiveEnvironmentGate()
+    {
+        string source = File.ReadAllText(FindRepositoryFile("Tests", "Alife.Test.QChat", "QChatFunctionTests.cs"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(source, Does.Contain("ALIFE_QCHAT_LIVE_MANUAL"));
+            Assert.That(source, Does.Contain("Assert.Ignore(\"Set ALIFE_QCHAT_LIVE_MANUAL=1"));
+            Assert.That(source, Does.Contain("client = new OneBotClient(TestUrl)"));
+        });
+    }
+
     static string FindRepositoryFile(params string[] relativeParts)
     {
         DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
