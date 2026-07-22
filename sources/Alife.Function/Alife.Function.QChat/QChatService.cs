@@ -9402,23 +9402,27 @@ public partial class QChatService(
             message.TargetId);
         QChatAgentIdentity? identity = ResolveRuntimeIdentity();
         string? approvedProfile = identity == null ? null : personaMemoryContext.TryReadApprovedProfile(identity);
+        QChatConversationContextCapability conversationCapability = new(recentEventMemory);
         QChatScopedCapabilityTurnExecutor scopedExecutor = scopedCapabilityTurnExecutor ??= new(
-            new QChatCapabilityCandidateSelector(),
-            new QChatConversationContextCapability(recentEventMemory),
+            conversationCapability,
             new QChatPersonaFactProvider(personaMemoryContext));
-        QChatScopedCapabilityTurnResult scopedResult = await scopedExecutor.ExecuteAsync(
-            new QChatScopedCapabilityTurnRequest(
-                message.Formatted,
-                string.IsNullOrWhiteSpace(message.CandidateText) ? message.Formatted : message.CandidateText,
-                conversationScope,
-                identity,
-                new QChatConversationContextCapability(recentEventMemory)
-                    .HasReplayableConversation(conversationScope, DateTimeOffset.UtcNow),
-                string.IsNullOrWhiteSpace(approvedProfile) == false,
-                DateTimeOffset.UtcNow),
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        QChatScopedCapabilityTurnRequest scopedRequest = new(
+            message.Formatted,
+            conversationScope,
+            identity,
+            conversationCapability.HasReplayableConversation(conversationScope, observedAt),
+            string.IsNullOrWhiteSpace(approvedProfile) == false,
+            observedAt);
+        string normalModelResponse = await DispatchStandardModelAsync(
+            message with { Formatted = scopedExecutor.BuildModelInput(scopedRequest) },
+            cancellationToken);
+        QChatScopedCapabilityTurnResult scopedResult = await scopedExecutor.CompleteAsync(
+            scopedRequest,
+            normalModelResponse,
             (call, token) => InvokeScopedCapabilityModelAsync(call, token),
             cancellationToken);
-        if (scopedResult.CapabilityOffered && scopedResult.RequiresStandardModelRouteFallback == false)
+        if (scopedResult.Feedback != null)
         {
             WriteQChatDiagnostic("qchat-scoped-read-capability", "A QChat scoped read capability turn completed.", new
             {
@@ -9428,10 +9432,13 @@ public partial class QChatService(
                 scopedResult.Feedback?.Capability,
                 scopedResult.Feedback?.Status
             });
-            return scopedResult.ModelResponse;
         }
 
-        return await DispatchStandardModelAsync(message, cancellationToken);
+        if (scopedResult.RequiresStandardModelRouteFallback == false)
+            return scopedResult.ModelResponse;
+
+        string fallbackResponse = await DispatchStandardModelAsync(message, cancellationToken);
+        return scopedExecutor.IsExactCapabilityMarker(fallbackResponse) ? string.Empty : fallbackResponse;
     }
 
     void RecordQChatLatencyAudit(QChatInboundMessage message, DateTimeOffset startedAt, string outcome)
