@@ -11222,8 +11222,11 @@ public class QChatServiceAdapterTests
         Assert.That(inbound.Formatted, Does.Contain("[private QQ routing hint - never quote or paraphrase]"));
         Assert.That(inbound.Formatted, Does.Contain("relationship=owner"));
         Assert.That(inbound.Formatted, Does.Contain("message_intent=question"));
-        Assert.That(inbound.Formatted, Does.Contain("social_action=reply_warmly"));
+        Assert.That(inbound.Formatted, Does.Contain("reply_eligibility=high"));
+        Assert.That(inbound.Formatted, Does.Not.Contain("social_action="));
         Assert.That(inbound.Formatted, Does.Contain("expected_length=medium"));
+        Assert.That(inbound.Formatted, Does.Contain("[QQ address]"));
+        Assert.That(inbound.Formatted, Does.Contain("preferred_address=主人"));
         Assert.That(inbound.Formatted, Does.Contain("：how should we improve memory?"));
         Assert.That(inbound.Formatted, Does.Not.Contain("锛"));
         Assert.That(inbound.Formatted.IndexOf("[private QQ routing hint - never quote or paraphrase]", StringComparison.Ordinal),
@@ -11661,7 +11664,7 @@ public class QChatServiceAdapterTests
 
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
         Assert.That(inbound.Formatted, Does.Contain("preferred_address=小雨"));
-        Assert.That(inbound.Formatted, Does.Contain("display_name=潇雨的吉他创作室"));
+        Assert.That(inbound.Formatted, Does.Not.Contain("display_name="));
     }
 
     [Test]
@@ -11837,7 +11840,7 @@ public class QChatServiceAdapterTests
         });
 
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
-        Assert.That(inbound.Formatted, Does.Contain("display_name=潇雨的吉他创作室"));
+        Assert.That(inbound.Formatted, Does.Not.Contain("display_name="));
         Assert.That(inbound.Formatted, Does.Contain("preferred_address=小雨"));
         Assert.That(inbound.Formatted, Does.Contain("小雨"));
         Assert.That(inbound.Formatted, Does.Not.Contain("戳了戳 999"));

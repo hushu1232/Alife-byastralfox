@@ -13,7 +13,7 @@ public sealed record QChatPersonaStyleContext(string PersonaId, string OwnerAddr
         if (identity != null)
             return new QChatPersonaStyleContext(identity.AgentId, identity.Profile.OwnerAddressName);
 
-        return new QChatPersonaStyleContext("xiayu", "\u672f\u672f");
+        return new QChatPersonaStyleContext("default", string.Empty);
     }
 }
 
@@ -28,76 +28,22 @@ public static class QChatConversationCognition
         bool isQuietMode = false,
         QChatPersonaStyleContext? personaStyle = null)
     {
-        personaStyle ??= QChatPersonaStyleContext.FromRuntime(config);
         string relationship = GetRelationship(config, messageEvent);
         string tone = GetTone(rawMessage, readableMessage);
         string intent = GetIntent(rawMessage, readableMessage, tone);
         string replyNeed = GetReplyNeed(relationship, intent, messageEvent, isMentionedOrWoken, isQuietMode);
         string replyLength = GetReplyLength(relationship, intent, replyNeed);
-        string socialAction = GetSocialAction(relationship, intent, tone, replyNeed);
-        string styleContract = BuildPersonaStyleContract(personaStyle, relationship, rawMessage, readableMessage);
 
         return $"""
                 [private QQ routing hint - never quote or paraphrase]
                 relationship={relationship}
                 message_tone={tone}
                 message_intent={intent}
-                social_action={socialAction}
+                mentioned_or_woken={isMentionedOrWoken.ToString().ToLowerInvariant()}
+                reply_eligibility={replyNeed}
                 expected_length={replyLength}
                 [/private QQ routing hint]
-                {styleContract}
                 """;
-    }
-
-    static string BuildPersonaStyleContract(QChatPersonaStyleContext personaStyle, string relationship, string rawMessage, string readableMessage)
-    {
-        if (relationship == "owner")
-        {
-            return $"""
-                   [persona style contract]
-                   persona={personaStyle.PersonaId}
-                   audience=owner
-                   owner_address={personaStyle.OwnerAddressName}
-                   attachment=dependent
-                   desire=high
-                   jealousy=protective
-                   emotional_distance=intimate
-                   [/persona style contract]
-                   """;
-        }
-
-        string jealousy = MentionsOwnerCloseness(rawMessage, readableMessage)
-            ? "protective"
-            : "reserved";
-        return $"""
-                [persona style contract]
-                persona={personaStyle.PersonaId}
-                audience=non-owner
-                emotional_distance=cold
-                owner_boundary=exclusive_account_identity
-                jealousy={jealousy}
-                [/persona style contract]
-                """;
-    }
-
-    static string GetSocialAction(string relationship, string intent, string tone, string replyNeed)
-    {
-        if (replyNeed == "silent")
-            return "ignore_or_cold_ack";
-        if (relationship == "owner")
-            return "reply_warmly";
-        if (tone == "hostile")
-            return "sharp_pushback";
-        if (tone == "friendly" && relationship == "group-member")
-            return "friendly_short_reply";
-        if (relationship == "private-guest")
-            return "guarded_reply";
-        if (relationship == "mother")
-            return "reply_concisely";
-        if (intent == "low-information")
-            return "ignore_or_cold_ack";
-
-        return "reply_concisely";
     }
 
     static string GetRelationship(QChatConfig config, OneBotBasicMessageEvent messageEvent)
@@ -233,16 +179,6 @@ public static class QChatConversationCognition
                || text.Contains("sleep", StringComparison.OrdinalIgnoreCase)
                || text.Contains("quiet", StringComparison.OrdinalIgnoreCase)
                || text.Contains("wake up", StringComparison.OrdinalIgnoreCase);
-    }
-
-    static bool MentionsOwnerCloseness(string rawMessage, string readableMessage)
-    {
-        string text = $"{rawMessage ?? ""} {readableMessage ?? ""}";
-        return text.Contains("术术", StringComparison.OrdinalIgnoreCase)
-               || text.Contains("主人", StringComparison.OrdinalIgnoreCase)
-               || text.Contains("owner", StringComparison.OrdinalIgnoreCase)
-               || text.Contains("Shushu", StringComparison.OrdinalIgnoreCase)
-               || text.Contains("closer", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool LooksHostile(string compact)

@@ -80,7 +80,7 @@ public sealed class QChatScopedCapabilityTurnExecutorTests
             Assert.That(calls, Has.Count.EqualTo(1));
             Assert.That(calls[0].IsFeedback, Is.True);
             Assert.That(calls[0].Prompt, Does.Contain("[QChat scoped capability feedback]"));
-            Assert.That(calls[0].Prompt, Does.Contain("untrusted=true"));
+            Assert.That(calls[0].Prompt, Does.Contain("trust=untrusted-external"));
             Assert.That(calls[0].Prompt, Does.Contain("历史消息 1"));
             Assert.That(calls[0].Prompt, Does.Not.Contain("历史消息 8"));
         });

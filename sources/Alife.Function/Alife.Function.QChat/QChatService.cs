@@ -4177,8 +4177,9 @@ public partial class QChatService(
                 rawMessage,
                 readableMessage,
                 isMentionedOrWoken,
-                IsQuietModeEnabled,
-                QChatPersonaStyleContext.FromRuntime(config, Character?.Name)));
+                IsQuietModeEnabled),
+            QChatPromptTrust.TrustedInternal,
+            maximumContentCharacters: 1200);
         string recentContext = QChatPromptEnvelope.Wrap(
             "recent_qq_context",
             observedAt,
@@ -4191,7 +4192,9 @@ public partial class QChatService(
                 includeRecalledMessages: false,
                 maxCharacters: 1200,
                 ownerUserId: config.OwnerId,
-                botUserId: config.BotId));
+                botUserId: config.BotId),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 1200);
         string recentRecallContext = QChatPromptEnvelope.Wrap(
             "recent_qq_recall",
             observedAt,
@@ -4200,19 +4203,40 @@ public partial class QChatService(
                 messageEvent.MessageType,
                 GetQChatConversationTargetId(messageEvent),
                 limit: 3,
-                observedAt));
-        string imageBlock = QChatPromptEnvelope.Wrap("image_analysis", observedAt, imageAnalysisPrompt);
-        string address = QChatPromptEnvelope.Wrap("qq_address", observedAt, BuildAddressPrompt(config, messageEvent));
+                observedAt),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 800);
+        string imageBlock = QChatPromptEnvelope.Wrap(
+            "image_analysis",
+            observedAt,
+            imageAnalysisPrompt,
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 1600);
+        string address = QChatPromptEnvelope.Wrap(
+            "qq_address",
+            observedAt,
+            BuildAddressPrompt(config, messageEvent),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 400);
         string secureMessage = QChatMessageSecurity.FormatForModel(
             config,
             messageEvent,
             string.IsNullOrWhiteSpace(imageBlock) ? formatted : HideImageUrlsForModelContext(formatted));
+        secureMessage = QChatPromptEnvelope.Wrap(
+            "incoming_qq_message",
+            observedAt,
+            secureMessage,
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 6000);
         string recentBlocks = string.Join(
             Environment.NewLine,
             new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
-        string personaBlock = QChatPromptEnvelope.Wrap("persona_frame", observedAt, personaFramePrompt);
-        string selfStateBlock = QChatPromptEnvelope.Wrap("character_state", observedAt, selfStatePrompt);
-        string researchEvidenceBlock = QChatPromptEnvelope.Wrap("research_evidence", observedAt, researchEvidencePrompt);
+        string personaBlock = QChatPromptEnvelope.Wrap(
+            "persona_frame", observedAt, personaFramePrompt, QChatPromptTrust.TrustedInternal, maximumContentCharacters: 1000);
+        string selfStateBlock = QChatPromptEnvelope.Wrap(
+            "character_state", observedAt, selfStatePrompt, QChatPromptTrust.TrustedInternal, maximumContentCharacters: 1000);
+        string researchEvidenceBlock = QChatPromptEnvelope.Wrap(
+            "research_evidence", observedAt, researchEvidencePrompt, QChatPromptTrust.UntrustedExternal, maximumContentCharacters: 1600);
         IEnumerable<string> blocks = new[]
         {
             cognition,
@@ -4625,16 +4649,30 @@ public partial class QChatService(
         long botId = ResolveCurrentBotId(config, messageEvent);
         string preferredAddress = ResolvePreferredAddress(config, messageEvent.UserId, displayName, agentId, botId);
         profileRuntimeServices.UserProfiles.TryGetProfile(agentId, botId, messageEvent.UserId, out QChatUserProfile? profile);
+        string explicitAddress = GetExplicitProfileAddress(profile);
+        string addressStyle = profile?.AddressStyle?.Trim() ?? string.Empty;
+        bool isBuiltInRelationshipAddress = (config.OwnerId != 0 && messageEvent.UserId == config.OwnerId)
+            || IsQuietModeWakeUser(messageEvent.UserId);
+        if (isBuiltInRelationshipAddress == false &&
+            string.IsNullOrWhiteSpace(explicitAddress) &&
+            string.IsNullOrWhiteSpace(addressStyle))
+            return string.Empty;
 
         return $"""
                 [QQ address]
-                user_id={messageEvent.UserId}
-                display_name={SanitizeAddressPromptValue(displayName)}
                 preferred_address={SanitizeAddressPromptValue(preferredAddress)}
-                relationship_label={SanitizeAddressPromptValue(profile?.RelationshipLabel)}
-                address_style={SanitizeAddressPromptValue(profile?.AddressStyle)}
+                address_style={SanitizeAddressPromptValue(addressStyle)}
                 [/QQ address]
                 """;
+    }
+
+    static string GetExplicitProfileAddress(QChatUserProfile? profile)
+    {
+        if (profile == null)
+            return string.Empty;
+
+        return new[] { profile.PreferredNickname, profile.CuteNicknames?.FirstOrDefault(), profile.FormalName }
+            .FirstOrDefault(value => string.IsNullOrWhiteSpace(value) == false)?.Trim() ?? string.Empty;
     }
 
     string BuildPokeContent(QChatConfig config, OneBotPokeEvent pokeEvent)
