@@ -4,7 +4,7 @@
 
 **Goal:** Reduce scripted QChat behavior while letting the model choose bounded, permission-gated reads by semantic intent rather than user-keyword triggers.
 
-**Architecture:** Keep permission, routing, sending, and XML execution in C#. Replace full persona seeding with compact stable identity plus bounded persona reads. Give the model a concise offer of safe scoped reads every eligible turn, validate one structured request, execute it, then request a natural final reply.
+**Architecture:** Keep permission, routing, sending, and XML execution in C#. Replace full persona seeding with compact stable identity plus bounded persona reads. Append a concise safe scoped-read offer to the normal model route every eligible turn; only an exact marker response is intercepted, validated, read, and followed by a natural final reply. All non-marker responses continue through the existing XML tool route unchanged.
 
 **Tech Stack:** .NET 9, C#, existing QChat XML caller, QChat prompt envelope, NUnit QChat tests.
 
@@ -22,6 +22,8 @@
 - Modify: matching `Tests/Alife.Test.QChat/*Tests.cs` — regression coverage for every behavior.
 - Modify: `docs/runbooks/alife-local-dual-account-production.md` — explain that complete persona files remain local and are read through bounded context only.
 - Modify locally only: `Storage/account-a/Configuration/Alife.Function.QChat.QChatService.json` and `Storage/Character/夏羽/Memory/Persona/夏羽-角色背景.md` — align known legacy XiaYu text with the approved current profile; never stage either file.
+
+**Route invariant:** Do not pass an offered scoped capability through the legacy text-only `ExecuteAsync` path before `DispatchStandardModelAsync`. That path returns a text-only reply even when no marker is selected and would bypass the established XML tool execution route. Instead, invoke the normal route first, then hand an exact marker to the scoped capability executor for bounded reading and feedback finalization.
 
 ### Task 1: Stop whole-persona injection and prove bounded access
 
@@ -115,7 +117,7 @@ The offer must list each name, bounded purpose, and privacy boundary. Extend the
 
 - [ ] **Step 4: Intercept markers from the normal model route**
 
-Append the concise scoped-read offer to the normal model input before `ChatBot.ChatAsync`, without entering the text-only response scope. If the normal response is an exact scoped marker, intercept it before QQ delivery, read the bounded data, and invoke the existing feedback pass. If the response is not a marker, return it unchanged so ordinary XML tools remain available. The feedback prompt must require one natural QQ reply and never emit marker/XML/protocol content to QQ.
+Append the concise scoped-read offer to the normal model input before `ChatBot.ChatAsync`, without entering the legacy text-only response scope. If the normal response is an exact scoped marker, intercept it before QQ delivery, read the bounded data, and invoke the feedback pass. If the response is not a marker, return it unchanged so ordinary XML tools remain available. The feedback prompt must require one natural QQ reply and never emit marker/XML/protocol content to QQ.
 
 - [ ] **Step 5: Run focused tests and verify GREEN**
 
