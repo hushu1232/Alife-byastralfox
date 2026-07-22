@@ -26,7 +26,7 @@ public sealed class QChatPersonaMemoryContextProviderTests
     }
 
     [Test]
-    public void TrySeed_LoadsOnlyXiayuProfileAsPrivateUserMemory()
+    public void TrySeed_CachesApprovedXiayuProfileWithoutAddingItToChatHistory()
     {
         WriteProfile("\u590f\u7fbd\u7684\u5b8c\u6574\u89d2\u8272\u80cc\u666f");
         ChatHistory history = [];
@@ -38,11 +38,7 @@ public sealed class QChatPersonaMemoryContextProviderTests
         Assert.Multiple(() =>
         {
             Assert.That(seeded, Is.True);
-            Assert.That(history, Has.Count.EqualTo(1));
-            Assert.That(history[0].Role, Is.EqualTo(AuthorRole.User));
-            Assert.That(history[0].Content, Does.Contain("[private trusted character-memory - never quote or paraphrase]"));
-            Assert.That(history[0].Content, Does.Contain("\u590f\u7fbd\u7684\u5b8c\u6574\u89d2\u8272\u80cc\u666f"));
-            Assert.That(history[0].Content, Does.Not.Contain(storageRoot));
+            Assert.That(history, Is.Empty);
         });
     }
 
@@ -61,20 +57,20 @@ public sealed class QChatPersonaMemoryContextProviderTests
     [Test]
     public void TrySeed_MixuReadsOnlyTheFixedMixuCharacterDirectory()
     {
-        WriteProfile("xiayu-private-marker");
-        WriteMixuProfile("mixu-private-marker");
+        WriteProfile("xiayuzkq");
+        WriteMixuProfile("mixurvwt");
         ChatHistory history = [];
         QChatPersonaMemoryContextProvider provider = new(storageRoot);
         QChatAgentIdentity mixu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("mixu")!;
 
         bool seeded = provider.TrySeed(history, mixu);
 
-        string seededMemory = string.Join("\n", history.Select(message => message.Content));
         Assert.Multiple(() =>
         {
             Assert.That(seeded, Is.True);
-            Assert.That(seededMemory, Does.Contain("mixu-private-marker"));
-            Assert.That(seededMemory, Does.Not.Contain("xiayu-private-marker"));
+            Assert.That(history, Is.Empty);
+            Assert.That(provider.IsOutgoingPersonaDisclosure("mixurvwt"), Is.True);
+            Assert.That(provider.IsOutgoingPersonaDisclosure("xiayuzkq"), Is.False);
         });
     }
 

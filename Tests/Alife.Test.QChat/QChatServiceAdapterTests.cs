@@ -9050,7 +9050,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task AwakeSeedsApprovedXiayuPersonaMemoryFromCharacterStorage()
+    public async Task AwakeCachesApprovedXiayuPersonaMemoryWithoutAddingItToChatHistory()
     {
         string storageRoot = Path.Combine(Path.GetTempPath(), "alife-xiayu-persona-awake-" + Guid.NewGuid().ToString("N"));
         try
@@ -9086,12 +9086,16 @@ public class QChatServiceAdapterTests
             await service.AwakeAsync(awakeContext);
             await service.AwakeAsync(awakeContext);
 
-            string?[] seededMemories = thread.ChatHistory
+            string?[] privatePersonaMessages = thread.ChatHistory
                 .Select(message => message.Content)
                 .Where(content => content?.Contains("[private trusted character-memory - never quote or paraphrase]") == true)
                 .ToArray();
-            Assert.That(seededMemories, Has.Length.EqualTo(1));
-            Assert.That(seededMemories[0]!, Does.Contain("\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6"));
+            string history = string.Join("\n", thread.ChatHistory.Select(message => message.Content));
+            Assert.Multiple(() =>
+            {
+                Assert.That(privatePersonaMessages, Is.Empty);
+                Assert.That(history, Does.Not.Contain("\u590f\u7fbd\u7684\u5df2\u5ba1\u6838\u89d2\u8272\u8bb0\u5fc6"));
+            });
         }
         finally
         {
