@@ -81,11 +81,12 @@ public partial class App
             }
             catch (Exception ex)
             {
-                runtimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
-                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
-                    DataAgentRuntimeHealthEvent.CharacterActivationComponent,
-                    DataAgentRuntimeHealthState.Unavailable,
-                    "CharacterActivationFailed"));
+                if (runtimeHealthReporter != null)
+                    runtimeHealthReporter.Report(new DataAgentRuntimeHealthEvent(
+                        runtimeHealthReporter.AccountId,
+                        DataAgentRuntimeHealthEvent.CharacterActivationComponent,
+                        DataAgentRuntimeHealthState.Unavailable,
+                        "CharacterActivationFailed"));
                 AlifeTerminal.LogError(ex.ToString());
             }
         });

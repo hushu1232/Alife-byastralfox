@@ -88,6 +88,31 @@ public sealed class DataAgentRuntimeHealthReporterTests
     }
 
     [Test]
+    public void Reporter_infers_the_account_only_from_an_account_local_storage_root()
+    {
+        string storageRoot = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"runtime-health-{Guid.NewGuid():N}",
+            "account-a");
+
+        DataAgentRuntimeHealthReporter? reporter = DataAgentRuntimeHealthReporter.TryCreate(storageRoot, null);
+
+        Assert.That(reporter, Is.Not.Null);
+        Assert.That(reporter!.AccountId, Is.EqualTo("account-a"));
+    }
+
+    [Test]
+    public void Reporter_rejects_an_account_id_that_does_not_match_the_storage_root()
+    {
+        string storageRoot = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"runtime-health-{Guid.NewGuid():N}",
+            "account-b");
+
+        Assert.That(DataAgentRuntimeHealthReporter.TryCreate(storageRoot, "account-a"), Is.Null);
+    }
+
+    [Test]
     public void Reporter_reuses_the_account_local_instance_and_merges_component_states()
     {
         string storageRoot = Path.Combine(TestContext.CurrentContext.WorkDirectory, $"runtime-health-{Guid.NewGuid():N}");

@@ -68,21 +68,19 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
                 }
 
                 hosts.Add(activity, host);
-                RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
-                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                ReportRuntimeHealth(
                     DataAgentRuntimeHealthEvent.QZoneOperatorComponent,
                     DataAgentRuntimeHealthState.Healthy,
-                    "QZoneOperatorReady"));
+                    "QZoneOperatorReady");
             }
             catch
             {
                 if (host != null)
                     await host.DisposeAsync().ConfigureAwait(false);
-                RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
-                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                ReportRuntimeHealth(
                     DataAgentRuntimeHealthEvent.QZoneOperatorComponent,
                     DataAgentRuntimeHealthState.Unavailable,
-                    "QZoneOperatorUnavailable"));
+                    "QZoneOperatorUnavailable");
                 AlifeTerminal.LogWarning("QQ Zone loopback operator did not start.");
             }
         }
@@ -96,6 +94,13 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
         DataAgentRuntimeHealthReporter.TryCreate(
             AlifePath.StorageFolderPath,
             Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID"));
+
+    void ReportRuntimeHealth(string component, DataAgentRuntimeHealthState state, string reasonCode)
+    {
+        DataAgentRuntimeHealthReporter? reporter = RuntimeHealthReporter;
+        if (reporter != null)
+            reporter.Report(new DataAgentRuntimeHealthEvent(reporter.AccountId, component, state, reasonCode));
+    }
 
     async Task StopForActivityAsync(ChatActivity activity)
     {
