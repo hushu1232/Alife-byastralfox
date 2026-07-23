@@ -1635,6 +1635,7 @@ public partial class QChatService(
             OnAIGroupActivity(targetId);
 
         message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        message = QChatVisibleTextPolicy.SanitizeVisibleText(message);
         message = new QChatReplyLayoutNormalizer().Normalize(message);
         string disclosureCandidate = personaDisclosureCandidate ?? message;
         if (personaDisclosureChecked == false && personaMemoryContext.IsOutgoingPersonaDisclosure(type, targetId, disclosureCandidate))
@@ -1655,19 +1656,16 @@ public partial class QChatService(
             return;
         }
 
-        QChatOutboundMessagePlan plan = new QChatOutboundPlanner().PlanText(message);
+        IReadOnlyList<string> replyUnits = new QChatReplyUnitBuffer().Commit(message);
         CancellationToken cancellationToken = GetCurrentReplySessionForGuard()?.GenerationLease.CancellationToken
             ?? CancellationToken.None;
-        await new QChatOutboundDispatcher().DispatchAsync(
-            plan,
-            async (item, token) =>
-            {
-                token.ThrowIfCancellationRequested();
-                if (IsCurrentReplyGenerationSendAllowed() == false)
-                    return;
-                await SendSingleMessageAsync(type, targetId, item.Text);
-            },
-            cancellationToken);
+        foreach (string replyUnit in replyUnits)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (IsCurrentReplyGenerationSendAllowed() == false)
+                return;
+            await SendSingleMessageAsync(type, targetId, replyUnit);
+        }
     }
 
     Task SendCommandReplyAsync(

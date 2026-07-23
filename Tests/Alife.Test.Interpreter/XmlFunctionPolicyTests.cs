@@ -73,7 +73,8 @@ public class XmlFunctionPolicyTests
         {
             Assert.That(handled, Does.Contain("[tool outcome]"));
             Assert.That(handled, Does.Contain("status=handled"));
-            Assert.That(handled, Does.Contain("tool=qchat_file_upload"));
+            Assert.That(handled, Does.Not.Contain("tool="));
+            Assert.That(handled, Does.Not.Contain("qchat_file_upload"));
             Assert.That(failed, Does.Contain("status=failed"));
             Assert.That(failed, Does.Not.Contain("exception"));
             Assert.That(failed, Does.Not.Contain("path="));

@@ -21,9 +21,7 @@ public sealed class QChatReplyLayoutNormalizer
         {
             if (ordinary.Count > 0)
             {
-                blocks.Add(ShouldCollapseFragments(ordinary)
-                    ? string.Join(" ", ordinary)
-                    : string.Join("\n", ordinary));
+                blocks.Add(string.Join(" ", ordinary));
                 ordinary.Clear();
             }
         }
@@ -84,10 +82,6 @@ public sealed class QChatReplyLayoutNormalizer
         line.StartsWith(">", StringComparison.Ordinal) ||
         line.StartsWith("- ", StringComparison.Ordinal) ||
         line.StartsWith("* ", StringComparison.Ordinal) ||
+        line.StartsWith("+ ", StringComparison.Ordinal) ||
         (line.Length > 2 && char.IsDigit(line[0]) && line[1] == '.');
-
-    static bool ShouldCollapseFragments(IReadOnlyList<string> lines) =>
-        lines.Count >= 3 && lines.All(line =>
-            line.Length <= 12 &&
-            line.IndexOfAny(['。', '！', '？', '.', '!', '?', '；', ';', '：', ':']) < 0);
 }
