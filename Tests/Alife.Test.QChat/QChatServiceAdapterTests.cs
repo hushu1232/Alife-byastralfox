@@ -69,6 +69,55 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SendChatAsync_SendsAnExplicitIndependentSupplementAsOneExtraMessage()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999, EnableBalancedTextStreaming = true }
+        };
+
+        await service.SendChatAsync("private", 456, "先把当前对话处理完。\n\n另外，日志我也会一起看。");
+
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[]
+        {
+            (456L, "先把当前对话处理完。"),
+            (456L, "另外，日志我也会一起看。")
+        }));
+    }
+
+    [Test]
+    public async Task SendChatAsync_KeepsAnIndependentSupplementInOneMessageWhenBalancedStreamingIsDisabled()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999, EnableBalancedTextStreaming = false }
+        };
+
+        await service.SendChatAsync("private", 456, "先把当前对话处理完。\n\n另外，日志我也会一起看。");
+
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[]
+        {
+            (456L, "先把当前对话处理完。\n\n另外，日志我也会一起看。")
+        }));
+    }
+
+    [Test]
+    public async Task SendChatAsync_RemovesInternalStateBeforeFoldingOrdinaryLines()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = new(null!, new NullLogger<QChatService>(), oneBotRuntime: runtime)
+        {
+            Configuration = new QChatConfig { BotId = 999 }
+        };
+
+        await service.SendChatAsync("private", 456, "正常\n状态: secret\n继续");
+
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (456L, "正常 继续") }));
+    }
+
+    [Test]
     public async Task SuccessfulOutgoingReplyAppearsInNextModelInputAsSelfTurn()
     {
         FakeOneBotRuntime runtime = new();
@@ -8344,7 +8393,8 @@ public class QChatServiceAdapterTests
                 Assert.That(dispatchCount, Is.Zero);
                 Assert.That(runtime.GroupFiles, Is.Empty);
                 Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("\u6ca1\u4f20\u6210"));
-                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("The requested action could not be completed."));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("The requested action could not be completed."));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("NapCat upload failed"));
                 Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("\u600e\u4e48\u5566"));
             });
         }
@@ -12642,14 +12692,14 @@ public class QChatServiceAdapterTests
         Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
-    [TestCase("\u3002")]
-    [TestCase("\u3002\u3002\u3002")]
-    [TestCase("\uff1f")]
-    [TestCase("\u7ef7")]
-    [TestCase("\u5567")]
-    [TestCase("\u5567\u3002")]
-    [TestCase("\u5567\uff1f")]
-    public async Task PlainGroupFallbackAllowsColdShortReplies(string modelReply)
+    [TestCase("\u3002", false)]
+    [TestCase("\u3002\u3002\u3002", false)]
+    [TestCase("\uff1f", false)]
+    [TestCase("\u7ef7", true)]
+    [TestCase("\u5567", true)]
+    [TestCase("\u5567\u3002", true)]
+    [TestCase("\u5567\uff1f", true)]
+    public async Task PlainGroupFallbackSuppressesPunctuationButAllowsSemanticShortReplies(string modelReply, bool shouldSend)
     {
         FakeOneBotRuntime runtime = new();
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -12677,18 +12727,26 @@ public class QChatServiceAdapterTests
             RawMessage = "[CQ:at,qq=999] \u4f60\u5728\u5417"
         });
 
-        await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, modelReply) }));
+        await service.WaitForDispatchAsync();
+        if (shouldSend)
+        {
+            await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
+            Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, modelReply) }));
+        }
+        else
+        {
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        }
     }
 
-    [TestCase("\u3002")]
-    [TestCase("\u3002\u3002\u3002")]
-    [TestCase("\uff1f")]
-    [TestCase("\u7ef7")]
-    [TestCase("\u5567")]
-    [TestCase("\u5567\u3002")]
-    [TestCase("\u5567\uff1f")]
-    public async Task XmlQChatAllowsColdShortReplies(string qchatContent)
+    [TestCase("\u3002", false)]
+    [TestCase("\u3002\u3002\u3002", false)]
+    [TestCase("\uff1f", false)]
+    [TestCase("\u7ef7", true)]
+    [TestCase("\u5567", true)]
+    [TestCase("\u5567\u3002", true)]
+    [TestCase("\u5567\uff1f", true)]
+    public async Task XmlQChatSuppressesPunctuationButAllowsSemanticShortReplies(string qchatContent, bool shouldSend)
     {
         FakeOneBotRuntime runtime = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
@@ -12697,31 +12755,19 @@ public class QChatServiceAdapterTests
             OwnerId = 1001,
             AllowGroupMemberChat = true,
             AllowGroupMemberMentions = true,
+            AllowedGroupIds = "3001",
             EnableBalancedTextStreaming = false
         });
-        service.InboundChatDispatcher = async inbound =>
+        await service.QChat(new XmlExecutorContext
         {
-            await service.QChat(new XmlExecutorContext
-            {
-                CallMode = CallMode.Closing,
-                Parameters = new Dictionary<string, string>(),
-                CallChain = ["qchat"],
-                Content = qchatContent
-            }, OneBotMessageType.Group, inbound.TargetId);
-        };
+            CallMode = CallMode.Closing,
+            Parameters = new Dictionary<string, string>(),
+            CallChain = ["qchat"],
+            Content = qchatContent
+        }, OneBotMessageType.Group, 3001);
 
-        runtime.Raise(new OneBotMessageEvent
-        {
-            SelfId = 999,
-            UserId = 2001,
-            GroupId = 3001,
-            GroupName = "test-group",
-            Sender = new OneBotSender { UserId = 2001, Nickname = "\u5c0f\u660e" },
-            RawMessage = "[CQ:at,qq=999] \u4f60\u5728\u5417"
-        });
-
-        await WaitUntilAsync(() => runtime.GroupMessages.Count > 0);
-        Assert.That(runtime.GroupMessages, Is.EqualTo(new[] { (3001L, qchatContent) }));
+        Assert.That(runtime.GroupMessages,
+            shouldSend ? Is.EqualTo(new[] { (3001L, qchatContent) }) : Is.Empty);
     }
 
     [Test]

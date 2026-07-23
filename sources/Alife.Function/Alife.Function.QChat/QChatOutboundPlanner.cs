@@ -37,23 +37,37 @@ public sealed class QChatOutboundPlanner(int maxTextLength = 900)
                 continue;
             }
 
-            AddTextItem(items, current.ToString());
+            AddTextItem(items, current.ToString(), maxTextLength);
             current.Clear();
             current.Append(block);
         }
 
-        AddTextItem(items, current.ToString());
+        AddTextItem(items, current.ToString(), maxTextLength);
         return new QChatOutboundMessagePlan(items);
     }
 
-    static void AddTextItem(List<QChatOutboundMessageItem> items, string text)
+    static void AddTextItem(List<QChatOutboundMessageItem> items, string text, int maxTextLength)
     {
         string trimmed = text.Trim();
         if (trimmed.Length == 0)
             return;
 
-        items.Add(new QChatOutboundMessageItem(QChatOutboundItemKind.Text, trimmed));
+        while (trimmed.Length > maxTextLength && CanSplitPlainText(trimmed))
+        {
+            int whitespace = trimmed.LastIndexOf(' ', maxTextLength);
+            int splitAt = whitespace > 0 ? whitespace : maxTextLength;
+
+            items.Add(new QChatOutboundMessageItem(QChatOutboundItemKind.Text, trimmed[..splitAt].TrimEnd()));
+            trimmed = trimmed[(whitespace > 0 ? splitAt + 1 : splitAt)..].TrimStart();
+        }
+
+        if (trimmed.Length > 0)
+            items.Add(new QChatOutboundMessageItem(QChatOutboundItemKind.Text, trimmed));
     }
+
+    static bool CanSplitPlainText(string text) =>
+        text.IndexOf('\n') < 0 &&
+        text.Contains("[CQ:", StringComparison.OrdinalIgnoreCase) == false;
 
     static string NormalizeText(string? text)
     {

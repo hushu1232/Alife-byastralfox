@@ -40,7 +40,7 @@ public class QChatTaskFeedbackFormatterTests
     }
 
     [Test]
-    public void FormatUploadFailureUsesDedicatedFailureWording()
+    public void FormatUploadFailureUsesDedicatedFailureWordingWithoutRawDetail()
     {
         string message = QChatTaskFeedbackFormatter.Format(new QChatTaskFeedbackContext(
             QChatTaskFeedbackKind.Failed,
@@ -52,7 +52,7 @@ public class QChatTaskFeedbackFormatterTests
         Assert.Multiple(() =>
         {
             Assert.That(message, Does.Contain("\u6ca1\u4f20\u6210"));
-            Assert.That(message, Does.Contain("NapCat upload failed"));
+            Assert.That(message, Does.Not.Contain("NapCat upload failed"));
             Assert.That(message, Does.Not.Contain("\u600e\u4e48\u5566"));
         });
     }
@@ -73,11 +73,12 @@ public class QChatTaskFeedbackFormatterTests
             Assert.That(message, Does.Contain("456"));
             Assert.That(message, Does.Contain("\u79c1\u804a\u6587\u4ef6"));
             Assert.That(message, Does.Not.Contain("\u7fa4\u6587\u4ef6"));
+            Assert.That(message, Does.Not.Contain("NapCat private upload failed"));
         });
     }
 
     [Test]
-    public void FormatTaskFeedbackForMixuMotherKeepsFileAndFailureDetail()
+    public void FormatTaskFeedbackForMixuMotherKeepsFileWithoutFailureDetail()
     {
         QChatPersonaFeedbackContext context = new("mixu", QChatSenderRole.PrivateGuest, "\u5988\u5988", "mother");
         string message = QChatTaskFeedbackFormatter.Format(
@@ -93,7 +94,7 @@ public class QChatTaskFeedbackFormatterTests
         {
             Assert.That(message, Does.Contain("\u5988\u5988"));
             Assert.That(message, Does.Contain("report.txt"));
-            Assert.That(message, Does.Contain("gateway-timeout"));
+            Assert.That(message, Does.Not.Contain("gateway-timeout"));
         });
     }
 

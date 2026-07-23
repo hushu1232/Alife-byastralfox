@@ -150,18 +150,26 @@ public class QChatOutboundPlannerTests
     }
 
     [Test]
-    public void LongSingleParagraphDoesNotSplitJustBecauseItIsLong()
+    public void LongSingleParagraphUsesWhitespaceChunksOnlyWhenTheHardLimitRequiresIt()
     {
         QChatOutboundPlanner planner = new(maxTextLength: 10);
-        string text = "This is one long paragraph with no safe blank-line boundary, so it stays together.";
+        string text = "one two three";
 
         QChatOutboundMessagePlan plan = planner.PlanText(text);
 
         Assert.Multiple(() =>
         {
-            Assert.That(plan.Items, Has.Count.EqualTo(1));
-            Assert.That(plan.Items[0].Text, Is.EqualTo(text));
+            Assert.That(plan.Items.Select(item => item.Text), Is.EqualTo(new[] { "one two", "three" }));
         });
+    }
+
+    [Test]
+    public void LongUnspacedParagraphUsesHardLengthChunks()
+    {
+        QChatOutboundPlanner planner = new(maxTextLength: 5);
+
+        Assert.That(planner.PlanText("一二三四五六").Items.Select(item => item.Text),
+            Is.EqualTo(new[] { "一二三四五", "六" }));
     }
 
     [Test]
