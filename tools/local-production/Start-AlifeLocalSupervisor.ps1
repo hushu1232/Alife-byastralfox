@@ -19,17 +19,10 @@ function Start-AccountWorker($Slot,[string]$Executable,[string]$Token){
   $start=[Diagnostics.ProcessStartInfo]::new()
   if([IO.Path]::GetExtension($Executable)-eq'.dll'){$dotnet=if($env:ALIFE_DOTNET_PATH){$env:ALIFE_DOTNET_PATH}else{'C:\Users\hu shu\.dotnet\dotnet.exe'};if(-not(Test-Path -LiteralPath $dotnet)){throw 'User .NET runtime was not found.'};$start.FileName=$dotnet;$start.Arguments='"'+$Executable+'"'}else{$start.FileName=$Executable}
   $start.UseShellExecute=$false;$start.CreateNoWindow=$true
-  $names=@('ALIFE_RUNTIME_PATH','ALIFE_STORAGE_PATH','ALIFE_TEMP_PATH','ALIFE_WEBVIEW2_USER_DATA_FOLDER','ALIFE_ONEBOT_URL','ALIFE_ONEBOT_TOKEN','ALIFE_QZONE_LOOPBACK_OPERATOR_URL','ALIFE_ACCOUNT_ID','ALIFE_ACCOUNT_A_ONEBOT_TOKEN','ALIFE_ACCOUNT_B_ONEBOT_TOKEN')
-  $previous=@{};foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
-  try {
-    $env:ALIFE_RUNTIME_PATH=$Slot.runtimeRoot;$env:ALIFE_STORAGE_PATH=$Slot.storageRoot;$env:ALIFE_TEMP_PATH=$Slot.tempRoot;$env:ALIFE_ACCOUNT_ID=$Slot.id
-    $env:ALIFE_WEBVIEW2_USER_DATA_FOLDER=(Join-Path $Slot.runtimeRoot 'webview2');$env:ALIFE_ONEBOT_URL=$Slot.oneBotUrl;$env:ALIFE_ONEBOT_TOKEN=$Token;$env:ALIFE_QZONE_LOOPBACK_OPERATOR_URL=$Slot.qZoneLoopbackOperatorUrl
-    $env:ALIFE_ACCOUNT_A_ONEBOT_TOKEN=$null;$env:ALIFE_ACCOUNT_B_ONEBOT_TOKEN=$null
-    [Diagnostics.Process]::Start($start)
-  }
-  finally {
-    foreach($name in $names){if($null-eq$previous[$name]){Remove-Item -Path ('Env:'+$name) -ErrorAction SilentlyContinue}else{Set-Item -Path ('Env:'+$name) -Value $previous[$name]}}
-  }
+  $start.Environment['ALIFE_RUNTIME_PATH']=$Slot.runtimeRoot;$start.Environment['ALIFE_STORAGE_PATH']=$Slot.storageRoot;$start.Environment['ALIFE_TEMP_PATH']=$Slot.tempRoot;$start.Environment['ALIFE_ACCOUNT_ID']=$Slot.id
+  $start.Environment['ALIFE_WEBVIEW2_USER_DATA_FOLDER']=(Join-Path $Slot.runtimeRoot 'webview2');$start.Environment['ALIFE_ONEBOT_URL']=$Slot.oneBotUrl;$start.Environment['ALIFE_ONEBOT_TOKEN']=$Token;$start.Environment['ALIFE_QZONE_LOOPBACK_OPERATOR_URL']=$Slot.qZoneLoopbackOperatorUrl
+  [void]$start.Environment.Remove('ALIFE_ACCOUNT_A_ONEBOT_TOKEN');[void]$start.Environment.Remove('ALIFE_ACCOUNT_B_ONEBOT_TOKEN')
+  [Diagnostics.Process]::Start($start)
 }
 $repoRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 if([string]::IsNullOrWhiteSpace($ClientExecutablePath)){$ClientExecutablePath=Join-Path $repoRoot 'Outputs\Alife.Client\Alife.Client.dll'}
