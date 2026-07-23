@@ -405,6 +405,11 @@ public partial class QChatService(
             AppContext.BaseDirectory,
             "DataAgent",
             "dataagent.sqlite")));
+    DataAgentRuntimeHealthReporter? resolvedRuntimeHealthReporter;
+    DataAgentRuntimeHealthReporter? RuntimeHealthReporter => resolvedRuntimeHealthReporter ??=
+        DataAgentRuntimeHealthReporter.TryCreate(
+            AlifePath.StorageFolderPath,
+            Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID"));
 
     DesktopActionGateway? resolvedDesktopActionGateway;
     DesktopActionGateway DesktopGateway => resolvedDesktopActionGateway ??= injectedDesktopActionGateway
@@ -2965,6 +2970,11 @@ public partial class QChatService(
         try
         {
             await oneBotClient.ConnectAsync();
+            RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                DataAgentRuntimeHealthEvent.OneBotComponent,
+                DataAgentRuntimeHealthState.Healthy,
+                "OneBotConnected"));
             WriteQChatDiagnostic("connect-succeeded", "OneBot connected.", new {
                 oneBotClient.BotId,
                 oneBotClient.IsConnected
@@ -2973,6 +2983,11 @@ public partial class QChatService(
         }
         catch (Exception ex)
         {
+            RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                DataAgentRuntimeHealthEvent.OneBotComponent,
+                DataAgentRuntimeHealthState.Unavailable,
+                QChatRuntimeHealthReasonClassifier.ForOneBotConnectionFailure()));
             WriteQChatDiagnostic("connect-failed", ex.Message, exception: ex);
         }
     }
@@ -9407,6 +9422,12 @@ public partial class QChatService(
         catch (Exception ex)
         {
             dispatchOutcome = "failed";
+            string healthReason = QChatRuntimeHealthReasonClassifier.ForModelFailure(ex);
+            RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                DataAgentRuntimeHealthEvent.ModelComponent,
+                healthReason == "ModelAuthRejected" ? DataAgentRuntimeHealthState.Unavailable : DataAgentRuntimeHealthState.Degraded,
+                healthReason));
             WriteQChatDiagnostic("model-dispatch-failed", ex.Message, new {
                 message.MessageType,
                 message.TargetId

@@ -68,4 +68,64 @@ function Invoke-AccountRecovery {
     return [pscustomobject]@{ Action='restart-worker'; Reason='RestartRecoveryRequired'; DeadlineUtc=$Now }
 }
 
-Export-ModuleMember -Function Get-OverallStatus,Read-LocalProductionPlan,Invoke-AccountRecovery
+function Test-OneBotLoopbackTcpReachable {
+    param([string]$OneBotUrl)
+
+    $client = $null
+    try {
+        $uri = [Uri]$OneBotUrl
+        if ($uri.Scheme -ne 'ws' -or $uri.Host -notin @('127.0.0.1','localhost','[::1]','::1')) { return $false }
+
+        $client = [Net.Sockets.TcpClient]::new()
+        $connectTask = $client.ConnectAsync($uri.Host.Trim('[', ']'), $uri.Port)
+        if ($connectTask.Wait(750) -eq $false) { return $false }
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $client) { $client.Dispose() }
+    }
+}
+
+function Read-AccountRuntimeHealthSnapshot {
+    param([string]$StorageRoot,[string]$AccountId)
+
+    if ($AccountId -cnotin @('account-a','account-b')) { return $null }
+    $path = Join-Path $StorageRoot 'runtime-health.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+
+    try {
+        $snapshot = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        if ($snapshot.version -ne 1 -or [string]$snapshot.account -cne $AccountId) { return $null }
+        $components = @($snapshot.components)
+        if ($components.Count -lt 1 -or $components.Count -gt 4) { return $null }
+
+        $seen = @{}
+        $safeComponents = [Collections.Generic.List[object]]::new()
+        foreach ($component in $components) {
+            $name = [string]$component.component
+            $health = [string]$component.health
+            $reason = [string]$component.reason
+            if ($seen.ContainsKey($name)) { return $null }
+            $valid = switch ($name) {
+                'onebot' { ($health -eq 'healthy' -and $reason -eq 'OneBotConnected') -or ($health -eq 'unavailable' -and $reason -eq 'OneBotUnavailable') -or ($health -eq 'degraded' -and $reason -eq 'OneBotProbeUnknown') }
+                'model' { ($health -eq 'unavailable' -and $reason -eq 'ModelAuthRejected') -or ($health -eq 'degraded' -and $reason -eq 'HealthProbeFailed') }
+                'qzone_operator' { ($health -eq 'healthy' -and $reason -eq 'QZoneOperatorReady') -or ($health -eq 'unavailable' -and $reason -eq 'QZoneOperatorUnavailable') }
+                'character_activation' { $health -eq 'unavailable' -and $reason -eq 'CharacterActivationFailed' }
+                default { $false }
+            }
+            if (-not $valid) { return $null }
+            $seen[$name] = $true
+            $safeComponents.Add([pscustomobject]@{ component=$name; health=$health; reason=$reason })
+        }
+
+        return [pscustomobject]@{ components=@($safeComponents) }
+    }
+    catch {
+        return $null
+    }
+}
+
+Export-ModuleMember -Function Get-OverallStatus,Read-LocalProductionPlan,Invoke-AccountRecovery,Test-OneBotLoopbackTcpReachable,Read-AccountRuntimeHealthSnapshot
