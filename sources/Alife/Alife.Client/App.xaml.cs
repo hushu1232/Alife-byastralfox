@@ -4,6 +4,7 @@ using Alife.Framework;
 using Alife.Components.Services;
 using Alife.Platform;
 using Alife.Function.QChat;
+using Alife.Function.DataAgent;
 using Microsoft.Extensions.Logging;
 
 namespace Alife;
@@ -70,6 +71,9 @@ public partial class App
         ServiceProvider = services.BuildServiceProvider();
         ServiceProvider.GetRequiredService<ChatMessageService>();
         ServiceProvider.GetRequiredService<QZoneLoopbackOperatorLifecycleHost>();
+        DataAgentRuntimeHealthReporter? runtimeHealthReporter = DataAgentRuntimeHealthReporter.TryCreate(
+            AlifePath.StorageFolderPath,
+            Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID"));
         _ = Task.Run(async () => {
             try
             {
@@ -77,6 +81,11 @@ public partial class App
             }
             catch (Exception ex)
             {
+                runtimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                    DataAgentRuntimeHealthEvent.CharacterActivationComponent,
+                    DataAgentRuntimeHealthState.Unavailable,
+                    "CharacterActivationFailed"));
                 AlifeTerminal.LogError(ex.ToString());
             }
         });

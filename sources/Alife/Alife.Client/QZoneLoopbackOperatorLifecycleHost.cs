@@ -1,5 +1,6 @@
 using Alife.Framework;
 using Alife.Function.QChat;
+using Alife.Function.DataAgent;
 using Alife.Platform;
 using Autofac;
 
@@ -11,6 +12,7 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
     readonly SemaphoreSlim lifecycleGate = new(1, 1);
     readonly Dictionary<ChatActivity, QZoneLoopbackOperatorHost> hosts = [];
     readonly HashSet<ChatActivity> stoppedActivities = [];
+    DataAgentRuntimeHealthReporter? runtimeHealthReporter;
     bool disposed;
 
     public QZoneLoopbackOperatorLifecycleHost(ChatActivitySystem chatActivitySystem)
@@ -66,11 +68,21 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
                 }
 
                 hosts.Add(activity, host);
+                RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                    DataAgentRuntimeHealthEvent.QZoneOperatorComponent,
+                    DataAgentRuntimeHealthState.Healthy,
+                    "QZoneOperatorReady"));
             }
             catch
             {
                 if (host != null)
                     await host.DisposeAsync().ConfigureAwait(false);
+                RuntimeHealthReporter?.Report(new DataAgentRuntimeHealthEvent(
+                    Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID")!,
+                    DataAgentRuntimeHealthEvent.QZoneOperatorComponent,
+                    DataAgentRuntimeHealthState.Unavailable,
+                    "QZoneOperatorUnavailable"));
                 AlifeTerminal.LogWarning("QQ Zone loopback operator did not start.");
             }
         }
@@ -79,6 +91,11 @@ public sealed class QZoneLoopbackOperatorLifecycleHost : IAsyncDisposable
             lifecycleGate.Release();
         }
     }
+
+    DataAgentRuntimeHealthReporter? RuntimeHealthReporter => runtimeHealthReporter ??=
+        DataAgentRuntimeHealthReporter.TryCreate(
+            AlifePath.StorageFolderPath,
+            Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID"));
 
     async Task StopForActivityAsync(ChatActivity activity)
     {

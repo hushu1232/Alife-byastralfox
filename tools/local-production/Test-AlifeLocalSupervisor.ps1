@@ -27,3 +27,36 @@ $slot=[pscustomobject]@{id='account-a';drainTimeoutSeconds=90}
 $now=[DateTimeOffset]::UtcNow
 Assert-Equal (Invoke-AccountRecovery -Slot $slot -ActiveWorkCount 1 -Now $now).Action 'drain'
 Assert-Equal (Invoke-AccountRecovery -Slot $slot -ActiveWorkCount 0 -Now $now).Action 'restart-worker'
+
+$runtimeHealthRoot = Join-Path ([IO.Path]::GetTempPath()) ("alife-runtime-health-" + [Guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($runtimeHealthRoot) | Out-Null
+    @{
+        version = 1
+        account = 'account-a'
+        components = @(@{ component = 'model'; health = 'unavailable'; reason = 'ModelAuthRejected' })
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $runtimeHealthRoot 'runtime-health.json') -Encoding UTF8
+    $snapshot = Read-AccountRuntimeHealthSnapshot -StorageRoot $runtimeHealthRoot -AccountId 'account-a'
+    Assert-Equal $snapshot.components[0].reason 'ModelAuthRejected'
+    Assert-Equal (Read-AccountRuntimeHealthSnapshot -StorageRoot $runtimeHealthRoot -AccountId 'account-b') $null
+
+    @{
+        version = 1
+        account = 'account-a'
+        components = @(@{ component = 'model'; health = 'unavailable'; reason = 'raw exception' })
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath (Join-Path $runtimeHealthRoot 'runtime-health.json') -Encoding UTF8
+    Assert-Equal (Read-AccountRuntimeHealthSnapshot -StorageRoot $runtimeHealthRoot -AccountId 'account-a') $null
+}
+finally {
+    Remove-Item -LiteralPath $runtimeHealthRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+try {
+    $listener.Start()
+    $port = ([Net.IPEndPoint]$listener.LocalEndpoint).Port
+    Assert-Equal (Test-OneBotLoopbackTcpReachable -OneBotUrl ("ws://127.0.0.1:" + $port)) $true
+}
+finally {
+    $listener.Stop()
+}

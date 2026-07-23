@@ -19,10 +19,10 @@ function Start-AccountWorker($Slot,[string]$Executable,[string]$Token){
   $start=[Diagnostics.ProcessStartInfo]::new()
   if([IO.Path]::GetExtension($Executable)-eq'.dll'){$dotnet=if($env:ALIFE_DOTNET_PATH){$env:ALIFE_DOTNET_PATH}else{'C:\Users\hu shu\.dotnet\dotnet.exe'};if(-not(Test-Path -LiteralPath $dotnet)){throw 'User .NET runtime was not found.'};$start.FileName=$dotnet;$start.Arguments='"'+$Executable+'"'}else{$start.FileName=$Executable}
   $start.UseShellExecute=$false;$start.CreateNoWindow=$true
-  $names=@('ALIFE_RUNTIME_PATH','ALIFE_STORAGE_PATH','ALIFE_TEMP_PATH','ALIFE_WEBVIEW2_USER_DATA_FOLDER','ALIFE_ONEBOT_URL','ALIFE_ONEBOT_TOKEN','ALIFE_QZONE_LOOPBACK_OPERATOR_URL','ALIFE_ACCOUNT_A_ONEBOT_TOKEN','ALIFE_ACCOUNT_B_ONEBOT_TOKEN')
+  $names=@('ALIFE_RUNTIME_PATH','ALIFE_STORAGE_PATH','ALIFE_TEMP_PATH','ALIFE_WEBVIEW2_USER_DATA_FOLDER','ALIFE_ONEBOT_URL','ALIFE_ONEBOT_TOKEN','ALIFE_QZONE_LOOPBACK_OPERATOR_URL','ALIFE_ACCOUNT_ID','ALIFE_ACCOUNT_A_ONEBOT_TOKEN','ALIFE_ACCOUNT_B_ONEBOT_TOKEN')
   $previous=@{};foreach($name in $names){$previous[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
   try {
-    $env:ALIFE_RUNTIME_PATH=$Slot.runtimeRoot;$env:ALIFE_STORAGE_PATH=$Slot.storageRoot;$env:ALIFE_TEMP_PATH=$Slot.tempRoot
+    $env:ALIFE_RUNTIME_PATH=$Slot.runtimeRoot;$env:ALIFE_STORAGE_PATH=$Slot.storageRoot;$env:ALIFE_TEMP_PATH=$Slot.tempRoot;$env:ALIFE_ACCOUNT_ID=$Slot.id
     $env:ALIFE_WEBVIEW2_USER_DATA_FOLDER=(Join-Path $Slot.runtimeRoot 'webview2');$env:ALIFE_ONEBOT_URL=$Slot.oneBotUrl;$env:ALIFE_ONEBOT_TOKEN=$Token;$env:ALIFE_QZONE_LOOPBACK_OPERATOR_URL=$Slot.qZoneLoopbackOperatorUrl
     $env:ALIFE_ACCOUNT_A_ONEBOT_TOKEN=$null;$env:ALIFE_ACCOUNT_B_ONEBOT_TOKEN=$null
     [Diagnostics.Process]::Start($start)
@@ -36,10 +36,11 @@ if([string]::IsNullOrWhiteSpace($ClientExecutablePath)){$ClientExecutablePath=Jo
 $previousState=$null
 if(Test-Path -LiteralPath $StatePath){try{$previousState=Get-Content -LiteralPath $StatePath -Raw|ConvertFrom-Json}catch{$previousState=$null}}
 $plan=Read-LocalProductionPlan (Get-Content -LiteralPath $PlanPath -Raw)
+$startedAccounts=@{}
 do {
   $accounts=[ordered]@{}
   foreach($slot in $plan.accounts){
-    $pidValue=0;$slotHealth='Degraded';$reason='DependencyUnavailable';$restartCount=0
+    $pidValue=0;$slotHealth='Degraded';$reason='DependencyUnavailable';$restartCount=0;$components=@()
     if(-not $DryRun){
       $token=[Environment]::GetEnvironmentVariable($slot.oneBotTokenEnvironmentVariable,'User')
       if([string]::IsNullOrWhiteSpace($token)){$token=[Environment]::GetEnvironmentVariable($slot.oneBotTokenEnvironmentVariable,'Process')}
@@ -48,11 +49,26 @@ do {
       else{
         $previousAccount=Get-TrackedAccount $previousState $slot.id
         $worker=Get-RunningAccountWorker $previousState $slot.id
-        if($null -ne $worker){$pidValue=$worker.Id;$slotHealth='Degraded';$reason='HealthProbeFailed';if($null -ne $previousAccount){$restartCount=[int]$previousAccount.restartCount}}
-        else{$worker=Start-AccountWorker $slot $ClientExecutablePath $token;$pidValue=$worker.Id;$slotHealth='Degraded';$reason='HealthProbeFailed';$restartCount=if($null -eq $previousAccount){1}else{[int]$previousAccount.restartCount+1}}
+        if($null -eq $worker -and $startedAccounts.ContainsKey($slot.id)){$slotHealth='Unavailable';$reason='ClientProcessMissing';if($null -ne $previousAccount){$restartCount=[int]$previousAccount.restartCount}}
+        elseif($null -eq $worker){$worker=Start-AccountWorker $slot $ClientExecutablePath $token;$startedAccounts[$slot.id]=$true;$pidValue=$worker.Id;$slotHealth='Degraded';$reason='HealthProbeFailed';$restartCount=if($null -eq $previousAccount){1}else{[int]$previousAccount.restartCount+1}}
+        else{$startedAccounts[$slot.id]=$true;$pidValue=$worker.Id;if($null -ne $previousAccount){$restartCount=[int]$previousAccount.restartCount}}
+
+        if($pidValue -gt 0 -and (Test-OneBotLoopbackTcpReachable -OneBotUrl $slot.oneBotUrl) -eq $false){$slotHealth='Unavailable';$reason='OneBotUnavailable'}
+        elseif($pidValue -gt 0){
+          $snapshot=Read-AccountRuntimeHealthSnapshot -StorageRoot $slot.storageRoot -AccountId $slot.id
+          if($null -eq $snapshot){$slotHealth='Degraded';$reason='HealthProbeFailed'}
+          else{
+            $components=$snapshot.components
+            $unavailable=@($components|Where-Object{$_.health -eq 'unavailable'}|Select-Object -First 1)
+            $degraded=@($components|Where-Object{$_.health -eq 'degraded'}|Select-Object -First 1)
+            if($unavailable.Count -gt 0){$slotHealth='Unavailable';$reason=$unavailable[0].reason}
+            elseif($degraded.Count -gt 0){$slotHealth='Degraded';$reason=$degraded[0].reason}
+            else{$slotHealth='Healthy';$reason=$components[0].reason}
+          }
+        }
       }
     }
-    $accounts[$slot.id]=[ordered]@{id=$slot.id;pid=$pidValue;health=$slotHealth;failures=0;restartCount=$restartCount;draining=$false;activeCount=0;reason=$reason}
+    $accounts[$slot.id]=[ordered]@{id=$slot.id;pid=$pidValue;health=$slotHealth;failures=0;restartCount=$restartCount;draining=$false;activeCount=0;reason=$reason;components=$components}
   }
   $health=@{};foreach($entry in $accounts.GetEnumerator()){$health[$entry.Key]=$entry.Value.health}
   $safe=[ordered]@{overall=Get-OverallStatus $health;accounts=$accounts;reason=if($DryRun){'DependencyUnavailable'}else{'None'};observedAtUtc=[DateTimeOffset]::UtcNow.ToString('O')}
