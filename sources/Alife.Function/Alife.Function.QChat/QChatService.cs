@@ -1213,6 +1213,7 @@ public partial class QChatService(
         {
             string line = lines[i];
             if (line.StartsWith("[QQ ", StringComparison.Ordinal)
+                || line.StartsWith("[/QChat dynamic context]", StringComparison.Ordinal)
                 || line.Contains("priority=", StringComparison.OrdinalIgnoreCase)
                 || line.Contains("trust=", StringComparison.OrdinalIgnoreCase)
                 || line.Contains("source=qq", StringComparison.OrdinalIgnoreCase)
@@ -4788,7 +4789,8 @@ public partial class QChatService(
 
     string ResolveCurrentAgentId(QChatConfig config)
     {
-        return QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
+        string agentId = QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
+        return string.Equals(agentId, "default", StringComparison.Ordinal) ? "xiayu" : agentId;
     }
 
     static long ResolveCurrentBotId(QChatConfig config, OneBotBasicMessageEvent messageEvent)
@@ -9375,11 +9377,12 @@ public partial class QChatService(
             if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
                 TryBuildPlainTextFallbackResponse(modelResponse, message.MessageType, out string fallbackMessage))
             {
-                bool delayed = await TryApplyReplyTimingDelayAsync(message.MessageType, message.TargetId);
-                if (delayed && ShouldSuppressOutgoingForQuietMode(message.MessageType, message.TargetId, "plain-fallback-after-delay"))
-                    return;
-
-                await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
+                bool voiceRequested = IsExplicitVoiceRequestedByUser(currentReplySession.Value);
+                await SendChatAsyncCore(
+                    message.MessageType == OneBotMessageType.Group ? "group" : "private",
+                    message.TargetId,
+                    fallbackMessage,
+                    voiceRequested);
                 TryScheduleConversationFollowUpAfterNormalReply(fallbackMessage);
                 WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
                     message.MessageType,

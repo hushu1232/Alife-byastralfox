@@ -110,11 +110,11 @@ public class QChatServiceAdapterTests
             Assert.That(runtime.PrivateMessages.First().Message, Is.EqualTo("我刚才的回复"));
             Assert.That(next.Formatted, Does.Contain("[QChat dynamic context]"));
             Assert.That(next.Formatted, Does.Contain("source=recent_qq_context"));
-            Assert.That(next.Formatted, Does.Contain("untrusted=true"));
+            Assert.That(next.Formatted, Does.Contain("trust=untrusted-external"));
             Assert.That(next.Formatted, Does.Contain("self: 我刚才的回复"));
             Assert.That(next.Formatted, Does.Contain("owner user 1001: 先说一件事"));
             Assert.That(next.Formatted, Does.Contain("owner user 1001: 继续刚才的话题"));
-            Assert.That(next.Formatted, Does.EndWith("继续刚才的话题"));
+            Assert.That(next.Formatted, Does.EndWith("[/QChat dynamic context]"));
         });
     }
 
@@ -11877,7 +11877,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task MixuAccountMentionedAsXiayuStillDispatchesMixuPersonaToModel()
+    public async Task MixuAccountMentionedAsXiayuDoesNotInjectXiayuIntoDynamicContext()
     {
         FakeOneBotRuntime runtime = new();
         XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
@@ -11902,7 +11902,7 @@ public class QChatServiceAdapterTests
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
         Assert.Multiple(() =>
         {
-            Assert.That(inbound.Formatted, Does.Contain("persona=mixu"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("persona=mixu"));
             Assert.That(inbound.Formatted, Does.Not.Contain("persona=xiayu"));
         });
     }
@@ -12179,7 +12179,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task XiayuDirectQChatOutputFiltersCatgirlTerms()
+    public async Task XiayuDirectQChatOutputPreservesOrdinaryCatgirlTerms()
     {
         FakeOneBotRuntime runtime = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
@@ -12193,9 +12193,9 @@ public class QChatServiceAdapterTests
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
         string sent = runtime.PrivateMessages.Single().Message;
-        Assert.That(sent, Does.Not.Contain("喵"));
-        Assert.That(sent, Does.Not.Contain("猫娘"));
-        Assert.That(sent, Does.Not.Contain("小鱼干"));
+        Assert.That(sent, Does.Contain("喵"));
+        Assert.That(sent, Does.Contain("猫娘"));
+        Assert.That(sent, Does.Contain("小鱼干"));
     }
 
     [Test]
