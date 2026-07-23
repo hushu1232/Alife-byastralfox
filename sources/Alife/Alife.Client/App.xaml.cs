@@ -74,10 +74,19 @@ public partial class App
         DataAgentRuntimeHealthReporter? runtimeHealthReporter = DataAgentRuntimeHealthReporter.TryCreate(
             AlifePath.StorageFolderPath,
             Environment.GetEnvironmentVariable("ALIFE_ACCOUNT_ID"));
+        ChatActivitySystem chatActivitySystem = ServiceProvider.GetRequiredService<ChatActivitySystem>();
+        chatActivitySystem.ActivationFailed += (_, _) => {
+            if (runtimeHealthReporter != null)
+                runtimeHealthReporter.Report(new DataAgentRuntimeHealthEvent(
+                    runtimeHealthReporter.AccountId,
+                    DataAgentRuntimeHealthEvent.CharacterActivationComponent,
+                    DataAgentRuntimeHealthState.Unavailable,
+                    "CharacterActivationFailed"));
+        };
         _ = Task.Run(async () => {
             try
             {
-                await ServiceProvider.GetRequiredService<ChatActivitySystem>().ActivateAutoActivateCharacters();
+                await chatActivitySystem.ActivateAutoActivateCharacters();
             }
             catch (Exception ex)
             {
