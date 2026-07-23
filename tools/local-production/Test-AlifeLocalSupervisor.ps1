@@ -20,9 +20,11 @@ if ($lifecycleHostSource -notmatch 'ALIFE_QZONE_LOOPBACK_OPERATOR_URL') { throw 
 $supervisorPath = Join-Path $PSScriptRoot 'Start-AlifeLocalSupervisor.ps1'
 $supervisorSource = Get-Content -LiteralPath $supervisorPath -Raw
 if ($supervisorSource -notmatch 'GetEnvironmentVariable\(\$slot\.oneBotTokenEnvironmentVariable,''Process''\)') { throw 'Supervisor must fall back to the inherited process token when the user environment is unavailable.' }
-if ($supervisorSource -notmatch '\$env:ALIFE_QZONE_LOOPBACK_OPERATOR_URL=\$Slot\.qZoneLoopbackOperatorUrl') { throw 'Supervisor must inject the character-local operator endpoint into the child process environment.' }
-if ($supervisorSource -notmatch '\$env:ALIFE_ACCOUNT_A_ONEBOT_TOKEN=\$null') { throw 'Supervisor must remove account-scoped token names before starting a role process.' }
+if ($supervisorSource -notmatch '\$start\.Environment\[''ALIFE_QZONE_LOOPBACK_OPERATOR_URL''\]=\$Slot\.qZoneLoopbackOperatorUrl') { throw 'Supervisor must inject the character-local operator endpoint into the child process environment.' }
+if ($supervisorSource -notmatch '\$start\.Environment\.Remove\(''ALIFE_ACCOUNT_A_ONEBOT_TOKEN''\)') { throw 'Supervisor must remove account-scoped token names before starting a role process.' }
 if ($supervisorSource -notmatch 'Get-Process -Id \$pidValue') { throw 'Supervisor must retain a still-running account worker instead of starting duplicates on every poll.' }
+if ($supervisorSource -notmatch '\$start\.Environment\[''ALIFE_STORAGE_PATH''\]=\$Slot\.storageRoot') { throw 'Supervisor must place the account-local storage root directly in the child process environment.' }
+if ($supervisorSource -notmatch '\$start\.Environment\[''ALIFE_ACCOUNT_ID''\]=\$Slot\.id') { throw 'Supervisor must place the account identity directly in the child process environment.' }
 $slot=[pscustomobject]@{id='account-a';drainTimeoutSeconds=90}
 $now=[DateTimeOffset]::UtcNow
 Assert-Equal (Invoke-AccountRecovery -Slot $slot -ActiveWorkCount 1 -Now $now).Action 'drain'
