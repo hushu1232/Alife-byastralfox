@@ -6,12 +6,20 @@ namespace Alife.Test.QChat;
 public sealed class QChatReplyLayoutNormalizerTests
 {
     [Test]
-    public void FoldsOrdinarySingleLineBreaksIntoOneNaturalParagraph()
+    public void PreservesOneIntentionalOrdinaryLineBreak()
     {
         QChatReplyLayoutNormalizer normalizer = new();
 
-        Assert.That(normalizer.Normalize("我看过了\n这个问题可以这样处理\n先把入口收紧"),
-            Is.EqualTo("我看过了 这个问题可以这样处理 先把入口收紧"));
+        Assert.That(normalizer.Normalize("我看过了\n这个问题可以这样处理"),
+            Is.EqualTo("我看过了\n这个问题可以这样处理"));
+    }
+
+    [Test]
+    public void CollapsesOnlyExcessShortUnpunctuatedFragments()
+    {
+        QChatReplyLayoutNormalizer normalizer = new();
+
+        Assert.That(normalizer.Normalize("好\n我在\n看看"), Is.EqualTo("好 我在 看看"));
     }
 
     [Test]

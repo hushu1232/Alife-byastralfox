@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Alife.Function.QChat;
 
-internal static class QChatExperienceSanitizer
+public static class QChatExperienceSanitizer
 {
     public static string SanitizeOutgoing(QChatConfig? config, OneBotMessageType type, long targetId, string message)
     {
@@ -17,7 +17,6 @@ internal static class QChatExperienceSanitizer
         if (IsHumanFacingNoReplyState(sanitized))
             return "";
 
-        sanitized = RemoveXiayuPersonaBleed(sanitized);
         sanitized = RewriteXiayuMachineIdentity(sanitized);
         sanitized = RemoveRoutingLabels(sanitized, type);
         return sanitized.Trim();
@@ -29,16 +28,6 @@ internal static class QChatExperienceSanitizer
     }
 
     static bool IsXiayu(QChatConfig? config) => config?.BotId == 2905391496;
-
-    static string RemoveXiayuPersonaBleed(string value)
-    {
-        return value
-            .Replace("主人喵", "术术", StringComparison.Ordinal)
-            .Replace("猫娘", "", StringComparison.Ordinal)
-            .Replace("小鱼干", "零食", StringComparison.Ordinal)
-            .Replace("喵", "", StringComparison.Ordinal)
-            .Replace("嘛！", "。", StringComparison.Ordinal);
-    }
 
     static string RewriteXiayuMachineIdentity(string value)
     {

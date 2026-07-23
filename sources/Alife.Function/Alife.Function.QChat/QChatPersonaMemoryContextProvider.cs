@@ -49,7 +49,6 @@ public sealed class QChatPersonaMemoryContextProvider
             return false;
 
         CacheProtectedProfile(document);
-        history.AddUserMessage($"{OpenMarker}\n{document}\n{CloseMarker}");
         return true;
     }
 

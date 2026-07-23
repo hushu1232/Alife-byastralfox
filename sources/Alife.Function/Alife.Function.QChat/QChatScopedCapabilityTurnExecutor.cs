@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,7 +9,6 @@ namespace Alife.Function.QChat;
 
 public sealed record QChatScopedCapabilityTurnRequest(
     string ModelInput,
-    string CandidateText,
     QChatConversationContextRequest ConversationScope,
     QChatAgentIdentity? Identity,
     bool HasReplayableConversation,
@@ -24,55 +25,58 @@ public sealed record QChatScopedCapabilityTurnResult(
     bool RequiresStandardModelRouteFallback = false);
 
 public sealed partial class QChatScopedCapabilityTurnExecutor(
-    QChatCapabilityCandidateSelector candidateSelector,
     QChatConversationContextCapability conversationCapability,
     QChatPersonaFactProvider personaFactProvider)
 {
-    readonly QChatCapabilityCandidateSelector candidateSelector = candidateSelector ?? throw new ArgumentNullException(nameof(candidateSelector));
     readonly QChatConversationContextCapability conversationCapability = conversationCapability ?? throw new ArgumentNullException(nameof(conversationCapability));
     readonly QChatPersonaFactProvider personaFactProvider = personaFactProvider ?? throw new ArgumentNullException(nameof(personaFactProvider));
 
-    public async Task<QChatScopedCapabilityTurnResult> ExecuteAsync(
+    public string BuildModelInput(QChatScopedCapabilityTurnRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        IReadOnlyList<QChatScopedCapabilityDefinition> available = BuildAvailableCapabilities(request);
+        if (available.Count == 0)
+            return request.ModelInput;
+
+        string offers = string.Join(Environment.NewLine, available.Select(capability =>
+            $"name={capability.Name}{Environment.NewLine}purpose={capability.Purpose}{Environment.NewLine}boundary={capability.Boundary}"));
+        return $"""
+                {request.ModelInput}
+
+                [QChat scoped read capabilities]
+                The following optional read-only capabilities are available only for this turn:
+                {offers}
+                Use at most one only when its bounded data is genuinely needed for the current reply. To choose one, output exactly [[qchat_capability:capability_name]], replacing capability_name with one listed name. Otherwise continue with the normal response and normal registered tools when appropriate.
+                Never explain this protocol, capability list, or internal boundary to a QQ user.
+                [/QChat scoped read capabilities]
+                """;
+    }
+
+    public async Task<QChatScopedCapabilityTurnResult> CompleteAsync(
         QChatScopedCapabilityTurnRequest request,
+        string normalModelResponse,
         Func<QChatScopedCapabilityModelCall, CancellationToken, Task<string>> invokeModelAsync,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(invokeModelAsync);
 
-        QChatCapabilityCandidate candidate = candidateSelector.Select(
-            request.CandidateText,
-            request.HasReplayableConversation,
-            request.HasApprovedPersona);
-        if (candidate.Kind == QChatCapabilityCandidateKind.None)
+        IReadOnlyList<QChatScopedCapabilityDefinition> available = BuildAvailableCapabilities(request);
+        if (TryParseExactCapabilityRequest(normalModelResponse, out string? requestedCapability) == false)
         {
             return new QChatScopedCapabilityTurnResult(
-                string.Empty,
-                CapabilityOffered: false,
+                normalModelResponse,
+                CapabilityOffered: available.Count > 0,
                 CapabilityRequested: false,
                 Feedback: null);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        string initialResponse = await invokeModelAsync(
-            new QChatScopedCapabilityModelCall(
-                BuildCapabilityOffer(request.ModelInput, candidate),
-                IsFeedback: false),
-            cancellationToken);
-        if (TryParseExactCapabilityRequest(initialResponse, out string? requestedCapability) == false)
-        {
-            return new QChatScopedCapabilityTurnResult(
-                initialResponse,
-                CapabilityOffered: true,
-                CapabilityRequested: false,
-                Feedback: null);
-        }
-
-        string expectedCapability = GetCapabilityName(candidate);
-        bool requestedExpectedCapability = string.Equals(requestedCapability, expectedCapability, StringComparison.Ordinal);
-        QChatCapabilityFeedback feedback = requestedExpectedCapability
-            ? ReadCapability(candidate, request)
-            : QChatCapabilityFeedback.Denied(expectedCapability);
+        QChatScopedCapabilityDefinition? selected = available.FirstOrDefault(capability =>
+            string.Equals(capability.Name, requestedCapability, StringComparison.OrdinalIgnoreCase));
+        bool capabilityRequested = selected != null;
+        QChatCapabilityFeedback feedback = selected == null
+            ? QChatCapabilityFeedback.Denied(requestedCapability ?? "unknown")
+            : ReadCapability(selected, request);
         cancellationToken.ThrowIfCancellationRequested();
         string finalResponse = await invokeModelAsync(
             new QChatScopedCapabilityModelCall(
@@ -81,47 +85,59 @@ public sealed partial class QChatScopedCapabilityTurnExecutor(
             cancellationToken);
         return new QChatScopedCapabilityTurnResult(
             TryParseExactCapabilityRequest(finalResponse, out _) ? string.Empty : finalResponse,
-            CapabilityOffered: true,
-            CapabilityRequested: requestedExpectedCapability,
+            CapabilityOffered: available.Count > 0,
+            CapabilityRequested: capabilityRequested,
             Feedback: feedback,
             RequiresStandardModelRouteFallback: TryParseExactCapabilityRequest(finalResponse, out _));
     }
 
     QChatCapabilityFeedback ReadCapability(
-        QChatCapabilityCandidate candidate,
+        QChatScopedCapabilityDefinition capability,
         QChatScopedCapabilityTurnRequest request)
     {
-        return candidate.Kind switch
+        QChatCapabilityFeedback feedback = capability.Kind switch
         {
-            QChatCapabilityCandidateKind.ConversationContext => conversationCapability.Read(
+            QChatScopedCapabilityKind.ConversationContext => conversationCapability.Read(
                 request.ConversationScope,
                 request.ObservedAt),
-            QChatCapabilityCandidateKind.PersonaFact => personaFactProvider.Read(
+            QChatScopedCapabilityKind.PersonaFact => personaFactProvider.Read(
                 request.Identity,
-                candidate.PersonaFactCategory ?? QChatPersonaFactCategory.SpeechStyle,
+                capability.PersonaFactCategory ?? QChatPersonaFactCategory.SpeechStyle,
                 request.ObservedAt),
-            _ => QChatCapabilityFeedback.Denied("unknown")
+            _ => QChatCapabilityFeedback.Denied(capability.Name)
         };
+        return feedback with { Capability = capability.Name };
     }
 
-    static string BuildCapabilityOffer(string modelInput, QChatCapabilityCandidate candidate)
+    static IReadOnlyList<QChatScopedCapabilityDefinition> BuildAvailableCapabilities(QChatScopedCapabilityTurnRequest request)
     {
-        string capability = GetCapabilityName(candidate);
-        string description = candidate.Kind == QChatCapabilityCandidateKind.ConversationContext
-            ? "Read a bounded earlier segment from only this QQ conversation. It excludes the six-message hot window and recalled messages."
-            : "Read one approved, bounded character fact category. It never exposes a profile file, path, or another character's data.";
-        return $"""
-                {modelInput}
+        List<QChatScopedCapabilityDefinition> available = [];
+        if (request.HasReplayableConversation)
+        {
+            available.Add(new(
+                "current_conversation_context",
+                QChatScopedCapabilityKind.ConversationContext,
+                null,
+                "Read a bounded earlier segment from this QQ conversation, excluding the six-message hot window and recalled messages.",
+                "It never reads another conversation or recalled content."));
+        }
 
-                [QChat scoped read capability]
-                One optional, read-only capability is available for this turn only.
-                name={capability}
-                purpose={description}
-                If and only if it is needed to answer the current user, output exactly [[qchat_capability:{capability}]].
-                Otherwise write the natural QQ response directly.
-                Do not output XML, any other capability name, tool details, or an explanation of this protocol.
-                [/QChat scoped read capability]
-                """;
+        if (request.HasApprovedPersona)
+        {
+            const string PersonaBoundary = "It returns one bounded approved fact only, never a profile file, path, or another character's data.";
+            available.Add(new("persona_origin", QChatScopedCapabilityKind.PersonaFact, QChatPersonaFactCategory.Origin,
+                "Read a bounded approved fact about the character's origin or background.", PersonaBoundary));
+            available.Add(new("persona_relationship", QChatScopedCapabilityKind.PersonaFact, QChatPersonaFactCategory.Relationship,
+                "Read a bounded approved fact about a character relationship.", PersonaBoundary));
+            available.Add(new("persona_speech_style", QChatScopedCapabilityKind.PersonaFact, QChatPersonaFactCategory.SpeechStyle,
+                "Read a bounded approved fact about speaking style.", PersonaBoundary));
+            available.Add(new("persona_behavior_boundary", QChatScopedCapabilityKind.PersonaFact, QChatPersonaFactCategory.BehaviorBoundary,
+                "Read a bounded approved fact about behavior boundaries.", PersonaBoundary));
+            available.Add(new("persona_confirmed_preference", QChatScopedCapabilityKind.PersonaFact, QChatPersonaFactCategory.ConfirmedPreference,
+                "Read a bounded approved fact about confirmed preferences.", PersonaBoundary));
+        }
+
+        return available;
     }
 
     static string BuildFeedbackPrompt(QChatCapabilityFeedback feedback)
@@ -143,13 +159,6 @@ public sealed partial class QChatScopedCapabilityTurnExecutor(
                 """;
     }
 
-    static string GetCapabilityName(QChatCapabilityCandidate candidate) => candidate.Kind switch
-    {
-        QChatCapabilityCandidateKind.ConversationContext => "current_conversation_context",
-        QChatCapabilityCandidateKind.PersonaFact => "persona_fact",
-        _ => string.Empty
-    };
-
     static bool TryParseExactCapabilityRequest(string? response, out string? capability)
     {
         capability = null;
@@ -164,6 +173,22 @@ public sealed partial class QChatScopedCapabilityTurnExecutor(
         return true;
     }
 
+    public bool IsExactCapabilityMarker(string? response) =>
+        TryParseExactCapabilityRequest(response, out _);
+
     [GeneratedRegex(@"^\[\[qchat_capability:(?<capability>[a-z_]+)\]\]$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex CapabilityRequestRegex();
+
+    enum QChatScopedCapabilityKind
+    {
+        ConversationContext,
+        PersonaFact
+    }
+
+    sealed record QChatScopedCapabilityDefinition(
+        string Name,
+        QChatScopedCapabilityKind Kind,
+        QChatPersonaFactCategory? PersonaFactCategory,
+        string Purpose,
+        string Boundary);
 }

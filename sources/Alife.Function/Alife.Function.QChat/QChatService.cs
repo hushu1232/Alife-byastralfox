@@ -1213,6 +1213,7 @@ public partial class QChatService(
         {
             string line = lines[i];
             if (line.StartsWith("[QQ ", StringComparison.Ordinal)
+                || line.StartsWith("[/QChat dynamic context]", StringComparison.Ordinal)
                 || line.Contains("priority=", StringComparison.OrdinalIgnoreCase)
                 || line.Contains("trust=", StringComparison.OrdinalIgnoreCase)
                 || line.Contains("source=qq", StringComparison.OrdinalIgnoreCase)
@@ -2831,17 +2832,7 @@ public partial class QChatService(
         RegisterRelationCacheToolsIfMissing();
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
 
-        Prompt($"""
-                此服务为你增加收发qq消息的能力，能够处理图片，文件，转发等各种丰富的qq功能。
-                当你需要用qq联系他人，或收到qq消息要处理时，先调用<{nameof(GetQChatGuide)}/>来学习如何使用qq工具，然后再以合适的方式回复。
-
-                收到 QQ 入站消息后，如果你决定回复，必须把面向 QQ 用户的内容发送到当前 QQ 会话：
-                - 私聊回复当前私聊：<qchat type="Private" targetId="对方QQ号">回复内容</qchat>
-                - 群聊普通回复当前群：<qchat type="Group" targetId="群号">小明，刚刚那句我听到了</qchat>
-                - 群聊强提醒当前群：<qchat type="Group" targetId="群号">[CQ:at,qq=发送者QQ号] 这件事需要你确认一下</qchat>
-                - 不要只输出普通文字来“说明你会回复”，普通文字不会自动出现在 QQ 里。
-                - 如果判断无需回复，可以保持沉默，不要输出解释。
-                """);
+        Prompt("面向 QQ 用户的内容必须通过当前会话发送能力交付；不要在 QQ 文本中解释内部工具、路由或权限。");
         RegisterStablePersonaPromptIfNeeded();
         SeedApprovedPersonaMemory();
     }
@@ -4177,8 +4168,9 @@ public partial class QChatService(
                 rawMessage,
                 readableMessage,
                 isMentionedOrWoken,
-                IsQuietModeEnabled,
-                QChatPersonaStyleContext.FromRuntime(config, Character?.Name)));
+                IsQuietModeEnabled),
+            QChatPromptTrust.TrustedInternal,
+            maximumContentCharacters: 1200);
         string recentContext = QChatPromptEnvelope.Wrap(
             "recent_qq_context",
             observedAt,
@@ -4191,7 +4183,9 @@ public partial class QChatService(
                 includeRecalledMessages: false,
                 maxCharacters: 1200,
                 ownerUserId: config.OwnerId,
-                botUserId: config.BotId));
+                botUserId: config.BotId),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 1200);
         string recentRecallContext = QChatPromptEnvelope.Wrap(
             "recent_qq_recall",
             observedAt,
@@ -4200,19 +4194,40 @@ public partial class QChatService(
                 messageEvent.MessageType,
                 GetQChatConversationTargetId(messageEvent),
                 limit: 3,
-                observedAt));
-        string imageBlock = QChatPromptEnvelope.Wrap("image_analysis", observedAt, imageAnalysisPrompt);
-        string address = QChatPromptEnvelope.Wrap("qq_address", observedAt, BuildAddressPrompt(config, messageEvent));
+                observedAt),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 800);
+        string imageBlock = QChatPromptEnvelope.Wrap(
+            "image_analysis",
+            observedAt,
+            imageAnalysisPrompt,
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 1600);
+        string address = QChatPromptEnvelope.Wrap(
+            "qq_address",
+            observedAt,
+            BuildAddressPrompt(config, messageEvent),
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 400);
         string secureMessage = QChatMessageSecurity.FormatForModel(
             config,
             messageEvent,
             string.IsNullOrWhiteSpace(imageBlock) ? formatted : HideImageUrlsForModelContext(formatted));
+        secureMessage = QChatPromptEnvelope.Wrap(
+            "incoming_qq_message",
+            observedAt,
+            secureMessage,
+            QChatPromptTrust.UntrustedExternal,
+            maximumContentCharacters: 6000);
         string recentBlocks = string.Join(
             Environment.NewLine,
             new[] { recentContext, recentRecallContext }.Where(block => string.IsNullOrWhiteSpace(block) == false));
-        string personaBlock = QChatPromptEnvelope.Wrap("persona_frame", observedAt, personaFramePrompt);
-        string selfStateBlock = QChatPromptEnvelope.Wrap("character_state", observedAt, selfStatePrompt);
-        string researchEvidenceBlock = QChatPromptEnvelope.Wrap("research_evidence", observedAt, researchEvidencePrompt);
+        string personaBlock = QChatPromptEnvelope.Wrap(
+            "persona_frame", observedAt, personaFramePrompt, QChatPromptTrust.TrustedInternal, maximumContentCharacters: 1000);
+        string selfStateBlock = QChatPromptEnvelope.Wrap(
+            "character_state", observedAt, selfStatePrompt, QChatPromptTrust.TrustedInternal, maximumContentCharacters: 1000);
+        string researchEvidenceBlock = QChatPromptEnvelope.Wrap(
+            "research_evidence", observedAt, researchEvidencePrompt, QChatPromptTrust.UntrustedExternal, maximumContentCharacters: 1600);
         IEnumerable<string> blocks = new[]
         {
             cognition,
@@ -4625,16 +4640,30 @@ public partial class QChatService(
         long botId = ResolveCurrentBotId(config, messageEvent);
         string preferredAddress = ResolvePreferredAddress(config, messageEvent.UserId, displayName, agentId, botId);
         profileRuntimeServices.UserProfiles.TryGetProfile(agentId, botId, messageEvent.UserId, out QChatUserProfile? profile);
+        string explicitAddress = GetExplicitProfileAddress(profile);
+        string addressStyle = profile?.AddressStyle?.Trim() ?? string.Empty;
+        bool isBuiltInRelationshipAddress = (config.OwnerId != 0 && messageEvent.UserId == config.OwnerId)
+            || IsQuietModeWakeUser(messageEvent.UserId);
+        if (isBuiltInRelationshipAddress == false &&
+            string.IsNullOrWhiteSpace(explicitAddress) &&
+            string.IsNullOrWhiteSpace(addressStyle))
+            return string.Empty;
 
         return $"""
                 [QQ address]
-                user_id={messageEvent.UserId}
-                display_name={SanitizeAddressPromptValue(displayName)}
                 preferred_address={SanitizeAddressPromptValue(preferredAddress)}
-                relationship_label={SanitizeAddressPromptValue(profile?.RelationshipLabel)}
-                address_style={SanitizeAddressPromptValue(profile?.AddressStyle)}
+                address_style={SanitizeAddressPromptValue(addressStyle)}
                 [/QQ address]
                 """;
+    }
+
+    static string GetExplicitProfileAddress(QChatUserProfile? profile)
+    {
+        if (profile == null)
+            return string.Empty;
+
+        return new[] { profile.PreferredNickname, profile.CuteNicknames?.FirstOrDefault(), profile.FormalName }
+            .FirstOrDefault(value => string.IsNullOrWhiteSpace(value) == false)?.Trim() ?? string.Empty;
     }
 
     string BuildPokeContent(QChatConfig config, OneBotPokeEvent pokeEvent)
@@ -4760,7 +4789,8 @@ public partial class QChatService(
 
     string ResolveCurrentAgentId(QChatConfig config)
     {
-        return QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
+        string agentId = QChatPersonaStyleContext.FromRuntime(config, Character?.Name).PersonaId;
+        return string.Equals(agentId, "default", StringComparison.Ordinal) ? "xiayu" : agentId;
     }
 
     static long ResolveCurrentBotId(QChatConfig config, OneBotBasicMessageEvent messageEvent)
@@ -9347,11 +9377,12 @@ public partial class QChatService(
             if (Volatile.Read(ref outboundMessageVersion) == outboundBefore &&
                 TryBuildPlainTextFallbackResponse(modelResponse, message.MessageType, out string fallbackMessage))
             {
-                bool delayed = await TryApplyReplyTimingDelayAsync(message.MessageType, message.TargetId);
-                if (delayed && ShouldSuppressOutgoingForQuietMode(message.MessageType, message.TargetId, "plain-fallback-after-delay"))
-                    return;
-
-                await SendTextOrMediaMessageAsync(message.MessageType, message.TargetId, fallbackMessage, streamText: true);
+                bool voiceRequested = IsExplicitVoiceRequestedByUser(currentReplySession.Value);
+                await SendChatAsyncCore(
+                    message.MessageType == OneBotMessageType.Group ? "group" : "private",
+                    message.TargetId,
+                    fallbackMessage,
+                    voiceRequested);
                 TryScheduleConversationFollowUpAfterNormalReply(fallbackMessage);
                 WriteQChatDiagnostic("plain-fallback-sent", "Model returned plain text without using qchat; sent it to the current QQ session.", new {
                     message.MessageType,
@@ -9402,23 +9433,27 @@ public partial class QChatService(
             message.TargetId);
         QChatAgentIdentity? identity = ResolveRuntimeIdentity();
         string? approvedProfile = identity == null ? null : personaMemoryContext.TryReadApprovedProfile(identity);
+        QChatConversationContextCapability conversationCapability = new(recentEventMemory);
         QChatScopedCapabilityTurnExecutor scopedExecutor = scopedCapabilityTurnExecutor ??= new(
-            new QChatCapabilityCandidateSelector(),
-            new QChatConversationContextCapability(recentEventMemory),
+            conversationCapability,
             new QChatPersonaFactProvider(personaMemoryContext));
-        QChatScopedCapabilityTurnResult scopedResult = await scopedExecutor.ExecuteAsync(
-            new QChatScopedCapabilityTurnRequest(
-                message.Formatted,
-                string.IsNullOrWhiteSpace(message.CandidateText) ? message.Formatted : message.CandidateText,
-                conversationScope,
-                identity,
-                new QChatConversationContextCapability(recentEventMemory)
-                    .HasReplayableConversation(conversationScope, DateTimeOffset.UtcNow),
-                string.IsNullOrWhiteSpace(approvedProfile) == false,
-                DateTimeOffset.UtcNow),
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        QChatScopedCapabilityTurnRequest scopedRequest = new(
+            message.Formatted,
+            conversationScope,
+            identity,
+            conversationCapability.HasReplayableConversation(conversationScope, observedAt),
+            string.IsNullOrWhiteSpace(approvedProfile) == false,
+            observedAt);
+        string normalModelResponse = await DispatchStandardModelAsync(
+            message with { Formatted = scopedExecutor.BuildModelInput(scopedRequest) },
+            cancellationToken);
+        QChatScopedCapabilityTurnResult scopedResult = await scopedExecutor.CompleteAsync(
+            scopedRequest,
+            normalModelResponse,
             (call, token) => InvokeScopedCapabilityModelAsync(call, token),
             cancellationToken);
-        if (scopedResult.CapabilityOffered && scopedResult.RequiresStandardModelRouteFallback == false)
+        if (scopedResult.Feedback != null)
         {
             WriteQChatDiagnostic("qchat-scoped-read-capability", "A QChat scoped read capability turn completed.", new
             {
@@ -9428,10 +9463,13 @@ public partial class QChatService(
                 scopedResult.Feedback?.Capability,
                 scopedResult.Feedback?.Status
             });
-            return scopedResult.ModelResponse;
         }
 
-        return await DispatchStandardModelAsync(message, cancellationToken);
+        if (scopedResult.RequiresStandardModelRouteFallback == false)
+            return scopedResult.ModelResponse;
+
+        string fallbackResponse = await DispatchStandardModelAsync(message, cancellationToken);
+        return scopedExecutor.IsExactCapabilityMarker(fallbackResponse) ? string.Empty : fallbackResponse;
     }
 
     void RecordQChatLatencyAudit(QChatInboundMessage message, DateTimeOffset startedAt, string outcome)

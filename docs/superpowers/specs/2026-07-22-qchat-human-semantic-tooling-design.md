@@ -28,13 +28,13 @@ Make QChat characters sound less scripted while preserving reliable, permission-
 ```text
 compact stable persona + QQ delivery rule + safety boundary
     + per-turn verified facts + bounded recent context + allowed scoped reads
-    -> model chooses direct reply or one bounded read
-    -> C# validates and reads
-    -> result feedback
-    -> model writes one natural QQ reply
+    -> normal QChat model route (including existing XML tools)
+    -> direct reply, or one exact internal scoped-read marker
+    -> C# intercepts marker, validates and reads
+    -> result feedback -> model writes one natural QQ reply
 ```
 
-The model never receives a forced `sharp_pushback`, `dependent`, `jealous`, or fixed reply phrase. Code decides whether a reply may be sent, whether a tool is allowed, and whether a confirmation is required. The model decides wording and whether a permitted bounded read is useful.
+The model never receives a forced `sharp_pushback`, `dependent`, `jealous`, or fixed reply phrase. Code decides whether a reply may be sent, whether a tool is allowed, and whether a confirmation is required. The model decides wording and whether a permitted bounded read is useful. A scoped-read offer must never replace or pre-empt the normal route: an ordinary response must retain the existing XML tool path.
 
 ## Design
 
@@ -62,7 +62,7 @@ When safe data is available, the normal QChat model call sees a concise capabili
 - approved persona behavior boundary;
 - approved persona confirmed preference.
 
-The offer describes purpose and privacy boundary. The model chooses one capability by structured marker; the selection is semantic model judgment, not a user phrase matcher. The marker is intercepted before QQ delivery, so normal XML tools remain available for direct replies. C# maps a marker to the bounded provider category, validates it, returns a bounded feedback block, and asks the model for a natural final reply.
+The offer describes purpose and privacy boundary. The model chooses one capability by structured marker; the selection is semantic model judgment, not a user phrase matcher. The normal model route runs first and the marker is intercepted only when it is the entire response before QQ delivery, so normal XML tools remain available for every ordinary reply. C# maps a marker to the bounded provider category, validates it, returns a bounded feedback block, and asks the model for a natural final reply.
 
 ### Static tool and output behavior
 
