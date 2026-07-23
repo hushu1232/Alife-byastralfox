@@ -157,12 +157,20 @@ function Invoke-OneBotStatusProbe {
   try{
     $cancel.CancelAfter([TimeSpan]::FromSeconds($TimeoutSeconds))
     $socket.Options.SetRequestHeader('Authorization',"Bearer $token")
-    $socket.ConnectAsync([Uri]("ws://{0}:{1}/"-f$Slot.Host,$Slot.Port),$cancel.Token).GetAwaiter().GetResult()
+    $null=$socket.ConnectAsync([Uri]("ws://{0}:{1}/"-f$Slot.Host,$Slot.Port),$cancel.Token).GetAwaiter().GetResult()
     $request=[Text.Encoding]::UTF8.GetBytes('{"action":"get_status","echo":"alife-startup-probe"}')
-    $socket.SendAsync([ArraySegment[byte]]::new($request),[Net.WebSockets.WebSocketMessageType]::Text,$true,$cancel.Token).GetAwaiter().GetResult()
-    $buffer=New-Object byte[]4096
-    $received=$socket.ReceiveAsync([ArraySegment[byte]]::new($buffer),$cancel.Token).GetAwaiter().GetResult()
-    return ConvertTo-OneBotStatus ([Text.Encoding]::UTF8.GetString($buffer,0,$received.Count))
+    $null=$socket.SendAsync([ArraySegment[byte]]::new($request),[Net.WebSockets.WebSocketMessageType]::Text,$true,$cancel.Token).GetAwaiter().GetResult()
+    $MaximumResponseBytes=16384
+    $response=[IO.MemoryStream]::new()
+    try{
+      do{
+        $buffer=New-Object byte[]4096
+        $received=$socket.ReceiveAsync([ArraySegment[byte]]::new($buffer),$cancel.Token).GetAwaiter().GetResult()
+        if($received.MessageType-ne[Net.WebSockets.WebSocketMessageType]::Text-or($response.Length+$received.Count)-gt$MaximumResponseBytes){return 'unknown'}
+        $response.Write($buffer,0,$received.Count)
+      }while(-not$received.EndOfMessage)
+      return ConvertTo-OneBotStatus ([Text.Encoding]::UTF8.GetString($response.ToArray()))
+    }finally{$response.Dispose()}
   }catch{return 'unknown'}
   finally{$cancel.Dispose();$socket.Dispose()}
 }

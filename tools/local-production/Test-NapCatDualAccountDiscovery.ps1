@@ -43,6 +43,11 @@ try {
   Assert-Equal (ConvertTo-OneBotStatus '{"data":{"online":true}}') 'online'
   Assert-Equal (ConvertTo-OneBotStatus '{"data":{"online":false}}') 'offline'
   Assert-Equal (ConvertTo-OneBotStatus '{"data":{}}') 'unknown'
+  $launcherSource=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Start-NapCatDualAccount.ps1') -Raw
+  if($launcherSource-notmatch'\$null\s*=\s*\$socket\.ConnectAsync\('){throw 'OneBot status probe must suppress connect task output.'}
+  if($launcherSource-notmatch'\$null\s*=\s*\$socket\.SendAsync\('){throw 'OneBot status probe must suppress send task output.'}
+  if($launcherSource-notmatch'while\(-not\s*\$received\.EndOfMessage\)'){throw 'OneBot status probe must read complete WebSocket messages.'}
+  if($launcherSource-notmatch'\$MaximumResponseBytes\s*=\s*16384'){throw 'OneBot status probe must bound response size.'}
   function Get-CimInstance{throw 'CIM unavailable'}
   try{Assert-Equal (Test-NapCatHost ([pscustomobject]@{LaunchPath='C:\missing\NapCatWinBootMain.exe'})) $false}
   finally{Remove-Item Function:\Get-CimInstance -ErrorAction SilentlyContinue}
