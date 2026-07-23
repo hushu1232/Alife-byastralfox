@@ -27,6 +27,8 @@ public sealed class DataAgentRuntimeHealthReporter
         LoadSnapshotIfValid();
     }
 
+    public string AccountId => accountId;
+
     public static DataAgentRuntimeHealthReporter Create(string storageRoot, string accountId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(storageRoot);
@@ -41,12 +43,25 @@ public sealed class DataAgentRuntimeHealthReporter
 
     public static DataAgentRuntimeHealthReporter? TryCreate(string storageRoot, string? accountId)
     {
-        if (string.IsNullOrWhiteSpace(storageRoot) || DataAgentRuntimeHealthEvent.IsAllowedAccountId(accountId) == false)
+        if (string.IsNullOrWhiteSpace(storageRoot))
             return null;
 
         try
         {
-            return Create(storageRoot, accountId!);
+            string inferredAccountId = Path.GetFileName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(storageRoot)));
+            if (DataAgentRuntimeHealthEvent.IsAllowedAccountId(accountId) &&
+                DataAgentRuntimeHealthEvent.IsAllowedAccountId(inferredAccountId) &&
+                string.Equals(accountId, inferredAccountId, StringComparison.Ordinal) == false)
+            {
+                return null;
+            }
+
+            string resolvedAccountId = DataAgentRuntimeHealthEvent.IsAllowedAccountId(accountId)
+                ? accountId!
+                : inferredAccountId;
+            return DataAgentRuntimeHealthEvent.IsAllowedAccountId(resolvedAccountId)
+                ? Create(storageRoot, resolvedAccountId)
+                : null;
         }
         catch
         {
