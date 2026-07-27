@@ -116,6 +116,20 @@ public sealed class QChatPublicInternetCommandPolicyTests
         });
     }
 
+    [Test]
+    public void ParseMessage_PrivateSearch_RemovesResponseFormattingRequestFromQuery()
+    {
+        const string text = "帮我搜索一下今天最新的人工智能新闻，并告诉我信息来源";
+
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            OneBotMessageType.Private,
+            botId: 999,
+            text,
+            text);
+
+        Assert.That(command.Query, Is.EqualTo("今天最新的人工智能新闻"));
+    }
+
     [TestCase("[CQ:at,qq=999] 搜一下")]
     [TestCase("[CQ:at,qq=999] 搜索一下 ")]
     [TestCase("[CQ:at,qq=999] 查一下")]

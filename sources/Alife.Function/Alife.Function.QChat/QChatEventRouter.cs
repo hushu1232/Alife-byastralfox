@@ -21,11 +21,14 @@ public sealed record QChatEventRoute(
 
 public static class QChatEventRouter
 {
-    public static QChatEventRoute Route(OneBotBaseEvent oneBotEvent, QChatSenderRole senderRole)
+    public static QChatEventRoute Route(
+        OneBotBaseEvent oneBotEvent,
+        QChatSenderRole senderRole,
+        QChatConfig? configuration = null)
     {
         return oneBotEvent switch
         {
-            OneBotMessageEvent messageEvent => RouteMessage(messageEvent, senderRole),
+            OneBotMessageEvent messageEvent => RouteMessage(messageEvent, senderRole, configuration),
             OneBotNoticeEvent noticeEvent => new QChatEventRoute(
                 QChatEventRouteKind.NoticeEvent,
                 noticeEvent.MessageType,
@@ -50,7 +53,10 @@ public static class QChatEventRouter
         };
     }
 
-    static QChatEventRoute RouteMessage(OneBotMessageEvent messageEvent, QChatSenderRole senderRole)
+    static QChatEventRoute RouteMessage(
+        OneBotMessageEvent messageEvent,
+        QChatSenderRole senderRole,
+        QChatConfig? configuration)
     {
         string plainText = OneBotSegment.GetPlainText(messageEvent.RawMessage).Trim();
         if (senderRole == QChatSenderRole.Owner && IsOwnerCommand(plainText))
@@ -64,7 +70,7 @@ public static class QChatEventRouter
                 "owner command");
         }
 
-        QChatIntentDecision intent = ClassifyFirstIntentCandidate(messageEvent, plainText);
+        QChatIntentDecision intent = ClassifyFirstIntentCandidate(messageEvent, plainText, configuration);
         if (intent.IsCandidate)
         {
             return new QChatEventRoute(
@@ -95,7 +101,10 @@ public static class QChatEventRouter
                QChatOwnerCommandService.TryParseApprovalCommand(plainText, out _, out _);
     }
 
-    static QChatIntentDecision ClassifyFirstIntentCandidate(OneBotMessageEvent messageEvent, string plainText)
+    static QChatIntentDecision ClassifyFirstIntentCandidate(
+        OneBotMessageEvent messageEvent,
+        string plainText,
+        QChatConfig? configuration)
     {
         QChatIntentInput input = new(
             plainText,
@@ -108,7 +117,10 @@ public static class QChatEventRouter
         if (recall.IsCandidate)
             return recall;
 
-        QChatIntentDecision quiet = QChatIntentClassifier.ClassifyQuietMode(input);
+        QChatIntentDecision quiet = QChatIntentClassifier.ClassifyQuietMode(
+            input,
+            configuration?.QuietModeSleepCommand,
+            configuration?.QuietModeWakeCommand);
         if (quiet.IsCandidate)
             return quiet;
 

@@ -14,7 +14,8 @@ public sealed class QChatPersonaMemoryContextProvider
     public const int MaxProfileCharacters = 6000;
     public const int MaxProfileBytes = 16 * 1024;
 
-    const int MinimumDisclosureRunLength = 4;
+    const int MinimumDisclosureRunLength = 16;
+    const int MinimumFragmentedDisclosureRunLength = 4;
     sealed record PersonaProfileDefinition(string CharacterRelativePath, string ProfileRelativePath);
 
     static readonly IReadOnlyDictionary<string, PersonaProfileDefinition> ProfileDefinitions =
@@ -29,6 +30,7 @@ public sealed class QChatPersonaMemoryContextProvider
     readonly object disclosureGate = new();
     readonly string storageRoot;
     HashSet<string> protectedRuns = new(StringComparer.Ordinal);
+    HashSet<string> protectedFragmentRuns = new(StringComparer.Ordinal);
     HashSet<string> protectedNumberTokens = new(StringComparer.Ordinal);
     Dictionary<string, string> disclosureTails = new(StringComparer.Ordinal);
 
@@ -97,6 +99,22 @@ public sealed class QChatPersonaMemoryContextProvider
                 {
                     disclosureTails.Remove(route);
                     return true;
+                }
+            }
+
+            if (tail.Length > 0 && normalized.Length > 0)
+            {
+                int firstBoundaryStart = Math.Max(0, tail.Length - MinimumFragmentedDisclosureRunLength + 1);
+                int lastBoundaryStart = Math.Min(
+                    tail.Length - 1,
+                    candidate.Length - MinimumFragmentedDisclosureRunLength);
+                for (int index = firstBoundaryStart; index <= lastBoundaryStart; index++)
+                {
+                    if (protectedFragmentRuns.Contains(candidate.Substring(index, MinimumFragmentedDisclosureRunLength)))
+                    {
+                        disclosureTails.Remove(route);
+                        return true;
+                    }
                 }
             }
 
@@ -177,11 +195,15 @@ public sealed class QChatPersonaMemoryContextProvider
         HashSet<string> runs = new(StringComparer.Ordinal);
         for (int index = 0; index + MinimumDisclosureRunLength <= normalized.Length; index++)
             runs.Add(normalized.Substring(index, MinimumDisclosureRunLength));
+        HashSet<string> fragmentRuns = new(StringComparer.Ordinal);
+        for (int index = 0; index + MinimumFragmentedDisclosureRunLength <= normalized.Length; index++)
+            fragmentRuns.Add(normalized.Substring(index, MinimumFragmentedDisclosureRunLength));
 
         HashSet<string> numbers = ExtractNumberTokens(document);
         lock (disclosureGate)
         {
             protectedRuns = runs;
+            protectedFragmentRuns = fragmentRuns;
             protectedNumberTokens = numbers;
             disclosureTails = new Dictionary<string, string>(StringComparer.Ordinal);
         }

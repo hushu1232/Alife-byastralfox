@@ -76,4 +76,65 @@ public sealed class SqliteDataAgentStore : IDataAgentStore
     {
         return new DataAgentLangGraphShadowArtifactStore(databasePath).ReadAggregate(now);
     }
+
+    public void RecordQChatConversationTurn(QChatConversationTurn turn)
+    {
+        new QChatContextSqliteStore(databasePath).RecordConversationTurn(turn);
+    }
+
+    public int MarkQChatConversationTurnsRecalled(string sourceMessageKey)
+    {
+        return new QChatContextSqliteStore(databasePath).MarkConversationTurnsRecalled(sourceMessageKey);
+    }
+
+    public QChatTopicReplayResult SearchQChatTopicReplay(QChatTopicReplayQuery query)
+    {
+        return new QChatContextSqliteStore(databasePath).SearchTopicReplay(query);
+    }
+
+    public void RecordQChatRuntimeAudit(QChatRuntimeAuditRecord record)
+    {
+        new QChatContextSqliteStore(databasePath).RecordRuntimeAudit(record);
+    }
+
+    public IReadOnlyList<QChatRuntimeAuditRecord> ReadQChatRuntimeAudit(int maxRecords)
+    {
+        return new QChatContextSqliteStore(databasePath).ReadRuntimeAudit(maxRecords);
+    }
+
+    public DataAgentImageAssetRecord? FindImageAssetById(string assetId)
+    {
+        return new DataAgentImageAssetSqliteStore(databasePath).FindById(assetId);
+    }
+
+    public DataAgentImageAssetRecord? FindImageAssetBySha256(string sha256)
+    {
+        return new DataAgentImageAssetSqliteStore(databasePath).FindBySha256(sha256);
+    }
+
+    public IReadOnlyList<DataAgentImageAssetMatch> FindSimilarImageAssets(
+        string perceptualHash,
+        int maxDistance,
+        int maxResults)
+    {
+        return new DataAgentImageAssetSqliteStore(databasePath).FindSimilar(perceptualHash, maxDistance, maxResults);
+    }
+
+    public void UpsertImageAsset(DataAgentImageAssetRecord record)
+    {
+        new DataAgentImageAssetSqliteStore(databasePath).Upsert(record);
+    }
+
+    public void UpdateImageAssetUnderstanding(
+        string assetId,
+        string visualSummary,
+        string ocrText,
+        DateTimeOffset updatedAt)
+    {
+        new DataAgentImageAssetSqliteStore(databasePath).UpdateUnderstanding(
+            assetId,
+            visualSummary,
+            ocrText,
+            updatedAt);
+    }
 }

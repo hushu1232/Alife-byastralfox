@@ -280,7 +280,17 @@ public class ChatBot : IAsyncDisposable
             messageCache.TryDequeue(out _);
         messageCache.Enqueue($"{message}\n");
         RecordRuntimeEvent("PokeQueued", $"Pending poke messages: {messageCache.Count}.");
-        lastAutoFlushTime = 0;//重新计时，防止后续还有Poke
+        lastAutoFlushTime = currentTime;//重新计时，防止后续还有Poke
+    }
+
+    public Task<string?> FlushPendingPokesAsync(
+        CancellationToken cancellationToken = default,
+        string? reasoningEffort = null)
+    {
+        return TryFlushMessageCache(
+            cancellationToken,
+            waitForResponse: true,
+            reasoningEffort: reasoningEffort);
     }
 
     public async Task ImplicitChatAsync(string message)
@@ -385,16 +395,22 @@ public class ChatBot : IAsyncDisposable
         }
     }
 
-    async Task TryFlushMessageCache(CancellationToken cancellationToken = default)
+    async Task<string?> TryFlushMessageCache(
+        CancellationToken cancellationToken = default,
+        bool waitForResponse = false,
+        string? reasoningEffort = null)
     {
-        int pendingCount = messageCache.Count;
-        if (pendingCount == 0)
-            return;
+        if (messageCache.IsEmpty)
+            return null;
 
-        RecordRuntimeEvent("PokeFlushStarted", $"Flushing {pendingCount} pending poke message(s).");
         await RequestChatAsync(cancellationToken);
+        bool lockHeld = true;
         try
         {
+            if (messageCache.IsEmpty)
+                return null;
+
+            RecordRuntimeEvent("PokeFlushStarted", $"Flushing {messageCache.Count} pending poke message(s).");
             //组合消息
             StringBuilder stringBuilder = new();
             foreach (string message in messageCache.Distinct())
@@ -413,11 +429,24 @@ public class ChatBot : IAsyncDisposable
 
             //发送消息
             RecordRuntimeEvent("PokeFlushDispatched", "Pending poke messages were dispatched into chat.");
-            Chat($"{PokeMessageTag}\n{poke}");
+            string prompt = $"{PokeMessageTag}\n{poke}";
+            if (waitForResponse)
+            {
+                ReleaseChat();
+                lockHeld = false;
+                return await ChatAsync(
+                    prompt,
+                    cancellationToken: cancellationToken,
+                    reasoningEffort: reasoningEffort);
+            }
+
+            Chat(prompt);
+            return null;
         }
         finally
         {
-            ReleaseChat();
+            if (lockHeld)
+                ReleaseChat();
         }
     }
 

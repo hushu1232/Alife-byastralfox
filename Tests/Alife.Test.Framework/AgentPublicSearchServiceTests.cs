@@ -271,6 +271,49 @@ public sealed class AgentPublicSearchServiceTests
     }
 
     [Test]
+    public async Task SearXngPublicSearchProvider_UsesNewsJsonAndParsesPublishedResult()
+    {
+        const string json = """
+                            {
+                              "results": [
+                                {
+                                  "title": "Older result",
+                                  "url": "https://example.com/older",
+                                  "content": "Older detail.",
+                                  "publishedDate": "2026-07-20T07:00:00"
+                                },
+                                {
+                                  "title": "AI &amp; News",
+                                  "url": "https://example.com/ai",
+                                  "content": "Latest <b>detail</b>.",
+                                  "publishedDate": "2026-07-25T07:00:00"
+                                }
+                              ]
+                            }
+                            """;
+        FakeHttpMessageHandler handler = new(json);
+        SearXngPublicSearchProvider provider = new(
+            new HttpClient(handler),
+            "http://127.0.0.1:8080/search");
+
+        IReadOnlyList<AgentPublicSearchResult> results = await provider.SearchAsync(
+            "今天最新的人工智能新闻",
+            1);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.LastRequestUri?.Query, Does.Contain("format=json"));
+            Assert.That(handler.LastRequestUri?.Query, Does.Contain("categories=news"));
+            Assert.That(handler.LastRequestUri?.Query, Does.Contain("language=zh-CN"));
+            Assert.That(results, Has.Count.EqualTo(1));
+            Assert.That(results[0].Title, Is.EqualTo("AI & News"));
+            Assert.That(results[0].Url, Is.EqualTo("https://example.com/ai"));
+            Assert.That(results[0].Snippet, Does.Contain("发布时间：2026-07-25T07:00:00"));
+            Assert.That(results[0].Snippet, Does.Contain("Latest detail"));
+        });
+    }
+
+    [Test]
     public async Task FallbackPublicSearchProvider_UsesNextProviderWhenPrimaryFails()
     {
         ThrowingPublicSearchProvider primary = new();

@@ -6,6 +6,9 @@ namespace Alife.Test.QChat;
 [TestFixture]
 public sealed class QChatSemanticTriggerCorpusTests
 {
+    const string XiayuSleepCommand = "Night has fallen";
+    const string XiayuWakeCommand = "wake up ， show me the flower";
+
     [TestCase("\u64a4\u4e86\u5427")]
     [TestCase("\u628a\u521a\u624d\u90a3\u6761\u64a4\u4e86")]
     [TestCase("\u5220\u6389\u4e0a\u4e00\u6761")]
@@ -38,13 +41,15 @@ public sealed class QChatSemanticTriggerCorpusTests
         });
     }
 
-    [TestCase("\u5148\u5b89\u9759\u4e00\u4e0b", "sleep")]
-    [TestCase("\u522b\u8bf4\u8bdd\u4e86", "sleep")]
-    [TestCase("\u9192\u9192", "wake")]
-    [TestCase("\u53ef\u4ee5\u8bf4\u8bdd\u4e86", "wake")]
+    [TestCase(XiayuSleepCommand, "sleep")]
+    [TestCase("N I G H T H A S F A L L E N", "sleep")]
+    [TestCase(XiayuWakeCommand, "wake")]
     public void QuietModeCorpusConfirmsDirectControlRequests(string text, string action)
     {
-        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(QChatIntentInput.FromText(text));
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
+            QChatIntentInput.FromText(text),
+            XiayuSleepCommand,
+            XiayuWakeCommand);
 
         Assert.Multiple(() =>
         {
@@ -60,14 +65,17 @@ public sealed class QChatSemanticTriggerCorpusTests
     [TestCase("\u4f60\u4f1a\u4e0d\u4f1a\u88ab\u53eb\u9192")]
     public void QuietModeCorpusRejectsMetaAndProbePhrases(string text)
     {
-        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(QChatIntentInput.FromText(text));
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
+            QChatIntentInput.FromText(text),
+            XiayuSleepCommand,
+            XiayuWakeCommand);
 
         Assert.Multiple(() =>
         {
             Assert.That(decision.Kind, Is.EqualTo(QChatIntentKind.QuietMode));
-            Assert.That(decision.IsCandidate, Is.True);
+            Assert.That(decision.IsCandidate, Is.False);
             Assert.That(decision.IsConfirmed, Is.False);
-            Assert.That(decision.IsMetaDiscussion, Is.True);
+            Assert.That(decision.IsMetaDiscussion, Is.False);
         });
     }
 
@@ -75,7 +83,10 @@ public sealed class QChatSemanticTriggerCorpusTests
     [TestCase("\u6211\u5931\u7720\u5176\u5b9e\u662f\u56e0\u4e3a\u5bb3\u6015\u7761\u89c9\uff0c\u4e0d\u662f\u8ba9\u4f60\u7761\u3002")]
     public void QuietModeCorpusRejectsSleepWordsInsidePastedProse(string text)
     {
-        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(QChatIntentInput.FromText(text));
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
+            QChatIntentInput.FromText(text),
+            XiayuSleepCommand,
+            XiayuWakeCommand);
 
         Assert.Multiple(() =>
         {

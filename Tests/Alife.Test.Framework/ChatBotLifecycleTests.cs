@@ -150,7 +150,7 @@ public class ChatBotLifecycleTests
             "TryFlushMessageCache",
             BindingFlags.Instance | BindingFlags.NonPublic)
             ?? throw new InvalidOperationException("TryFlushMessageCache was not found.");
-        Task flushTask = (Task)method.Invoke(chatBot, [CancellationToken.None])!;
+        Task flushTask = (Task)method.Invoke(chatBot, [CancellationToken.None, false, null])!;
 
         await flushTask;
         ChatRuntimeState state = chatBot.GetRuntimeState();
@@ -158,6 +158,46 @@ public class ChatBotLifecycleTests
         Assert.That(state.PendingPokeCount, Is.EqualTo(0));
         Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "PokeFlushStarted"), Is.True);
         Assert.That(state.RecentEvents.Any(runtimeEvent => runtimeEvent.Kind == "PokeFlushDispatched"), Is.True);
+    }
+
+    [Test]
+    public async Task FlushPendingPokesAsyncReturnsModelContinuation()
+    {
+        ReasoningEffortRecordingCompletionService completion = new();
+        await using ChatBot chatBot = CreateChatBot(completion);
+        chatBot.Poke("tool evidence");
+
+        string? response = await chatBot.FlushPendingPokesAsync(
+            reasoningEffort: "high");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response, Is.EqualTo("reasoned"));
+            Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.Zero);
+            Assert.That(completion.ReasoningEfforts, Is.EqualTo(["high"]));
+        });
+    }
+
+    [Test]
+    public async Task ConcurrentPokeFlushesDispatchOnlyOneContinuation()
+    {
+        ReasoningEffortRecordingCompletionService completion = new();
+        await using ChatBot chatBot = CreateChatBot(completion);
+        await chatBot.RequestChatAsync();
+        chatBot.Poke("tool evidence");
+
+        Task<string?> first = chatBot.FlushPendingPokesAsync();
+        Task<string?> second = chatBot.FlushPendingPokesAsync();
+        chatBot.ReleaseChat();
+        string?[] responses = await Task.WhenAll(first, second);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(responses.Count(response => response == "reasoned"), Is.EqualTo(1));
+            Assert.That(responses.Count(response => response == null), Is.EqualTo(1));
+            Assert.That(completion.ReasoningEfforts, Has.Count.EqualTo(1));
+            Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.Zero);
+        });
     }
 
     [Test]

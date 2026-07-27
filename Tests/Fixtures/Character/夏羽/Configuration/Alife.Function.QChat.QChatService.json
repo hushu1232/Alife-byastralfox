@@ -1,6 +1,8 @@
 {
   "BotId": 2905391496,
   "OwnerId": 3045846738,
+  "QuietModeSleepCommand": "Night has fallen",
+  "QuietModeWakeCommand": "wake up ， show me the flower",
   "EnableImageRecognition": true,
   "AgnesVisionApiKey": "",
   "EnableQChatVoiceOutput": true,

@@ -102,6 +102,55 @@ public static class DataAgentSchemaInitializer
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS qchat_conversation_turn (
+                conversation_key TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                speaker TEXT NOT NULL,
+                content TEXT NOT NULL,
+                occurred_at_utc TEXT NOT NULL,
+                is_recalled INTEGER NOT NULL DEFAULT 0,
+                source_message_key TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (conversation_key, sequence)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_qchat_conversation_turn_lookup
+                ON qchat_conversation_turn (conversation_key, sequence);
+
+            CREATE TABLE IF NOT EXISTS qchat_runtime_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                event_kind TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                occurred_at_utc TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_qchat_runtime_audit_recent
+                ON qchat_runtime_audit (agent_id, occurred_at_utc DESC);
+
+            CREATE TABLE IF NOT EXISTS image_asset (
+                asset_id TEXT PRIMARY KEY,
+                sha256 TEXT NOT NULL UNIQUE,
+                perceptual_hash TEXT NOT NULL,
+                managed_file_id TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                media_type TEXT NOT NULL,
+                byte_length INTEGER NOT NULL,
+                pixel_width INTEGER NOT NULL,
+                pixel_height INTEGER NOT NULL,
+                visual_summary TEXT NOT NULL,
+                ocr_text TEXT NOT NULL,
+                first_seen_at_utc TEXT NOT NULL,
+                last_seen_at_utc TEXT NOT NULL,
+                seen_count INTEGER NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_image_asset_perceptual_hash
+                ON image_asset (perceptual_hash);
+
+            CREATE INDEX IF NOT EXISTS ix_image_asset_last_seen
+                ON image_asset (last_seen_at_utc DESC);
+
             CREATE TABLE IF NOT EXISTS langgraph_shadow_artifact (
                 artifact_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,
@@ -123,5 +172,36 @@ public static class DataAgentSchemaInitializer
                 ON langgraph_shadow_artifact (expires_at);
             """;
         command.ExecuteNonQuery();
+        EnsureQChatConversationTurnSourceMessageKeyColumn(connection);
+    }
+
+    static void EnsureQChatConversationTurnSourceMessageKeyColumn(SqliteConnection connection)
+    {
+        bool exists;
+        using (SqliteCommand columns = connection.CreateCommand())
+        {
+            columns.CommandText = "PRAGMA table_info(qchat_conversation_turn);";
+            using SqliteDataReader reader = columns.ExecuteReader();
+            exists = false;
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), "source_message_key", StringComparison.Ordinal))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+
+        if (exists == false)
+        {
+            using SqliteCommand migration = connection.CreateCommand();
+            migration.CommandText = "ALTER TABLE qchat_conversation_turn ADD COLUMN source_message_key TEXT NOT NULL DEFAULT '';";
+            migration.ExecuteNonQuery();
+        }
+
+        using SqliteCommand index = connection.CreateCommand();
+        index.CommandText = "CREATE INDEX IF NOT EXISTS ix_qchat_conversation_turn_source_message ON qchat_conversation_turn (source_message_key);";
+        index.ExecuteNonQuery();
     }
 }

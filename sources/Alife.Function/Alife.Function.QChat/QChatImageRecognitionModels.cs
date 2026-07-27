@@ -118,7 +118,8 @@ public sealed record QChatImageRecognitionContext(
     QChatSenderRole SenderRole,
     bool IsMentionedOrWoken,
     bool IsPassiveGroupMessage,
-    QChatVisionProfile? VisionProfile = null);
+    QChatVisionProfile? VisionProfile = null,
+    string? CurrentTurnText = null);
 
 public interface IQChatImageRecognitionClient
 {

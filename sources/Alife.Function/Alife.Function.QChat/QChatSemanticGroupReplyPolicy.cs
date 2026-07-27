@@ -54,7 +54,7 @@ public static partial class QChatSemanticGroupReplyPolicy
             return Deny("semantic_group_reply_disabled");
         if (context.Route.ConversationKind != QChatConversationKind.Group)
             return Deny("not_group_message");
-        if (context.Route.IsOwner || context.IsMentionedOrWoken || context.IsAggressive)
+        if (context.Route.IsOwner || context.IsAggressive)
             return Deny("already_explicitly_activated");
         if (IsAllowedAgent(context.Config, context.Route.AgentId) == false)
             return Deny("agent_not_allowed");
@@ -67,6 +67,9 @@ public static partial class QChatSemanticGroupReplyPolicy
         QChatOwnerBoundaryRisk risk = DetectOwnerBoundaryRisk(rawText, ownerReference);
         if (risk != QChatOwnerBoundaryRisk.None && context.Config.EnableOwnerDefenseReply)
             return Allow(GetRiskReason(risk), ownerReference.Kind, risk);
+
+        if (context.IsMentionedOrWoken)
+            return Deny("already_explicitly_activated");
 
         if (ownerReference.Kind != QChatOwnerMentionKind.None && context.Config.EnableOwnerMentionSemanticReply)
         {

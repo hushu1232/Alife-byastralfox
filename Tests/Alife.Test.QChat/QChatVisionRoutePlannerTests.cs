@@ -7,7 +7,9 @@ namespace Alife.Test.QChat;
 public sealed class QChatVisionRoutePlannerTests
 {
     [TestCase("请读出图片里的文字", "grok", "complex_ocr")]
+    [TestCase("把这张发票的文字提取出来", "grok", "complex_ocr")]
     [TestCase("截图里的报错怎么解决", "grok", "complex_ui_or_code")]
+    [TestCase("这段文字写得很好", "agnes", "default_image")]
     [TestCase("what is in this photo", "agnes", "default_image")]
     public void Plan_SelectsExpectedPrimary(string text, string provider, string reason)
     {
@@ -26,6 +28,21 @@ public sealed class QChatVisionRoutePlannerTests
         QChatVisionRoutePlan plan = QChatVisionRoutePlanner.Plan(Profile(), "OCR this screenshot");
 
         Assert.That(plan.FallbackProvider, Is.Null);
+    }
+
+    [Test]
+    public void Plan_OcrGetsLongerTimeoutWithoutSlowingNormalImages()
+    {
+        TimeSpan requested = TimeSpan.FromSeconds(12);
+
+        QChatVisionRoutePlan ocr = QChatVisionRoutePlanner.Plan(Profile(), "请识别图片里的文字", totalTimeout: requested);
+        QChatVisionRoutePlan normal = QChatVisionRoutePlanner.Plan(Profile(), "普通照片", totalTimeout: requested);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ocr.TotalTimeout, Is.EqualTo(TimeSpan.FromSeconds(30)));
+            Assert.That(normal.TotalTimeout, Is.EqualTo(requested));
+        });
     }
 
     [Test]

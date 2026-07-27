@@ -36,6 +36,10 @@ docs/superpowers/plans/*
 !/tools/local-production/
 !/tools/local-production/*.ps1
 !/tools/local-production/*.psm1
+/tools/local-production/local-production-state.json
+/tools/local-production/local-production-status.json
+/Tests/Alife.Test.QChat/TestResults/
+/NUL
 !/tools/upload-alife-service-via-foxd.ps1
 !/tools/start-alife-napcat-live.ps1
 !/tools/start-gpt-sovits-xiayu.ps1

@@ -432,4 +432,58 @@ public class QChatRecentEventMemoryTests
             Assert.That(context, Does.Not.Contain("private secret"));
         });
     }
+
+    [Test]
+    public void IsOutgoingMessageRequiresMatchingBotConversationAndTarget()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 7, 25, 22, 0, 0, TimeSpan.FromHours(8));
+        memory.RememberOutgoing(77, 2905391496, OneBotMessageType.Group, 925402131, "夏羽的回复", now);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(memory.IsOutgoingMessage(2905391496, 77, OneBotMessageType.Group, 925402131, now), Is.True);
+            Assert.That(memory.IsOutgoingMessage(2905391496, 77, OneBotMessageType.Group, 100, now), Is.False);
+            Assert.That(memory.IsOutgoingMessage(123, 77, OneBotMessageType.Group, 925402131, now), Is.False);
+        });
+    }
+
+    [Test]
+    public void GroupContextCanKeepOnlyCurrentParticipantAndBotTurns()
+    {
+        QChatRecentEventMemory memory = new(maxMessages: 10, retention: TimeSpan.FromMinutes(30));
+        DateTimeOffset now = new(2026, 7, 25, 22, 0, 0, TimeSpan.FromHours(8));
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 1,
+            UserId = 111,
+            GroupId = 925402131,
+            RawMessage = "当前参与者"
+        }, "当前参与者", now);
+        memory.Remember(new OneBotMessageEvent
+        {
+            SelfId = 2905391496,
+            MessageId = 2,
+            UserId = 222,
+            GroupId = 925402131,
+            RawMessage = "无关群友"
+        }, "无关群友", now.AddSeconds(1));
+        memory.RememberOutgoing(3, 2905391496, OneBotMessageType.Group, 925402131, "夏羽回复", now.AddSeconds(2));
+
+        string context = memory.BuildRecentContextBlock(
+            2905391496,
+            OneBotMessageType.Group,
+            925402131,
+            limit: 6,
+            now.AddSeconds(3),
+            relevantGroupUserId: 111);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(context, Does.Contain("当前参与者"));
+            Assert.That(context, Does.Contain("夏羽回复"));
+            Assert.That(context, Does.Not.Contain("无关群友"));
+        });
+    }
 }

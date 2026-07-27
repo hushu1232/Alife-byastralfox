@@ -57,8 +57,8 @@ public sealed class QChatPersonaMemoryContextProviderTests
     [Test]
     public void TrySeed_MixuReadsOnlyTheFixedMixuCharacterDirectory()
     {
-        WriteProfile("xiayuzkq");
-        WriteMixuProfile("mixurvwt");
+        WriteProfile("xiayuzkq-private-alpha-7381");
+        WriteMixuProfile("mixurvwt-secret-beta-9254");
         ChatHistory history = [];
         QChatPersonaMemoryContextProvider provider = new(storageRoot);
         QChatAgentIdentity mixu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("mixu")!;
@@ -69,8 +69,8 @@ public sealed class QChatPersonaMemoryContextProviderTests
         {
             Assert.That(seeded, Is.True);
             Assert.That(history, Is.Empty);
-            Assert.That(provider.IsOutgoingPersonaDisclosure("mixurvwt"), Is.True);
-            Assert.That(provider.IsOutgoingPersonaDisclosure("xiayuzkq"), Is.False);
+            Assert.That(provider.IsOutgoingPersonaDisclosure("mixurvwt-secret-beta-9254"), Is.True);
+            Assert.That(provider.IsOutgoingPersonaDisclosure("xiayuzkq-private-alpha-7381"), Is.False);
         });
     }
 
@@ -116,8 +116,36 @@ public sealed class QChatPersonaMemoryContextProviderTests
             Assert.That(provider.IsOutgoingPersonaDisclosure("\u590f\u7fbd\u7684\u79c1\u4eba\u4eba\u683c\u80cc\u666f\u53ea\u80fd\u5728\u672c\u5730\u89d2\u8272\u8bb0\u5fc6\u4e2d\u4f7f\u7528\uff0c\u4e0d\u5f97\u5411 QQ \u7528\u6237\u53d1\u9001\u6216\u8f6c\u8ff0"), Is.True);
             Assert.That(provider.IsOutgoingPersonaDisclosure("\u590f\u7fbd\u7684\u79c1\u4eba\u4eba\u683c\u80cc\u666f\u53ea\u80fd\u5728\u672c\u5730\u89d2\u8272\u8bb0\u5fc6\u4e2d\u4f7f\u7528 \u4e0d\u5f97\u5411 QQ \u7528\u6237\u53d1\u9001\u6216\u8f6c\u8ff0"), Is.True);
             Assert.That(provider.IsOutgoingPersonaDisclosure("3045846738"), Is.True);
-            Assert.That(provider.IsOutgoingPersonaDisclosure("\u590f\u7fbd\u7684\u79c1"), Is.True);
+            Assert.That(provider.IsOutgoingPersonaDisclosure("\u590f\u7fbd\u7684\u79c1"), Is.False);
             Assert.That(provider.IsOutgoingPersonaDisclosure("\u4eca\u5929\u5148\u628a\u5f53\u524d\u95ee\u9898\u7406\u6e05\u695a"), Is.False);
+        });
+    }
+
+    [Test]
+    public void IsOutgoingPersonaDisclosure_AllowsOrdinaryPersonaConsistentNewsReply()
+    {
+        WriteProfile("\u590f\u7fbd\u4f1a\u5bf9\u672f\u672f\u4fdd\u6301\u6e29\u67d4\u4eb2\u5bc6\uff0c\u4e5f\u4f1a\u4f7f\u7528\u5de5\u5177\u67e5\u627e\u4eba\u5de5\u667a\u80fd\u9886\u57df\u7684\u65b0\u95fb\u3002");
+        QChatPersonaMemoryContextProvider provider = new(storageRoot);
+        QChatAgentIdentity xiayu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("xiayu")!;
+
+        Assert.That(provider.TrySeed([], xiayu), Is.True);
+        Assert.That(provider.IsOutgoingPersonaDisclosure(
+            "\u672f\u672f\uff0c\u4eca\u5929 AI \u5708\u633a\u70ed\u95f9\u7684\uff0cChatGPT \u5e02\u573a\u4efd\u989d\u6709\u4e86\u65b0\u53d8\u5316\u3002"), Is.False);
+    }
+
+    [Test]
+    public void IsOutgoingPersonaDisclosure_BlocksShortProfileRunOnlyAcrossMessageBoundary()
+    {
+        WriteProfile("\u590f\u7fbd\u7684\u79c1\u4eba\u89d2\u8272\u80cc\u666f\u53ea\u80fd\u5728\u672c\u5730\u4f7f\u7528\u3002");
+        QChatPersonaMemoryContextProvider provider = new(storageRoot);
+        QChatAgentIdentity xiayu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("xiayu")!;
+
+        Assert.That(provider.TrySeed([], xiayu), Is.True);
+        Assert.Multiple(() =>
+        {
+            Assert.That(provider.IsOutgoingPersonaDisclosure(OneBotMessageType.Private, 1001, "\u590f\u7fbd\u7684\u79c1"), Is.False);
+            Assert.That(provider.IsOutgoingPersonaDisclosure(OneBotMessageType.Private, 1002, "\u590f\u7fbd\u7684"), Is.False);
+            Assert.That(provider.IsOutgoingPersonaDisclosure(OneBotMessageType.Private, 1002, "\u79c1\u4eba"), Is.True);
         });
     }
 

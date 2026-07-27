@@ -20,8 +20,18 @@ public sealed class QChatToolRouteStateWiringTests
             Assert.That(source, Does.Contain("functionService.UseToolRouteState(routeState)"));
             Assert.That(source, Does.Contain("protected virtual async Task<string> DispatchStandardModelAsync("));
             Assert.That(source, Does.Contain("string reasoningEffort = QChatReasoningEffortPolicy.Decide("));
-            Assert.That(source, Does.Contain("ChatTextFilter(message.Formatted),"));
+            Assert.That(source, Does.Contain("string modelInput = ChatTextFilter(message.Formatted)"));
+            Assert.That(source, Does.Contain("functionService.BuildContextualFunctionGuide(\"qchat_image_understand\")"));
+            Assert.That(source, Does.Contain("message.SenderRole == QChatSenderRole.Owner"));
+            Assert.That(source, Does.Contain("message.MessageType == OneBotMessageType.Private"));
+            Assert.That(source, Does.Contain("modelInput,"));
             Assert.That(source, Does.Contain("reasoningEffort: reasoningEffort"));
+            Assert.That(source, Does.Contain("DateTimeOffset observedAt = DateTimeOffset.Now;"));
+            Assert.That(source, Does.Contain("long toolCompletionVersion = functionService.ToolCompletionVersion;"));
+            Assert.That(source, Does.Contain("await functionService.FlushAndWaitToIdleAsync(cancellationToken);"));
+            Assert.That(source, Does.Contain("await ChatBot.FlushPendingPokesAsync("));
+            Assert.That(source, Does.Contain("while (toolContinuationRounds < 2)"));
+            Assert.That(source, Does.Contain("\"qchat-tool-continuation\""));
             Assert.That(source, Does.Contain("recentToolRouteTrace = FormatToolRouteTrace(functionService.RecentToolRouteDecision)"));
         });
     }

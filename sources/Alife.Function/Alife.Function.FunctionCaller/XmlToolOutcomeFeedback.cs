@@ -6,6 +6,9 @@ public static class XmlToolOutcomeFeedback
 {
     public static string Format(string? toolName, bool succeeded)
     {
+        if (succeeded && string.Equals(toolName, "qchat", StringComparison.OrdinalIgnoreCase))
+            return string.Empty;
+
         string status = succeeded ? "handled" : "failed";
         string hint = succeeded
             ? "The tool call finished without a reported runtime error. Do not claim any external result beyond verified context."

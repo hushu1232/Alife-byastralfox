@@ -9,24 +9,31 @@ public sealed record QChatGroupGateDecision(
     QChatInboundDecisionKind Kind,
     string Reason,
     string PendingContextText,
-    string ContextBeforeDispatch);
+    string ContextBeforeDispatch,
+    bool RequiresRelevanceCheck = false);
 
 public sealed class QChatGroupGateService
 {
     const int MaxPendingItems = 12;
 
     readonly ConcurrentDictionary<string, PendingSessionContext> pendingBySession = new();
+    readonly ConcurrentDictionary<string, DateTimeOffset> activeThreads = new();
 
     public QChatGroupGateDecision Evaluate(
         QChatAgentRoute route,
         string rawText,
         bool isMentionedOrWoken,
         bool isAggressive,
-        bool isSemanticReply = false)
+        bool isSemanticReply = false,
+        bool isReplyToBot = false,
+        bool isAddressedToOther = false,
+        DateTimeOffset? observedAt = null,
+        TimeSpan? activeWindow = null)
     {
         ArgumentNullException.ThrowIfNull(route);
 
         string text = rawText?.Trim() ?? string.Empty;
+        DateTimeOffset now = observedAt ?? DateTimeOffset.UtcNow;
 
         if (route.ConversationKind == QChatConversationKind.Private)
         {
@@ -37,32 +44,66 @@ public sealed class QChatGroupGateService
                 string.Empty);
         }
 
-        if (route.IsOwner || isMentionedOrWoken || isAggressive || isSemanticReply)
+        if (isMentionedOrWoken || isSemanticReply || isReplyToBot)
         {
+            TouchActiveThread(route, now);
             return new QChatGroupGateDecision(
                 QChatInboundDecisionKind.DispatchToModel,
-                CreateDispatchReason(route, isMentionedOrWoken, isAggressive, isSemanticReply),
+                CreateDispatchReason(isMentionedOrWoken, isAggressive, isSemanticReply, isReplyToBot),
                 string.Empty,
-                DrainPending(route.SessionKey));
+                DrainPending(GetThreadKey(route)));
+        }
+
+        if (isAddressedToOther)
+            return ListenOnly(text, "group message addresses another participant");
+
+        TimeSpan window = activeWindow ?? TimeSpan.FromSeconds(120);
+        if (window > TimeSpan.Zero && IsActiveThread(route, now, window))
+        {
+            return new QChatGroupGateDecision(
+                QChatInboundDecisionKind.ListenOnly,
+                "active group thread requires relevance check",
+                string.Empty,
+                string.Empty,
+                RequiresRelevanceCheck: true);
         }
 
         if (text.Length > 0)
-            Remember(route.SessionKey, text);
+            Remember(GetThreadKey(route), text);
 
-        return new QChatGroupGateDecision(
-            QChatInboundDecisionKind.ListenOnly,
-            "group message is not activated",
-            text,
-            string.Empty);
+        return ListenOnly(text, "group message is not activated");
     }
 
-    static string CreateDispatchReason(QChatAgentRoute route, bool isMentionedOrWoken, bool isAggressive, bool isSemanticReply)
+    public QChatGroupGateDecision AcceptContinuation(QChatAgentRoute route, DateTimeOffset? observedAt = null)
     {
-        if (route.IsOwner)
-            return "owner group message";
+        ArgumentNullException.ThrowIfNull(route);
+        TouchActiveThread(route, observedAt ?? DateTimeOffset.UtcNow);
+        return new QChatGroupGateDecision(
+            QChatInboundDecisionKind.DispatchToModel,
+            "active group thread continuation",
+            string.Empty,
+            DrainPending(GetThreadKey(route)));
+    }
 
-        if (isAggressive)
-            return "aggressive group message";
+    public void CloseActiveThread(QChatAgentRoute route)
+    {
+        ArgumentNullException.ThrowIfNull(route);
+        activeThreads.TryRemove(GetThreadKey(route), out _);
+    }
+
+    static QChatGroupGateDecision ListenOnly(string text, string reason) => new(
+        QChatInboundDecisionKind.ListenOnly,
+        reason,
+        text,
+        string.Empty);
+
+    static string CreateDispatchReason(bool isMentionedOrWoken, bool isAggressive, bool isSemanticReply, bool isReplyToBot)
+    {
+        if (isReplyToBot)
+            return "reply to bot group message";
+
+        if (isAggressive && (isMentionedOrWoken || isSemanticReply))
+            return "addressed aggressive group message";
 
         if (isMentionedOrWoken)
             return "mentioned or woken group message";
@@ -72,6 +113,25 @@ public sealed class QChatGroupGateService
 
         return "group message dispatch";
     }
+
+    bool IsActiveThread(QChatAgentRoute route, DateTimeOffset now, TimeSpan activeWindow)
+    {
+        string key = GetThreadKey(route);
+        if (activeThreads.TryGetValue(key, out DateTimeOffset lastActivity) == false)
+            return false;
+        if (now - lastActivity <= activeWindow)
+            return true;
+
+        activeThreads.TryRemove(key, out _);
+        return false;
+    }
+
+    void TouchActiveThread(QChatAgentRoute route, DateTimeOffset now)
+    {
+        activeThreads[GetThreadKey(route)] = now;
+    }
+
+    static string GetThreadKey(QChatAgentRoute route) => $"{route.SessionKey}:sender:{route.SenderId}";
 
     void Remember(string sessionKey, string text)
     {

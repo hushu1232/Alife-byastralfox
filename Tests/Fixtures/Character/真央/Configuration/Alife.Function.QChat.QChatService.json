@@ -1,3 +1,5 @@
 {
+  "QuietModeSleepCommand": "晚安咪绪",
+  "QuietModeWakeCommand": "耄耋快起床",
   "AppendChatPrompt": "完整句子后再发送。群聊要选择性回复。"
 }

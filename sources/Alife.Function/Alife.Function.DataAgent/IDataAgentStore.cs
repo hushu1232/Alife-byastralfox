@@ -16,6 +16,31 @@ public interface IDataAgentStore
         DateTimeOffset now) => throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
     DataAgentLangGraphShadowArtifactReadResult ReadLangGraphShadowArtifactAggregate(DateTimeOffset now) =>
         throw new NotSupportedException("LangGraph shadow artifact storage is only available for SQLite stores.");
+    void RecordQChatConversationTurn(QChatConversationTurn turn) =>
+        throw new NotSupportedException("QChat context storage is only available for SQLite stores.");
+    int MarkQChatConversationTurnsRecalled(string sourceMessageKey) =>
+        throw new NotSupportedException("QChat context storage is only available for SQLite stores.");
+    QChatTopicReplayResult SearchQChatTopicReplay(QChatTopicReplayQuery query) =>
+        throw new NotSupportedException("QChat context storage is only available for SQLite stores.");
+    void RecordQChatRuntimeAudit(QChatRuntimeAuditRecord record) =>
+        throw new NotSupportedException("QChat runtime audit storage is only available for SQLite stores.");
+    IReadOnlyList<QChatRuntimeAuditRecord> ReadQChatRuntimeAudit(int maxRecords) =>
+        throw new NotSupportedException("QChat runtime audit storage is only available for SQLite stores.");
+    DataAgentImageAssetRecord? FindImageAssetById(string assetId) =>
+        throw new NotSupportedException("Image asset storage is only available for SQLite stores.");
+    DataAgentImageAssetRecord? FindImageAssetBySha256(string sha256) =>
+        throw new NotSupportedException("Image asset storage is only available for SQLite stores.");
+    IReadOnlyList<DataAgentImageAssetMatch> FindSimilarImageAssets(
+        string perceptualHash,
+        int maxDistance,
+        int maxResults) => throw new NotSupportedException("Image asset storage is only available for SQLite stores.");
+    void UpsertImageAsset(DataAgentImageAssetRecord record) =>
+        throw new NotSupportedException("Image asset storage is only available for SQLite stores.");
+    void UpdateImageAssetUnderstanding(
+        string assetId,
+        string visualSummary,
+        string ocrText,
+        DateTimeOffset updatedAt) => throw new NotSupportedException("Image asset storage is only available for SQLite stores.");
 }
 
 public sealed record DataAgentAcceptedAuditInput(

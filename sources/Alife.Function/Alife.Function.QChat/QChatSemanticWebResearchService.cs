@@ -149,7 +149,7 @@ public sealed class QChatSemanticWebResearchService(
         return Math.Clamp(Math.Min(Math.Max(1, requestedMaxSources), Math.Max(1, configured)), 1, 5);
     }
 
-    static string FormatModelPrompt(AgentWebResearchResult result)
+    internal static string FormatModelPrompt(AgentWebResearchResult result)
     {
         if (result.Success == false)
         {

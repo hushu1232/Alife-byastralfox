@@ -23,6 +23,7 @@ public enum DocumentMode
 public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveModule<XmlFunctionCaller>
 {
     public bool IsIdle => executor.IsInactive;
+    public long ToolCompletionVersion => Volatile.Read(ref toolCompletionVersion);
     public XmlFunctionExecutionPolicy ExecutionPolicy => handlerTable.ExecutionPolicy;
     public bool IsTextOnlyResponseScopeActive => textOnlyResponseDepth.Value > 0;
 
@@ -164,6 +165,33 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
                """;
     }
 
+    public async Task FlushAndWaitToIdleAsync(CancellationToken cancellationToken = default)
+    {
+        executor.Flush();
+        await Task.Yield();
+        await executor.WaitToInactive(cancellationToken);
+    }
+
+    public string BuildContextualFunctionGuide(params string[] functionNames)
+    {
+        ArgumentNullException.ThrowIfNull(functionNames);
+        HashSet<string> selected = functionNames
+            .Where(name => string.IsNullOrWhiteSpace(name) == false)
+            .Select(name => name.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (selected.Count == 0)
+            return string.Empty;
+
+        string documents = handlerTable.Document(function => selected.Contains(function.Name));
+        if (string.IsNullOrWhiteSpace(documents))
+            return string.Empty;
+
+        return $"""
+               Contextual XML tools for the current turn only:
+               {documents}
+               """;
+    }
+
     public ToolRouteState CreateToolRouteState(bool isOwner, bool isPrivateChat, bool isTrustedRuntime = true)
     {
         lock (dataAgentRouteGate)
@@ -261,6 +289,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     string recentDataAgentTraceDiagnostics = string.Empty;
     string recentDataAgentProgressDiagnostics = string.Empty;
     string recentDataAgentGraphDiagnostics = string.Empty;
+    long toolCompletionVersion;
     ToolRouteDecision? recentToolRouteDecision;
     readonly List<string> plainAreas = new();
     XmlStreamParser parser = null!;
@@ -432,14 +461,20 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     void OnError(string tag, Exception exception)
     {
+        Interlocked.Increment(ref toolCompletionVersion);
         Poke(XmlToolOutcomeFeedback.Format(tag, succeeded: false));
         logger.LogWarning(exception, $"执行{tag}标签出错");
     }
 
     void OnToolCompleted(string toolName, bool succeeded)
     {
+        Interlocked.Increment(ref toolCompletionVersion);
         if (succeeded)
-            Poke(XmlToolOutcomeFeedback.Format(toolName, succeeded: true));
+        {
+            string feedback = XmlToolOutcomeFeedback.Format(toolName, succeeded: true);
+            if (string.IsNullOrEmpty(feedback) == false)
+                Poke(feedback);
+        }
     }
 
     static string? ReadContextValue(string context, string prefix)

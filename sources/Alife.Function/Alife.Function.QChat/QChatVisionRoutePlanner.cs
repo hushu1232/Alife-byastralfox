@@ -12,7 +12,8 @@ public static class QChatVisionRoutePlanner
 {
     static readonly string[] OcrKeywords =
     [
-        "ocr", "read text", "extract text", "read the screenshot", "图片里的文字", "图中文字", "读出", "识别文字"
+        "ocr", "read text", "extract text", "transcribe", "read the screenshot", "invoice", "receipt", "qr code",
+        "图片里的文字", "图中文字", "读出", "识别文字", "二维码", "票据", "发票", "收据", "菜单"
     ];
 
     static readonly string[] UiOrCodeKeywords =
@@ -52,11 +53,15 @@ public static class QChatVisionRoutePlanner
             fallback = null;
         }
 
+        TimeSpan timeout = totalTimeout.GetValueOrDefault(TimeSpan.FromSeconds(12));
+        if (string.Equals(reason, "complex_ocr", StringComparison.Ordinal) && timeout < TimeSpan.FromSeconds(30))
+            timeout = TimeSpan.FromSeconds(30);
+
         return new QChatVisionRoutePlan(
             primary,
             fallback,
             reason,
-            totalTimeout.GetValueOrDefault(TimeSpan.FromSeconds(12)));
+            timeout);
     }
 
     public static bool ShouldFallback(QChatImageRecognitionFailureKind failureKind)

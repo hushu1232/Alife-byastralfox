@@ -48,7 +48,7 @@ public class QChatGroupGateServiceTests
     }
 
     [Test]
-    public void AggressiveMessageCanDispatchForXiaYuPolicy()
+    public void AggressiveMessageWithoutDirectAddressIsListenOnly()
     {
         QChatGroupGateService service = new();
         QChatAgentRoute route = CreateGroupRoute();
@@ -59,7 +59,7 @@ public class QChatGroupGateServiceTests
             isMentionedOrWoken: false,
             isAggressive: true);
 
-        Assert.That(decision.Kind, Is.EqualTo(QChatInboundDecisionKind.DispatchToModel));
+        Assert.That(decision.Kind, Is.EqualTo(QChatInboundDecisionKind.ListenOnly));
     }
 
     [Test]
@@ -85,7 +85,7 @@ public class QChatGroupGateServiceTests
     }
 
     [Test]
-    public void OwnerGroupMessageDispatchesWithoutMention()
+    public void OwnerGroupMessageWithoutDirectAddressIsListenOnly()
     {
         QChatGroupGateService service = new();
         QChatAgentRoute route = CreateGroupRoute(senderId: 3045846738, isOwner: true);
@@ -96,7 +96,68 @@ public class QChatGroupGateServiceTests
             isMentionedOrWoken: false,
             isAggressive: false);
 
-        Assert.That(decision.Kind, Is.EqualTo(QChatInboundDecisionKind.DispatchToModel));
+        Assert.That(decision.Kind, Is.EqualTo(QChatInboundDecisionKind.ListenOnly));
+    }
+
+    [Test]
+    public void ReplyToBotDispatchesAndStartsAnActiveThread()
+    {
+        QChatGroupGateService service = new();
+        QChatAgentRoute route = CreateGroupRoute();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        QChatGroupGateDecision reply = service.Evaluate(
+            route,
+            "继续说",
+            isMentionedOrWoken: false,
+            isAggressive: false,
+            isReplyToBot: true,
+            observedAt: now,
+            activeWindow: TimeSpan.FromSeconds(60));
+        QChatGroupGateDecision continuation = service.Evaluate(
+            route,
+            "那这一点呢",
+            isMentionedOrWoken: false,
+            isAggressive: false,
+            observedAt: now.AddSeconds(5),
+            activeWindow: TimeSpan.FromSeconds(60));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(reply.Kind, Is.EqualTo(QChatInboundDecisionKind.DispatchToModel));
+            Assert.That(reply.Reason, Is.EqualTo("reply to bot group message"));
+            Assert.That(continuation.Kind, Is.EqualTo(QChatInboundDecisionKind.ListenOnly));
+            Assert.That(continuation.RequiresRelevanceCheck, Is.True);
+        });
+    }
+
+    [Test]
+    public void ActiveThreadExpiresWithoutDispatchingUnrelatedMessages()
+    {
+        QChatGroupGateService service = new();
+        QChatAgentRoute route = CreateGroupRoute();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        service.Evaluate(
+            route,
+            "@夏羽 看看",
+            isMentionedOrWoken: true,
+            isAggressive: false,
+            observedAt: now,
+            activeWindow: TimeSpan.FromSeconds(30));
+
+        QChatGroupGateDecision expired = service.Evaluate(
+            route,
+            "群里另一个话题",
+            isMentionedOrWoken: false,
+            isAggressive: false,
+            observedAt: now.AddSeconds(31),
+            activeWindow: TimeSpan.FromSeconds(30));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(expired.Kind, Is.EqualTo(QChatInboundDecisionKind.ListenOnly));
+            Assert.That(expired.RequiresRelevanceCheck, Is.False);
+        });
     }
 
     [Test]
@@ -182,6 +243,7 @@ public class QChatGroupGateServiceTests
 
         service.Evaluate(route, "before-drain", isMentionedOrWoken: false, isAggressive: false);
         service.Evaluate(route, "@xiayu drain", isMentionedOrWoken: true, isAggressive: false);
+        service.CloseActiveThread(route);
         service.Evaluate(route, "after-drain", isMentionedOrWoken: false, isAggressive: false);
 
         QChatGroupGateDecision finalDispatch = service.Evaluate(route, "@xiayu final", isMentionedOrWoken: true, isAggressive: false);
@@ -209,11 +271,21 @@ public class QChatGroupGateServiceTests
             int index = i;
             tasks[index * 2] = Task.Run(() =>
             {
-                service.Evaluate(route, pendingIds[index], isMentionedOrWoken: false, isAggressive: false);
+                service.Evaluate(
+                    route,
+                    pendingIds[index],
+                    isMentionedOrWoken: false,
+                    isAggressive: false,
+                    activeWindow: TimeSpan.Zero);
             });
             tasks[(index * 2) + 1] = Task.Run(() =>
             {
-                QChatGroupGateDecision decision = service.Evaluate(route, "@xiayu", isMentionedOrWoken: true, isAggressive: false);
+                QChatGroupGateDecision decision = service.Evaluate(
+                    route,
+                    "@xiayu",
+                    isMentionedOrWoken: true,
+                    isAggressive: false,
+                    activeWindow: TimeSpan.Zero);
                 if (decision.ContextBeforeDispatch.Length > 0)
                     observedContexts.Add(decision.ContextBeforeDispatch);
             });

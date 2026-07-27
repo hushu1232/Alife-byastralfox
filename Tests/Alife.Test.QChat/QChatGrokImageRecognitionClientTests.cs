@@ -55,6 +55,25 @@ public sealed class QChatGrokImageRecognitionClientTests
     }
 
     [Test]
+    public async Task UsesOfficialDefaultEndpointWhenRequestAndProviderDoNotOverrideIt()
+    {
+        RecordingHandler handler = new("""{"choices":[{"message":{"content":"image text"}}]}""");
+        QChatGrokImageRecognitionClient client = new(new HttpClient(handler), () => "test-key");
+
+        QChatImageRecognitionProviderResult result = await client.AnalyzeAsync(new QChatImageRecognitionProviderRequest(
+            "https://example.invalid/image.jpg",
+            "Describe it.",
+            "grok-4.5",
+            80));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(handler.RequestUri, Is.EqualTo(new Uri("https://api.x.ai/v1/chat/completions")));
+        });
+    }
+
+    [Test]
     public async Task HttpErrorDoesNotLeakProviderBodyOrKey()
     {
         RecordingHandler handler = new("provider-response-must-stay-private", HttpStatusCode.BadGateway);
@@ -98,11 +117,13 @@ public sealed class QChatGrokImageRecognitionClientTests
         public int CallCount { get; private set; }
         public string? Authorization { get; private set; }
         public string RequestBody { get; private set; } = "";
+        public Uri? RequestUri { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             CallCount++;
             Authorization = request.Headers.Authorization?.ToString();
+            RequestUri = request.RequestUri;
             RequestBody = request.Content == null ? "" : await request.Content.ReadAsStringAsync(cancellationToken);
             return new HttpResponseMessage(statusCode) { Content = new StringContent(responseBody) };
         }

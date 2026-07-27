@@ -144,7 +144,7 @@ public sealed partial class QChatScopedCapabilityTurnExecutor(
     {
         string data = QChatPromptEnvelope.Wrap(
             "scoped_capability_feedback",
-            feedback.ObservedAt ?? DateTimeOffset.UtcNow,
+            feedback.ObservedAt ?? DateTimeOffset.Now,
             string.Join(Environment.NewLine,
                 $"capability={feedback.Capability}",
                 $"status={feedback.Status}",

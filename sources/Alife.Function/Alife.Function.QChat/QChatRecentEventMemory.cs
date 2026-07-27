@@ -190,6 +190,25 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
             .ToArray();
     }
 
+    public bool IsOutgoingMessage(
+        long selfId,
+        long messageId,
+        OneBotMessageType type,
+        long targetId,
+        DateTimeOffset now)
+    {
+        if (selfId <= 0 || messageId <= 0 || targetId <= 0)
+            return false;
+
+        Prune(now);
+        return byMessageId.TryGetValue(
+                   (selfId, messageId, QChatConversationSpeaker.Self),
+                   out LinkedListNode<QChatRecentMessageSnapshot>? node) &&
+               node.Value.IsRecalled == false &&
+               node.Value.MessageType == type &&
+               GetTargetId(node.Value) == targetId;
+    }
+
     public string BuildRecentContextBlock(
         long selfId,
         OneBotMessageType type,
@@ -199,10 +218,17 @@ public sealed class QChatRecentEventMemory(int maxMessages = 500, TimeSpan? rete
         bool includeRecalledMessages = true,
         int maxCharacters = 1200,
         long ownerUserId = 0,
-        long botUserId = 0)
+        long botUserId = 0,
+        long relevantGroupUserId = 0,
+        long excludedMessageId = 0)
     {
         IReadOnlyList<QChatRecentMessageSnapshot> recent = GetRecentConversation(selfId, type, targetId, limit, now)
             .Where(message => includeRecalledMessages || message.IsRecalled == false)
+            .Where(message => excludedMessageId <= 0 || message.MessageId != excludedMessageId)
+            .Where(message => type != OneBotMessageType.Group ||
+                              relevantGroupUserId <= 0 ||
+                              message.Speaker == QChatConversationSpeaker.Self ||
+                              message.UserId == relevantGroupUserId)
             .ToArray();
         if (recent.Count == 0)
             return "";

@@ -42,6 +42,23 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void ContextualFunctionGuideExposesOnlyRequestedNonPersistentTool()
+    {
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        caller.RegisterHandlerWithoutDocument(new XmlHandler(new HiddenTool()));
+
+        string stableGuide = caller.BuildFunctionGuide();
+        string contextualGuide = caller.BuildContextualFunctionGuide("hidden_ping");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(stableGuide, Does.Not.Contain("hidden_ping"));
+            Assert.That(contextualGuide, Does.Contain("Contextual XML tools for the current turn only"));
+            Assert.That(contextualGuide, Does.Contain("<hidden_ping"));
+        });
+    }
+
+    [Test]
     public void FunctionCallerStoresRecentDataAgentEvidenceDiagnosticsAsStringOnlyBridge()
     {
         XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
@@ -68,6 +85,7 @@ public class XmlFunctionPolicyTests
 
         string handled = (string)format!.Invoke(null, ["qchat_file_upload", true])!;
         string failed = (string)format.Invoke(null, ["qchat_file_upload", false])!;
+        string terminalReply = (string)format.Invoke(null, ["qchat", true])!;
 
         Assert.Multiple(() =>
         {
@@ -78,6 +96,7 @@ public class XmlFunctionPolicyTests
             Assert.That(failed, Does.Contain("status=failed"));
             Assert.That(failed, Does.Not.Contain("exception"));
             Assert.That(failed, Does.Not.Contain("path="));
+            Assert.That(terminalReply, Is.Empty);
         });
     }
 

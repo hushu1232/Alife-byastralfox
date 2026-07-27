@@ -6,6 +6,11 @@ namespace Alife.Test.QChat;
 [TestFixture]
 public class QChatIntentClassifierTests
 {
+    const string XiayuSleepCommand = "Night has fallen";
+    const string XiayuWakeCommand = "wake up ， show me the flower";
+    const string MixuSleepCommand = "晚安咪绪";
+    const string MixuWakeCommand = "耄耋快起床";
+
     [TestCase("撤了吧")]
     [TestCase("把那条撤了")]
     [TestCase("撤你刚才那句")]
@@ -146,18 +151,24 @@ public class QChatIntentClassifierTests
         });
     }
 
-    [TestCase("\u5148\u5b89\u9759\u4e00\u4e0b", "sleep")]
-    [TestCase("\u522b\u8bf4\u8bdd\u4e86", "sleep")]
-    [TestCase("\u7fbd\uff0c\u5b89\u9759\u4e00\u70b9", "sleep")]
-    [TestCase("\u7761\u4e00\u4f1a\u513f", "sleep")]
-    [TestCase("\u9192\u9192", "wake")]
-    [TestCase("\u7fbd\uff0c\u6062\u590d\u6b63\u5e38", "wake")]
-    [TestCase("\u53ef\u4ee5\u8bf4\u8bdd\u4e86", "wake")]
-    [TestCase("\u51fa\u6765\u5427", "wake")]
-    public void QuietModeIntentConfirmsNaturalControlPhrases(string text, string action)
+    [TestCase(XiayuSleepCommand, XiayuSleepCommand, XiayuWakeCommand, "sleep")]
+    [TestCase("N i g h t\u2003H A S\u00a0F A L L E N", XiayuSleepCommand, XiayuWakeCommand, "sleep")]
+    [TestCase(XiayuWakeCommand, XiayuSleepCommand, XiayuWakeCommand, "wake")]
+    [TestCase("W A K E U P ， S H O W M E T H E F L O W E R", XiayuSleepCommand, XiayuWakeCommand, "wake")]
+    [TestCase(MixuSleepCommand, MixuSleepCommand, MixuWakeCommand, "sleep")]
+    [TestCase("晚 安 咪 绪", MixuSleepCommand, MixuWakeCommand, "sleep")]
+    [TestCase(MixuWakeCommand, MixuSleepCommand, MixuWakeCommand, "wake")]
+    [TestCase("耄 耋 快 起 床", MixuSleepCommand, MixuWakeCommand, "wake")]
+    public void QuietModeIntentConfirmsOnlyConfiguredWholeMessage(
+        string text,
+        string sleepCommand,
+        string wakeCommand,
+        string action)
     {
         QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
-            QChatIntentInput.FromText(text));
+            QChatIntentInput.FromText(text),
+            sleepCommand,
+            wakeCommand);
 
         Assert.Multiple(() =>
         {
@@ -168,30 +179,19 @@ public class QChatIntentClassifierTests
         });
     }
 
-    [TestCase("\u5b89\u9759\u6a21\u5f0f\u662f\u4ec0\u4e48")]
-    [TestCase("\u6d4b\u8bd5\u4e00\u4e0b\u80fd\u4e0d\u80fd\u5b89\u9759")]
-    [TestCase("\u4f60\u4f1a\u4e0d\u4f1a\u88ab\u53eb\u9192")]
-    public void QuietModeIntentRejectsMetaAndProbePhrases(string text)
+    [TestCase("我说 Night has fallen 只是歌词")]
+    [TestCase("Night has fallen。")]
+    [TestCase("wake up, show me the flower")]
+    [TestCase("醒醒")]
+    [TestCase("回来")]
+    [TestCase("我等会回来")]
+    [TestCase("你去睡觉吧")]
+    public void QuietModeIntentRejectsAnythingOtherThanConfiguredWholeMessage(string text)
     {
         QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
-            QChatIntentInput.FromText(text));
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(decision.Kind, Is.EqualTo(QChatIntentKind.QuietMode));
-            Assert.That(decision.IsCandidate, Is.True);
-            Assert.That(decision.IsConfirmed, Is.False);
-            Assert.That(decision.IsMetaDiscussion, Is.True);
-        });
-    }
-
-    [TestCase("\u4f60\u53ef\u4ee5\u7d2f\uff0c\u53ef\u4ee5\u4e0d\u60f3\u8bf4\u8bdd\uff0c\u6211\u4e5f\u53ef\u4ee5\u5b89\u9759\u5730\u966a\u7740\u4f60\u3002")]
-    [TestCase("\u6211\u5bb3\u6015\u7761\u89c9\u4e86\uff0c\u6240\u4ee5\u603b\u662f\u5931\u7720\u3002")]
-    [TestCase("\u4ed6\u5728\u964c\u751f\u4eba\u9762\u524d\u4f1a\u5f88\u5b89\u9759\uff0c\u4f46\u8fd9\u53ea\u662f\u6027\u683c\u63cf\u8ff0\u3002")]
-    public void QuietModeIntentDoesNotTreatEmbeddedProseAsSleepCommand(string text)
-    {
-        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
-            QChatIntentInput.FromText(text));
+            QChatIntentInput.FromText(text),
+            XiayuSleepCommand,
+            XiayuWakeCommand);
 
         Assert.Multiple(() =>
         {
@@ -199,6 +199,45 @@ public class QChatIntentClassifierTests
             Assert.That(decision.IsCandidate, Is.False);
             Assert.That(decision.IsConfirmed, Is.False);
             Assert.That(decision.TargetText, Is.Null);
+        });
+    }
+
+    [Test]
+    public void QuietModeIntentDoesNotScanReadableOrForwardedContent()
+    {
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
+            new QChatIntentInput(
+                PlainText: "看看这条转发",
+                ReadableText: XiayuSleepCommand,
+                RawMessage: "[CQ:forward,id=quiet-command]",
+                HasReply: false,
+                ReplyMessageId: null),
+            XiayuSleepCommand,
+            XiayuWakeCommand);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Kind, Is.EqualTo(QChatIntentKind.QuietMode));
+            Assert.That(decision.IsCandidate, Is.False);
+            Assert.That(decision.IsConfirmed, Is.False);
+            Assert.That(decision.TargetText, Is.Null);
+        });
+    }
+
+    [Test]
+    public void QuietModeIntentRejectsAmbiguousConfiguration()
+    {
+        QChatIntentDecision decision = QChatIntentClassifier.ClassifyQuietMode(
+            QChatIntentInput.FromText(XiayuSleepCommand),
+            XiayuSleepCommand,
+            XiayuSleepCommand);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.IsCandidate, Is.True);
+            Assert.That(decision.IsConfirmed, Is.False);
+            Assert.That(decision.TargetText, Is.Null);
+            Assert.That(decision.Reason, Does.Contain("ambiguous"));
         });
     }
 

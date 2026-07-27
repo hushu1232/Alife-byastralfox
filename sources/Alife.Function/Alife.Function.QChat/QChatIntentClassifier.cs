@@ -167,66 +167,56 @@ public static class QChatIntentClassifier
             confirmed ? "confirmed group allowlist update" : "allowlist target is missing");
     }
 
-    public static QChatIntentDecision ClassifyQuietMode(QChatIntentInput input)
+    public static QChatIntentDecision ClassifyQuietMode(
+        QChatIntentInput input,
+        string? sleepCommand,
+        string? wakeCommand)
     {
-        string text = Merge(input.PlainText, input.ReadableText);
-        bool sleep = ContainsDirectQuietModeSleepCommand(text);
-        bool wake = ContainsAny(text, "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "出来吧", "出来一下", "回来", "恢复正常", "wake", "resume");
-        bool quietModeMention = ContainsAny(text, "安静", "别说话", "不要说话", "别回复", "不要回复", "睡觉", "睡一会", "睡会", "休息", "醒醒", "叫醒", "可以说话", "继续说话", "能说话", "恢复正常", "quiet", "silent", "wake", "resume");
-        bool meta = ContainsAny(text, "是什么", "会不会", "为什么", "怎么", "失败", "测试", "验证", "演示", "试试", "能不能", "是不是", "是否");
-        bool candidate = sleep || wake || (quietModeMention && meta);
-        if (candidate == false)
-            return None(QChatIntentKind.QuietMode, "no quiet-mode keyword");
+        string text = NormalizeQuietModeCommand(input.PlainText);
+        string sleep = NormalizeQuietModeCommand(sleepCommand);
+        string wake = NormalizeQuietModeCommand(wakeCommand);
+        bool sleepMatched = text.Length > 0 && sleep.Length > 0 && text.Equals(sleep, StringComparison.Ordinal);
+        bool wakeMatched = text.Length > 0 && wake.Length > 0 && text.Equals(wake, StringComparison.Ordinal);
+        if (sleepMatched == false && wakeMatched == false)
+            return None(QChatIntentKind.QuietMode, "message is not an exact quiet-mode command");
+        if (sleepMatched && wakeMatched)
+        {
+            return new QChatIntentDecision(
+                QChatIntentKind.QuietMode,
+                true,
+                false,
+                0,
+                QChatIntentTargetKind.None,
+                null,
+                null,
+                null,
+                false,
+                false,
+                "quiet-mode commands are ambiguous");
+        }
 
-        string? action = wake ? "wake" : sleep ? "sleep" : null;
-        bool confirmed = action != null && meta == false;
+        string action = wakeMatched ? "wake" : "sleep";
 
         return new QChatIntentDecision(
             QChatIntentKind.QuietMode,
             true,
-            confirmed,
-            confirmed ? 0.88 : 0.3,
-            confirmed ? QChatIntentTargetKind.CurrentSession : QChatIntentTargetKind.None,
-            confirmed ? action : null,
+            true,
+            1,
+            QChatIntentTargetKind.CurrentSession,
+            action,
             null,
             null,
             false,
-            meta,
-            confirmed ? $"confirmed quiet-mode {action} request" : "quiet-mode keyword is not an execution command");
+            false,
+            $"confirmed exact quiet-mode {action} command");
     }
 
-    static bool ContainsDirectQuietModeSleepCommand(string text)
+    static string NormalizeQuietModeCommand(string? text)
     {
-        return ContainsAny(
-            text,
-            "先安静",
-            "安静一下",
-            "安静一点",
-            "安静一会",
-            "安静一阵",
-            "安静点",
-            "安静下来",
-            "保持安静",
-            "别说话",
-            "不要说话",
-            "别回复",
-            "不要回复",
-            "去睡觉",
-            "睡觉吧",
-            "睡一会",
-            "睡会",
-            "睡一下",
-            "闭眼睡",
-            "闭眼 睡",
-            "先睡",
-            "先休息",
-            "去休息",
-            "休息一下",
-            "休息一会",
-            "休息会",
-            "休息吧",
-            "quiet",
-            "silent");
+        return new string((text ?? string.Empty)
+            .Where(ch => char.IsWhiteSpace(ch) == false)
+            .Select(char.ToUpperInvariant)
+            .ToArray());
     }
 
     public static QChatIntentDecision ClassifyGroupWake(
