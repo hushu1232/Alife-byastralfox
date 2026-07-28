@@ -8586,7 +8586,11 @@ public partial class QChatService(
             decision,
             action);
 
-        string? filePath = FindOwnerPrivateFileSendTarget(text);
+        string? filePath = string.IsNullOrWhiteSpace(decision.FilePath)
+            ? FindOwnerPrivateFileSendTarget(text)
+            : File.Exists(decision.FilePath)
+                ? Path.GetFullPath(decision.FilePath)
+                : null;
         if (filePath == null)
             return false;
 

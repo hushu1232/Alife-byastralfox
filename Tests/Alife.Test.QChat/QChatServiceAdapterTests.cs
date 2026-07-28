@@ -8816,6 +8816,62 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerGroupExplicitFilePathDoesNotFallBackToRecentHelloWorld()
+    {
+        string originalCurrentDirectory = Environment.CurrentDirectory;
+        string root = Path.Combine(Path.GetTempPath(), "alife-qchat-owner-group-explicit-file-tests", Guid.NewGuid().ToString("N"));
+        string outputDirectory = Path.Combine(root, "output");
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
+        await File.WriteAllTextAsync(Path.Combine(outputDirectory, "hello_world.c"), "stale fallback");
+        string requestedFile = Path.Combine(root, "README.md");
+        await File.WriteAllTextAsync(requestedFile, "requested file");
+
+        try
+        {
+            string clientDirectory = Path.Combine(root, "Outputs", "Alife.Client");
+            Directory.CreateDirectory(clientDirectory);
+            Environment.CurrentDirectory = clientDirectory;
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            });
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                GroupId = 971237816,
+                UserId = 3045846738,
+                RawMessage = $"[CQ:at,qq=2905391496] 把 \"{requestedFile}\" 上传到这个群，完成后告诉我结果"
+            });
+
+            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            Assert.Multiple(() =>
+            {
+                Assert.That(dispatchCount, Is.Zero);
+                Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
+                    971237816L,
+                    requestedFile.Replace('\\', '/'),
+                    "README.md")));
+                Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("README.md"));
+            });
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+        }
+    }
+
+    [Test]
     public async Task OwnerGroupSendThisFileCommandWritesIntentActionDecisionDiagnostic()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
