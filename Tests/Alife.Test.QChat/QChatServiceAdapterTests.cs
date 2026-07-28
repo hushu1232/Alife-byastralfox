@@ -12396,6 +12396,39 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task IncomingXmlQChatNaturalReplyContainingHeardSendsQqMessage()
+    {
+        const string Reply = "术术今天辛苦啦，听到你的声音就好开心！";
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+        service.InboundChatDispatcher = async inbound =>
+        {
+            await service.QChat(new XmlExecutorContext
+            {
+                CallMode = CallMode.Closing,
+                Parameters = new Dictionary<string, string>(),
+                CallChain = ["qchat"],
+                Content = Reply
+            }, OneBotMessageType.Private, inbound.TargetId);
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "voice reply"
+        });
+
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        Assert.That(runtime.PrivateMessages.Single().Message, Is.EqualTo(Reply));
+    }
+
+    [Test]
     public async Task IncomingXmlQChatStatusDoesNotSendQqMessage()
     {
         FakeOneBotRuntime runtime = new();

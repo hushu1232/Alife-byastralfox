@@ -11523,7 +11523,6 @@ public partial class QChatService(
                || compact.Contains("默默看", StringComparison.Ordinal)
                || compact.Contains("安静看", StringComparison.Ordinal)
                || compact.Contains("安靜看", StringComparison.Ordinal)
-               || compact.Contains("听到", StringComparison.Ordinal)
                || compact.Contains("指令后", StringComparison.Ordinal)
                || compact.Contains("默默", StringComparison.Ordinal)
                || compact.Contains("趴好", StringComparison.Ordinal)
