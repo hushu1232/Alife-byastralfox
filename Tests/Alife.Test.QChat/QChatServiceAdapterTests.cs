@@ -15678,6 +15678,52 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QuietModeSuppressesOwnerPrivateMessageBeforeSemanticResearch()
+    {
+        FakeOneBotRuntime runtime = new();
+        RecordingSemanticWebResearchService semanticResearch = new();
+        int dispatchCount = 0;
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
+        },
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: semanticResearch);
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = XiayuSleepCommand
+        });
+        await WaitUntilAsync(() => service.IsQuietModeEnabled);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "你还在吗"
+        });
+        await Task.Delay(300);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(semanticResearch.Calls, Is.Zero);
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+        });
+    }
+
+    [Test]
     public async Task OwnerSleepCommandIgnoresUnicodeWhitespaceAndCase()
     {
         FakeOneBotRuntime runtime = new();

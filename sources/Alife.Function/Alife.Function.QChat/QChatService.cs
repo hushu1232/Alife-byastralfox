@@ -3526,6 +3526,8 @@ public partial class QChatService(
                 {
                     return;
                 }
+                if (ShouldSuppressForQuietMode(messageEvent, senderRole, isMentionedOrWoken: false))
+                    return;
                 string formatted = $"{speaker}：{content}";
                 bool isAtBot = messageEvent.GetAtID() == client.BotId;
                 QChatIntentDecision wakeDecision = QChatIntentClassifier.ClassifyGroupWake(
