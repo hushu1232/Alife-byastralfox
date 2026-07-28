@@ -1466,6 +1466,48 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task NaturalOwnerSearch_UsesSemanticResearchWhenAvailable()
+    {
+        FakeOneBotRuntime runtime = new();
+        FakePublicSearchProvider shortcutProvider = new(
+            new AgentPublicSearchResult("Shortcut Result", "https://example.test/shortcut", "shortcut snippet"));
+        RecordingSemanticWebResearchService semanticResearch = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnablePublicInternetSearch = true,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
+        },
+        publicSearchProvider: shortcutProvider,
+        semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+        semanticWebResearchService: semanticResearch);
+        QChatInboundMessage? dispatched = null;
+        service.InboundChatDispatcher = message =>
+        {
+            dispatched = message;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "帮我查一下 OpenAI 官方最近一次 ChatGPT 更新是什么，给我发布日期和实际来源链接"
+        });
+
+        await WaitUntilAsync(() => dispatched != null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(shortcutProvider.Calls, Is.Zero);
+            Assert.That(semanticResearch.Calls, Is.EqualTo(1));
+            Assert.That(dispatched!.Formatted, Does.Contain("https://example.test/semantic-web-research"));
+        });
+    }
+
+    [Test]
     public void AppendRequiredSourceUrls_AddsOnlyMissingUrlsAfterAnswer()
     {
         MethodInfo method = typeof(QChatService).GetMethod(
@@ -1671,6 +1713,7 @@ public class QChatServiceAdapterTests
         {
             Assert.That(research.Calls, Is.EqualTo(1));
             Assert.That(dispatched!.Formatted, Does.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(dispatched.Formatted, Does.Contain("Live web research has already completed"));
             Assert.That(dispatched.Formatted, Does.Contain("https://example.test/semantic-web-research"));
         });
     }
@@ -10102,10 +10145,13 @@ public class QChatServiceAdapterTests
     {
         FakeOneBotRuntime runtime = new();
         FakeImageRecognitionClient imageClient = new("settled image contains a cat");
+        RecordingSemanticWebResearchService semanticResearch = new();
         CapturingQChatService service = new(
             new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
             runtime,
-            imageRecognitionService: new QChatImageRecognitionService(imageClient))
+            imageRecognitionService: new QChatImageRecognitionService(imageClient),
+            semanticWebResearchRouter: new FixedSemanticWebResearchRouter(),
+            semanticWebResearchService: semanticResearch)
         {
             Configuration = new QChatConfig
             {
@@ -10114,9 +10160,11 @@ public class QChatServiceAdapterTests
                 EnableImageRecognition = true,
                 EnableBalancedTextStreaming = false,
                 EnableConversationSettleWindow = true,
-                PrivateSettleMilliseconds = 180,
+                PrivateSettleMilliseconds = 40,
+                PrivateImageSettleMilliseconds = 300,
                 RecallGraceMilliseconds = 1,
-                MaxSettleMilliseconds = 500
+                MaxSettleMilliseconds = 100,
+                SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
             }
         };
         StartService(service);
@@ -10128,7 +10176,7 @@ public class QChatServiceAdapterTests
             UserId = 1001,
             RawMessage = "[CQ:image,file=cat.jpg,url=https://example.invalid/cat.jpg]"
         });
-        await Task.Delay(60);
+        await Task.Delay(140);
         runtime.Raise(new OneBotMessageEvent
         {
             SelfId = 999,
@@ -10137,7 +10185,7 @@ public class QChatServiceAdapterTests
             RawMessage = "请完整识别图片里的文字"
         });
 
-        await Task.Delay(80);
+        await Task.Delay(20);
         Assert.That(imageClient.Calls, Is.Zero);
 
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
@@ -10146,11 +10194,15 @@ public class QChatServiceAdapterTests
         {
             Assert.That(imageClient.Calls, Is.EqualTo(1));
             Assert.That(inbound.Formatted, Does.Contain("[qchat image analysis]"));
-            Assert.That(inbound.Formatted, Does.Contain("image_1_summary=settled image contains a cat"));
+            Assert.That(inbound.Formatted, Does.Contain("image_1_ocr_text_begin"));
+            Assert.That(inbound.Formatted, Does.Contain("settled image contains a cat"));
+            Assert.That(inbound.Formatted, Does.Contain("image_1_ocr_text_end"));
             Assert.That(inbound.Formatted, Does.Contain("请完整识别图片里的文字"));
             Assert.That(inbound.Formatted, Does.Not.Contain("https://example.invalid/cat.jpg"));
-            Assert.That(imageClient.Requests.Single().Prompt, Does.Contain("Extract all legible text"));
+            Assert.That(imageClient.Requests.Single().Prompt, Does.Contain("Transcribe every legible character"));
+            Assert.That(imageClient.Requests.Single().Prompt, Does.Contain("Do not summarize, paraphrase"));
             Assert.That(imageClient.Requests.Single().MaxTokens, Is.EqualTo(800));
+            Assert.That(semanticResearch.Calls, Is.Zero);
         });
     }
 
@@ -10169,6 +10221,7 @@ public class QChatServiceAdapterTests
                 EnableBalancedTextStreaming = false,
                 EnableConversationSettleWindow = true,
                 PrivateSettleMilliseconds = 180,
+                PrivateImageSettleMilliseconds = 180,
                 RecallGraceMilliseconds = 1,
                 MaxSettleMilliseconds = 500
             },
@@ -12909,7 +12962,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task IncomingPrivateQChatToolReplyCanSendOnlyToCurrentSession()
+    public async Task IncomingPrivateQChatToolReplyRemapsWrongTargetToCurrentSession()
     {
         FakeOneBotRuntime runtime = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
@@ -12924,16 +12977,8 @@ public class QChatServiceAdapterTests
                 CallMode = CallMode.Closing,
                 Parameters = new Dictionary<string, string>(),
                 CallChain = ["qchat"],
-                Content = "same-session"
-            }, OneBotMessageType.Private, 1001);
-
-            await service.QChat(new XmlExecutorContext
-            {
-                CallMode = CallMode.Closing,
-                Parameters = new Dictionary<string, string>(),
-                CallChain = ["qchat"],
                 Content = "cross-session"
-            }, OneBotMessageType.Private, 2002);
+            }, OneBotMessageType.Group, 2002);
         };
 
         runtime.Raise(new OneBotMessageEvent
@@ -12944,7 +12989,8 @@ public class QChatServiceAdapterTests
         });
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count > 0);
-        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "same-session") }));
+        Assert.That(runtime.PrivateMessages, Is.EqualTo(new[] { (1001L, "cross-session") }));
+        Assert.That(runtime.GroupMessages, Is.Empty);
     }
 
     [Test]
@@ -14981,6 +15027,85 @@ public class QChatServiceAdapterTests
         await Task.Delay(200);
         Assert.That(dispatchCount, Is.EqualTo(1));
         Assert.That(runtime.GroupMessages.Select(message => message.Message), Is.EqualTo(new[] { "reply-1" }));
+    }
+
+    [Test]
+    public async Task SemanticIncompleteTurnUsesRollingWindowUntilCompletion()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        TurnCompletenessSemanticWebResearchRouter router = new();
+        RecordingSemanticWebResearchService research = new();
+        CapturingQChatService service = new(
+            functionCaller,
+            runtime,
+            semanticWebResearchRouter: router,
+            semanticWebResearchService: research)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 40,
+                SemanticIncompleteSettleMilliseconds = 300,
+                MaxSettleMilliseconds = 100,
+                SemanticWebResearch = new QChatSemanticWebResearchConfig
+                {
+                    Enabled = true,
+                    FeedbackDelayMilliseconds = 1000
+                }
+            }
+        };
+        StartService(service);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 21,
+            UserId = 1001,
+            RawMessage = "unfinished fragment"
+        });
+        await router.WaitForFirstAsync();
+        await Task.Delay(220);
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 22,
+            UserId = 1001,
+            RawMessage = "unfinished continuation"
+        });
+        await router.WaitForSecondAsync();
+        await Task.Delay(100);
+        Assert.That(service.TryReadInbound(out _), Is.False);
+        await Task.Delay(120);
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 23,
+            UserId = 1001,
+            RawMessage = "complete ending"
+        });
+        await router.WaitForThirdAsync();
+
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        await Task.Delay(100);
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("unfinished fragment"));
+            Assert.That(inbound.Formatted, Does.Contain("unfinished continuation"));
+            Assert.That(inbound.Formatted, Does.Contain("complete ending"));
+            Assert.That(inbound.SourceMessageIds, Is.EqualTo(new[] { 21L, 22L, 23L }));
+            Assert.That(inbound.SuggestedSettleMilliseconds, Is.Null);
+            Assert.That(router.Calls, Is.EqualTo(3));
+            Assert.That(router.Requests, Has.Count.EqualTo(3));
+            Assert.That(router.Requests[0].RecentContext, Does.Not.Contain("unfinished fragment"));
+            Assert.That(router.Requests[1].RecentContext, Does.Contain("unfinished fragment").And.Not.Contain("unfinished continuation"));
+            Assert.That(router.Requests[2].RecentContext, Does.Contain("unfinished fragment").And.Contain("unfinished continuation").And.Not.Contain("complete ending"));
+            Assert.That(research.Calls, Is.Zero);
+            Assert.That(service.TryReadInbound(out _), Is.False);
+        });
     }
 
     [Test]
@@ -17107,6 +17232,53 @@ public class QChatServiceAdapterTests
         });
     }
 
+    sealed class TurnCompletenessSemanticWebResearchRouter : IQChatSemanticWebResearchRouter
+    {
+        readonly TaskCompletionSource first = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource second = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        readonly TaskCompletionSource third = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls;
+
+        public int Calls => calls;
+        public List<QChatSemanticWebResearchRequest> Requests { get; } = [];
+        public Task WaitForFirstAsync() => first.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        public Task WaitForSecondAsync() => second.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        public Task WaitForThirdAsync() => third.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        public async Task<QChatSemanticWebResearchDecision> RouteAsync(
+            QChatSemanticWebResearchRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            int call = Interlocked.Increment(ref calls);
+            if (call == 1)
+            {
+                first.TrySetResult();
+                return Decision(turnComplete: false);
+            }
+
+            if (call == 2)
+            {
+                second.TrySetResult();
+                await Task.Delay(120, cancellationToken);
+                return Decision(turnComplete: false);
+            }
+
+            third.TrySetResult();
+            return Decision(turnComplete: true);
+        }
+
+        static QChatSemanticWebResearchDecision Decision(bool turnComplete) => new(
+            false,
+            false,
+            "",
+            QChatSemanticWebResearchDepth.Quick,
+            1,
+            QChatSemanticWebResearchReasonCategory.Companion,
+            "turn completeness test",
+            turnComplete);
+    }
+
     [Test]
     public async Task MixuOwnerPrivateRepeatedFollowUpIsSuppressed()
     {
@@ -17723,7 +17895,9 @@ public class QChatServiceAdapterTests
         QChatProfileLearningService? profileLearningService = null,
         QChatImageRecognitionService? imageRecognitionService = null,
         XiaYuSelfStateStore? xiaYuSelfStateStore = null,
-        IDataAgentStore? dataAgentStore = null) : QChatService(
+        IDataAgentStore? dataAgentStore = null,
+        IQChatSemanticWebResearchRouter? semanticWebResearchRouter = null,
+        IAgentWebResearchService? semanticWebResearchService = null) : QChatService(
             functionCaller,
             new NullLogger<QChatService>(),
             oneBotRuntime: runtime,
@@ -17732,6 +17906,8 @@ public class QChatServiceAdapterTests
             profileLearningService: profileLearningService,
             riskScoreService: new QChatRiskScoreService(CreateTempRiskRoot()),
             imageRecognitionService: imageRecognitionService,
+            semanticWebResearchRouter: semanticWebResearchRouter,
+            semanticWebResearchService: semanticWebResearchService,
             xiaYuSelfStateStore: xiaYuSelfStateStore,
             dataAgentStore: dataAgentStore ?? new CapturingDataAgentStore())
     {
@@ -17763,6 +17939,8 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(config.PrivateSettleMilliseconds, Is.EqualTo(450));
+            Assert.That(config.SemanticIncompleteSettleMilliseconds, Is.EqualTo(3000));
+            Assert.That(config.PrivateImageSettleMilliseconds, Is.EqualTo(6000));
             Assert.That(config.GroupSettleMilliseconds, Is.EqualTo(700));
             Assert.That(config.MaxSettleMilliseconds, Is.EqualTo(1200));
         });

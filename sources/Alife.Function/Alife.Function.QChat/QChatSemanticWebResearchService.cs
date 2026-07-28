@@ -41,6 +41,10 @@ public sealed class QChatSemanticWebResearchService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        string rawMessage = request.MessageEvent.RawMessage;
+        if (QChatConversationCognition.IsMediaOnly(rawMessage, OneBotSegment.GetPlainText(rawMessage)))
+            return QChatSemanticWebResearchEvidence.Empty;
+
         if (QChatSemanticWebResearchEligibility.IsEligible(
                 request.Config,
                 request.MessageEvent,

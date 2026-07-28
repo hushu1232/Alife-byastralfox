@@ -41,6 +41,7 @@ public sealed class QChatGrokImageRecognitionClientTests
             80));
 
         using JsonDocument requestJson = JsonDocument.Parse(handler.RequestBody);
+        string systemPrompt = requestJson.RootElement.GetProperty("messages")[0].GetProperty("content").GetString() ?? "";
         JsonElement userContent = requestJson.RootElement.GetProperty("messages")[1].GetProperty("content");
 
         Assert.Multiple(() =>
@@ -49,6 +50,8 @@ public sealed class QChatGrokImageRecognitionClientTests
             Assert.That(result.ProviderName, Is.EqualTo("grok"));
             Assert.That(result.Content, Is.EqualTo("screenshot text"));
             Assert.That(handler.Authorization, Is.EqualTo("Bearer test-key"));
+            Assert.That(systemPrompt, Does.Contain("For OCR or transcription"));
+            Assert.That(systemPrompt, Does.Contain("without summarizing, paraphrasing"));
             Assert.That(userContent[1].GetProperty("type").GetString(), Is.EqualTo("image_url"));
             Assert.That(userContent[1].GetProperty("image_url").GetProperty("url").GetString(), Is.EqualTo("https://example.invalid/screenshot.jpg"));
         });

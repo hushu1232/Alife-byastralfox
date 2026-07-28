@@ -45,7 +45,9 @@ public sealed class SearXngPublicSearchProvider(
     {
         string separator = endpoint.Contains('?', StringComparison.Ordinal) ? "&" : "?";
         string category = isNewsQuery ? "news" : "general";
-        string language = ContainsCjk(query) ? "zh-CN" : "auto";
+        string language = query.Contains("site:", StringComparison.OrdinalIgnoreCase)
+            ? "auto"
+            : ContainsCjk(query) ? "zh-CN" : "auto";
         return new Uri(
             $"{endpoint}{separator}q={Uri.EscapeDataString(query)}" +
             $"&format=json&categories={category}&language={language}&safesearch=1");

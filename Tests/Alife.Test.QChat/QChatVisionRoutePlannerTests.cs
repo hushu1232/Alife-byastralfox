@@ -46,6 +46,32 @@ public sealed class QChatVisionRoutePlannerTests
     }
 
     [Test]
+    public void Plan_UsesProviderSpecificTimeouts()
+    {
+        QChatVisionProviderCatalog catalog = new()
+        {
+            Providers =
+            [
+                new QChatVisionProviderSettings { ProviderId = "agnes", TimeoutMilliseconds = 12000 },
+                new QChatVisionProviderSettings { ProviderId = "grok", TimeoutMilliseconds = 90000 }
+            ]
+        };
+
+        QChatVisionRoutePlan normal = QChatVisionRoutePlanner.Plan(
+            Profile(), "普通照片", catalog, TimeSpan.FromSeconds(12));
+        QChatVisionRoutePlan complex = QChatVisionRoutePlanner.Plan(
+            Profile(), "请识别图片里的文字", catalog, TimeSpan.FromSeconds(12));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(normal.TotalTimeout, Is.EqualTo(TimeSpan.FromSeconds(12)));
+            Assert.That(normal.FallbackTimeout, Is.EqualTo(TimeSpan.FromSeconds(90)));
+            Assert.That(complex.TotalTimeout, Is.EqualTo(TimeSpan.FromSeconds(90)));
+            Assert.That(complex.FallbackTimeout, Is.Null);
+        });
+    }
+
+    [Test]
     public void Plan_DoesNotFallbackToSameOrDisabledProvider()
     {
         QChatVisionProfile profile = Profile();

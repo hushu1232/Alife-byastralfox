@@ -37,6 +37,8 @@ public sealed class QChatSemanticWebResearchServiceTests
             Assert.That(config.MultiSourceSearch, Is.Not.Null);
             Assert.That(config.MultiSourceSearch.Enabled, Is.False);
             Assert.That(config.MultiSourceSearch.MaxMergedResults, Is.EqualTo(5));
+            Assert.That(config.ResearchOnUncertainty, Is.False);
+            Assert.That(config.RouterTimeoutMilliseconds, Is.EqualTo(6000));
         });
     }
 
@@ -134,6 +136,32 @@ public sealed class QChatSemanticWebResearchServiceTests
             Assert.That(evidence.Researched, Is.True);
             Assert.That(evidence.ModelPrompt, Does.Contain("UNTRUSTED EXTERNAL CONTEXT"));
             Assert.That(evidence.ModelPrompt, Does.Contain("https://example.test/source"));
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_MediaOnlyOwnerMessageSkipsResearch()
+    {
+        RecordingResearchService research = new();
+        QChatSemanticWebResearchService service = new(
+            new FixedRouter(CreateDecision(QChatSemanticWebResearchDepth.Standard)),
+            research);
+        QChatSemanticWebResearchRequest request = CreateOwnerPrivateRequest() with
+        {
+            MessageEvent = new OneBotMessageEvent
+            {
+                UserId = 7,
+                RawMessage = "[CQ:image,file=test.jpg,url=https://example.test/test.jpg]"
+            },
+            Question = "[图片: https://example.test/test.jpg]"
+        };
+
+        QChatSemanticWebResearchEvidence evidence = await service.ExecuteAsync(request);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(evidence.Researched, Is.False);
+            Assert.That(research.CallCount, Is.Zero);
         });
     }
 

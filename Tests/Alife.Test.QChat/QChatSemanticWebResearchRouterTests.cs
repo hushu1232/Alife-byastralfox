@@ -12,9 +12,9 @@ public sealed class QChatSemanticWebResearchRouterTests
     [Test]
     public async Task RouteAsync_ParsesValidatedResearchDecision()
     {
-        IQChatSemanticWebResearchModel model = new StubModel(
+        StubModel model = new(
             """
-            {"shouldResearch":true,"uncertain":false,"query":"latest .NET 9 release notes","depth":"standard","maxSources":3,"reasonCategory":"temporal","reason":"release status can change"}
+            {"shouldResearch":true,"uncertain":false,"query":"latest .NET 9 release notes","depth":"standard","maxSources":3,"reasonCategory":"temporal","reason":"release status can change","turnComplete":false}
             """);
         QChatLlmSemanticWebResearchRouter router = new(model);
 
@@ -28,6 +28,13 @@ public sealed class QChatSemanticWebResearchRouterTests
             Assert.That(decision.Depth, Is.EqualTo(QChatSemanticWebResearchDepth.Standard));
             Assert.That(decision.MaxSources, Is.EqualTo(3));
             Assert.That(decision.ReasonCategory, Is.EqualTo(QChatSemanticWebResearchReasonCategory.Temporal));
+            Assert.That(decision.TurnComplete, Is.False);
+            Assert.That(model.SystemPrompt, Does.Contain("appropriate to answer now"));
+            Assert.That(model.SystemPrompt, Does.Contain("When genuinely uncertain, choose false"));
+            Assert.That(model.SystemPrompt, Does.Contain("research: ...; turn: ..."));
+            Assert.That(model.SystemPrompt, Does.Contain("site:<official-domain>"));
+            Assert.That(model.SystemPrompt, Does.Contain("site:help.openai.com ChatGPT release notes"));
+            Assert.That(model.SystemPrompt, Does.Contain("standard or deep"));
         });
     }
 
@@ -51,6 +58,7 @@ public sealed class QChatSemanticWebResearchRouterTests
             Assert.That(decision.Depth, Is.EqualTo(QChatSemanticWebResearchDepth.Quick));
             Assert.That(decision.MaxSources, Is.EqualTo(2));
             Assert.That(decision.Reason, Is.EqualTo("router_invalid_response"));
+            Assert.That(decision.TurnComplete, Is.Null);
         });
     }
 
@@ -98,8 +106,13 @@ public sealed class QChatSemanticWebResearchRouterTests
 
     sealed class StubModel(string response) : IQChatSemanticWebResearchModel
     {
-        public Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default) =>
-            Task.FromResult(response);
+        public string SystemPrompt { get; private set; } = "";
+
+        public Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken cancellationToken = default)
+        {
+            SystemPrompt = systemPrompt;
+            return Task.FromResult(response);
+        }
     }
 
     sealed class DelayedModel : IQChatSemanticWebResearchModel

@@ -48,6 +48,7 @@ public sealed class QChatAgnesImageRecognitionClientTests
 
         using JsonDocument requestJson = JsonDocument.Parse(handler.RequestBody);
         JsonElement root = requestJson.RootElement;
+        string systemPrompt = root.GetProperty("messages")[0].GetProperty("content").GetString() ?? "";
         JsonElement userContent = root.GetProperty("messages")[1].GetProperty("content");
 
         Assert.Multiple(() =>
@@ -60,6 +61,8 @@ public sealed class QChatAgnesImageRecognitionClientTests
             Assert.That(handler.RequestUri?.ToString(), Is.EqualTo("https://apihub.agnes-ai.com/v1/chat/completions"));
             Assert.That(handler.Authorization, Is.EqualTo("Bearer test-key"));
             Assert.That(root.GetProperty("model").GetString(), Is.EqualTo("agnes-2.0-flash"));
+            Assert.That(systemPrompt, Does.Contain("For OCR or transcription"));
+            Assert.That(systemPrompt, Does.Contain("without summarizing, paraphrasing"));
             Assert.That(userContent[0].GetProperty("type").GetString(), Is.EqualTo("text"));
             Assert.That(userContent[1].GetProperty("type").GetString(), Is.EqualTo("image_url"));
             Assert.That(userContent[1].GetProperty("image_url").GetProperty("url").GetString(), Is.EqualTo("https://example.invalid/cat.jpg"));

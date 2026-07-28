@@ -146,7 +146,7 @@ public static class QChatConversationCognition
             .Any(id => long.TryParse(id, out long parsed) && parsed == userId);
     }
 
-    static bool IsMediaOnly(string rawMessage, string plainText)
+    internal static bool IsMediaOnly(string rawMessage, string plainText)
     {
         bool hasMedia = rawMessage.Contains("[CQ:image", StringComparison.OrdinalIgnoreCase)
                         || rawMessage.Contains("[CQ:face", StringComparison.OrdinalIgnoreCase)

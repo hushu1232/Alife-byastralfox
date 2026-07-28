@@ -78,7 +78,8 @@ public sealed class AgentWebResearchService(
             return Failure(search.Reason, query, "搜索失败，先不乱说。");
 
         int maxSources = Math.Clamp(request.MaxSources, 1, 5);
-        AgentPublicSearchResult[] candidates = BuildCandidates(search.Results, maxSources);
+        string? requiredSiteHost = TryGetRequiredSiteHost(query);
+        AgentPublicSearchResult[] candidates = BuildCandidates(search.Results, maxSources, requiredSiteHost);
         if (candidates.Length == 0 && request.ActorRole == AgentWebAccessActorRole.Owner)
         {
             foreach (string expandedQuery in PlanOwnerExpandedQueries(query))
@@ -87,7 +88,7 @@ public sealed class AgentWebResearchService(
                 if (expandedSearch.Success == false)
                     continue;
 
-                candidates = BuildCandidates(expandedSearch.Results, maxSources);
+                candidates = BuildCandidates(expandedSearch.Results, maxSources, requiredSiteHost);
                 if (candidates.Length > 0)
                     break;
             }
@@ -184,20 +185,38 @@ public sealed class AgentWebResearchService(
         return Regex.Replace((query ?? "").Trim(), @"\s+", " ");
     }
 
+    static string? TryGetRequiredSiteHost(string query)
+    {
+        Match match = Regex.Match(
+            query,
+            @"(?:^|\s)site:(?<host>[A-Za-z0-9.-]+)(?=\s|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (match.Success == false)
+            return null;
+
+        string host = match.Groups["host"].Value.Trim('.');
+        return host.Length == 0 ? null : host.ToLowerInvariant();
+    }
+
     AgentPublicSearchResult[] BuildCandidates(
         IReadOnlyList<AgentPublicSearchResult> results,
-        int maxSources)
+        int maxSources,
+        string? requiredSiteHost)
     {
         return results
-            .Where(IsUsableCandidate)
+            .Where(result => IsUsableCandidate(result, requiredSiteHost))
             .OrderByDescending(GetCandidateScore)
             .Take(maxSources)
             .ToArray();
     }
 
-    bool IsUsableCandidate(AgentPublicSearchResult result)
+    bool IsUsableCandidate(AgentPublicSearchResult result, string? requiredSiteHost)
     {
-        if (AgentBrowserSiteExperienceStore.TryNormalizeHttpHost(result.Url, out _) == false)
+        if (AgentBrowserSiteExperienceStore.TryNormalizeHttpHost(result.Url, out string host) == false)
+            return false;
+        if (requiredSiteHost != null &&
+            host.Equals(requiredSiteHost, StringComparison.OrdinalIgnoreCase) == false &&
+            host.EndsWith($".{requiredSiteHost}", StringComparison.OrdinalIgnoreCase) == false)
             return false;
 
         AgentBrowserSiteExperience? experience = GetSiteExperience(result.Url);

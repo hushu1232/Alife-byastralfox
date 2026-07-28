@@ -147,6 +147,37 @@ public sealed class AgentWebResearchServiceTests
     }
 
     [Test]
+    public async Task ResearchAsync_SiteQueryAcceptsOnlyThatDomainAndSubdomains()
+    {
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("OpenAI", "https://openai.com/index/update", "official result"),
+            new AgentPublicSearchResult("OpenAI Help", "https://help.openai.com/en/articles/update", "official help result"),
+            new AgentPublicSearchResult("Lookalike", "https://openai.com.evil.test/update", "lookalike result"),
+            new AgentPublicSearchResult("External", "https://example.com/update", "external result")
+        ]);
+        AgentWebResearchService service = new(search, new AgentWebAccessService());
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "ChatGPT release notes site:openai.com",
+            AgentWebAccessActorRole.GroupMember,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                AllowGroupMemberPublicSearch = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Evidence.Select(item => item.Url), Is.EquivalentTo(new[]
+            {
+                "https://openai.com/index/update",
+                "https://help.openai.com/en/articles/update"
+            }));
+        });
+    }
+
+    [Test]
     public async Task ResearchAsync_OwnerExpandsQueryWhenOriginalHasNoUsablePublicResults()
     {
         FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>

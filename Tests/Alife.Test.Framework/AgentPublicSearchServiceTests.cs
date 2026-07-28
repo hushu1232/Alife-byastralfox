@@ -314,6 +314,19 @@ public sealed class AgentPublicSearchServiceTests
     }
 
     [Test]
+    public async Task SearXngPublicSearchProvider_SiteQueryUsesAutomaticLanguage()
+    {
+        FakeHttpMessageHandler handler = new("{\"results\":[]}");
+        SearXngPublicSearchProvider provider = new(
+            new HttpClient(handler),
+            "http://127.0.0.1:8080/search");
+
+        await provider.SearchAsync("site:help.openai.com ChatGPT 更新 release notes", 3);
+
+        Assert.That(handler.LastRequestUri?.Query, Does.Contain("language=auto"));
+    }
+
+    [Test]
     public async Task FallbackPublicSearchProvider_UsesNextProviderWhenPrimaryFails()
     {
         ThrowingPublicSearchProvider primary = new();

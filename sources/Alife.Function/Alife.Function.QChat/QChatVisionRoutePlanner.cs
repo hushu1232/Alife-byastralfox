@@ -6,7 +6,8 @@ public sealed record QChatVisionRoutePlan(
     string PrimaryProvider,
     string? FallbackProvider,
     string Reason,
-    TimeSpan TotalTimeout);
+    TimeSpan TotalTimeout,
+    TimeSpan? FallbackTimeout = null);
 
 public static class QChatVisionRoutePlanner
 {
@@ -57,11 +58,15 @@ public static class QChatVisionRoutePlanner
         if (string.Equals(reason, "complex_ocr", StringComparison.Ordinal) && timeout < TimeSpan.FromSeconds(30))
             timeout = TimeSpan.FromSeconds(30);
 
+        TimeSpan primaryTimeout = ResolveProviderTimeout(catalog, primary, timeout);
+        TimeSpan? fallbackTimeout = fallback == null ? null : ResolveProviderTimeout(catalog, fallback, timeout);
+
         return new QChatVisionRoutePlan(
             primary,
             fallback,
             reason,
-            timeout);
+            primaryTimeout,
+            fallbackTimeout);
     }
 
     public static bool ShouldFallback(QChatImageRecognitionFailureKind failureKind)
@@ -93,6 +98,14 @@ public static class QChatVisionRoutePlanner
 
         QChatVisionProviderSettings? provider = catalog.Find(providerId);
         return provider == null || provider.Enabled;
+    }
+
+    static TimeSpan ResolveProviderTimeout(QChatVisionProviderCatalog? catalog, string providerId, TimeSpan fallback)
+    {
+        int configuredMilliseconds = catalog?.Find(providerId)?.TimeoutMilliseconds ?? 0;
+        return configuredMilliseconds <= 0
+            ? fallback
+            : TimeSpan.FromMilliseconds(Math.Max(fallback.TotalMilliseconds, configuredMilliseconds));
     }
 
     static string Normalize(string? preferred, string? fallback, string defaultValue)

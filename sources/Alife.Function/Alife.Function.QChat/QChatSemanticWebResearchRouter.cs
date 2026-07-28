@@ -81,10 +81,17 @@ public sealed class QChatLlmSemanticWebResearchRouter(IQChatSemanticWebResearchM
 
     static string BuildSystemPrompt() =>
         """
+        Make two independent decisions. Decide turnComplete first.
+        turnComplete means it is appropriate to answer now without interrupting the sender; it does not mean the fragment's likely meaning can merely be guessed.
+        Set turnComplete=false when question is cut off mid-clause, depends grammatically on surrounding text, reads like setup for a request or conclusion that is probably still coming, or recentContext shows the sender is building one thought across messages. Lack of terminal punctuation alone is not enough. When genuinely uncertain, choose false and wait.
+        Examples: "我想把它做得" is false; a following comparative fragment such as "更自然一点" can remain false when it reads as setup; "你觉得重点是什么" is true. "I want to make it feel" is false; "more natural" can remain false as setup; "What should we prioritize?" is true.
         Decide whether a QQ question needs live web research to answer accurately. Use semantics, not keyword lists.
         Research is appropriate for time-sensitive facts, verification, changing status, or niche information that needs external evidence.
         Research is not appropriate for companionship, creative writing, subjective conversation, or stable knowledge already answerable without live evidence.
-        Return only one JSON object with exactly these fields: shouldResearch (boolean), uncertain (boolean), query (string), depth (quick|standard|deep), maxSources (integer 1..5), reasonCategory (temporal|verification|niche|explicit|stable|creative|companion|unknown), reason (string).
+        Decide research independently from turnComplete. The reason must briefly explain both decisions in this form: "research: ...; turn: ...".
+        When an official source is explicitly requested and its official domain is confidently known, constrain query with site:<official-domain> and choose standard or deep; never guess a domain.
+        For product-update questions, target the exact official support/docs subdomain and release-notes or changelog page when confidently known, for example: site:help.openai.com ChatGPT release notes.
+        Return only one JSON object with exactly these fields: turnComplete (boolean), shouldResearch (boolean), uncertain (boolean), query (string), depth (quick|standard|deep), maxSources (integer 1..5), reasonCategory (temporal|verification|niche|explicit|stable|creative|companion|unknown), reason (string).
         """;
 
     static string BuildUserPrompt(QChatSemanticWebResearchRequest request) =>
@@ -132,6 +139,18 @@ public sealed class QChatLlmSemanticWebResearchRouter(IQChatSemanticWebResearchM
             if (shouldResearch && (normalizedQuery.Length == 0 || normalizedQuery.Length > MaxQueryChars))
                 return false;
 
+            bool? turnComplete = null;
+            if (root.TryGetProperty("turnComplete", out JsonElement turnCompleteElement))
+            {
+                if (turnCompleteElement.ValueKind != JsonValueKind.True &&
+                    turnCompleteElement.ValueKind != JsonValueKind.False)
+                {
+                    return false;
+                }
+
+                turnComplete = turnCompleteElement.GetBoolean();
+            }
+
             decision = new QChatSemanticWebResearchDecision(
                 shouldResearch,
                 uncertainElement.GetBoolean(),
@@ -139,7 +158,8 @@ public sealed class QChatLlmSemanticWebResearchRouter(IQChatSemanticWebResearchM
                 depth,
                 maxSources,
                 reasonCategory,
-                reason.Trim());
+                reason.Trim(),
+                turnComplete);
             return true;
         }
         catch (JsonException)

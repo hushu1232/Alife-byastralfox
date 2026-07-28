@@ -10,6 +10,7 @@ public sealed class QChatVisionProviderSettings
     public string Model { get; set; } = "";
     public string ApiEndpoint { get; set; } = "";
     public string ApiKeyEnvironmentVariable { get; set; } = "";
+    public int TimeoutMilliseconds { get; set; }
     public bool Enabled { get; set; } = true;
 }
 
@@ -26,13 +27,15 @@ public sealed class QChatVisionProviderCatalog
                 ProviderId = "agnes",
                 Model = "agnes-2.0-flash",
                 ApiEndpoint = "https://apihub.agnes-ai.com/v1/chat/completions",
-                ApiKeyEnvironmentVariable = QChatAgnesVisionApiKeyResolver.DefaultEnvironmentVariableName
+                ApiKeyEnvironmentVariable = QChatAgnesVisionApiKeyResolver.DefaultEnvironmentVariableName,
+                TimeoutMilliseconds = 12000
             },
             new QChatVisionProviderSettings
             {
                 ProviderId = "grok",
                 Model = "grok-4.5",
-                ApiKeyEnvironmentVariable = "ALIFE_GROK_VISION_API_KEY"
+                ApiKeyEnvironmentVariable = "ALIFE_GROK_VISION_API_KEY",
+                TimeoutMilliseconds = 90000
             }
         ]
     };

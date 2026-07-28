@@ -148,10 +148,12 @@ public sealed class QChatVisionExecutionCoordinator
         Func<string, QChatImageRecognitionProviderRequest>? requestFactory,
         CancellationToken cancellationToken)
     {
-        using CancellationTokenSource timeout = new(route.TotalTimeout <= TimeSpan.Zero
+        TimeSpan primaryTimeout = route.TotalTimeout <= TimeSpan.Zero
             ? TimeSpan.FromSeconds(12)
-            : route.TotalTimeout);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+            : route.TotalTimeout;
+        TimeSpan fallbackTimeout = route.FallbackTimeout is { } configuredFallbackTimeout && configuredFallbackTimeout > TimeSpan.Zero
+            ? configuredFallbackTimeout
+            : primaryTimeout;
 
         string primaryProvider = route.PrimaryProvider.Trim();
         string? fallbackProvider = string.IsNullOrWhiteSpace(route.FallbackProvider) ? null : route.FallbackProvider.Trim();
@@ -163,15 +165,31 @@ public sealed class QChatVisionExecutionCoordinator
                     primaryProvider, request.Model, QChatImageRecognitionFailureKind.Disabled, "provider_circuit_open");
             }
 
-            return await CallProviderAsync(state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), linked.Token);
+            return await CallProviderWithTimeoutAsync(
+                state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), fallbackTimeout, cancellationToken);
         }
 
-        QChatImageRecognitionProviderResult primary = await CallProviderAsync(
-            state, primaryProvider, CreateRequest(primaryProvider, request, requestFactory), linked.Token);
-        if (primary.Success || fallbackProvider == null || QChatVisionRoutePlanner.ShouldFallback(primary.FailureKind) == false)
+        QChatImageRecognitionProviderResult primary = await CallProviderWithTimeoutAsync(
+            state, primaryProvider, CreateRequest(primaryProvider, request, requestFactory), primaryTimeout, cancellationToken);
+        if (primary.Success || fallbackProvider == null || cancellationToken.IsCancellationRequested ||
+            QChatVisionRoutePlanner.ShouldFallback(primary.FailureKind) == false)
             return primary;
 
-        return await CallProviderAsync(state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), linked.Token);
+        return await CallProviderWithTimeoutAsync(
+            state, fallbackProvider, CreateRequest(fallbackProvider, request, requestFactory), fallbackTimeout, cancellationToken);
+    }
+
+    async Task<QChatImageRecognitionProviderResult> CallProviderWithTimeoutAsync(
+        BotState state,
+        string providerId,
+        QChatImageRecognitionProviderRequest request,
+        TimeSpan attemptTimeout,
+        CancellationToken cancellationToken)
+    {
+        // Each provider gets its own attempt budget; otherwise a timed-out primary leaves fallback already canceled.
+        using CancellationTokenSource timeout = new(attemptTimeout);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+        return await CallProviderAsync(state, providerId, request, linked.Token);
     }
 
     async Task<QChatImageRecognitionProviderResult> CallProviderAsync(

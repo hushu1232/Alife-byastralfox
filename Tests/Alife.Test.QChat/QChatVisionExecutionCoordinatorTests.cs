@@ -35,6 +35,31 @@ public sealed class QChatVisionExecutionCoordinatorTests
     }
 
     [Test]
+    public async Task TimedOutPrimaryLeavesFreshBudgetForFallback()
+    {
+        RecordingClient agnes = RecordingClient.WaitUntilCanceled("agnes");
+        RecordingClient grok = RecordingClient.DelayedSuccess("grok", "fallback", TimeSpan.FromMilliseconds(100));
+        QChatVisionExecutionCoordinator coordinator = new(new Dictionary<string, IQChatImageRecognitionClient>
+        {
+            ["agnes"] = agnes,
+            ["grok"] = grok
+        });
+
+        QChatImageRecognitionProviderResult result = await coordinator.AnalyzeAsync(
+            1, false, "timeout-fallback",
+            new("agnes", "grok", "default_image", TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(500)),
+            Request("timeout-fallback"));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.ProviderName, Is.EqualTo("grok"));
+            Assert.That(agnes.Calls, Is.EqualTo(1));
+            Assert.That(grok.Calls, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
     public async Task DeduplicatesSameImageWithinTtl()
     {
         TaskCompletionSource<QChatImageRecognitionProviderResult> completion = new();
@@ -159,10 +184,10 @@ public sealed class QChatVisionExecutionCoordinatorTests
 
     sealed class RecordingClient : IQChatImageRecognitionClient
     {
-        readonly Func<QChatImageRecognitionProviderRequest, Task<QChatImageRecognitionProviderResult>> handler;
+        readonly Func<QChatImageRecognitionProviderRequest, CancellationToken, Task<QChatImageRecognitionProviderResult>> handler;
         readonly TaskCompletionSource<object?> firstCall = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        RecordingClient(string providerName, Func<QChatImageRecognitionProviderRequest, Task<QChatImageRecognitionProviderResult>> handler)
+        RecordingClient(string providerName, Func<QChatImageRecognitionProviderRequest, CancellationToken, Task<QChatImageRecognitionProviderResult>> handler)
         {
             ProviderName = providerName;
             this.handler = handler;
@@ -173,18 +198,30 @@ public sealed class QChatVisionExecutionCoordinatorTests
         public ConcurrentQueue<string> RequestLabels { get; } = new();
         public ConcurrentQueue<QChatImageRecognitionProviderRequest> Requests { get; } = new();
 
-        public static RecordingClient Success(string providerName, string content) => new(providerName, request =>
+        public static RecordingClient Success(string providerName, string content) => new(providerName, (request, _) =>
             Task.FromResult(QChatImageRecognitionProviderResult.Ok(providerName, request.Model, content)));
 
-        public static RecordingClient Fail(string providerName, QChatImageRecognitionFailureKind failureKind) => new(providerName, request =>
+        public static RecordingClient Fail(string providerName, QChatImageRecognitionFailureKind failureKind) => new(providerName, (request, _) =>
             Task.FromResult(QChatImageRecognitionProviderResult.Fail(providerName, request.Model, failureKind, "test_failure")));
 
-        public static RecordingClient Waiting(string providerName, TaskCompletionSource<QChatImageRecognitionProviderResult> completion) => new(providerName, _ => completion.Task);
+        public static RecordingClient Waiting(string providerName, TaskCompletionSource<QChatImageRecognitionProviderResult> completion) => new(providerName, (_, _) => completion.Task);
+
+        public static RecordingClient WaitUntilCanceled(string providerName) => new(providerName, async (request, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return QChatImageRecognitionProviderResult.Fail(providerName, request.Model, QChatImageRecognitionFailureKind.Timeout, "unreachable");
+        });
+
+        public static RecordingClient DelayedSuccess(string providerName, string content, TimeSpan delay) => new(providerName, async (request, cancellationToken) =>
+        {
+            await Task.Delay(delay, cancellationToken);
+            return QChatImageRecognitionProviderResult.Ok(providerName, request.Model, content);
+        });
 
         public static RecordingClient WaitingFirstThenSuccess(string providerName, TaskCompletionSource<QChatImageRecognitionProviderResult> firstCompletion)
         {
             int call = 0;
-            return new RecordingClient(providerName, request => Interlocked.Increment(ref call) == 1
+            return new RecordingClient(providerName, (request, _) => Interlocked.Increment(ref call) == 1
                 ? firstCompletion.Task
                 : Task.FromResult(QChatImageRecognitionProviderResult.Ok(providerName, request.Model, request.Prompt)));
         }
@@ -199,7 +236,7 @@ public sealed class QChatVisionExecutionCoordinatorTests
             RequestLabels.Enqueue(request.Prompt);
             Requests.Enqueue(request);
             firstCall.TrySetResult(null);
-            return await handler(request);
+            return await handler(request, cancellationToken);
         }
     }
 }

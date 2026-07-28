@@ -28,8 +28,8 @@ public sealed class QChatSemanticWebResearchConfig
     public AgentMultiSourceSearchConfig MultiSourceSearch { get; set; } = new();
     public bool EnableOwnerPrivate { get; set; } = true;
     public bool EnableMentionedGroup { get; set; } = true;
-    public bool ResearchOnUncertainty { get; set; } = true;
-    public int RouterTimeoutMilliseconds { get; set; } = 900;
+    public bool ResearchOnUncertainty { get; set; } = false;
+    public int RouterTimeoutMilliseconds { get; set; } = 6000;
     public int FeedbackDelayMilliseconds { get; set; } = 1200;
     public int QuickMaxSources { get; set; } = 3;
     public int StandardMaxSources { get; set; } = 3;
@@ -53,7 +53,8 @@ public sealed record QChatSemanticWebResearchDecision(
     QChatSemanticWebResearchDepth Depth,
     int MaxSources,
     QChatSemanticWebResearchReasonCategory ReasonCategory,
-    string Reason);
+    string Reason,
+    bool? TurnComplete = null);
 
 public static class QChatSemanticWebResearchEligibility
 {
