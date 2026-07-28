@@ -42,9 +42,12 @@ public sealed class DesktopFileAccessPolicy
         if (TryNormalize(path, out string normalizedPath) == false)
             return new DesktopFileAccessDecision(false, "invalid_path", string.Empty);
 
-        return MatchesAny(normalizedPath, readBlacklistRules)
-            ? new DesktopFileAccessDecision(false, "read_blacklisted_path", normalizedPath)
-            : new DesktopFileAccessDecision(true, "allowed", normalizedPath);
+        if (MatchesAny(normalizedPath, readBlacklistRules))
+            return new DesktopFileAccessDecision(false, "read_blacklisted_path", normalizedPath);
+        if (ContainsReparsePoint(normalizedPath))
+            return new DesktopFileAccessDecision(false, "read_reparse_point", normalizedPath);
+
+        return new DesktopFileAccessDecision(true, "allowed", normalizedPath);
     }
 
     public DesktopFileAccessDecision CanWrite(string? path)
@@ -147,6 +150,33 @@ public sealed class DesktopFileAccessPolicy
     static bool MatchesAny(string normalizedPath, IReadOnlyList<DesktopFileAccessPathRule> rules)
     {
         return rules.Any(rule => rule.Matches(normalizedPath));
+    }
+
+    static bool ContainsReparsePoint(string normalizedPath)
+    {
+        string? current = normalizedPath;
+        while (string.IsNullOrWhiteSpace(current) == false)
+        {
+            try
+            {
+                if ((File.Exists(current) || Directory.Exists(current)) &&
+                    (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+
+            string? parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent) || string.Equals(parent, current, StringComparison.OrdinalIgnoreCase))
+                break;
+            current = parent;
+        }
+
+        return false;
     }
 
     static IEnumerable<DesktopFileAccessPathRule> CreateRule(string path)

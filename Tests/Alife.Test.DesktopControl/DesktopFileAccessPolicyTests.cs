@@ -102,6 +102,44 @@ public sealed class DesktopFileAccessPolicyTests
     }
 
     [Test]
+    public void CreateDefault_DeniesReadingThroughDirectorySymbolicLink()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "alife-file-policy-link-tests", Guid.NewGuid().ToString("N"));
+        string target = Path.Combine(root, "target");
+        string link = Path.Combine(root, "link");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "secret.txt"), "secret");
+        try
+        {
+            try
+            {
+                Directory.CreateSymbolicLink(link, target);
+            }
+            catch (Exception exception) when (exception is UnauthorizedAccessException or IOException or PlatformNotSupportedException)
+            {
+                Assert.Ignore($"Symbolic links are unavailable in this test environment: {exception.GetType().Name}");
+                return;
+            }
+
+            DesktopFileAccessDecision decision = DesktopFileAccessPolicy.CreateDefault()
+                .CanRead(Path.Combine(link, "secret.txt"));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(decision.Allowed, Is.False);
+                Assert.That(decision.Reason, Is.EqualTo("read_reparse_point"));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(link))
+                Directory.Delete(link);
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
     public void FormatForOwner_ReturnsCompactSummaryWithoutPathContents()
     {
         DesktopFileAccessPolicy policy = new(
