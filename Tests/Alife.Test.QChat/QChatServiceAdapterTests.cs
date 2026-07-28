@@ -8305,15 +8305,17 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task OwnerPrivateSendThisFileCommandUploadsRecentHelloWorldWithoutModelDispatch()
+    public async Task OwnerPrivateExplicitPathRequiresOneApprovalAndDoesNotUseRecentHelloWorld()
     {
         string originalCurrentDirectory = Environment.CurrentDirectory;
         string root = Path.Combine(Path.GetTempPath(), "alife-qchat-owner-private-file-tests", Guid.NewGuid().ToString("N"));
         string outputDirectory = Path.Combine(root, "output");
         Directory.CreateDirectory(outputDirectory);
         File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
-        string file = Path.Combine(outputDirectory, "hello_world.c");
-        await File.WriteAllTextAsync(file, "#include <stdio.h>\n");
+        string staleFile = Path.Combine(outputDirectory, "hello_world.c");
+        await File.WriteAllTextAsync(staleFile, "#include <stdio.h>\n");
+        string requestedFile = Path.Combine(root, "README.md");
+        await File.WriteAllTextAsync(requestedFile, "requested readme\n");
 
         try
         {
@@ -8321,12 +8323,13 @@ public class QChatServiceAdapterTests
             Directory.CreateDirectory(clientDirectory);
             Environment.CurrentDirectory = clientDirectory;
             FakeOneBotRuntime runtime = new();
+            AgentApprovalService approvals = new();
             QChatService service = CreateStartedService(runtime, new QChatConfig
             {
                 BotId = 2905391496,
                 OwnerId = 3045846738,
                 EnableBalancedTextStreaming = false
-            });
+            }, approvalService: approvals);
             int dispatchCount = 0;
             service.InboundChatDispatcher = _ =>
             {
@@ -8338,17 +8341,83 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "现在把这个文件发给我"
+                RawMessage = $"把 \"{requestedFile}\" 作为文件发给我"
             });
 
-            await WaitUntilAsync(() => runtime.PrivateFiles.Count == 1);
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
-                Assert.That(runtime.PrivateFiles.Single(), Is.EqualTo((
-                    3045846738L,
-                    file.Replace('\\', '/'),
-                    "hello_world.c")));
+                Assert.That(runtime.PrivateFiles, Is.Empty);
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("README.md"));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("/approve 1"));
+                Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("Owner confirmation required"));
+                Assert.That(approvals.GetRequest(1)?.Status, Is.EqualTo(AgentApprovalStatus.Pending));
+            });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/approve 1"
+            });
+
+            await WaitUntilAsync(() => runtime.PrivateFiles.Count == 1);
+            Assert.That(runtime.PrivateFiles.Single(), Is.EqualTo((
+                3045846738L,
+                requestedFile.Replace('\\', '/'),
+                "README.md")));
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalCurrentDirectory;
+        }
+    }
+
+    [Test]
+    public async Task OwnerPrivateMissingExplicitPathDoesNotFallBackToRecentHelloWorld()
+    {
+        string originalCurrentDirectory = Environment.CurrentDirectory;
+        string root = Path.Combine(Path.GetTempPath(), "alife-qchat-owner-private-missing-file-tests", Guid.NewGuid().ToString("N"));
+        string outputDirectory = Path.Combine(root, "output");
+        Directory.CreateDirectory(outputDirectory);
+        File.WriteAllText(Path.Combine(root, "Alife.slnx"), "<Solution />");
+        await File.WriteAllTextAsync(Path.Combine(outputDirectory, "hello_world.c"), "#include <stdio.h>\n");
+        string missingFile = Path.Combine(root, "missing.md");
+
+        try
+        {
+            string clientDirectory = Path.Combine(root, "Outputs", "Alife.Client");
+            Directory.CreateDirectory(clientDirectory);
+            Environment.CurrentDirectory = clientDirectory;
+            FakeOneBotRuntime runtime = new();
+            AgentApprovalService approvals = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 2905391496,
+                OwnerId = 3045846738,
+                EnableBalancedTextStreaming = false
+            }, approvalService: approvals);
+            int dispatchCount = 0;
+            service.InboundChatDispatcher = _ =>
+            {
+                dispatchCount++;
+                return Task.CompletedTask;
+            };
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = $"把 \"{missingFile}\" 作为文件发给我"
+            });
+
+            await WaitUntilAsync(() => dispatchCount == 1);
+            Assert.Multiple(() =>
+            {
+                Assert.That(runtime.PrivateFiles, Is.Empty);
+                Assert.That(runtime.GroupFiles, Is.Empty);
+                Assert.That(approvals.GetRequest(1), Is.Null);
             });
         }
         finally
@@ -8391,7 +8460,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 971237816 \u7fa4"
+                RawMessage = "\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6\uff0c\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 971237816 \u7fa4"
             });
 
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
@@ -8454,7 +8523,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 925402131 \u7fa4"
+                RawMessage = "\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6\uff0c\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 925402131 \u7fa4"
             });
 
             await WaitUntilAsync(() => runtime.PrivateMessages.Count >= 2, TimeSpan.FromSeconds(3));
@@ -8465,10 +8534,10 @@ public class QChatServiceAdapterTests
                     925402131L,
                     file.Replace('\\', '/'),
                     "hello_world.c")));
-                Assert.That(runtime.PrivateMessages[0].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002"));
+                Assert.That(runtime.PrivateMessages[0].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86"));
                 Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("\u5728\u4f20"));
                 Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("925402131"));
-                Assert.That(runtime.PrivateMessages[1].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86\u3002"));
+                Assert.That(runtime.PrivateMessages[1].Message, Does.StartWith("\u672f\u672f\uff0c\u6211\u770b\u8fc7\u4e86"));
                 Assert.That(runtime.PrivateMessages[1].Message, Does.Contain("hello_world.c \u5df2\u4e0a\u4f20\u5230 925402131 \u7fa4\u6587\u4ef6"));
             });
         }
@@ -8523,7 +8592,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 925402131 \u7fa4"
+                RawMessage = "\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6\uff0c\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230 925402131 \u7fa4"
             });
 
             await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1, TimeSpan.FromSeconds(3));
@@ -8579,7 +8648,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "\u7fbd\uff0c\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230925402131\u8fd9\u4e2a\u7fa4\u91cc"
+                RawMessage = "\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6\uff0c\u7fbd\uff0c\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u5230925402131\u8fd9\u4e2a\u7fa4\u91cc"
             });
 
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
@@ -8698,18 +8767,36 @@ public class QChatServiceAdapterTests
                 RawMessage = "925402131"
             });
 
-            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
-                Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
-                    925402131L,
-                    file.Replace('\\', '/'),
-                    "hello_world.c")));
+                Assert.That(runtime.GroupFiles, Is.Empty);
                 Assert.That(runtime.PrivateFiles, Is.Empty);
                 Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("hello_world.c"));
-                Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("925402131"));
+                Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("/approve 1"));
             });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/approve 1"
+            });
+            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
+                925402131L,
+                file.Replace('\\', '/'),
+                "hello_world.c")));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/approve 1"
+            });
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 4);
+            Assert.That(runtime.GroupFiles.Count, Is.EqualTo(1));
         }
         finally
         {
@@ -8751,7 +8838,7 @@ public class QChatServiceAdapterTests
             {
                 SelfId = 2905391496,
                 UserId = 3045846738,
-                RawMessage = "\u73b0\u5728\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u7ed9\u6211"
+                RawMessage = "\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6\uff0c\u73b0\u5728\u628a\u8fd9\u4e2a\u6587\u4ef6\u53d1\u7ed9\u6211"
             });
             await WaitUntilAsync(() => runtime.PrivateFiles.Count == 1);
 
@@ -8770,7 +8857,7 @@ public class QChatServiceAdapterTests
                 RawMessage = "925402131"
             });
 
-            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            await WaitUntilAsync(() => runtime.PrivateMessages.Count == 3);
             Assert.Multiple(() =>
             {
                 Assert.That(dispatchCount, Is.Zero);
@@ -8778,13 +8865,22 @@ public class QChatServiceAdapterTests
                     3045846738L,
                     file.Replace('\\', '/'),
                     "hello_world.c")));
-                Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
-                    925402131L,
-                    file.Replace('\\', '/'),
-                    "hello_world.c")));
+                Assert.That(runtime.GroupFiles, Is.Empty);
                 Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("hello_world.c"));
-                Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("925402131"));
+                Assert.That(runtime.PrivateMessages.Last().Message, Does.Contain("/approve 1"));
             });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 2905391496,
+                UserId = 3045846738,
+                RawMessage = "/approve 1"
+            });
+            await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
+            Assert.That(runtime.GroupFiles.Single(), Is.EqualTo((
+                925402131L,
+                file.Replace('\\', '/'),
+                "hello_world.c")));
         }
         finally
         {
@@ -8859,7 +8955,7 @@ public class QChatServiceAdapterTests
                 SelfId = 2905391496,
                 GroupId = 971237816,
                 UserId = 3045846738,
-                RawMessage = "\u7fbd\uff0c\u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc"
+                RawMessage = "\u7fbd\uff0c\u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc\uff0c\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6"
             });
 
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
@@ -8915,7 +9011,7 @@ public class QChatServiceAdapterTests
                 SelfId = 2905391496,
                 GroupId = 971237816,
                 UserId = 3045846738,
-                RawMessage = $"[CQ:at,qq=2905391496] 把 \"{requestedFile}\" 上传到这个群，完成后告诉我结果"
+                RawMessage = $"[CQ:at,qq=2905391496] 允许上传文件，把 \"{requestedFile}\" 上传到这个群，完成后告诉我结果"
             });
 
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
@@ -8967,7 +9063,7 @@ public class QChatServiceAdapterTests
                 SelfId = 2905391496,
                 GroupId = 971237816,
                 UserId = 3045846738,
-                RawMessage = "\u7fbd\uff0c\u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc"
+                RawMessage = "\u7fbd\uff0c\u628a\u90a3\u4e2a\u6587\u4ef6\u53d1\u7fa4\u91cc\uff0c\u5141\u8bb8\u4e0a\u4f20\u6587\u4ef6"
             });
 
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
@@ -9798,7 +9894,7 @@ public class QChatServiceAdapterTests
                 HasExplicitConfirmation: true,
                 Action: "qq.group_file_upload"),
             config);
-        QChatExternalActionResult ownerExecutedWithoutConfirmation = await service.QGroupFile(
+        QChatExternalActionResult ownerNeedsConfirmation = await service.QGroupFile(
             123,
             file,
             "report.txt",
@@ -9826,11 +9922,11 @@ public class QChatServiceAdapterTests
         Assert.That(blocked.Executed, Is.False);
         Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
-        Assert.That(ownerExecutedWithoutConfirmation.Executed, Is.True);
-        Assert.That(ownerExecutedWithoutConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(ownerNeedsConfirmation.Executed, Is.False);
+        Assert.That(ownerNeedsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(ownerNeedsConfirmation.ApprovalId, Is.Not.Null);
         Assert.That(executed.Executed, Is.True);
         Assert.That(runtime.GroupFiles, Is.EqualTo(new[] {
-            (123L, file.Replace('\\', '/'), "report.txt"),
             (123L, file.Replace('\\', '/'), "report.txt")
         }));
     }
@@ -9842,13 +9938,15 @@ public class QChatServiceAdapterTests
         await File.WriteAllTextAsync(file, "group file");
         FakeOneBotRuntime runtime = new();
         AgentApprovalService approvals = new();
+        AgentActionGatewayService gateway = new(approvalService: approvals);
+        CapturingDataAgentStore store = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 999,
             OwnerId = 1001,
             AllowPrivateGuestChat = true,
             EnableBalancedTextStreaming = false
-        }, approvalService: approvals);
+        }, dataAgentStore: store, actionGateway: gateway);
         AgentPermissionConfig config = new()
         {
             OwnerUserIds = [1001],
@@ -9872,6 +9970,7 @@ public class QChatServiceAdapterTests
         Assert.That(requested.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(requested.Message, Does.Contain("/approve 1"));
         Assert.That(approvals.GetRequest(1)!.Status, Is.EqualTo(AgentApprovalStatus.Pending));
+        Assert.That(store.RuntimeAudits.Select(record => record.Outcome), Is.EqualTo(new[] { "pending" }));
         Assert.That(runtime.GroupFiles, Is.Empty);
 
         runtime.Raise(new OneBotMessageEvent
@@ -9881,9 +9980,10 @@ public class QChatServiceAdapterTests
             RawMessage = "/approve 1"
         });
 
-        await WaitUntilAsync(() => runtime.GroupFiles.Count > 0);
+        await WaitUntilAsync(() => runtime.GroupFiles.Count > 0 && store.RuntimeAudits.Count >= 3);
         Assert.That(runtime.GroupFiles, Is.EqualTo(new[] { (123L, file.Replace('\\', '/'), "report.txt") }));
         Assert.That(approvals.GetRequest(1)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
+        Assert.That(store.RuntimeAudits.Select(record => record.Outcome), Is.EqualTo(new[] { "pending", "approved", "executed" }));
     }
 
     [Test]
@@ -14188,7 +14288,7 @@ public class QChatServiceAdapterTests
             SelfId = 999,
             UserId = 1001,
             GroupId = 3003,
-            RawMessage = $"把 {filePath} 文件发到群里"
+            RawMessage = $"允许上传文件，把 {filePath} 文件发到群里"
         });
 
         await WaitUntilAsync(() => runtime.GroupFiles.Count == 1 && runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(2));
@@ -14286,7 +14386,7 @@ public class QChatServiceAdapterTests
                 SelfId = 999,
                 UserId = 1001,
                 GroupId = 3003,
-                RawMessage = $"把 {filePath} 上传到群文件"
+                RawMessage = $"允许上传文件，把 {filePath} 上传到群文件"
             });
 
             await WaitUntilAsync(() => runtime.GroupMessages.Count == 1, TimeSpan.FromSeconds(2));
@@ -14314,6 +14414,12 @@ public class QChatServiceAdapterTests
         try
         {
             Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            string expectedFile = Path.Combine(
+                storageRoot,
+                "AgentWorkspace",
+                "QChatGenerated",
+                "3001",
+                "hello_world.c");
             FakeOneBotRuntime runtime = new();
             int modelDispatchCount = 0;
             QChatService service = CreateStartedService(runtime, new QChatConfig
@@ -14340,10 +14446,30 @@ public class QChatServiceAdapterTests
                 RawMessage = "[CQ:at,qq=999] 新建 hello_world.c，内容是标准 C Hello World，然后上传到本群文件"
             });
 
+            await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
+            Assert.Multiple(() =>
+            {
+                Assert.That(runtime.GroupFiles, Is.Empty);
+                Assert.That(File.Exists(expectedFile), Is.False);
+                Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("hello_world.c"));
+                Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("/approve 1"));
+                Assert.That(modelDispatchCount, Is.Zero);
+            });
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 3001,
+                GroupName = "test-group",
+                Sender = new OneBotSender { UserId = 1001, Nickname = "owner" },
+                RawMessage = "/approve 1"
+            });
             await WaitUntilAsync(() => runtime.GroupFiles.Count == 1);
             (long target, string file, string name) = runtime.GroupFiles.Single();
             Assert.That(target, Is.EqualTo(3001));
             Assert.That(name, Is.EqualTo("hello_world.c"));
+            Assert.That(Path.GetFullPath(file), Is.EqualTo(Path.GetFullPath(expectedFile)));
             Assert.That(File.Exists(file), Is.True);
             Assert.That(File.ReadAllText(file), Is.EqualTo("""
                                                            #include <stdio.h>
@@ -14355,7 +14481,16 @@ public class QChatServiceAdapterTests
                                                            }
                                                            """.Replace("\r\n", "\n", StringComparison.Ordinal)));
             Assert.That(modelDispatchCount, Is.Zero);
-            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("hello_world.c"));
+
+            runtime.Raise(new OneBotMessageEvent
+            {
+                SelfId = 999,
+                UserId = 1001,
+                GroupId = 3001,
+                RawMessage = "/approve 1"
+            });
+            await WaitUntilAsync(() => runtime.GroupMessages.Count == 3);
+            Assert.That(runtime.GroupFiles.Count, Is.EqualTo(1));
         }
         finally
         {
@@ -17409,7 +17544,8 @@ public class QChatServiceAdapterTests
         XmlFunctionCaller? functionCaller = null,
         QChatPersonaMemoryContextProvider? personaMemoryContextProvider = null,
         string characterName = "QChatTest",
-        IDataAgentStore? dataAgentStore = null)
+        IDataAgentStore? dataAgentStore = null,
+        AgentActionGatewayService? actionGateway = null)
     {
         riskScoreService ??= new QChatRiskScoreService(CreateTempRiskRoot());
         functionCaller ??= new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>());
@@ -17420,6 +17556,7 @@ public class QChatServiceAdapterTests
             oneBotRuntime: runtime,
             agentControlCenter: controlCenter,
             emotionEngine: emotionEngine,
+            actionGateway: actionGateway,
             approvalService: approvalService,
             checkpointService: checkpointService,
             taskService: taskService,

@@ -172,7 +172,7 @@ public class QChatActionPolicyServiceTests
     }
 
     [Test]
-    public void OwnerPrivateHighRiskRequestEvaluatesAllowed()
+    public void OwnerPrivateHighRiskRequestRequiresConfirmation()
     {
         QChatActionPolicyService service = new(OwnerUserId);
         AgentPermissionPolicy policy = new(service.CreateConfig());
@@ -184,7 +184,8 @@ public class QChatActionPolicyServiceTests
             isMentioned: false,
             hasExplicitConfirmation: false));
 
-        Assert.That(decision.Allowed, Is.True);
+        Assert.That(decision.Allowed, Is.False);
+        Assert.That(decision.Reason, Does.Contain("confirmation"));
     }
 
     static QChatAgentRoute PrivateRoute(long senderId) => new(

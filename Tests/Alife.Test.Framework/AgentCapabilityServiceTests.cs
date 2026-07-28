@@ -342,7 +342,7 @@ public class AgentCapabilityServiceTests
                 Source: AgentRequestSource.PrivateChat,
                 IsMentioned: false,
                 RiskLevel: AgentRiskLevel.Low,
-                HasExplicitConfirmation: false,
+                HasExplicitConfirmation: true,
                 Action: "workspace.apply"),
             config);
 
@@ -421,8 +421,8 @@ public class AgentCapabilityServiceTests
         Assert.That(blocked.ReadyToRun, Is.False);
         Assert.That(blocked.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(blocked.GatewayDecision.RiskLevel, Is.EqualTo(AgentRiskLevel.High));
-        Assert.That(needsConfirmation.ReadyToRun, Is.True);
-        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
+        Assert.That(needsConfirmation.ReadyToRun, Is.False);
+        Assert.That(needsConfirmation.GatewayDecision.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(allowed.ReadyToRun, Is.True);
         Assert.That(allowed.Command, Does.Contain("upload-alife-service-via-foxd.ps1"));
     }
@@ -557,7 +557,7 @@ public class AgentCapabilityServiceTests
     }
 
     [Test]
-    public void PermissionPolicyAllowsOwnerHighRiskWithoutExplicitConfirmation()
+    public void PermissionPolicyRequiresOwnerConfirmationForHighRisk()
     {
         AgentPermissionPolicy policy = new(new AgentPermissionConfig
         {
@@ -589,8 +589,9 @@ public class AgentCapabilityServiceTests
             HasExplicitConfirmation: true,
             Action: "workspace.write"));
 
-        Assert.That(ownerNoConfirm.Allowed, Is.True);
+        Assert.That(ownerNoConfirm.Allowed, Is.False);
         Assert.That(ownerNoConfirm.Priority, Is.EqualTo(AgentActorPriority.Owner));
+        Assert.That(ownerNoConfirm.Reason, Does.Contain("confirmation"));
         Assert.That(ownerConfirmed.Allowed, Is.True);
         Assert.That(ownerConfirmed.Priority, Is.EqualTo(AgentActorPriority.Owner));
         Assert.That(guestGroup.Allowed, Is.False);
@@ -689,8 +690,9 @@ public class AgentCapabilityServiceTests
 
         Assert.That(lowRiskGroup.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
         Assert.That(lowRiskGroup.AllowedNow, Is.True);
-        Assert.That(ownerNeedsConfirmation.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));
-        Assert.That(ownerNeedsConfirmation.RequiresOwnerConfirmation, Is.False);
+        Assert.That(ownerNeedsConfirmation.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
+        Assert.That(ownerNeedsConfirmation.RequiresOwnerConfirmation, Is.True);
+        Assert.That(ownerNeedsConfirmation.AllowedNow, Is.False);
         Assert.That(memberBlocked.Status, Is.EqualTo(AgentExecutionDecisionStatus.OwnerConfirmationRequired));
         Assert.That(memberBlocked.AllowedNow, Is.False);
         Assert.That(ownerConfirmed.Status, Is.EqualTo(AgentExecutionDecisionStatus.AllowedAutomatically));

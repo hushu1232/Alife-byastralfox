@@ -27,7 +27,7 @@ public class AgentPermissionGateTests
     }
 
     [Test]
-    public void Evaluate_AllowsOwnerHighRiskWithoutExplicitConfirmation()
+    public void Evaluate_AsksOwnerForHighRiskWithoutExplicitConfirmation()
     {
         AgentPermissionGate gate = new(new AgentPermissionPolicy(new AgentPermissionConfig
         {
@@ -43,8 +43,8 @@ public class AgentPermissionGateTests
             HasExplicitConfirmation: false,
             Action: "write-source"));
 
-        Assert.That(decision.Kind, Is.EqualTo(AgentPermissionDecisionKind.Allow));
-        Assert.That(decision.Reason, Does.Contain("Owner"));
+        Assert.That(decision.Kind, Is.EqualTo(AgentPermissionDecisionKind.AskOwner));
+        Assert.That(decision.Reason, Does.Contain("confirmation"));
     }
 
     [Test]

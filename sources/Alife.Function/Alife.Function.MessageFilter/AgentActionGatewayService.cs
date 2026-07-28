@@ -22,6 +22,8 @@ public class AgentActionGatewayService(
     readonly AgentActionAuthorizationService authorization = authorization ?? new AgentActionAuthorizationService();
     readonly AgentApprovalService? approvalService = approvalService;
 
+    public AgentApprovalService? ApprovalService => approvalService;
+
     public async Task<AgentActionGatewayResult<T>> ExecuteAsync<T>(
         AgentPermissionRequest request,
         AgentPermissionConfig config,

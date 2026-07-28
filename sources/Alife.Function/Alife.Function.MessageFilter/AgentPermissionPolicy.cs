@@ -63,7 +63,9 @@ public class AgentPermissionPolicy(AgentPermissionConfig? config = null)
         {
             if (priority != AgentActorPriority.Owner)
                 return Deny(priority, $"High-risk action '{action}' requires owner authority.");
-            return Allow(priority, $"Owner authorized high-risk action '{action}'.");
+            if (config.RequireConfirmationForHighRisk && request.HasExplicitConfirmation == false)
+                return Deny(priority, $"High-risk action '{action}' requires explicit owner confirmation.");
+            return Allow(priority, $"Owner confirmed high-risk action '{action}'.");
         }
 
         if (priority == AgentActorPriority.Owner)

@@ -32,6 +32,9 @@ public sealed class AgentPermissionGate(AgentPermissionPolicy policy)
         }
 
         AgentPermissionDecision decision = policy.Evaluate(request);
+        if (request.RiskLevel == AgentRiskLevel.High && actorIsOwner && decision.Allowed == false)
+            return new AgentPermissionGateDecision(AgentPermissionDecisionKind.AskOwner, decision.Reason);
+
         return decision.Allowed
             ? new AgentPermissionGateDecision(AgentPermissionDecisionKind.Allow, decision.Reason)
             : new AgentPermissionGateDecision(AgentPermissionDecisionKind.Deny, decision.Reason);

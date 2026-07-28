@@ -212,7 +212,8 @@ public class GroupState
 public sealed record QChatExternalActionResult(
     bool Executed,
     AgentExecutionGatewayDecision GatewayDecision,
-    string Message);
+    string Message,
+    long? ApprovalId = null);
 
 public sealed record QChatOwnerNotificationDeliveryResult(
     bool ShouldNotify,
@@ -2525,13 +2526,25 @@ public partial class QChatService(
         };
     }
 
-    static QChatExternalActionResult ToExternalActionResult(
+    QChatExternalActionResult ToExternalActionResult(
         AgentActionGatewayResult<bool> gatewayResult,
         string successMessage)
     {
-        return gatewayResult.Executed
+        QChatExternalActionResult result = gatewayResult.Executed
             ? new QChatExternalActionResult(true, gatewayResult.Decision, successMessage)
-            : new QChatExternalActionResult(false, gatewayResult.Decision, gatewayResult.Message);
+            : new QChatExternalActionResult(
+                false,
+                gatewayResult.Decision,
+                gatewayResult.Message,
+                gatewayResult.ApprovalRequest?.Id);
+        if (gatewayResult.ApprovalRequest is { } approval)
+        {
+            TryRecordQChatRuntimeAudit(
+                "agent.approval",
+                "pending",
+                $"approval_id={approval.Id}; action={gatewayResult.Decision.Action}; {approval.Summary}");
+        }
+        return result;
     }
 
     [XmlFunction(FunctionMode.OneShot, riskLevel: XmlFunctionRiskLevel.High, budgetCost: 4)]
@@ -2763,7 +2776,8 @@ public partial class QChatService(
     readonly IOneBotRuntime? injectedOneBotRuntime = oneBotRuntime;
     readonly AgentControlCenterService? agentControlCenter = agentControlCenter;
     readonly AgentActionAuthorizationService actionAuthorization = actionAuthorization ?? new AgentActionAuthorizationService();
-    readonly AgentApprovalService approvals = approvalService ??= new AgentApprovalService();
+    readonly AgentApprovalService approvals = actionGateway?.ApprovalService
+        ?? (approvalService ??= new AgentApprovalService());
     readonly AgentActionGatewayService actionGateway = actionGateway ?? new AgentActionGatewayService(
         authorization: actionAuthorization,
         approvalService: approvalService);
@@ -7879,16 +7893,39 @@ public partial class QChatService(
         {
             handled = false;
             result = "这件事只能让主人来确认";
+            TryRecordQChatRuntimeAudit(
+                "agent.approval",
+                "rejected",
+                $"approval_id={approvalId}; command={command}; actor=non_owner");
         }
         else if (command == "approve")
         {
+            AgentApprovalRequest? requestBefore = approvals.GetRequest(approvalId);
             AgentApprovalExecutionResult execution = await approvals.ApproveAndExecuteAsync(approvalId, messageEvent.UserId);
-            handled = execution.Executed || approvals.GetRequest(approvalId)?.Status == AgentApprovalStatus.Approved;
+            AgentApprovalRequest? requestAfter = approvals.GetRequest(approvalId);
+            bool approvedNow = requestBefore?.Status == AgentApprovalStatus.Pending &&
+                               requestAfter?.Status == AgentApprovalStatus.Approved;
+            if (approvedNow)
+            {
+                TryRecordQChatRuntimeAudit(
+                    "agent.approval",
+                    "approved",
+                    $"approval_id={approvalId}; action={requestAfter!.Title}");
+            }
+            TryRecordQChatRuntimeAudit(
+                "agent.approval",
+                execution.Executed ? "executed" : approvedNow ? "execution_failed" : "rejected",
+                $"approval_id={approvalId}; action={requestAfter?.Title ?? requestBefore?.Title ?? "unknown"}");
+            handled = execution.Executed || requestAfter?.Status == AgentApprovalStatus.Approved;
             result = handled ? "已经确认并处理好了" : "这次确认没有完成";
         }
         else
         {
             handled = approvals.TryDeny(approvalId, messageEvent.UserId, out _);
+            TryRecordQChatRuntimeAudit(
+                "agent.approval",
+                handled ? "denied" : "rejected",
+                $"approval_id={approvalId}; command=deny");
             result = handled ? "已经取消这件事" : "这次取消没有完成";
         }
 
@@ -8517,8 +8554,6 @@ public partial class QChatService(
             "AgentWorkspace",
             "QChatGenerated",
             messageEvent.GroupId.ToString());
-        Directory.CreateDirectory(outputDirectory);
-
         string filePath = Path.Combine(outputDirectory, fileName);
         const string helloWorldC = """
                                    #include <stdio.h>
@@ -8530,22 +8565,42 @@ public partial class QChatService(
                                    }
                                    """;
 
-        await File.WriteAllTextAsync(
-            filePath,
-            helloWorldC.Replace("\r\n", "\n", StringComparison.Ordinal),
-            new UTF8Encoding(false));
-        WriteQChatDiagnostic("qchat-owner-file-command-handled", "Owner deterministic file command created a file before model dispatch.", new {
-            messageEvent.GroupId,
-            messageEvent.UserId,
-            file = filePath,
-            name = fileName
-        });
-
-        await ExecuteQGroupFileCore(messageEvent.GroupId, filePath, fileName);
+        AgentPermissionRequest request = BuildDeterministicFilePermissionRequest(
+            messageEvent,
+            senderRole,
+            "qq.group_file_upload");
+        AgentPermissionConfig permissionConfig = QChatMessageSecurity.BuildPermissionConfig(
+            Configuration!,
+            agentControlCenter?.Configuration);
+        AgentActionGatewayResult<bool> gatewayResult = await actionGateway.ExecuteAsync(
+            request,
+            permissionConfig,
+            async () =>
+            {
+                Directory.CreateDirectory(outputDirectory);
+                await File.WriteAllTextAsync(
+                    filePath,
+                    helloWorldC.Replace("\r\n", "\n", StringComparison.Ordinal),
+                    new UTF8Encoding(false));
+                WriteQChatDiagnostic("qchat-owner-file-command-handled", "Owner deterministic file command created a file before model dispatch.", new {
+                    messageEvent.GroupId,
+                    messageEvent.UserId,
+                    file = filePath,
+                    name = fileName
+                });
+                await ExecuteQGroupFileCore(messageEvent.GroupId, filePath, fileName);
+                return true;
+            },
+            detail: $"group={messageEvent.GroupId}; file={fileName}; generated=true");
+        QChatExternalActionResult result = ToExternalActionResult(
+            gatewayResult,
+            "QQ generated group file upload executed.");
         await SendTextOrMediaMessageAsync(
             OneBotMessageType.Group,
             messageEvent.GroupId,
-            $"{fileName} \u5df2\u521b\u5efa\u5e76\u4e0a\u4f20\u5230\u7fa4\u6587\u4ef6",
+            result.Executed
+                ? $"{fileName} \u5df2\u521b\u5efa\u5e76\u4e0a\u4f20\u5230\u7fa4\u6587\u4ef6"
+                : FormatFileApprovalRequest(result, fileName),
             streamText: false);
         return true;
     }
@@ -8644,7 +8699,7 @@ public partial class QChatService(
 
         string message = result.Executed
             ? $"{fileName} \u5df2\u4e0a\u4f20\u5230\u7fa4\u6587\u4ef6"
-            : result.Message;
+            : FormatFileApprovalRequest(result, fileName);
         await SendTextOrMediaMessageAsync(
             OneBotMessageType.Group,
             messageEvent.GroupId,
@@ -8729,7 +8784,7 @@ public partial class QChatService(
             await SendTextOrMediaMessageAsync(
                 OneBotMessageType.Private,
                 messageEvent.UserId,
-                result.Message,
+                FormatFileApprovalRequest(result, fileName),
                 streamText: false);
         }
         return true;
@@ -8896,19 +8951,29 @@ public partial class QChatService(
             text
         });
 
-        QChatTaskFeedbackContext taskFeedback = new(
-            result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
-            "group-file-upload",
-            fileName,
-            groupId,
-            result.Executed ? null : BuildTaskFailureDetail(result));
-        string taskFeedbackBody = QChatTaskFeedbackFormatter.Format(taskFeedback);
-        string message = QChatTaskFeedbackFormatter.Format(
-            taskFeedback,
-            CreateFeedbackContext(
-                QChatSenderRole.Owner,
-                messageEvent.UserId,
-                ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent)));
+        string taskFeedbackBody;
+        string message;
+        if (result.GatewayDecision.Status == AgentExecutionDecisionStatus.OwnerConfirmationRequired)
+        {
+            message = FormatFileApprovalRequest(result, fileName);
+            taskFeedbackBody = message;
+        }
+        else
+        {
+            QChatTaskFeedbackContext taskFeedback = new(
+                result.Executed ? QChatTaskFeedbackKind.Succeeded : QChatTaskFeedbackKind.Failed,
+                "group-file-upload",
+                fileName,
+                groupId,
+                result.Executed ? null : BuildTaskFailureDetail(result));
+            taskFeedbackBody = QChatTaskFeedbackFormatter.Format(taskFeedback);
+            message = QChatTaskFeedbackFormatter.Format(
+                taskFeedback,
+                CreateFeedbackContext(
+                    QChatSenderRole.Owner,
+                    messageEvent.UserId,
+                    ResolveCurrentBotId(Configuration ?? new QChatConfig(), messageEvent)));
+        }
         await SendTextOrMediaMessageAsync(
             OneBotMessageType.Private,
             messageEvent.UserId,
@@ -8932,6 +8997,22 @@ public partial class QChatService(
         }
 
         return true;
+    }
+
+    string FormatFileApprovalRequest(QChatExternalActionResult result, string fileName)
+    {
+        if (result.GatewayDecision.Status != AgentExecutionDecisionStatus.OwnerConfirmationRequired ||
+            result.ApprovalId is not > 0)
+            return result.Message;
+
+        QChatConfig config = Configuration ?? new QChatConfig();
+        string agentId = ResolveCurrentAgentId(config);
+        long botId = config.BotId;
+        string address = ResolvePreferredAddress(config, config.OwnerId, null, agentId, botId);
+        if (string.IsNullOrWhiteSpace(address))
+            address = string.Equals(agentId, "xiayu", StringComparison.OrdinalIgnoreCase) ? "术术" : "主人";
+        string suffix = string.Equals(agentId, "mixu", StringComparison.OrdinalIgnoreCase) ? "喵" : string.Empty;
+        return $"{address}，{fileName} 要上传出去，再确认一次：/approve {result.ApprovalId.Value}{suffix}";
     }
 
     static string BuildTaskFailureDetail(QChatExternalActionResult result)
@@ -8979,9 +9060,8 @@ public partial class QChatService(
             ActorUserId: messageEvent.UserId == 0 ? null : messageEvent.UserId,
             Source: source,
             IsMentioned: isMentionedOrOwner,
-            RiskLevel: AgentRiskLevel.Low,
-            HasExplicitConfirmation: senderRole == QChatSenderRole.Owner ||
-                                     QChatMessageSecurity.HasExplicitHighRiskConfirmation(messageEvent.RawMessage),
+            RiskLevel: AgentRiskLevel.High,
+            HasExplicitConfirmation: QChatMessageSecurity.HasExplicitHighRiskConfirmation(messageEvent.RawMessage),
             Action: action);
     }
 
@@ -8998,12 +9078,11 @@ public partial class QChatService(
 
     IEnumerable<string> BuildOwnerPrivateFileCandidates(string text)
     {
-        foreach (Match match in Regex.Matches(
-                     text,
-                     @"(?<path>[A-Za-z]:[\\/][^\r\n""<>|?*]+?\.c)(?![A-Za-z0-9._-])",
-                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        string? explicitPath = QChatIntentClassifier.ExtractWindowsPath(text);
+        if (string.IsNullOrWhiteSpace(explicitPath) == false)
         {
-            yield return match.Groups["path"].Value.Trim();
+            yield return explicitPath;
+            yield break;
         }
 
         string? projectRoot = FindProjectRoot(Environment.CurrentDirectory);

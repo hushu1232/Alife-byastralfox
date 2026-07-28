@@ -297,13 +297,15 @@ public static class QChatIntentClassifier
         return match.Success && long.TryParse(match.Groups[1].Value, out long value) ? value : 0;
     }
 
-    static string? ExtractWindowsPath(string text)
+    internal static string? ExtractWindowsPath(string text)
     {
         Match quoted = Regex.Match(text, @"""([A-Za-z]:[\\/][^""<>|?*]+)""");
         if (quoted.Success)
             return quoted.Groups[1].Value.Trim();
 
         Match match = Regex.Match(text, @"[A-Za-z]:[\\/][^\s""<>|?*]+");
-        return match.Success ? match.Value.Trim() : null;
+        return match.Success
+            ? match.Value.Trim().TrimEnd('.', ',', ';', ':', '!', '。', '，', '；', '：', '！', '？')
+            : null;
     }
 }

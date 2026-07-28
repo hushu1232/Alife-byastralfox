@@ -98,4 +98,47 @@ public class AgentApprovalServiceTests
         Assert.That(actionCalled, Is.True);
         Assert.That(approvals.GetRequest(result.ApprovalRequest.Id)!.Status, Is.EqualTo(AgentApprovalStatus.Approved));
     }
+
+    [Test]
+    public async Task GatewayRequiresOneConfirmationForOwnerHighRiskAction()
+    {
+        AgentApprovalService approvals = new();
+        AgentActionGatewayService gateway = new(approvalService: approvals);
+        AgentPermissionConfig config = new()
+        {
+            OwnerUserIds = [3045846738],
+            RequireConfirmationForHighRisk = true
+        };
+        int actionCalls = 0;
+
+        AgentActionGatewayResult<string> pending = await gateway.ExecuteAsync(
+            new AgentPermissionRequest(
+                ActorUserId: 3045846738,
+                Source: AgentRequestSource.PrivateChat,
+                IsMentioned: false,
+                RiskLevel: AgentRiskLevel.High,
+                HasExplicitConfirmation: false,
+                Action: "qq.private_file_upload"),
+            config,
+            () =>
+            {
+                actionCalls++;
+                return Task.FromResult("uploaded");
+            });
+
+        Assert.That(pending.Executed, Is.False);
+        Assert.That(pending.ApprovalRequest, Is.Not.Null);
+        Assert.That(actionCalls, Is.Zero);
+
+        AgentApprovalExecutionResult first = await approvals.ApproveAndExecuteAsync(
+            pending.ApprovalRequest!.Id,
+            actorUserId: 3045846738);
+        AgentApprovalExecutionResult replay = await approvals.ApproveAndExecuteAsync(
+            pending.ApprovalRequest.Id,
+            actorUserId: 3045846738);
+
+        Assert.That(first.Executed, Is.True);
+        Assert.That(replay.Executed, Is.False);
+        Assert.That(actionCalls, Is.EqualTo(1));
+    }
 }
