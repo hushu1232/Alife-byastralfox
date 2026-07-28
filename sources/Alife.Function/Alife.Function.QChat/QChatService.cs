@@ -1784,7 +1784,13 @@ public partial class QChatService(
         if (type == OneBotMessageType.Group)
             OnAIGroupActivity(targetId);
 
-        message = QChatExperienceSanitizer.SanitizeOutgoing(Configuration, type, targetId, message);
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        message = QChatExperienceSanitizer.SanitizeOutgoing(
+            Configuration,
+            type,
+            targetId,
+            message,
+            replySession?.SenderRole);
         message = QChatVisibleTextPolicy.SanitizeVisibleText(message);
         message = new QChatReplyLayoutNormalizer().Normalize(message);
         string disclosureCandidate = personaDisclosureCandidate ?? message;
@@ -1807,7 +1813,7 @@ public partial class QChatService(
         }
 
         IReadOnlyList<string> replyUnits = new QChatReplyUnitBuffer().Commit(message);
-        CancellationToken cancellationToken = GetCurrentReplySessionForGuard()?.GenerationLease.CancellationToken
+        CancellationToken cancellationToken = replySession?.GenerationLease.CancellationToken
             ?? CancellationToken.None;
         foreach (string replyUnit in replyUnits)
         {

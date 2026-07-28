@@ -43,9 +43,11 @@ public sealed class QChatPersonaStylePolicyTests
         {
             Assert.That(ownerStyle, Does.Contain("tone=warm_intimate"));
             Assert.That(ownerStyle, Does.Contain("punctuation=avoid_chinese_full_stop"));
+            Assert.That(ownerStyle, Does.Contain("wave_dash=forbidden"));
             Assert.That(ownerStyle, Does.Contain("owner_attack=natural_hurt"));
             Assert.That(memberStyle, Does.Contain("tone=polite_reserved"));
             Assert.That(memberStyle, Does.Contain("punctuation=prefer_chinese_full_stop"));
+            Assert.That(memberStyle, Does.Contain("wave_dash=forbidden"));
             Assert.That(boundaryStyle, Does.Contain("defense=natural_sharp"));
         });
     }

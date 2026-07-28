@@ -19,6 +19,7 @@ public static class QChatPersonaStylePolicy
             return string.Join('\n', [
                 "tone=warm_intimate",
                 "punctuation=avoid_chinese_full_stop",
+                "wave_dash=forbidden",
                 "length=can_be_more_complete_when_helpful",
                 attacked
                     ? "owner_attack=natural_hurt"
@@ -32,6 +33,7 @@ public static class QChatPersonaStylePolicy
         return string.Join('\n', [
             "tone=polite_reserved",
             "punctuation=prefer_chinese_full_stop",
+            "wave_dash=forbidden",
             "length=concise_complete_sentence",
             isBoundary ? "defense=natural_sharp" : "defense=none",
             "rule=Stay rational and courteous. For a boundary violation, generate a firm natural reply instead of a fixed canned phrase."

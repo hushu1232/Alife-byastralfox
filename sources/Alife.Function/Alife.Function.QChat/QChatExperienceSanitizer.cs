@@ -5,7 +5,12 @@ namespace Alife.Function.QChat;
 
 public static class QChatExperienceSanitizer
 {
-    public static string SanitizeOutgoing(QChatConfig? config, OneBotMessageType type, long targetId, string message)
+    public static string SanitizeOutgoing(
+        QChatConfig? config,
+        OneBotMessageType type,
+        long targetId,
+        string message,
+        QChatSenderRole? senderRole = null)
     {
         if (string.IsNullOrWhiteSpace(message))
             return "";
@@ -19,6 +24,9 @@ public static class QChatExperienceSanitizer
 
         sanitized = RewriteXiayuMachineIdentity(sanitized);
         sanitized = RemoveRoutingLabels(sanitized, type);
+        bool ownerReply = senderRole == QChatSenderRole.Owner ||
+                          type == OneBotMessageType.Private && config?.OwnerId is > 0 && targetId == config.OwnerId;
+        sanitized = NormalizeXiayuPunctuation(sanitized, ownerReply);
         return sanitized.Trim();
     }
 
@@ -65,6 +73,30 @@ public static class QChatExperienceSanitizer
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         return result;
+    }
+
+    static string NormalizeXiayuPunctuation(string value, bool ownerReply)
+    {
+        if (value.Contains("[CQ:", StringComparison.Ordinal))
+            return value;
+
+        string[] fencedParts = value.Split("```", StringSplitOptions.None);
+        for (int i = 0; i < fencedParts.Length; i += 2)
+        {
+            string[] inlineParts = fencedParts[i].Split('`');
+            for (int j = 0; j < inlineParts.Length; j += 2)
+            {
+                string text = inlineParts[j]
+                    .Replace("～", "！", StringComparison.Ordinal)
+                    .Replace("~", "！", StringComparison.Ordinal);
+                if (ownerReply)
+                    text = text.Replace("。", " ", StringComparison.Ordinal);
+                inlineParts[j] = Regex.Replace(text, @"[ \t]{2,}", " ");
+            }
+            fencedParts[i] = string.Join('`', inlineParts);
+        }
+
+        return string.Join("```", fencedParts);
     }
 
     static string RemoveRoutingLabels(string value, OneBotMessageType type)
