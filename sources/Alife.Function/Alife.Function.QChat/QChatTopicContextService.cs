@@ -12,7 +12,7 @@ public sealed class QChatTopicContextService(IDataAgentStore store)
     static readonly string[] ContinuationCues =
     [
         "继续",
-        "刚才那个",
+        "刚才",
         "前面那个",
         "前面说的",
         "上周那件事",

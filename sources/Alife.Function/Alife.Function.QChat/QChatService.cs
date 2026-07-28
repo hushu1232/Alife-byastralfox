@@ -4614,6 +4614,11 @@ public partial class QChatService(
                 IsQuietModeEnabled),
             QChatPromptTrust.TrustedInternal,
             maximumContentCharacters: 1200);
+        // ponytail: widen only explicit replay turns; older archived group replay stays participant-scoped.
+        long relevantGroupUserId = messageEvent.MessageType == OneBotMessageType.Group &&
+                                   TopicContextService.ShouldOfferReplay(readableMessage) == false
+            ? messageEvent.UserId
+            : 0;
         string recentContext = QChatPromptEnvelope.Wrap(
             "recent_qq_context",
             observedAt,
@@ -4627,9 +4632,7 @@ public partial class QChatService(
                 maxCharacters: 1200,
                 ownerUserId: config.OwnerId,
                 botUserId: config.BotId,
-                relevantGroupUserId: messageEvent.MessageType == OneBotMessageType.Group
-                    ? messageEvent.UserId
-                    : 0,
+                relevantGroupUserId: relevantGroupUserId,
                 excludedMessageId: messageEvent.MessageType == OneBotMessageType.Group &&
                                    messageEvent is OneBotMessageEvent currentMessage
                     ? currentMessage.MessageId

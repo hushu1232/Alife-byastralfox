@@ -172,6 +172,70 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task OwnerGroupReplayRequestIncludesRecentMessagesFromOtherParticipants()
+    {
+        FakeOneBotRuntime runtime = new();
+        CapturingReplyQChatService service = new(
+            new XmlFunctionCaller(new NullLogger<XmlFunctionCaller>()),
+            runtime,
+            "summary")
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                AllowGroupMemberChat = true,
+                AllowGroupMemberMentions = true,
+                EnableBalancedTextStreaming = false
+            }
+        };
+        StartService(service, "夏羽");
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 10,
+            UserId = 2001,
+            GroupId = 3001,
+            RawMessage = "最近在聊王者转线"
+        });
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 11,
+            UserId = 2002,
+            GroupId = 3001,
+            RawMessage = "也聊到发箍"
+        });
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 12,
+            UserId = 3003,
+            GroupId = 4001,
+            RawMessage = "另一个群的话题"
+        });
+        await Task.Delay(200);
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 13,
+            UserId = 1001,
+            GroupId = 3001,
+            RawMessage = "[CQ:at,qq=999] 帮我概括一下我们刚才在聊什么，挑两点就行"
+        });
+        QChatInboundMessage inbound = await service.WaitForInboundAsync();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(inbound.Formatted, Does.Contain("最近在聊王者转线"));
+            Assert.That(inbound.Formatted, Does.Contain("也聊到发箍"));
+            Assert.That(inbound.Formatted, Does.Not.Contain("另一个群的话题"));
+        });
+    }
+
+    [Test]
     public void GetHealth_WhenSmartWebSearchDetectionIsEnabled_AppendsInformationalStatusWithoutChangingConnectionHealth()
     {
         FakeOneBotRuntime runtime = new();
