@@ -3522,12 +3522,12 @@ public partial class QChatService(
                     return;
                 if (ShouldBlockQChatMessage(config, messageEvent, includeRiskLocalBlock: true))
                     return;
+                recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
+                TryArchiveIncomingConversation(messageEvent, content, DateTimeOffset.UtcNow);
                 if (await TryHandlePublicInternetCommandAsync(messageEvent, senderRole, content))
                     return;
                 if (await TryHandleBrowserAgentAutomationAsync(messageEvent, senderRole))
                     return;
-                recentEventMemory.Remember(messageEvent, content, DateTimeOffset.Now);
-                TryArchiveIncomingConversation(messageEvent, content, DateTimeOffset.UtcNow);
                 QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
                 QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
                 if (eventRoute.Kind == QChatEventRouteKind.OwnerCommand)

@@ -3247,6 +3247,7 @@ public class QChatServiceAdapterTests
     public async Task OwnerPrivateBrowserAgentRequestRunsAutomationWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
+        CapturingDataAgentStore store = new();
         FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
             true,
             "ok",
@@ -3260,7 +3261,7 @@ public class QChatServiceAdapterTests
             OwnerId = 1001,
             EnableBrowserAgentAutomation = true,
             EnableBalancedTextStreaming = false
-        }, browserProvider: browser);
+        }, browserProvider: browser, dataAgentStore: store);
         int dispatchCount = 0;
         service.InboundChatDispatcher = _ =>
         {
@@ -3271,16 +3272,21 @@ public class QChatServiceAdapterTests
         runtime.Raise(new OneBotMessageEvent
         {
             SelfId = 999,
+            MessageId = 7001,
             UserId = 1001,
             RawMessage = "browse https://example.com/docs install steps"
         });
 
-        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1 && store.Turns.Count == 2);
 
         Assert.Multiple(() =>
         {
             Assert.That(browser.Calls, Is.EqualTo(1));
             Assert.That(dispatchCount, Is.Zero);
+            Assert.That(store.Turns, Has.Count.EqualTo(2));
+            Assert.That(store.Turns[0].Speaker, Is.EqualTo(Alife.Function.DataAgent.QChatConversationSpeaker.Peer));
+            Assert.That(store.Turns[0].Content, Does.Contain("browse [image-url-hidden] install steps"));
+            Assert.That(store.Turns[1].Speaker, Is.EqualTo(Alife.Function.DataAgent.QChatConversationSpeaker.Self));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("主要内容："));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("https://example.com/docs"));
         });
