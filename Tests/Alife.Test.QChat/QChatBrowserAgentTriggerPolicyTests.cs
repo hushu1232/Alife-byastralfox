@@ -49,6 +49,22 @@ public sealed class QChatBrowserAgentTriggerPolicyTests
     }
 
     [Test]
+    public void Parse_AllowedGroupOwnerMention_RunsBrowserAutomation()
+    {
+        QChatBrowserAgentTrigger trigger = QChatBrowserAgentTriggerPolicy.Parse(
+            OneBotMessageType.Group,
+            QChatSenderRole.Owner,
+            "[CQ:at,qq=999] browse https://example.com/docs",
+            allowOwnerGroupTask: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(trigger.Kind, Is.EqualTo(QChatBrowserAgentTriggerKind.RunBrowserTask));
+            Assert.That(trigger.Task, Is.EqualTo("browse https://example.com/docs"));
+        });
+    }
+
+    [Test]
     public void Parse_SearchOnlyRequest_DoesNotStealWebResearch()
     {
         QChatBrowserAgentTrigger trigger = QChatBrowserAgentTriggerPolicy.Parse(

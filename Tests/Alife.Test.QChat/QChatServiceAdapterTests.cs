@@ -3426,7 +3426,7 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task GroupBrowserAgentRequestDoesNotRunAutomation()
+    public async Task OwnerGroupMentionBrowserAgentRequestRunsWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
         FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
@@ -3445,7 +3445,12 @@ public class QChatServiceAdapterTests
             EnableBrowserAgentAutomation = true,
             EnableBalancedTextStreaming = false
         }, browserProvider: browser);
-        service.InboundChatDispatcher = _ => Task.CompletedTask;
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
 
         runtime.Raise(new OneBotMessageEvent
         {
@@ -3455,12 +3460,14 @@ public class QChatServiceAdapterTests
             RawMessage = "[CQ:at,qq=999] browse https://example.com/docs"
         });
 
-        await Task.Delay(200);
+        await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
 
         Assert.Multiple(() =>
         {
-            Assert.That(browser.Calls, Is.Zero);
-            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(browser.Calls, Is.EqualTo(1));
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.GroupMessages, Has.Count.EqualTo(1));
+            Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("主要内容："));
         });
     }
 

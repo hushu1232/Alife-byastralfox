@@ -28,7 +28,8 @@ public static class QChatBrowserAgentTriggerPolicy
     public static QChatBrowserAgentTrigger Parse(
         OneBotMessageType messageType,
         QChatSenderRole senderRole,
-        string? rawText)
+        string? rawText,
+        bool allowOwnerGroupTask = false)
     {
         string text = OneBotSegment.GetPlainText(rawText ?? "").Trim();
         if (text.Length == 0)
@@ -39,6 +40,12 @@ public static class QChatBrowserAgentTriggerPolicy
             return new QChatBrowserAgentTrigger(QChatBrowserAgentTriggerKind.None);
         if (SearchOnly.IsMatch(text))
             return new QChatBrowserAgentTrigger(QChatBrowserAgentTriggerKind.None);
+        if (messageType == OneBotMessageType.Group)
+        {
+            return senderRole == QChatSenderRole.Owner && allowOwnerGroupTask
+                ? new QChatBrowserAgentTrigger(QChatBrowserAgentTriggerKind.RunBrowserTask, text, "owner_group_browser_request")
+                : new QChatBrowserAgentTrigger(QChatBrowserAgentTriggerKind.None);
+        }
         if (messageType != OneBotMessageType.Private)
             return new QChatBrowserAgentTrigger(QChatBrowserAgentTriggerKind.None);
         if (senderRole != QChatSenderRole.Owner)

@@ -3526,7 +3526,13 @@ public partial class QChatService(
                 TryArchiveIncomingConversation(messageEvent, content, DateTimeOffset.UtcNow);
                 if (await TryHandlePublicInternetCommandAsync(messageEvent, senderRole, content))
                     return;
-                if (await TryHandleBrowserAgentAutomationAsync(messageEvent, senderRole))
+                bool allowOwnerGroupBrowserTask = messageEvent.MessageType == OneBotMessageType.Group &&
+                                                  senderRole == QChatSenderRole.Owner &&
+                                                  messageEvent.GetAtID() == client.BotId;
+                if (await TryHandleBrowserAgentAutomationAsync(
+                        messageEvent,
+                        senderRole,
+                        allowOwnerGroupBrowserTask))
                     return;
                 QChatEventRoute eventRoute = QChatEventRouter.Route(messageEvent, senderRole);
                 QChatOwnerCommandService ownerCommandService = BuildOwnerCommandService();
@@ -6552,7 +6558,8 @@ public partial class QChatService(
 
     async Task<bool> TryHandleBrowserAgentAutomationAsync(
         OneBotMessageEvent messageEvent,
-        QChatSenderRole senderRole)
+        QChatSenderRole senderRole,
+        bool allowOwnerGroupTask)
     {
         QChatConfig config = Configuration ?? new QChatConfig();
         if (config.EnableBrowserAgentAutomation == false)
@@ -6561,7 +6568,8 @@ public partial class QChatService(
         QChatBrowserAgentTrigger trigger = QChatBrowserAgentTriggerPolicy.Parse(
             messageEvent.MessageType,
             senderRole,
-            messageEvent.RawMessage);
+            messageEvent.RawMessage,
+            allowOwnerGroupTask);
         if (trigger.Kind == QChatBrowserAgentTriggerKind.None)
             return false;
 
