@@ -3435,6 +3435,10 @@ public partial class QChatService(
             if (basicMessageEvent.MessageType == OneBotMessageType.Private &&
                 QChatMessageSecurity.ShouldAcceptPrivateMessage(config, basicMessageEvent) == false)
             {
+                TryRecordQChatRuntimeAudit(
+                    "security.private_message",
+                    "denied",
+                    "reason=private_guest_chat_disabled");
                 WriteQChatDiagnostic("event-filtered", "Private message rejected by QChat security policy.", new {
                     basicMessageEvent.UserId,
                     senderRole,

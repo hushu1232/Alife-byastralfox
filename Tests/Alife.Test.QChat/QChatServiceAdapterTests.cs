@@ -1324,6 +1324,51 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task NonOwnerPrivateMessageGateRecordsDataAgentAuditWithoutContent()
+    {
+        FakeOneBotRuntime runtime = new();
+        CapturingDataAgentStore store = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        }, dataAgentStore: store);
+        int dispatchCount = 0;
+        service.InboundChatDispatcher = _ =>
+        {
+            dispatchCount++;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 7002,
+            UserId = 2002,
+            RawMessage = "browse https://private.example/path?token=secret"
+        });
+
+        await WaitUntilAsync(() => store.RuntimeAudits.Count == 1);
+
+        QChatRuntimeAuditRecord audit = store.RuntimeAudits.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(dispatchCount, Is.Zero);
+            Assert.That(runtime.PrivateMessages, Is.Empty);
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(store.Turns, Is.Empty);
+            Assert.That(audit.EventKind, Is.EqualTo("security.private_message"));
+            Assert.That(audit.Outcome, Is.EqualTo("denied"));
+            Assert.That(audit.Summary, Is.EqualTo("reason=private_guest_chat_disabled"));
+            Assert.That(audit.Summary, Does.Not.Contain("browse"));
+            Assert.That(audit.Summary, Does.Not.Contain("http"));
+            Assert.That(audit.Summary, Does.Not.Contain("2002"));
+            Assert.That(audit.Summary, Does.Not.Contain("secret"));
+        });
+    }
+
+    [Test]
     public async Task OwnerCanTriggerInternetLookupWhenEnabled()
     {
         FakeOneBotRuntime runtime = new();
