@@ -131,10 +131,13 @@ public sealed class AgentBrowserSiteExperienceStoreTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(status, Does.Contain("browser_site_experience recent=1"));
-            Assert.That(status, Does.Contain("host=example.com"));
-            Assert.That(status, Does.Contain("strategy=BrowserSnapshot"));
-            Assert.That(status, Does.Contain("success=true"));
+            Assert.That(status, Does.Contain("最近保存了 1 个网站的访问经验"));
+            Assert.That(status, Does.Contain("example.com：上次读取成功"));
+            Assert.That(status, Does.Contain("优先使用浏览器读取"));
+            Assert.That(status, Does.Contain("没有发现登录或反爬限制"));
+            Assert.That(status, Does.Not.Contain("browser_site_experience"));
+            Assert.That(status, Does.Not.Contain("strategy="));
+            Assert.That(status, Does.Not.Contain("success="));
         });
     }
 
@@ -154,10 +157,12 @@ public sealed class AgentBrowserSiteExperienceStoreTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(doctor, Does.Contain("web_doctor browser_provider=configured internet=enabled"));
-            Assert.That(doctor, Does.Contain("recent_sites=1"));
-            Assert.That(doctor, Does.Contain("host=example.com"));
-            Assert.That(doctor, Does.Contain("strategy=BrowserSnapshot"));
+            Assert.That(doctor, Does.Contain("浏览器读取已经配置好，联网读取已开启"));
+            Assert.That(doctor, Does.Contain("最近保存了 1 个网站的访问经验"));
+            Assert.That(doctor, Does.Contain("example.com：上次读取成功"));
+            Assert.That(doctor, Does.Not.Contain("web_doctor"));
+            Assert.That(doctor, Does.Not.Contain("browser_provider="));
+            Assert.That(doctor, Does.Not.Contain("strategy="));
         });
     }
 

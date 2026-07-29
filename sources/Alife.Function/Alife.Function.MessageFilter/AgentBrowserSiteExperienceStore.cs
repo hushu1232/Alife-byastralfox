@@ -111,16 +111,12 @@ public sealed class AgentBrowserSiteExperienceStore
     {
         IReadOnlyList<AgentBrowserSiteExperience> records = ListRecent(limit);
         if (records.Count == 0)
-            return "browser_site_experience=empty";
+            return "还没有保存过网页访问记录。";
 
         StringBuilder builder = new();
-        builder.AppendLine($"browser_site_experience recent={records.Count}");
+        builder.AppendLine($"最近保存了 {records.Count} 个网站的访问经验。");
         foreach (AgentBrowserSiteExperience record in records)
-        {
-            builder.AppendLine(
-                $"host={record.Host} strategy={record.PreferredStrategy} success={FormatBool(record.LastSuccess)} risk={record.RiskLevel} needs_login={FormatBool(record.NeedsLogin)} anti_bot={FormatBool(record.HasAntiBotSignals)} reason={record.LastReason} updated={record.UpdatedAt:O}");
-        }
-
+            builder.AppendLine(FormatExperience(record));
         return builder.ToString().TrimEnd();
     }
 
@@ -129,23 +125,34 @@ public sealed class AgentBrowserSiteExperienceStore
         bool browserProviderConfigured,
         int limit = 8)
     {
-        IReadOnlyList<AgentBrowserSiteExperience> records = ListRecent(limit);
-        StringBuilder builder = new();
-        builder.AppendLine(
-            $"web_doctor browser_provider={FormatConfigured(browserProviderConfigured)} internet={FormatEnabled(internetAccessEnabled)} recent_sites={records.Count}");
-        if (records.Count == 0)
-        {
-            builder.AppendLine("site_experience=empty");
-            return builder.ToString().TrimEnd();
-        }
+        string browser = browserProviderConfigured
+            ? "浏览器读取已经配置好"
+            : "浏览器读取还没有配置好";
+        string internet = internetAccessEnabled
+            ? "联网读取已开启"
+            : "联网读取未开启";
+        return $"{browser}，{internet}。{Environment.NewLine}{FormatStatus(limit)}";
+    }
 
-        foreach (AgentBrowserSiteExperience record in records)
+    static string FormatExperience(AgentBrowserSiteExperience record)
+    {
+        string outcome = record.LastSuccess ? "上次读取成功" : "上次读取没有成功";
+        string strategy = record.PreferredStrategy switch
         {
-            builder.AppendLine(
-                $"host={record.Host} strategy={record.PreferredStrategy} success={FormatBool(record.LastSuccess)} risk={record.RiskLevel} needs_login={FormatBool(record.NeedsLogin)} anti_bot={FormatBool(record.HasAntiBotSignals)} reason={record.LastReason}");
-        }
-
-        return builder.ToString().TrimEnd();
+            AgentBrowserSiteStrategy.PublicFetch => "优先直接读取公开页面",
+            AgentBrowserSiteStrategy.BrowserSnapshot => "优先使用浏览器读取",
+            AgentBrowserSiteStrategy.DynamicBrowser => "需要通过动态浏览器读取",
+            AgentBrowserSiteStrategy.Blocked => "暂时不适合自动读取",
+            _ => "还没确定合适的读取方式"
+        };
+        string restriction = (record.NeedsLogin, record.HasAntiBotSignals) switch
+        {
+            (true, true) => "需要登录，也可能遇到反爬验证",
+            (true, false) => "需要登录",
+            (false, true) => "可能会遇到反爬验证",
+            _ => "没有发现登录或反爬限制"
+        };
+        return $"{record.Host}：{outcome}，{strategy}，{restriction}。";
     }
 
     static AgentBrowserSiteExperience BuildSnapshotExperience(
@@ -251,12 +258,6 @@ public sealed class AgentBrowserSiteExperienceStore
 
     static bool ContainsAny(string value, params string[] needles) =>
         needles.Any(needle => value.Contains(needle, StringComparison.OrdinalIgnoreCase));
-
-    static string FormatBool(bool value) => value ? "true" : "false";
-
-    static string FormatConfigured(bool value) => value ? "configured" : "missing";
-
-    static string FormatEnabled(bool value) => value ? "enabled" : "disabled";
 
     static List<AgentBrowserSiteExperience> ReadJsonLines(string path)
     {

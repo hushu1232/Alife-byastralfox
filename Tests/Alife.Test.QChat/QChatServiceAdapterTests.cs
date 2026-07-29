@@ -2922,9 +2922,12 @@ public class QChatServiceAdapterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(reply, Does.Contain("browser_site_experience recent=1"));
-            Assert.That(reply, Does.Contain("host=example.com"));
-            Assert.That(reply, Does.Contain("strategy=BrowserSnapshot"));
+            Assert.That(reply, Does.Contain("最近保存了 1 个网站的访问经验"));
+            Assert.That(reply, Does.Contain("example.com：上次读取成功"));
+            Assert.That(reply, Does.Contain("优先使用浏览器读取"));
+            Assert.That(reply, Does.Not.Contain("browser_site_experience"));
+            Assert.That(reply, Does.Not.Contain("strategy="));
+            Assert.That(reply, Does.Not.Contain("success="));
             Assert.That(browser.Calls, Is.Zero);
             Assert.That(dispatchCount, Is.Zero);
         });
@@ -2970,10 +2973,12 @@ public class QChatServiceAdapterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(reply, Does.Contain("web_doctor browser_provider=configured internet=enabled"));
-            Assert.That(reply, Does.Contain("recent_sites=1"));
-            Assert.That(reply, Does.Contain("host=example.com"));
-            Assert.That(reply, Does.Contain("strategy=BrowserSnapshot"));
+            Assert.That(reply, Does.Contain("浏览器读取已经配置好，联网读取已开启"));
+            Assert.That(reply, Does.Contain("最近保存了 1 个网站的访问经验"));
+            Assert.That(reply, Does.Contain("example.com：上次读取成功"));
+            Assert.That(reply, Does.Not.Contain("web_doctor"));
+            Assert.That(reply, Does.Not.Contain("browser_provider="));
+            Assert.That(reply, Does.Not.Contain("strategy="));
             Assert.That(browser.Calls, Is.Zero);
             Assert.That(dispatchCount, Is.Zero);
         });
