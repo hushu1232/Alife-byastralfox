@@ -54,6 +54,8 @@ public sealed class AgentInternetServiceTests
         {
             Assert.That(result.Success, Is.False);
             Assert.That(result.Reason, Is.EqualTo("internet_access_disabled"));
+            Assert.That(result.UserVisibleContent, Is.EqualTo("这个网页暂时不可用，请稍后再试。"));
+            Assert.That(result.UserVisibleContent, Does.Not.Contain("internet_access_disabled"));
             Assert.That(handler.Calls, Is.Zero);
         });
     }
@@ -66,13 +68,20 @@ public sealed class AgentInternetServiceTests
             config: new AgentInternetConfig { EnableInternetAccess = true },
             httpClient: new HttpClient(handler));
 
-        AgentInternetFetchResult result = await service.FetchPublicPageAsync("https://example.com");
+        AgentInternetFetchResult result = await service.FetchPublicPageAsync(
+            "https://example.com/page?token=secret#private");
 
         Assert.Multiple(() =>
         {
             Assert.That(result.Success, Is.True);
             Assert.That(result.Content, Does.Contain("[UNTRUSTED EXTERNAL CONTEXT: internet-page]"));
             Assert.That(result.Content, Does.Contain("Hello world"));
+            Assert.That(result.UserVisibleContent, Does.Contain("主要内容：Example Hello world"));
+            Assert.That(result.UserVisibleContent, Does.Contain("来源：https://example.com/page"));
+            Assert.That(result.UserVisibleContent, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(result.UserVisibleContent, Does.Not.Contain("token"));
+            Assert.That(result.UserVisibleContent, Does.Not.Contain("secret"));
+            Assert.That(result.UserVisibleContent, Does.Not.Contain("private"));
             Assert.That(handler.Calls, Is.EqualTo(1));
         });
     }

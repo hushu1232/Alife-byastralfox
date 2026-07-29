@@ -11,7 +11,11 @@ using Alife.Function.Interpreter;
 
 namespace Alife.Function.Agent;
 
-public sealed record AgentInternetFetchResult(bool Success, string Reason, string Content);
+public sealed record AgentInternetFetchResult(
+    bool Success,
+    string Reason,
+    string Content,
+    string? UserVisibleContent = null);
 
 [Module("Agent Internet Access", "Controlled public web lookup for agents. Disabled by default.",
     defaultCategory: "astralfox-alife/Agent",
@@ -70,6 +74,13 @@ public class AgentInternetService(
             string html = Encoding.UTF8.GetString(bytes);
             string text = ExtractReadableText(html, config.MaxExtractedChars);
             string wrapped = ExternalContextFormatter.WrapUntrusted("internet-page", text);
+            string userVisible = AgentBrowserSnapshotFormatter.FormatForUser(new AgentBrowserSnapshot(
+                true,
+                "ok",
+                policy.Uri.ToString(),
+                "",
+                text,
+                []));
 
             audit?.Record(
                 "agent.internet.fetch",
@@ -78,7 +89,7 @@ public class AgentInternetService(
                 AgentAuditRiskLevel.Medium,
                 succeeded: true);
 
-            return new AgentInternetFetchResult(true, "ok", wrapped);
+            return new AgentInternetFetchResult(true, "ok", wrapped, userVisible);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || cancellationToken.IsCancellationRequested == false)
         {
@@ -90,7 +101,11 @@ public class AgentInternetService(
                 succeeded: false,
                 error: ex.Message);
 
-            return new AgentInternetFetchResult(false, "fetch_failed", $"internet_fetch_failed: {ex.Message}");
+            return new AgentInternetFetchResult(
+                false,
+                "fetch_failed",
+                $"internet_fetch_failed: {ex.Message}",
+                "这个网页暂时没读出来，请稍后再试。");
         }
     }
 
@@ -113,7 +128,11 @@ public class AgentInternetService(
             succeeded: false,
             error: reason);
 
-        return new AgentInternetFetchResult(false, reason, $"internet_fetch_denied: {reason}; target={detail}");
+        return new AgentInternetFetchResult(
+            false,
+            reason,
+            $"internet_fetch_denied: {reason}; target={detail}",
+            "这个网页暂时不可用，请稍后再试。");
     }
 
     static string ExtractReadableText(string html, int maxChars)

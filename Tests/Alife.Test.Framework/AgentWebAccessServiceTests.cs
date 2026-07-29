@@ -95,7 +95,8 @@ public sealed class AgentWebAccessServiceTests
         FakeInternetService internet = new(new AgentInternetFetchResult(
             true,
             "ok",
-            "internet content"));
+            "[UNTRUSTED EXTERNAL CONTEXT: internet-page] internet content",
+            "主要内容：internet content"));
         AgentWebAccessService service = new(internetService: internet);
 
         AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
@@ -110,7 +111,9 @@ public sealed class AgentWebAccessServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(response.Success, Is.True);
-            Assert.That(response.FormattedContent, Is.EqualTo("internet content"));
+            Assert.That(response.FormattedContent, Does.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(response.UserVisibleContent, Is.EqualTo("主要内容：internet content"));
+            Assert.That(response.UserVisibleContent, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
             Assert.That(internet.Calls, Is.EqualTo(1));
             Assert.That(internet.LastUrl, Is.EqualTo("https://example.com"));
         });

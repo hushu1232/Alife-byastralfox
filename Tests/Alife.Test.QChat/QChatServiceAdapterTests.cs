@@ -1327,7 +1327,9 @@ public class QChatServiceAdapterTests
     public async Task OwnerCanTriggerInternetLookupWhenEnabled()
     {
         FakeOneBotRuntime runtime = new();
-        FakeInternetService internet = new("wrapped page");
+        FakeInternetService internet = new(
+            "网页内容：wrapped page",
+            "[UNTRUSTED EXTERNAL CONTEXT: internet-page] internal model context");
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 2905391496,
@@ -1350,7 +1352,9 @@ public class QChatServiceAdapterTests
             Assert.That(internet.Calls, Is.EqualTo(1));
             Assert.That(internet.LastUrl, Is.EqualTo("https://example.com"));
             Assert.That(runtime.PrivateMessages.Single().Target, Is.EqualTo(3045846738));
-            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("wrapped page"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("网页内容：wrapped page"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("internal model context"));
         });
     }
 
@@ -2988,7 +2992,9 @@ public class QChatServiceAdapterTests
     public async Task OwnerWebReadCommandUsesAutoReadPublicFetchWithoutBrowserOrModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
-        FakeInternetService internet = new("public page content [CQ:record,file=http://example.com/a.mp3]");
+        FakeInternetService internet = new(
+            "public page content [CQ:record,file=http://example.com/a.mp3]",
+            "[UNTRUSTED EXTERNAL CONTEXT: internet-page] internal model context");
         FakeBrowserProvider browser = new();
         AgentBrowserSiteExperienceStore siteExperienceStore = new(Path.Combine(
             Path.GetTempPath(),
@@ -3025,6 +3031,8 @@ public class QChatServiceAdapterTests
             Assert.That(browser.Calls, Is.Zero);
             Assert.That(reply, Does.Contain("public page content"));
             Assert.That(reply, Does.Contain("[CQ :record"));
+            Assert.That(reply, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+            Assert.That(reply, Does.Not.Contain("internal model context"));
             Assert.That(dispatchCount, Is.Zero);
         });
     }
@@ -17231,7 +17239,9 @@ public class QChatServiceAdapterTests
         };
     }
 
-    sealed class FakeInternetService(string content) : AgentInternetService
+    sealed class FakeInternetService(
+        string userVisibleContent,
+        string? formattedContent = null) : AgentInternetService
     {
         public int Calls { get; private set; }
         public string? LastUrl { get; private set; }
@@ -17242,7 +17252,11 @@ public class QChatServiceAdapterTests
         {
             Calls++;
             LastUrl = url;
-            return Task.FromResult(new AgentInternetFetchResult(true, "ok", content));
+            return Task.FromResult(new AgentInternetFetchResult(
+                true,
+                "ok",
+                formattedContent ?? userVisibleContent,
+                userVisibleContent));
         }
     }
 

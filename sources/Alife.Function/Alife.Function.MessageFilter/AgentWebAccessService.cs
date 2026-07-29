@@ -109,7 +109,8 @@ public sealed class AgentWebAccessService(
             response.Success,
             response.Reason,
             request.Capability,
-            response.Content);
+            response.Content,
+            response.UserVisibleContent);
     }
 
     AgentWebAccessResponse ExecuteExternalRagQuery(AgentWebAccessRequest request)
