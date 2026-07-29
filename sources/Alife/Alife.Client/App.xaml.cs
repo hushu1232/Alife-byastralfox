@@ -19,6 +19,7 @@ public partial class App
 
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
+        System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(typeof(Function.Browser.BrowserService).TypeHandle);
 
 #if DEBUG
         LogLoadedAssembly(typeof(Function.Memory.MemoryService).Assembly);

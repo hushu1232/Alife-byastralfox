@@ -7,7 +7,8 @@ public sealed record AgentWebAccessResponse(
     bool Success,
     string Reason,
     AgentWebAccessCapability Capability,
-    string FormattedContent);
+    string FormattedContent,
+    string? UserVisibleContent = null);
 
 public sealed class AgentWebAccessService(
     AgentPublicSearchService? searchService = null,
@@ -144,9 +145,15 @@ public sealed class AgentWebAccessService(
             snapshot.Success,
             snapshot.Reason,
             request.Capability,
-            AgentBrowserSnapshotFormatter.Format(snapshot));
+            AgentBrowserSnapshotFormatter.Format(snapshot),
+            AgentBrowserSnapshotFormatter.FormatForUser(snapshot));
     }
 
     static AgentWebAccessResponse Denied(AgentWebAccessCapability capability, string reason) =>
-        new(false, reason, capability, $"web_access_denied: {reason}");
+        new(
+            false,
+            reason,
+            capability,
+            $"web_access_denied: {reason}",
+            "这个网页暂时不可用，请稍后再试。");
 }

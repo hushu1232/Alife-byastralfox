@@ -86,6 +86,35 @@ public static class AgentBrowserSnapshotFormatter
             builder.ToString().TrimEnd());
     }
 
+    public static string FormatForUser(AgentBrowserSnapshot snapshot, int maxTextChars = 600)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (snapshot.Success == false)
+            return "这个网页暂时没读出来，请稍后再试。";
+
+        string title = Compact(snapshot.Title);
+        if (title.Length > 160)
+            title = $"{title[..160].TrimEnd()}…";
+        string text = Compact(snapshot.Text);
+        int textLimit = Math.Clamp(maxTextChars, 0, 2000);
+        if (text.Length > textLimit)
+            text = $"{text[..textLimit].TrimEnd()}…";
+
+        StringBuilder builder = new();
+        if (title.Length > 0)
+            builder.AppendLine($"网页标题：{title}");
+        if (text.Length > 0)
+            builder.AppendLine($"主要内容：{text}");
+        string sourceUrl = FormatSourceUrl(snapshot.Url);
+        if (sourceUrl.Length > 0)
+            builder.AppendLine($"来源：{sourceUrl}");
+
+        return builder.Length == 0
+            ? "网页已经打开，但没有读取到可用正文。"
+            : builder.ToString().TrimEnd();
+    }
+
     static string FormatRisk(AgentBrowserSnapshotDiagnostics? diagnostics)
     {
         if (diagnostics == null)
@@ -106,4 +135,23 @@ public static class AgentBrowserSnapshotFormatter
             line += $" href={element.Href}";
         return line;
     }
+
+    static string FormatSourceUrl(string? value)
+    {
+        if (Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) == false ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return "";
+        }
+
+        string source = uri.GetComponents(
+            UriComponents.SchemeAndServer | UriComponents.Path,
+            UriFormat.UriEscaped);
+        return source.Length <= 300
+            ? source
+            : uri.GetComponents(UriComponents.SchemeAndServer, UriFormat.UriEscaped);
+    }
+
+    static string Compact(string? value) =>
+        string.Join(' ', (value ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }

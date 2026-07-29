@@ -1841,7 +1841,12 @@ public partial class QChatService(
         if (string.IsNullOrWhiteSpace(formatted))
             return Task.CompletedTask;
 
-        return SendSingleMessageAsync(targetType, targetId, formatted.Trim());
+        return SendSingleMessageAsync(
+            targetType,
+            targetId,
+            formatted.Trim(),
+            archiveSelfId: ResolveCurrentBotId(config, messageEvent),
+            archiveParticipantId: messageEvent.UserId);
     }
 
     QChatPersonaFeedbackContext CreateFeedbackContext(
@@ -1856,7 +1861,12 @@ public partial class QChatService(
         return new QChatPersonaFeedbackContext(agentId, senderRole, preferredAddress, profile?.RelationshipLabel);
     }
 
-    async Task SendSingleMessageAsync(OneBotMessageType type, long targetId, string message)
+    async Task SendSingleMessageAsync(
+        OneBotMessageType type,
+        long targetId,
+        string message,
+        long archiveSelfId = 0,
+        long archiveParticipantId = 0)
     {
         if (IsCurrentReplyGenerationSendAllowed() == false)
             return;
@@ -1878,9 +1888,11 @@ public partial class QChatService(
         DateTimeOffset sentAt = DateTimeOffset.Now;
         RememberSentMessage(new QChatRecentSentMessage(result.MessageId, type, targetId, message, sentAt));
         QChatReplySession? replySession = GetCurrentReplySessionForGuard();
-        long selfId = replySession?.ResolvedBotId ?? Configuration?.BotId ?? 0;
+        long selfId = replySession?.ResolvedBotId
+                      ?? (archiveSelfId > 0 ? archiveSelfId : Configuration?.BotId ?? 0);
         recentEventMemory.RememberOutgoing(result.MessageId, selfId, type, targetId, message, sentAt);
-        if (replySession != null)
+        long participantId = replySession?.SenderId ?? archiveParticipantId;
+        if (selfId > 0 && participantId > 0)
         {
             TryArchiveOutgoingConversation(
                 type,
@@ -1888,7 +1900,7 @@ public partial class QChatService(
                 message,
                 result.MessageId,
                 selfId,
-                replySession.SenderId,
+                participantId,
                 sentAt);
         }
         Interlocked.Increment(ref outboundMessageVersion);
@@ -6261,7 +6273,7 @@ public partial class QChatService(
             senderRole,
             targetType,
             targetId,
-            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+            NeutralizePublicExternalQqMarkup(response.UserVisibleContent ?? response.FormattedContent));
         WriteQChatDiagnostic("qchat-browser-snapshot-command-handled", "QChat browser snapshot command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
@@ -6310,7 +6322,7 @@ public partial class QChatService(
             senderRole,
             targetType,
             targetId,
-            NeutralizePublicExternalQqMarkup(response.FormattedContent));
+            NeutralizePublicExternalQqMarkup(response.UserVisibleContent ?? response.FormattedContent));
         WriteQChatDiagnostic("qchat-web-auto-read-command-handled", "QChat web auto-read command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,

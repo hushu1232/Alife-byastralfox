@@ -135,6 +135,7 @@ public class BrowserServiceAdapterTests
         FakeBrowserRuntime runtime = new()
         {
             ScriptResult = """
+                           [Success] Return:
                            {
                              "title": "Structured Title",
                              "bodyText": "Primary article body from DOM.",
@@ -160,6 +161,7 @@ public class BrowserServiceAdapterTests
         Assert.Equal("Docs", snapshot.Elements[0].Text);
         Assert.Equal("https://example.com/docs", snapshot.Elements[0].Href);
         Assert.Equal(2, snapshot.Diagnostics?.LinkCount);
+        Assert.Empty(runtime.ObservedPages);
         Assert.Contains("querySelectorAll", runtime.ExecutedScripts.Single());
     }
 

@@ -83,6 +83,9 @@ public sealed class AgentWebAccessServiceTests
             Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://example.com"));
             Assert.That(response.FormattedContent, Does.Contain("[UNTRUSTED EXTERNAL CONTEXT: browser-snapshot]"));
             Assert.That(response.FormattedContent, Does.Contain("browser text"));
+            Assert.That(response.UserVisibleContent, Does.Contain("网页标题：Example"));
+            Assert.That(response.UserVisibleContent, Does.Contain("主要内容：browser text"));
+            Assert.That(response.UserVisibleContent, Does.Not.Contain("browser-snapshot"));
         });
     }
 
@@ -308,6 +311,8 @@ public sealed class AgentWebAccessServiceTests
         {
             Assert.That(response.Success, Is.False);
             Assert.That(response.Reason, Is.EqualTo("browser_provider_not_configured"));
+            Assert.That(response.UserVisibleContent, Is.EqualTo("这个网页暂时不可用，请稍后再试。"));
+            Assert.That(response.UserVisibleContent, Does.Not.Contain("browser_provider_not_configured"));
         });
     }
 

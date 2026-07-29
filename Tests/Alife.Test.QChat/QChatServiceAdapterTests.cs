@@ -2783,6 +2783,7 @@ public class QChatServiceAdapterTests
     public async Task OwnerBrowserSnapshotCommandSendsReadOnlySnapshotWithoutModelDispatch()
     {
         FakeOneBotRuntime runtime = new();
+        CapturingDataAgentStore store = new();
         FakeBrowserProvider browser = new(new AgentBrowserSnapshot(
             true,
             "ok",
@@ -2796,7 +2797,7 @@ public class QChatServiceAdapterTests
             OwnerId = 3045846738,
             EnableInternetAccess = true,
             EnableBalancedTextStreaming = false
-        }, browserProvider: browser);
+        }, browserProvider: browser, dataAgentStore: store);
         int dispatchCount = 0;
         service.InboundChatDispatcher = _ =>
         {
@@ -2811,16 +2812,27 @@ public class QChatServiceAdapterTests
             RawMessage = "/qchat web snapshot https://example.com/dashboard"
         });
 
-        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1);
+        await WaitUntilAsync(() => runtime.PrivateMessages.Count == 1 &&
+                                   store.Turns.Any(turn => turn.Speaker == Alife.Function.DataAgent.QChatConversationSpeaker.Self));
         string reply = runtime.PrivateMessages.Single().Message;
+        QChatConversationTurn archivedReply = store.Turns.Single(turn =>
+            turn.Speaker == Alife.Function.DataAgent.QChatConversationSpeaker.Self);
 
         Assert.Multiple(() =>
         {
             Assert.That(browser.Calls, Is.EqualTo(1));
             Assert.That(browser.LastRequest?.Url, Is.EqualTo("https://example.com/dashboard"));
-            Assert.That(reply, Does.Contain("browser-snapshot"));
-            Assert.That(reply, Does.Contain("Dashboard"));
+            Assert.That(reply, Does.Contain("网页标题：Dashboard"));
+            Assert.That(reply, Does.Contain("主要内容：snapshot text"));
+            Assert.That(reply, Does.Contain("来源：https://example.com/dashboard"));
+            Assert.That(reply, Does.Not.Contain("browser-snapshot"));
+            Assert.That(reply, Does.Not.Contain("snapshot_risk"));
+            Assert.That(reply, Does.Not.Contain("url="));
             Assert.That(reply, Does.Contain("[CQ :record"));
+            Assert.That(archivedReply.Content, Does.Contain("网页标题：Dashboard"));
+            Assert.That(archivedReply.Content, Does.Contain("主要内容：snapshot text"));
+            Assert.That(archivedReply.Content, Does.Contain("[image-url-hidden]"));
+            Assert.That(archivedReply.Content, Does.Not.Contain("browser-snapshot"));
             Assert.That(runtime.GroupMessages, Is.Empty);
             Assert.That(dispatchCount, Is.Zero);
         });
@@ -3142,7 +3154,9 @@ public class QChatServiceAdapterTests
             Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("web-access"));
             Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("official"));
             Assert.That(Uri.UnescapeDataString(requestUrl), Does.Contain("GitHub"));
-            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("browser-snapshot"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("网页标题：Search"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("主要内容：search snapshot"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Not.Contain("browser-snapshot"));
             Assert.That(dispatchCount, Is.Zero);
         });
     }

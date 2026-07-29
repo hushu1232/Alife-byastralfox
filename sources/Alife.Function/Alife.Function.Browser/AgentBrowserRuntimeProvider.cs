@@ -25,12 +25,14 @@ public sealed class AgentBrowserRuntimeProvider(IBrowserRuntime runtime) : IAgen
             await runtime.NavigateAsync(request.Url);
             cancellationToken.ThrowIfCancellationRequested();
 
-            string scriptResult = await runtime.ExecuteScriptAsync(SnapshotExtractionScript);
+            string scriptResult = UnwrapSuccessfulResult(
+                await runtime.ExecuteScriptAsync(SnapshotExtractionScript));
             ExtractedSnapshot extracted = DecodeExtractedSnapshot(scriptResult);
             string title = extracted.Title;
             string text = extracted.BodyText;
             if (string.IsNullOrWhiteSpace(text))
-                text = await runtime.ObserveAsync(Math.Max(request.Page, 1));
+                text = UnwrapSuccessfulResult(
+                    await runtime.ObserveAsync(Math.Max(request.Page, 1)));
             int originalTextChars = text.Length;
             bool truncated = false;
             if (request.MaxTextChars >= 0 && text.Length > request.MaxTextChars)
@@ -100,6 +102,15 @@ public sealed class AgentBrowserRuntimeProvider(IBrowserRuntime runtime) : IAgen
           });
         })()
         """;
+
+    static string UnwrapSuccessfulResult(string value)
+    {
+        const string prefix = "[Success] Return:";
+        string text = value?.Trim() ?? "";
+        return text.StartsWith(prefix, StringComparison.Ordinal)
+            ? text[prefix.Length..].TrimStart()
+            : text;
+    }
 
     static ExtractedSnapshot DecodeExtractedSnapshot(string value)
     {
