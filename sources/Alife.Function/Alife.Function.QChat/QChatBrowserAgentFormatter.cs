@@ -13,16 +13,20 @@ public static class QChatBrowserAgentFormatter
         if (result.Success == false)
             return FormatFailure(result.Reason);
 
-        List<string> lines = ["Conclusion: " + Compact(result.Evidence.FirstOrDefault()?.Summary ?? result.Answer, 180)];
-        foreach (AgentBrowserEvidence item in result.Evidence.Take(3))
-            lines.Add($"- {Compact(item.Title, 40)}: {Compact(item.Summary, 100)}");
+        string summary = Compact(result.Evidence.FirstOrDefault()?.Summary ?? result.Answer, 360);
+        List<string> lines =
+        [
+            summary.Length == 0
+                ? "网页已经打开，但没有读取到可用正文。"
+                : "主要内容：" + summary
+        ];
 
         string sources = string.Join(" / ", result.Evidence.Take(3)
-            .Select(item => item.Url)
+            .Select(item => AgentBrowserSnapshotFormatter.FormatSourceUrl(item.Url))
             .Where(url => string.IsNullOrWhiteSpace(url) == false)
             .Distinct());
         if (sources.Length > 0)
-            lines.Add("Sources: " + sources);
+            lines.Add("来源：" + sources);
 
         return Limit(string.Join(Environment.NewLine, lines), 760);
     }
@@ -43,7 +47,7 @@ public static class QChatBrowserAgentFormatter
                     messages.Add($"[CQ:image,file={output.LocalPath.Replace('\\', '/')}]");
                     break;
                 case AgentBrowserMediaOutputKind.VideoLink when string.IsNullOrWhiteSpace(output.ReturnText) == false:
-                    messages.Add("Video: " + output.ReturnText.Trim());
+                    messages.Add("视频链接：" + output.ReturnText.Trim());
                     break;
             }
         }
@@ -53,19 +57,19 @@ public static class QChatBrowserAgentFormatter
 
     static string FormatFailure(string reason) => reason switch
     {
-        "browser_agent_owner_required" => "Browser automation is owner-only.",
-        "browser_agent_disabled" => "Browser automation is disabled.",
-        "browser_agent_login_required" => "Cannot use that page because it requires login.",
-        "browser_agent_anti_bot_challenge" => "Cannot use that page because it shows anti-bot verification.",
-        "browser_agent_unsafe_url" => "That browser target is not a safe public URL.",
-        "browser_agent_step_limit" => "Browser task stopped at the step limit.",
-        "browser_agent_page_limit" => "Browser task stopped at the page limit.",
-        "browser_agent_runtime_unavailable" => "Browser runtime is unavailable.",
-        "browser_agent_no_reliable_evidence" => "No reliable browser evidence was found.",
-        "search_provider_not_configured" => "Public search is not configured.",
-        "search_failed" => "Public search failed.",
-        "no_public_search_result" => "No public search result was found.",
-        _ => "Browser automation failed."
+        "browser_agent_owner_required" => "这项浏览器操作只接受主人账号。",
+        "browser_agent_disabled" => "浏览器自动化现在没有开启。",
+        "browser_agent_login_required" => "这个页面需要登录，我没有继续。",
+        "browser_agent_anti_bot_challenge" => "页面出现了反爬验证，我没有继续。",
+        "browser_agent_unsafe_url" => "这个地址不是安全的公网网页，我没有打开。",
+        "browser_agent_step_limit" => "我已经停在安全的步骤限制内。",
+        "browser_agent_page_limit" => "我已经停在安全的页面限制内。",
+        "browser_agent_runtime_unavailable" => "浏览器暂时不可用，请稍后再试。",
+        "browser_agent_no_reliable_evidence" => "网页打开了，但没有找到可靠内容。",
+        "search_provider_not_configured" => "公开搜索还没有配置好。",
+        "search_failed" => "公开搜索暂时失败，请稍后再试。",
+        "no_public_search_result" => "没有找到可用的公开搜索结果。",
+        _ => "这次浏览器任务没有完成。"
     };
 
     static string Compact(string? value, int maxChars)

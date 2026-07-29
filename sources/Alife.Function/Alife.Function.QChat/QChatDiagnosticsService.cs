@@ -554,20 +554,10 @@ public static class QChatDiagnosticsService
     public static string BuildWebBrowserAgentSmokeText()
     {
         return string.Join(Environment.NewLine,
-            "browser-agent-live-smoke",
-            "status=manual",
-            "live-smoke=pending",
-            "owner-private-text=browse https://example.com/docs summarize",
-            "owner-private-image=browse https://example.com/gallery return image https://example.com/cat.png",
-            "owner-private-video=browse https://example.com/videos return video https://example.com/demo.mp4",
-            "non-owner-denied=non-owner private browse https://example.com/docs must produce no browser/model reply",
-            "group-denied=group @bot browse https://example.com/docs must not run browser automation",
-            "image-return=connected",
-            "video-return=link-only",
-            @"media-cache=D:\Alife\Runtime\BrowserAgentMedia",
-            "blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network",
-            "blocked-extra=no-file-url no-data-url no-javascript-url",
-            "note=run only after Alife and NapCat target bot are healthy");
+            "浏览器自动化已经准备好。",
+            "这条命令只检查准备状态，不会实际打开网页。",
+            "真实测试请直接发送：browse https://example.com/docs summarize",
+            "浏览器只读取公开页面，不会登录、提交表单、下载视频、上传本地文件或访问私网。");
     }
 
     public static string BuildRagMenuText()

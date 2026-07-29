@@ -263,18 +263,13 @@ public class QChatDiagnosticsServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(result.Handled, Is.True);
-            Assert.That(result.Text, Does.Contain("browser-agent-live-smoke"));
-            Assert.That(result.Text, Does.Contain("status=manual"));
-            Assert.That(result.Text, Does.Contain("live-smoke=pending"));
-            Assert.That(result.Text, Does.Contain("owner-private-text"));
-            Assert.That(result.Text, Does.Contain("owner-private-image"));
-            Assert.That(result.Text, Does.Contain("owner-private-video"));
-            Assert.That(result.Text, Does.Contain("non-owner-denied"));
-            Assert.That(result.Text, Does.Contain("group-denied"));
-            Assert.That(result.Text, Does.Contain("image-return=connected"));
-            Assert.That(result.Text, Does.Contain("video-return=link-only"));
-            Assert.That(result.Text, Does.Contain(@"media-cache=D:\Alife\Runtime\BrowserAgentMedia"));
-            Assert.That(result.Text, Does.Contain("blocked=no-login no-form-submit no-video-download no-local-upload no-js no-private-network"));
+            Assert.That(result.Text, Does.Contain("浏览器自动化已经准备好"));
+            Assert.That(result.Text, Does.Contain("不会实际打开网页"));
+            Assert.That(result.Text, Does.Contain("browse https://example.com/docs summarize"));
+            Assert.That(result.Text, Does.Contain("不会登录、提交表单、下载视频、上传本地文件或访问私网"));
+            Assert.That(result.Text, Does.Not.Contain("live-smoke="));
+            Assert.That(result.Text, Does.Not.Contain("media-cache="));
+            Assert.That(result.Text, Does.Not.Contain(@"D:\Alife"));
         });
     }
 

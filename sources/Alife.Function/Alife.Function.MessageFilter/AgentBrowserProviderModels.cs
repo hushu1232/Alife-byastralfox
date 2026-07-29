@@ -136,7 +136,7 @@ public static class AgentBrowserSnapshotFormatter
         return line;
     }
 
-    static string FormatSourceUrl(string? value)
+    public static string FormatSourceUrl(string? value)
     {
         if (Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) == false ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))

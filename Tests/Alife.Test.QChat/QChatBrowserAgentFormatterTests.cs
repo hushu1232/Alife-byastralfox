@@ -15,7 +15,7 @@ public sealed class QChatBrowserAgentFormatterTests
             "ok",
             "raw answer that should not be trusted as-is",
             [
-                new AgentBrowserEvidence("Docs", "https://example.com/docs", "Install with dotnet tool install."),
+                new AgentBrowserEvidence("Docs", "https://user:pass@example.com/docs?token=secret#part", "Install with dotnet tool install."),
                 new AgentBrowserEvidence("Guide", "https://example.com/guide", "Configure the API key.")
             ],
             [],
@@ -25,9 +25,11 @@ public sealed class QChatBrowserAgentFormatterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(text, Does.StartWith("Conclusion:"));
-            Assert.That(text, Does.Contain("Docs"));
-            Assert.That(text, Does.Contain("https://example.com/docs"));
+            Assert.That(text, Does.StartWith("主要内容：Install with dotnet tool install."));
+            Assert.That(text, Does.Contain("来源：https://example.com/docs"));
+            Assert.That(text, Does.Not.Contain("Conclusion:"));
+            Assert.That(text, Does.Not.Contain("token=secret"));
+            Assert.That(text, Does.Not.Contain("user:pass"));
             Assert.That(text.Length, Is.LessThanOrEqualTo(760));
         });
     }
@@ -39,7 +41,7 @@ public sealed class QChatBrowserAgentFormatterTests
 
         string text = QChatBrowserAgentFormatter.Format(result);
 
-        Assert.That(text, Is.EqualTo("Cannot use that page because it requires login."));
+        Assert.That(text, Is.EqualTo("这个页面需要登录，我没有继续。"));
     }
 
     [Test]
@@ -49,7 +51,7 @@ public sealed class QChatBrowserAgentFormatterTests
 
         string text = QChatBrowserAgentFormatter.Format(result);
 
-        Assert.That(text, Is.EqualTo("That browser target is not a safe public URL."));
+        Assert.That(text, Is.EqualTo("这个地址不是安全的公网网页，我没有打开。"));
     }
 
     [Test]
@@ -94,7 +96,7 @@ public sealed class QChatBrowserAgentFormatterTests
         Assert.Multiple(() =>
         {
             Assert.That(messages, Has.Count.EqualTo(1));
-            Assert.That(messages[0], Is.EqualTo("Video: https://example.com/demo.mp4"));
+            Assert.That(messages[0], Is.EqualTo("视频链接：https://example.com/demo.mp4"));
             Assert.That(messages[0], Does.Not.Contain("[CQ:"));
         });
     }

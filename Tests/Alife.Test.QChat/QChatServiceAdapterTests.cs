@@ -3281,7 +3281,7 @@ public class QChatServiceAdapterTests
         {
             Assert.That(browser.Calls, Is.EqualTo(1));
             Assert.That(dispatchCount, Is.Zero);
-            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("Conclusion:"));
+            Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("主要内容："));
             Assert.That(runtime.PrivateMessages.Single().Message, Does.Contain("https://example.com/docs"));
         });
     }
@@ -3324,7 +3324,7 @@ public class QChatServiceAdapterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("Conclusion:"));
+            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("主要内容："));
             Assert.That(runtime.PrivateMessages[1].Message, Does.StartWith("[CQ:image,file=D:/Alife/Runtime/BrowserAgentMedia/"));
             Assert.That(runtime.PrivateMessages[1].Message, Does.EndWith(".png]"));
             Assert.That(runtime.PrivateFiles, Is.Empty);
@@ -3366,8 +3366,8 @@ public class QChatServiceAdapterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("Conclusion:"));
-            Assert.That(runtime.PrivateMessages[1].Message, Is.EqualTo("Video: https://example.com/demo.mp4"));
+            Assert.That(runtime.PrivateMessages[0].Message, Does.Contain("主要内容："));
+            Assert.That(runtime.PrivateMessages[1].Message, Is.EqualTo("视频链接：https://example.com/demo.mp4"));
             Assert.That(runtime.PrivateMessages[1].Message, Does.Not.Contain("[CQ:image"));
             Assert.That(runtime.PrivateMessages[1].Message, Does.Not.Contain("[CQ:video"));
             Assert.That(runtime.PrivateFiles, Is.Empty);
