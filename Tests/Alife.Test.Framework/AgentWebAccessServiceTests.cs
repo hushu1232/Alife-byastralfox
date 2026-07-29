@@ -133,7 +133,7 @@ public sealed class AgentWebAccessServiceTests
             browserProvider: browser,
             browserSiteExperienceStore: store);
 
-        AgentWebAccessResponse response = await service.ExecuteAsync(new AgentWebAccessRequest(
+        AgentWebAccessRequest request = new(
             AgentWebAccessActorRole.Owner,
             AgentWebAccessCapability.AutoRead,
             "https://example.com/docs",
@@ -142,15 +142,18 @@ public sealed class AgentWebAccessServiceTests
                 EnableAutoRead = true,
                 EnablePublicFetch = true,
                 EnableBrowserSnapshot = true
-            }));
+            });
+        AgentWebAccessResponse response = await service.ExecuteAsync(request);
+        AgentWebAccessResponse repeatedResponse = await service.ExecuteAsync(request);
 
         Assert.Multiple(() =>
         {
             Assert.That(response.Success, Is.True);
             Assert.That(response.Capability, Is.EqualTo(AgentWebAccessCapability.PublicFetch));
+            Assert.That(repeatedResponse.Capability, Is.EqualTo(AgentWebAccessCapability.PublicFetch));
             Assert.That(response.Reason, Is.EqualTo("ok"));
             Assert.That(response.FormattedContent, Is.EqualTo("public fetch content"));
-            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.Calls, Is.EqualTo(2));
             Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/docs"));
             Assert.That(browser.Calls, Is.Zero);
         });

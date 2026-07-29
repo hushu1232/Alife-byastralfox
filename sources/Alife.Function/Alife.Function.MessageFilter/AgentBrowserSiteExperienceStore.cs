@@ -55,19 +55,35 @@ public sealed class AgentBrowserSiteExperienceStore
         path = Path.Combine(fullStorageRootPath, "browser-site-experience.jsonl");
     }
 
+    public bool RecordPublicFetchResult(
+        string url,
+        bool success,
+        string reason,
+        DateTimeOffset? now = null) =>
+        RecordResult(url, success, reason, AgentBrowserSiteStrategy.PublicFetch, now);
+
     public bool RecordSnapshotResult(
         string url,
         bool success,
         string reason,
-        DateTimeOffset? now = null)
+        DateTimeOffset? now = null) =>
+        RecordResult(url, success, reason, AgentBrowserSiteStrategy.BrowserSnapshot, now);
+
+    bool RecordResult(
+        string url,
+        bool success,
+        string reason,
+        AgentBrowserSiteStrategy successfulStrategy,
+        DateTimeOffset? now)
     {
         if (TryNormalizeHttpHost(url, out string host) == false)
             return false;
 
-        AgentBrowserSiteExperience experience = BuildSnapshotExperience(
+        AgentBrowserSiteExperience experience = BuildExperience(
             host,
             success,
             reason,
+            successfulStrategy,
             now ?? DateTimeOffset.UtcNow);
 
         lock (syncRoot)
@@ -155,10 +171,11 @@ public sealed class AgentBrowserSiteExperienceStore
         return $"{record.Host}：{outcome}，{strategy}，{restriction}。";
     }
 
-    static AgentBrowserSiteExperience BuildSnapshotExperience(
+    static AgentBrowserSiteExperience BuildExperience(
         string host,
         bool success,
         string reason,
+        AgentBrowserSiteStrategy successfulStrategy,
         DateTimeOffset updatedAt)
     {
         string normalizedReason = string.IsNullOrWhiteSpace(reason) ? "unknown" : reason.Trim();
@@ -169,7 +186,7 @@ public sealed class AgentBrowserSiteExperienceStore
         AgentBrowserSiteRiskLevel riskLevel;
         if (success)
         {
-            strategy = AgentBrowserSiteStrategy.BrowserSnapshot;
+            strategy = successfulStrategy;
             riskLevel = AgentBrowserSiteRiskLevel.Low;
         }
         else if (needsLogin)
@@ -191,7 +208,7 @@ public sealed class AgentBrowserSiteExperienceStore
         return new AgentBrowserSiteExperience(
             host,
             strategy,
-            NeedsBrowser: true,
+            NeedsBrowser: strategy != AgentBrowserSiteStrategy.PublicFetch,
             needsLogin,
             hasAntiBotSignals,
             success,
