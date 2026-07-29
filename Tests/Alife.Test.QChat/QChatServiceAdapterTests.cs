@@ -3301,7 +3301,7 @@ public class QChatServiceAdapterTests
             "ok",
             "https://example.com/gallery",
             "Gallery",
-            "Featured image https://example.com/cat.png",
+            "Featured image",
             []));
         AgentBrowserMediaOutputService mediaOutput = new(
             fetcher: (_, _, _) => Task.FromResult(new AgentBrowserMediaFetchResult(
@@ -3323,7 +3323,7 @@ public class QChatServiceAdapterTests
         {
             SelfId = 999,
             UserId = 1001,
-            RawMessage = "browse https://example.com/gallery return the image"
+            RawMessage = "browse https://example.com/gallery return image https://example.com/cat.png"
         });
 
         await WaitUntilAsync(() => runtime.PrivateMessages.Count == 2);

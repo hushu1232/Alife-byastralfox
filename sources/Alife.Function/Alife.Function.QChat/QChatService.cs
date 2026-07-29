@@ -6610,7 +6610,7 @@ public partial class QChatService(
         });
 
         IReadOnlyList<AgentBrowserMediaOutputResult> mediaOutputs = result.Success
-            ? await PrepareBrowserMediaOutputsAsync(result, config)
+            ? await PrepareBrowserMediaOutputsAsync(result, config, trigger.Task)
             : [];
 
         await SendCommandReplyAsync(
@@ -6625,14 +6625,15 @@ public partial class QChatService(
 
     async Task<IReadOnlyList<AgentBrowserMediaOutputResult>> PrepareBrowserMediaOutputsAsync(
         AgentBrowserAutomationResult result,
-        QChatConfig config)
+        QChatConfig config,
+        string task)
     {
         AgentBrowserMediaOutputService service = browserMediaOutputService ?? new AgentBrowserMediaOutputService();
         AgentBrowserAutomationConfig automationConfig = CreateBrowserAutomationConfig(config);
         List<AgentBrowserMediaOutputResult> outputs = [];
         int imageCount = 0;
 
-        foreach ((AgentBrowserMediaOutputKind Kind, string Url) candidate in ExtractBrowserMediaCandidates(result))
+        foreach ((AgentBrowserMediaOutputKind Kind, string Url) candidate in ExtractBrowserMediaCandidates(result, task))
         {
             if (candidate.Kind == AgentBrowserMediaOutputKind.Image)
             {
@@ -6662,10 +6663,13 @@ public partial class QChatService(
     }
 
     static IReadOnlyList<(AgentBrowserMediaOutputKind Kind, string Url)> ExtractBrowserMediaCandidates(
-        AgentBrowserAutomationResult result)
+        AgentBrowserAutomationResult result,
+        string task)
     {
         List<(AgentBrowserMediaOutputKind Kind, string Url)> candidates = [];
         HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in BrowserMediaUrl.Matches(task))
+            AddMediaCandidate(match.Value, candidates, seen);
         foreach (AgentBrowserEvidence evidence in result.Evidence)
         {
             AddMediaCandidate(evidence.Url, candidates, seen);
