@@ -3027,6 +3027,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.Configuration?.EnableInternetAccess, Is.True);
             Assert.That(internet.LastUrl, Is.EqualTo("https://example.com/docs"));
             Assert.That(browser.Calls, Is.Zero);
             Assert.That(reply, Does.Contain("public page content"));

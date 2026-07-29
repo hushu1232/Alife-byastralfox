@@ -6306,6 +6306,11 @@ public partial class QChatService(
             return true;
 
         QChatConfig config = Configuration ?? new QChatConfig();
+        if (config.EnableInternetAccess && injectedInternetService != null)
+        {
+            injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
+            injectedInternetService.Configuration.EnableInternetAccess = true;
+        }
         AgentWebAccessService webAccess = new(
             internetService: injectedInternetService,
             browserProvider: injectedBrowserProvider,
