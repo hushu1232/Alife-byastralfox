@@ -6214,7 +6214,12 @@ public partial class QChatService(
         injectedInternetService.Configuration ??= AgentInternetConfig.CreateDefault();
         injectedInternetService.Configuration.EnableInternetAccess = true;
         AgentInternetFetchResult result = await injectedInternetService.FetchPublicPageAsync(url);
-        await SendCommandReplyAsync(messageEvent, senderRole, targetType, targetId, result.Content);
+        await SendCommandReplyAsync(
+            messageEvent,
+            senderRole,
+            targetType,
+            targetId,
+            result.UserVisibleContent ?? result.Content);
         WriteQChatDiagnostic("qchat-internet-command-handled", "QChat internet command handled.", new {
             messageEvent.UserId,
             messageEvent.GroupId,
