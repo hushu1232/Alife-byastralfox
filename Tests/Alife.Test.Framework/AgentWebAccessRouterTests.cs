@@ -66,6 +66,22 @@ public sealed class AgentWebAccessRouterTests
     }
 
     [Test]
+    public void Evaluate_AllowsGroupMemberPublicFetchOnlyWhenExplicitlyEnabled()
+    {
+        AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.GroupMember,
+            AgentWebAccessCapability.PublicFetch,
+            "https://example.com",
+            new AgentWebAccessConfig
+            {
+                EnablePublicFetch = true,
+                AllowGroupMemberPublicFetch = true
+            }));
+
+        Assert.That(decision.Allowed, Is.True);
+    }
+
+    [Test]
     public void Evaluate_AllowsOwnerPublicFetchWhenEnabled()
     {
         AgentWebAccessDecision decision = AgentWebAccessRouter.Evaluate(new AgentWebAccessRequest(

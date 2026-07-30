@@ -65,6 +65,7 @@ public sealed class AgentWebAccessService(
             EnableExternalRagQuery = config.EnableExternalRagQuery,
             EnableExternalRagMutation = false,
             AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicSearch,
+            AllowGroupMemberPublicFetch = config.AllowGroupMemberPublicFetch,
             AllowGroupMemberExternalRagQuery = config.AllowGroupMemberExternalRagQuery,
             MaxQueryChars = config.MaxQueryChars,
             MaxExternalRagChunks = config.MaxExternalRagChunks

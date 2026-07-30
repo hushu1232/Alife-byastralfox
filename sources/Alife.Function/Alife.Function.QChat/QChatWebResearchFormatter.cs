@@ -24,10 +24,13 @@ public static class QChatWebResearchFormatter
         int maxItems = context.SenderRole == QChatSenderRole.Owner ? 3 : 2;
         int conclusionBudget = Math.Max(48, maxLength / 3);
         string conclusion = Compact(result.Answer, conclusionBudget);
+        const string conclusionPrefix = "\u7ed3\u8bba\uff1a";
+        if (conclusion.StartsWith(conclusionPrefix, StringComparison.Ordinal))
+            conclusion = conclusion[conclusionPrefix.Length..].TrimStart();
         if (string.IsNullOrWhiteSpace(conclusion))
             conclusion = Compact(result.Query, conclusionBudget);
 
-        string formatted = "\u7ed3\u8bba\uff1a" + conclusion;
+        string formatted = conclusionPrefix + conclusion;
         int itemIndex = 0;
         foreach (AgentWebResearchEvidence evidence in result.Evidence)
         {

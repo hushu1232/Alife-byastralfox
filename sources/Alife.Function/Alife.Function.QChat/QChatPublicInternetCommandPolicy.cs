@@ -195,7 +195,7 @@ public static class QChatPublicInternetCommandPolicy
         string cleaned = Regex.Replace(query.Trim(), @"^(?:\u4e00\u4e0b|\u770b\u770b|\u770b\u4e00\u4e0b)\s*", "");
         cleaned = Regex.Replace(
             cleaned,
-            @"(?:[,\uff0c]\s*)?(?:\u5e76)?(?:\u8bf7)?(?:\u544a\u8bc9\u6211|\u5217\u51fa|\u9644\u4e0a|\u63d0\u4f9b|\u6ce8\u660e|\u7ed9\u51fa)(?:\u76f8\u5173)?(?:\u7684)?(?:\u4fe1\u606f)?\u6765\u6e90(?:\u94fe\u63a5)?\s*$",
+            @"(?:[,\uff0c]\s*)?(?:\u5e76)?(?:\u8bf7)?(?:\u544a\u8bc9\u6211|\u5217\u51fa|\u9644\u4e0a|\u63d0\u4f9b|\u6ce8\u660e|\u7ed9\u51fa)\s*(?:[0-9\u96f6\u4e00\u4e8c\u4e09\u56db\u4e94\u516d\u4e03\u516b\u4e5d\u5341\u4e24]+\s*(?:\u4e2a|\u6761)?)?\s*(?:\u76f8\u5173)?(?:\u7684)?(?:\u4fe1\u606f)?\u6765\u6e90(?:\u94fe\u63a5)?\s*$",
             "",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         cleaned = Regex.Replace(cleaned, @"\s+", " ");

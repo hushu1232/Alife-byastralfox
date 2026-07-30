@@ -95,6 +95,58 @@ public sealed class AgentWebResearchServiceTests
     }
 
     [Test]
+    public async Task ResearchAsync_GroupMemberReadsOneRefinedOfficialPageWithoutBrowser()
+    {
+        FakePublicSearchService search = new(new Dictionary<string, IReadOnlyList<AgentPublicSearchResult>>
+        {
+            [".net9\u7684\u5b98\u65b9\u652f\u6301\u5468\u671f"] =
+            [
+                new AgentPublicSearchResult(".NET Framework lifecycle FAQ", "https://learn.microsoft.com/dotnet/framework/faq", "framework support"),
+                new AgentPublicSearchResult("Third-party .NET 9 article", "https://example.com/dotnet9", "18 month support")
+            ],
+            ["\".net 9\" support policy releases patches"] =
+            [
+                new AgentPublicSearchResult("The official .NET support policy", "https://dotnet.example.org/support/policy", "supported versions and end of support"),
+                new AgentPublicSearchResult(".NET releases, patches, and support", "https://learn.microsoft.com/dotnet/core/releases-and-support", ".NET release and support documentation"),
+                new AgentPublicSearchResult(".NET 9 update", "https://support.microsoft.com/dotnet-9-update", ".NET 9 update support")
+            ]
+        });
+        FakeInternetService internet = new(new AgentInternetFetchResult(
+            true,
+            "ok",
+            "[UNTRUSTED EXTERNAL CONTEXT: internet-page] Header .NET 10 data .NET 9 November 12, 2024 9.0.18 July 14, 2026 STS Maintenance November 10, 2026 .NET 8 data"));
+        AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            ".net9\u7684\u5b98\u65b9\u652f\u6301\u5468\u671f",
+            AgentWebAccessActorRole.GroupMember,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                AllowGroupMemberPublicSearch = true,
+                EnablePublicFetch = true,
+                AllowGroupMemberPublicFetch = true,
+                EnableBrowserSnapshot = true
+            }));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(search.Queries, Is.EqualTo(new[]
+            {
+                ".net9\u7684\u5b98\u65b9\u652f\u6301\u5468\u671f",
+                "\".net 9\" support policy releases patches"
+            }));
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://dotnet.example.org/support/policy"));
+            Assert.That(result.Evidence[0].Summary, Does.StartWith(".NET 9"));
+            Assert.That(result.Evidence[1].Title, Is.EqualTo(".NET releases, patches, and support"));
+            Assert.That(result.Evidence.Any(item => item.Title.Contains("Framework", StringComparison.OrdinalIgnoreCase)), Is.False);
+            Assert.That(result.Answer, Does.Contain("November 10, 2026"));
+        });
+    }
+
+    [Test]
     public async Task ResearchAsync_NoSearchResultsDoesNotFabricate()
     {
         AgentWebResearchService service = new(new FakePublicSearchService([]), new AgentWebAccessService());
@@ -421,7 +473,7 @@ public sealed class AgentWebResearchServiceTests
         FakePublicSearchService search = new([
             new AgentPublicSearchResult("Generic Blog", "https://random.example.com/post", "blog snippet"),
             new AgentPublicSearchResult("GitHub Repo", "https://github.com/example/agent-browser", "github snippet"),
-            new AgentPublicSearchResult("Official Docs", "https://learn.microsoft.com/example/docs", "docs snippet")
+            new AgentPublicSearchResult("Agent Browser Official Docs", "https://learn.microsoft.com/example/docs", "docs snippet")
         ]);
         FakeInternetService internet = new(new AgentInternetFetchResult(true, "ok", "trusted page content"));
         AgentWebResearchService service = new(search, new AgentWebAccessService(internetService: internet));
@@ -442,7 +494,33 @@ public sealed class AgentWebResearchServiceTests
             Assert.That(result.Success, Is.True);
             Assert.That(internet.Calls, Is.EqualTo(1));
             Assert.That(internet.LastUrl, Is.EqualTo("https://learn.microsoft.com/example/docs"));
-            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Official Docs"));
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Agent Browser Official Docs"));
+        });
+    }
+
+    [Test]
+    public async Task ResearchAsync_PrefersRelevantSourceBeforeUnrelatedTrustedSource()
+    {
+        FakePublicSearchService search = new([
+            new AgentPublicSearchResult("Product 9 What's New", "https://docs.example.com/product-9/whats-new", "new features"),
+            new AgentPublicSearchResult("Official Product Support Lifecycle", "https://docs.example.com/product/support-lifecycle", "Product 9 is supported until next year")
+        ]);
+        AgentWebResearchService service = new(search, new AgentWebAccessService());
+
+        AgentWebResearchResult result = await service.ResearchAsync(new AgentWebResearchRequest(
+            "product9的官方支持周期",
+            AgentWebAccessActorRole.GroupMember,
+            new AgentWebAccessConfig
+            {
+                EnablePublicSearch = true,
+                AllowGroupMemberPublicSearch = true
+            },
+            MaxSources: 1));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.Success, Is.True);
+            Assert.That(result.Evidence.Single().Title, Is.EqualTo("Official Product Support Lifecycle"));
         });
     }
 

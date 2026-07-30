@@ -48,6 +48,23 @@ public sealed class QChatWebResearchFormatterTests
     }
 
     [Test]
+    public void Format_Success_DoesNotDuplicateExistingConclusionPrefix()
+    {
+        AgentWebResearchResult result = SuccessResult(1) with
+        {
+            Answer = "结论：直接答案"
+        };
+
+        string formatted = QChatWebResearchFormatter.Format(result);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(formatted, Does.StartWith("结论：直接答案"));
+            Assert.That(formatted, Does.Not.StartWith("结论：结论："));
+        });
+    }
+
+    [Test]
     public void Format_DefaultOverloadUsesConservativeLengthBound()
     {
         AgentWebResearchResult result = SuccessResult(4);

@@ -77,9 +77,23 @@ public sealed class AgentWebResearchService(
         if (search.Success == false)
             return Failure(search.Reason, query, "搜索失败，先不乱说。");
 
+        IReadOnlyList<AgentPublicSearchResult> searchResults = search.Results;
+        if (request.ActorRole == AgentWebAccessActorRole.GroupMember &&
+            request.Config.AllowGroupMemberPublicFetch &&
+            webAccessService != null)
+        {
+            string? refinement = TryBuildOfficialSupportRefinementQuery(query);
+            if (refinement != null)
+            {
+                AgentPublicSearchResponse refinedSearch = await SearchAsync(refinement, cancellationToken);
+                if (refinedSearch.Success && refinedSearch.Results.Count > 0)
+                    searchResults = refinedSearch.Results;
+            }
+        }
+
         int maxSources = Math.Clamp(request.MaxSources, 1, 5);
         string? requiredSiteHost = TryGetRequiredSiteHost(query);
-        AgentPublicSearchResult[] candidates = BuildCandidates(search.Results, maxSources, requiredSiteHost);
+        AgentPublicSearchResult[] candidates = BuildCandidates(searchResults, query, maxSources, requiredSiteHost);
         if (candidates.Length == 0 && request.ActorRole == AgentWebAccessActorRole.Owner)
         {
             foreach (string expandedQuery in PlanOwnerExpandedQueries(query))
@@ -88,20 +102,43 @@ public sealed class AgentWebResearchService(
                 if (expandedSearch.Success == false)
                     continue;
 
-                candidates = BuildCandidates(expandedSearch.Results, maxSources, requiredSiteHost);
+                candidates = BuildCandidates(expandedSearch.Results, query, maxSources, requiredSiteHost);
                 if (candidates.Length > 0)
                     break;
             }
+        }
+        if (request.ActorRole == AgentWebAccessActorRole.GroupMember && request.Config.AllowGroupMemberPublicFetch)
+        {
+            candidates = candidates
+                .OrderByDescending(result => IsTrustedOfficialCandidate(result, query))
+                .ThenByDescending(GetCandidateScore)
+                .ToArray();
         }
         if (candidates.Length == 0)
             return Failure("no_results", query, "没查到可靠来源。");
 
         List<AgentWebResearchEvidence> evidence = [];
+        bool groupMemberPublicReadAttempted = false;
         foreach (AgentPublicSearchResult result in candidates)
         {
-            AgentWebResearchEvidence? item = request.ActorRole == AgentWebAccessActorRole.Owner
-                ? await TryReadOwnerEvidenceAsync(result, request.Config, cancellationToken)
-                : BuildSearchEvidence(result);
+            AgentWebResearchEvidence? item;
+            if (request.ActorRole == AgentWebAccessActorRole.Owner)
+            {
+                item = await TryReadOwnerEvidenceAsync(result, request.Config, cancellationToken);
+            }
+            else if (request.ActorRole == AgentWebAccessActorRole.GroupMember &&
+                     request.Config.AllowGroupMemberPublicFetch &&
+                     groupMemberPublicReadAttempted == false &&
+                     IsTrustedOfficialCandidate(result, query))
+            {
+                groupMemberPublicReadAttempted = true;
+                item = await TryReadGroupMemberEvidenceAsync(result, query, request.Config, cancellationToken);
+            }
+            else
+            {
+                item = BuildSearchEvidence(result);
+            }
+
             if (item != null)
                 evidence.Add(item);
         }
@@ -154,6 +191,35 @@ public sealed class AgentWebResearchService(
             InferSourceType(result.Url));
     }
 
+    async Task<AgentWebResearchEvidence> TryReadGroupMemberEvidenceAsync(
+        AgentPublicSearchResult result,
+        string query,
+        AgentWebAccessConfig config,
+        CancellationToken cancellationToken)
+    {
+        if (webAccessService == null)
+            return BuildSearchEvidence(result);
+
+        AgentWebAccessResponse response = await webAccessService.ExecuteAsync(new AgentWebAccessRequest(
+            AgentWebAccessActorRole.GroupMember,
+            AgentWebAccessCapability.PublicFetch,
+            result.Url,
+            config),
+            cancellationToken);
+        controlState.RecordRead(response.FormattedContent);
+        if (response.Success == false)
+            return BuildSearchEvidence(result);
+
+        string summary = CompactRelevant(response.FormattedContent, query);
+        if (summary.Length == 0)
+            summary = Compact(result.Snippet);
+        return new AgentWebResearchEvidence(
+            CleanOneLine(result.Title),
+            result.Url,
+            summary,
+            InferSourceType(result.Url));
+    }
+
     static AgentWebResearchEvidence BuildSearchEvidence(AgentPublicSearchResult result)
     {
         string summary = Compact(result.Snippet);
@@ -185,6 +251,33 @@ public sealed class AgentWebResearchService(
         return Regex.Replace((query ?? "").Trim(), @"\s+", " ");
     }
 
+    static string? TryBuildOfficialSupportRefinementQuery(string query)
+    {
+        if (ContainsAny(
+                query,
+                "\u5b98\u65b9",
+                "\u652f\u6301\u5468\u671f",
+                "\u751f\u547d\u5468\u671f",
+                "official",
+                "support lifecycle",
+                "end of support") == false ||
+            TryExtractProductVersion(query, out string product, out string version) == false)
+            return null;
+
+        return $"\"{product} {version}\" support policy releases patches";
+    }
+
+    static bool TryExtractProductVersion(string value, out string product, out string version)
+    {
+        Match match = Regex.Match(
+            value,
+            @"(?<product>\.?[A-Za-z][A-Za-z.+#-]*?)\s*(?<version>\d+(?:\.\d+)*)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        product = match.Groups["product"].Value;
+        version = match.Groups["version"].Value;
+        return match.Success;
+    }
+
     static string? TryGetRequiredSiteHost(string query)
     {
         Match match = Regex.Match(
@@ -200,14 +293,88 @@ public sealed class AgentWebResearchService(
 
     AgentPublicSearchResult[] BuildCandidates(
         IReadOnlyList<AgentPublicSearchResult> results,
+        string query,
         int maxSources,
         string? requiredSiteHost)
     {
+        IReadOnlySet<string> relevanceTerms = BuildRelevanceTerms(query);
         return results
             .Where(result => IsUsableCandidate(result, requiredSiteHost))
-            .OrderByDescending(GetCandidateScore)
+            .OrderByDescending(result => GetQueryRelevanceScore(result, relevanceTerms))
+            .ThenByDescending(GetCandidateScore)
             .Take(maxSources)
             .ToArray();
+    }
+
+    static IReadOnlySet<string> BuildRelevanceTerms(string query)
+    {
+        HashSet<string> terms = new(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in Regex.Matches(query, @"[A-Za-z]+|\d+|[\u4e00-\u9fff]+"))
+        {
+            string value = match.Value;
+            if (value[0] is >= '\u4e00' and <= '\u9fff')
+            {
+                for (int index = 0; index + 1 < value.Length; index++)
+                    terms.Add(value.Substring(index, 2));
+            }
+            else if (value.Length > 1 || char.IsDigit(value[0]))
+            {
+                terms.Add(value);
+            }
+        }
+
+        if (query.Contains("\u5b98\u65b9", StringComparison.OrdinalIgnoreCase))
+            terms.Add("official");
+        if (query.Contains("\u652f\u6301", StringComparison.OrdinalIgnoreCase))
+            terms.Add("support");
+        if (query.Contains("\u652f\u6301\u5468\u671f", StringComparison.OrdinalIgnoreCase) ||
+            query.Contains("\u751f\u547d\u5468\u671f", StringComparison.OrdinalIgnoreCase))
+        {
+            terms.Add("lifecycle");
+            terms.Add("policy");
+        }
+        return terms;
+    }
+
+    static int GetQueryRelevanceScore(
+        AgentPublicSearchResult result,
+        IReadOnlySet<string> relevanceTerms)
+    {
+        string candidate = $"{result.Title} {result.Snippet} {result.Url}";
+        return relevanceTerms
+            .Where(term => candidate.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Sum(term => Math.Min(term.Length, 8));
+    }
+
+    static bool IsTrustedOfficialCandidate(AgentPublicSearchResult result, string query)
+    {
+        if (Uri.TryCreate(result.Url, UriKind.Absolute, out Uri? uri) == false ||
+            uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) == false)
+            return false;
+
+        string candidate = $"{result.Title} {result.Snippet} {result.Url}";
+        string sourceType = InferSourceType(result.Url);
+        bool hasOfficialSignal = sourceType is "docs" or "official" ||
+                                 ContainsAny(result.Title, "official", "\u5b98\u65b9");
+        if (hasOfficialSignal == false)
+            return false;
+
+        if (TryExtractProductVersion(query, out string product, out string version) == false)
+            return true;
+
+        string productToken = product.TrimStart('.');
+        bool productMatches = candidate.Contains(productToken, StringComparison.OrdinalIgnoreCase) ||
+                              uri.Host.Contains(productToken, StringComparison.OrdinalIgnoreCase);
+        if (productMatches == false)
+            return false;
+
+        bool versionMatches = Regex.IsMatch(
+            candidate,
+            $@"(?<!\d){Regex.Escape(version)}(?![\d.])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return versionMatches ||
+               ContainsAny(result.Title, "official", "\u5b98\u65b9") &&
+               ContainsAny(result.Title, "policy", "\u7b56\u7565");
     }
 
     bool IsUsableCandidate(AgentPublicSearchResult result, string? requiredSiteHost)
@@ -376,14 +543,48 @@ public sealed class AgentWebResearchService(
         return terms.Any(term => value.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
-    static string Compact(string? value)
+    static string CompactRelevant(string? value, string query)
+    {
+        string text = Regex.Replace(value ?? "", @"\[UNTRUSTED EXTERNAL CONTEXT:[^\]]+\]", " ");
+        text = Regex.Replace(text, @"\s+", " ").Trim();
+        if (TryExtractProductVersion(query, out string product, out string version))
+        {
+            Match match = Regex.Match(
+                text,
+                $@"{Regex.Escape(product)}\s*{Regex.Escape(version)}",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            if (match.Success)
+            {
+                int rowStart = match.Index;
+                int afterMatch = match.Index + match.Length;
+                Match nextVersion = Regex.Match(
+                    text[afterMatch..],
+                    $@"{Regex.Escape(product)}\s*\d",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                int rowEnd = nextVersion.Success ? afterMatch + nextVersion.Index : text.Length;
+                string row = text[rowStart..rowEnd];
+                MatchCollection dates = Regex.Matches(
+                    row,
+                    @"(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|\d{4}\u5e74\d{1,2}\u6708\d{1,2}\u65e5",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (dates.Count >= 2)
+                    return $"{match.Value} end of support: {dates[dates.Count - 1].Value}. {Compact(row, 160)}";
+                return Compact(row, 240);
+            }
+        }
+
+        return Compact(text);
+    }
+
+    static string Compact(string? value, int maxLength = 140)
     {
         string text = value ?? "";
         text = Regex.Replace(text, @"\[UNTRUSTED EXTERNAL CONTEXT:[^\]]+\]", " ");
         text = Regex.Replace(text, @"\s+", " ").Trim();
-        if (text.Length <= 140)
+        int limit = Math.Max(1, maxLength);
+        if (text.Length <= limit)
             return text;
-        return text[..140].TrimEnd() + "...";
+        return text[..limit].TrimEnd() + "...";
     }
 
     static string CleanOneLine(string? value)

@@ -1830,14 +1830,19 @@ public partial class QChatService(
         QChatSenderRole senderRole,
         OneBotMessageType targetType,
         long targetId,
-        string message)
+        string message,
+        bool applyPersonaFormatting = true)
     {
         QChatConfig config = Configuration ?? new QChatConfig();
-        QChatPersonaFeedbackContext feedbackContext = CreateFeedbackContext(
-            senderRole,
-            messageEvent.UserId,
-            ResolveCurrentBotId(config, messageEvent));
-        string formatted = QChatCommandPersonaFormatter.Format(feedbackContext, message);
+        string formatted = message.Trim();
+        if (applyPersonaFormatting)
+        {
+            QChatPersonaFeedbackContext feedbackContext = CreateFeedbackContext(
+                senderRole,
+                messageEvent.UserId,
+                ResolveCurrentBotId(config, messageEvent));
+            formatted = QChatCommandPersonaFormatter.Format(feedbackContext, message);
+        }
         if (string.IsNullOrWhiteSpace(formatted))
             return Task.CompletedTask;
 
@@ -6842,9 +6847,11 @@ public partial class QChatService(
                     return true;
                 }
 
-                bool ownerPageReadEnabled = senderRole == QChatSenderRole.Owner &&
-                                            config.EnableInternetAccess &&
-                                            injectedInternetService != null;
+                bool safePublicFetchAvailable = config.EnableInternetAccess && injectedInternetService != null;
+                bool ownerPageReadEnabled = senderRole == QChatSenderRole.Owner && safePublicFetchAvailable;
+                bool groupMemberPublicFetchEnabled = senderRole == QChatSenderRole.GroupMember &&
+                                                     targetType == OneBotMessageType.Group &&
+                                                     safePublicFetchAvailable;
                 AgentWebResearchResult research = await researchService.ResearchAsync(new AgentWebResearchRequest(
                     command.Query,
                     MapWebAccessActorRole(senderRole),
@@ -6853,7 +6860,8 @@ public partial class QChatService(
                         EnablePublicSearch = config.EnablePublicInternetSearch,
                         AllowGroupMemberPublicSearch = config.AllowGroupMemberPublicInternetSearch,
                         EnableAutoRead = ownerPageReadEnabled,
-                        EnablePublicFetch = ownerPageReadEnabled,
+                        EnablePublicFetch = ownerPageReadEnabled || groupMemberPublicFetchEnabled,
+                        AllowGroupMemberPublicFetch = groupMemberPublicFetchEnabled,
                         EnableBrowserSnapshot = ownerPageReadEnabled,
                         MaxQueryChars = config.PublicInternetQueryMaxChars,
                         WebResearchUserCooldownSeconds = config.PublicInternetUserCooldownSeconds,
@@ -6868,7 +6876,8 @@ public partial class QChatService(
                     research.Success,
                     research.Reason,
                     EvidenceCount = research.Evidence.Count,
-                    OwnerPageReadEnabled = ownerPageReadEnabled
+                    OwnerPageReadEnabled = ownerPageReadEnabled,
+                    GroupMemberPublicFetchEnabled = groupMemberPublicFetchEnabled
                 });
                 if (research.Success &&
                     senderRole == QChatSenderRole.Owner &&
@@ -6919,7 +6928,8 @@ public partial class QChatService(
                     targetId,
                     NeutralizePublicExternalQqMarkup(QChatWebResearchFormatter.Format(
                         research,
-                        new QChatWebResearchFormatContext(senderRole, messageEvent.MessageType))));
+                        new QChatWebResearchFormatContext(senderRole, messageEvent.MessageType))),
+                    applyPersonaFormatting: research.Success == false);
                 return true;
 
             case QChatPublicInternetCommandKind.RagQuery:

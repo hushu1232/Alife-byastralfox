@@ -2272,12 +2272,15 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
-    public async Task WebResearchGroupMentionSearchDoesNotReadPageOrUseBrowser()
+    public async Task WebResearchGroupMentionSearchReadsOneOfficialPageWithoutBrowser()
     {
         FakeOneBotRuntime runtime = new();
         FakePublicSearchProvider provider = new(
-            new AgentPublicSearchResult("Group Result", "https://example.com/group", "group search snippet"));
-        FakeInternetService internet = new("should not be read");
+            new AgentPublicSearchResult("Third-party .NET 9 article", "https://example.com/dotnet9", "18 month support"),
+            new AgentPublicSearchResult("The official .NET support policy", "https://dotnet.example.org/support/policy", "supported versions and end of support"),
+            new AgentPublicSearchResult(".NET Framework official support policy", "https://dotnet.example.org/support/framework", "framework policy"));
+        FakeInternetService internet = new(
+            "Header .NET 10 data .NET 9 2024年11月12日 9.0.18 2026年7月14日 STS メンテナンス 2026年11月10日 .NET 8 data");
         FakeBrowserProvider browser = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
@@ -2302,7 +2305,7 @@ public class QChatServiceAdapterTests
             GroupId = 3003,
             UserId = 2002,
             SelfId = 999,
-            RawMessage = "[CQ:at,qq=999] 搜一下 agent-browser"
+            RawMessage = "[CQ:at,qq=999] 搜索一下 .NET 9 的官方支持周期，给出两个来源"
         });
 
         await WaitUntilAsync(() => runtime.GroupMessages.Count == 1);
@@ -2310,12 +2313,16 @@ public class QChatServiceAdapterTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(provider.Calls, Is.EqualTo(1));
-            Assert.That(internet.Calls, Is.Zero);
+            Assert.That(provider.Calls, Is.EqualTo(2));
+            Assert.That(internet.Calls, Is.EqualTo(1));
+            Assert.That(internet.LastUrl, Is.EqualTo("https://dotnet.example.org/support/policy"));
             Assert.That(browser.Calls, Is.Zero);
             Assert.That(message, Does.Contain("结论："));
-            Assert.That(message, Does.Contain("group search snippet"));
-            Assert.That(message, Does.Contain("来源："));
+            Assert.That(message, Does.Contain("The official .NET support policy"));
+            Assert.That(message, Does.Contain("2026年11月10日"));
+            Assert.That(message, Does.Not.Contain("Third-party .NET 9 article"));
+            Assert.That(message, Does.Not.Contain("状态如下。"));
+            Assert.That(message, Does.Not.Contain("结论：结论："));
             Assert.That(dispatchCount, Is.Zero);
         });
     }
@@ -2366,6 +2373,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(provider.Calls, Is.EqualTo(1));
+            Assert.That(runtime.GroupMessages[1].Message, Does.StartWith("状态如下。"));
             Assert.That(runtime.GroupMessages[1].Message, Does.Contain("\u641c\u592a\u5feb\u4e86"));
             Assert.That(dispatchCount, Is.Zero);
         });
@@ -2447,6 +2455,7 @@ public class QChatServiceAdapterTests
         Assert.Multiple(() =>
         {
             Assert.That(publicSearch.Calls, Is.Zero);
+            Assert.That(runtime.GroupMessages.Single().Message, Does.StartWith("状态如下。"));
             Assert.That(runtime.GroupMessages.Single().Message, Does.Contain("group_member_public_search_disabled"));
             Assert.That(dispatchCount, Is.Zero);
         });

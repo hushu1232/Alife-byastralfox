@@ -130,6 +130,24 @@ public sealed class QChatPublicInternetCommandPolicyTests
         Assert.That(command.Query, Is.EqualTo("今天最新的人工智能新闻"));
     }
 
+    [TestCase("搜索一下 .NET 9 的官方支持周期，给出两个来源")]
+    [TestCase("搜索一下 .NET 9 的官方支持周期，给出 2 个来源")]
+    public void ParseMessage_PrivateSearch_RemovesRequestedSourceCountFromQuery(string text)
+    {
+
+        QChatPublicInternetCommand command = QChatPublicInternetCommandPolicy.ParseMessage(
+            OneBotMessageType.Private,
+            botId: 999,
+            text,
+            text);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(command.Kind, Is.EqualTo(QChatPublicInternetCommandKind.Search));
+            Assert.That(command.Query, Is.EqualTo(".NET 9 的官方支持周期"));
+        });
+    }
+
     [TestCase("[CQ:at,qq=999] 搜一下")]
     [TestCase("[CQ:at,qq=999] 搜索一下 ")]
     [TestCase("[CQ:at,qq=999] 查一下")]

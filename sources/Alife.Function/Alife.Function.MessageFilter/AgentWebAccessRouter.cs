@@ -31,6 +31,7 @@ public sealed class AgentWebAccessConfig
     public bool EnableExternalRagQuery { get; set; }
     public bool EnableExternalRagMutation { get; set; }
     public bool AllowGroupMemberPublicSearch { get; set; }
+    public bool AllowGroupMemberPublicFetch { get; set; }
     public bool AllowGroupMemberExternalRagQuery { get; set; }
     public int MaxQueryChars { get; set; } = 160;
     public int MaxExternalRagChunks { get; set; } = 4;
@@ -71,11 +72,7 @@ public static class AgentWebAccessRouter
                 config.EnableAutoRead,
                 request.Capability,
                 "auto_read_disabled"),
-            AgentWebAccessCapability.PublicFetch => EvaluateOwnerOnly(
-                request.ActorRole,
-                config.EnablePublicFetch,
-                request.Capability,
-                "public_fetch_disabled"),
+            AgentWebAccessCapability.PublicFetch => EvaluatePublicFetch(request.ActorRole, config),
             AgentWebAccessCapability.BrowserSnapshot => EvaluateOwnerOnly(
                 request.ActorRole,
                 config.EnableBrowserSnapshot,
@@ -111,6 +108,19 @@ public static class AgentWebAccessRouter
             AgentWebAccessActorRole.GroupMember => Deny(AgentWebAccessCapability.PublicSearch, "group_member_public_search_disabled"),
             _ => Deny(AgentWebAccessCapability.PublicSearch, "owner_required")
         };
+    }
+
+    static AgentWebAccessDecision EvaluatePublicFetch(
+        AgentWebAccessActorRole actorRole,
+        AgentWebAccessConfig config)
+    {
+        if (config.EnablePublicFetch == false)
+            return Deny(AgentWebAccessCapability.PublicFetch, "public_fetch_disabled");
+
+        return actorRole == AgentWebAccessActorRole.Owner ||
+               actorRole == AgentWebAccessActorRole.GroupMember && config.AllowGroupMemberPublicFetch
+            ? Allow(AgentWebAccessCapability.PublicFetch)
+            : Deny(AgentWebAccessCapability.PublicFetch, "owner_required");
     }
 
     static AgentWebAccessDecision EvaluateExternalRagQuery(
