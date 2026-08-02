@@ -21,6 +21,7 @@
 !/docs/browser-live-validation-2026-06-23.md
 !/docs/astralfox-engineering-standards.md
 !/docs/agent-debug-map.md
+!/docs/qq-emoji-integration-prep.md
 !/docs/superpowers/
 docs/superpowers/*
 !/docs/superpowers/specs/
@@ -41,6 +42,7 @@ docs/superpowers/plans/*
 /Tests/Alife.Test.QChat/TestResults/
 /NUL
 !/tools/upload-alife-service-via-foxd.ps1
+!/tools/install-qqemoji-runtime.ps1
 !/tools/start-alife-napcat-live.ps1
 !/tools/start-gpt-sovits-xiayu.ps1
 !/tools/start-gpt-sovits-mixu.ps1

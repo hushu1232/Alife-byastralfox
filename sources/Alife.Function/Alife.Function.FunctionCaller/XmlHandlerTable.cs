@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Alife.Function.FunctionCaller;
 
 namespace Alife.Function.Interpreter;
 
@@ -67,6 +68,24 @@ public class XmlHandlerTable
         SortedSet<XmlFunction>? xmlFunctionGroup = xmlFunctions.GetValueOrDefault(name.ToLower());
         if (xmlFunctionGroup == null || xmlFunctionGroup.Count == 0)
             throw new Exception($"未找到名为 {name} 的可调用函数");
+
+        ToolRouteDecision? route = ExecutionPolicy.CurrentRoute;
+        if (route is not null && route.Allows(name) && route.BoundParameters.Count > 0)
+        {
+            Dictionary<string, string> parameters = tagContext.Parameters.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.OrdinalIgnoreCase);
+            foreach ((string key, string value) in route.BoundParameters)
+                parameters[key] = value;
+            tagContext = new XmlContext
+            {
+                CallMode = tagContext.CallMode,
+                Content = tagContext.Content,
+                Parameters = parameters
+            };
+        }
+
         foreach (XmlFunction xmlFunction in xmlFunctionGroup)
         {
             XmlFunctionExecutionDecision decision = ExecutionPolicy.TryConsume(xmlFunction, tagContext);

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 
 namespace Alife.Function.FunctionCaller;
@@ -44,7 +45,8 @@ public sealed record ToolRouteDecision
         IReadOnlyList<ToolRouteDeniedTool>? DeniedTools,
         ToolRouteState State,
         string Reason,
-        string? ReasonCode = null)
+        string? ReasonCode = null,
+        IReadOnlyDictionary<string, string>? BoundParameters = null)
     {
         this.RouteId = RouteId;
         this.Domain = Domain;
@@ -54,6 +56,7 @@ public sealed record ToolRouteDecision
         this.State = State;
         this.Reason = Reason;
         this.ReasonCode = string.IsNullOrWhiteSpace(ReasonCode) ? Reason : ReasonCode;
+        this.BoundParameters = CopyOrEmpty(BoundParameters);
     }
 
     public string RouteId { get; }
@@ -72,6 +75,8 @@ public sealed record ToolRouteDecision
 
     public string ReasonCode { get; }
 
+    public IReadOnlyDictionary<string, string> BoundParameters { get; }
+
     public bool Allows(string? toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName))
@@ -87,5 +92,13 @@ public sealed record ToolRouteDecision
         return tools is null || tools.Count == 0
             ? Array.Empty<T>()
             : Array.AsReadOnly(tools.ToArray());
+    }
+
+    private static IReadOnlyDictionary<string, string> CopyOrEmpty(IReadOnlyDictionary<string, string>? parameters)
+    {
+        Dictionary<string, string> copy = parameters is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : parameters.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+        return new ReadOnlyDictionary<string, string>(copy);
     }
 }

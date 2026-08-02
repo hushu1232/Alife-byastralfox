@@ -2609,8 +2609,27 @@ public partial class QChatService(
             if (foundFile != null) image = foundFile;
         }
 
-        if (image.StartsWith("http") == false && File.Exists(image) == false)
+        bool isRemoteImage = Uri.TryCreate(image, UriKind.Absolute, out Uri? remoteImageUri) &&
+                             remoteImageUri is { IsFile: false };
+        if (isRemoteImage)
+        {
+            QChatVisionMediaDecision decision = QChatVisionMediaPolicy.CheckImageUrl(
+                image,
+                Configuration.ImageRecognitionAllowedImageHosts);
+            if (decision.Allowed == false)
+            {
+                WriteQChatDiagnostic("qchat-image-send-failed", "QQ image send rejected by media policy.", new {
+                    type,
+                    targetId,
+                    reason = decision.Reason
+                });
+                return;
+            }
+        }
+        else if (File.Exists(image) == false)
+        {
             throw new Exception("图片不存在");
+        }
 
         image = image.Replace('\\', '/');
         string message = $"[CQ:image,file={image}]";
@@ -2634,12 +2653,19 @@ public partial class QChatService(
             });
 
         if (result.Succeeded)
+        {
+            WriteQChatDiagnostic("qchat-image-send-succeeded", "QQ image send completed.", new {
+                type,
+                targetId,
+                image = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image)
+            });
             return;
+        }
 
         WriteQChatDiagnostic("qchat-image-send-failed", result.Error ?? "QQ image send failed.", new {
             type,
             targetId,
-            image
+            image = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image)
         }, result.Exception);
     }
 
@@ -10242,6 +10268,7 @@ public partial class QChatService(
             message.IsAwakening);
         currentReplySession.Value = replySession;
         RegisterActiveReplySession(replySession);
+        using IDisposable permissionScope = PushPermissionRequest(message.PermissionRequest, TimeSpan.FromMinutes(5));
         WriteQChatDiagnostic("model-dispatch-start", "Dispatching inbound QQ message to model.", new {
             message.MessageType,
             message.TargetId,

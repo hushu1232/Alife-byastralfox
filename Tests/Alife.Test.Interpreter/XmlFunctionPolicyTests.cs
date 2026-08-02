@@ -42,6 +42,25 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public async Task ExecuteFunctionAsyncUsesExistingExecutionPolicy()
+    {
+        PolicyHandler handler = new();
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        caller.ExecutionPolicy.MaxBudgetPerTurn = 1;
+        caller.RegisterHandlerWithoutDocument(new XmlHandler(handler));
+
+        await caller.ExecuteFunctionAsync("ping", OneShotContext());
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await caller.ExecuteFunctionAsync("ping", OneShotContext()));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(handler.PingCalls, Is.EqualTo(1));
+            Assert.That(exception!.Message, Does.Contain("budget"));
+        });
+    }
+
+    [Test]
     public void ContextualFunctionGuideExposesOnlyRequestedNonPersistentTool()
     {
         XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);

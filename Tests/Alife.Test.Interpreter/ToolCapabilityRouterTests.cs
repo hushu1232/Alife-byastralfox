@@ -433,6 +433,82 @@ public sealed class ToolCapabilityRouterTests
             Throws.InstanceOf<ArgumentException>());
     }
 
+    [Test]
+    public void AppendedManifestIsGovernedButDeniedUntilARouteExplicitlyAllowsIt()
+    {
+        ToolCapabilityManifest emojiSearch = new(
+            "qqemoji_search_bqb",
+            ToolCapabilityDomain.QChat,
+            "search_online_emoji",
+            ToolCapabilityRisk.Medium,
+            [ToolCapabilityPrecondition.TrustedRuntime, ToolCapabilityPrecondition.OwnerIdentity, ToolCapabilityPrecondition.PrivateChat],
+            [ToolCapabilitySurface.OwnerPrivate, ToolCapabilitySurface.TrustedRuntime],
+            ToolStateEffect.None);
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault().WithAppendedManifests([emojiSearch]);
+
+        ToolRouteDecision decision = router.Route("分析一下我们离 V2 还差什么", TrustedOwnerPrivateState(activeSession: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(router.ToolNames, Does.Contain("qqemoji_search_bqb"));
+            Assert.That(decision.Allows("qqemoji_search_bqb"), Is.False);
+            Assert.That(
+                decision.DeniedTools.Single(tool => tool.Name == "qqemoji_search_bqb").Reason,
+                Is.EqualTo("tool_not_allowed_in_current_route"));
+        });
+    }
+
+    [Test]
+    public void AppendingDuplicateManifestNameIsRejected()
+    {
+        ToolCapabilityManifest duplicate = new(
+            "dataagent_query",
+            ToolCapabilityDomain.QChat,
+            "duplicate",
+            ToolCapabilityRisk.Low,
+            [ToolCapabilityPrecondition.TrustedRuntime],
+            [ToolCapabilitySurface.TrustedRuntime],
+            ToolStateEffect.None);
+
+        Assert.That(
+            () => ToolCapabilityRouter.CreateDefault().WithAppendedManifests([duplicate]),
+            Throws.InstanceOf<ArgumentException>());
+    }
+
+    [Test]
+    public void RouterAllowsSaveImageOnlyForExplicitHttpsOwnerPrivateRequest()
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault().WithAppendedManifests([CreateSaveImageManifest()]);
+
+        ToolRouteDecision decision = router.Route(
+            "保存 https://images.example.com/cat.png 为 happy_cat.png",
+            TrustedOwnerPrivateState(activeSession: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.Domain, Is.EqualTo(ToolCapabilityDomain.QChat));
+            Assert.That(decision.Intent, Is.EqualTo("emoji_save_image"));
+            Assert.That(decision.AllowedTools, Is.EqualTo(new[] { "saveimage" }));
+            Assert.That(decision.BoundParameters["source"], Is.EqualTo("https://images.example.com/cat.png"));
+        });
+    }
+
+    [TestCase("save image")]
+    [TestCase("how do I save an image?")]
+    [TestCase("保存图片")]
+    public void RouterDoesNotAllowSaveImageWithoutExplicitHttpsTarget(string utterance)
+    {
+        ToolCapabilityRouter router = ToolCapabilityRouter.CreateDefault().WithAppendedManifests([CreateSaveImageManifest()]);
+
+        ToolRouteDecision decision = router.Route(utterance, TrustedOwnerPrivateState(activeSession: false));
+
+        Assert.Multiple(() =>
+        {
+            AssertOrdinaryTrustedChatDecision(decision);
+            Assert.That(decision.Allows("saveimage"), Is.False);
+        });
+    }
+
     [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
@@ -456,6 +532,15 @@ public sealed class ToolCapabilityRouterTests
             ? new("analysis-1", "Active", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true)
             : new("", "", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true);
     }
+
+    static ToolCapabilityManifest CreateSaveImageManifest() => new(
+        "saveimage",
+        ToolCapabilityDomain.QChat,
+        "save_local_emoji_image",
+        ToolCapabilityRisk.Medium,
+        [ToolCapabilityPrecondition.TrustedRuntime, ToolCapabilityPrecondition.OwnerIdentity, ToolCapabilityPrecondition.PrivateChat],
+        [ToolCapabilitySurface.OwnerPrivate, ToolCapabilitySurface.TrustedRuntime],
+        ToolStateEffect.None);
 
     static void AssertOrdinaryTrustedChatDecision(ToolRouteDecision decision)
     {

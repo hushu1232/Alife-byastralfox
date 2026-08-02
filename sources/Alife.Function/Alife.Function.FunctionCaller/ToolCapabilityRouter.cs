@@ -34,6 +34,8 @@ public sealed class ToolCapabilityRouter
         "dataagent_analysis_end"
     ];
 
+    static readonly IReadOnlyList<string> SaveImageTools = ["saveimage"];
+
     readonly IReadOnlyList<ToolCapabilityManifest> manifests;
 
     public IReadOnlyList<string> ToolNames { get; }
@@ -62,6 +64,27 @@ public sealed class ToolCapabilityRouter
         return new ToolCapabilityRouter(DataAgentToolCapabilityManifests.Create());
     }
 
+    public ToolCapabilityRouter WithAppendedManifests(IEnumerable<ToolCapabilityManifest> additions)
+    {
+        ArgumentNullException.ThrowIfNull(additions);
+
+        ToolCapabilityManifest[] appended = additions.ToArray();
+        if (appended.Any(manifest => manifest is null))
+        {
+            throw new ArgumentException("Tool capability manifests cannot contain null entries.", nameof(additions));
+        }
+
+        HashSet<string> names = new(
+            manifests.Select(manifest => manifest.Name),
+            StringComparer.OrdinalIgnoreCase);
+        if (appended.Any(manifest => names.Add(manifest.Name) == false))
+        {
+            throw new ArgumentException("Tool capability manifest names must be unique.", nameof(additions));
+        }
+
+        return new ToolCapabilityRouter(manifests.Concat(appended).ToArray());
+    }
+
     public ToolRouteDecision Route(string utterance, ToolRouteState state)
     {
         state ??= ToolRouteState.Empty;
@@ -78,6 +101,33 @@ public sealed class ToolCapabilityRouter
                 RouteStateNotTrustedReason,
                 routeDenyReason: RouteStateNotTrustedReason,
                 reasonCode: TrustedRuntimeRequiredReasonCode);
+        }
+
+        if (TryGetExplicitSaveImageUrl(normalizedUtterance, out string saveImageUrl))
+        {
+            if (IsOwnerPrivateSurfaceAllowed(state) == false)
+            {
+                return BuildDecision(
+                    ToolCapabilityDomain.QChat,
+                    "emoji_save_image",
+                    Array.Empty<string>(),
+                    state,
+                    SurfaceNotAllowedReason,
+                    routeDenyReason: SurfaceNotAllowedReason,
+                    reasonCode: OwnerPrivateRequiredReasonCode);
+            }
+
+            return BuildDecision(
+                ToolCapabilityDomain.QChat,
+                "emoji_save_image",
+                SaveImageTools,
+                state,
+                "explicit_qqemoji_save_image",
+                reasonCode: RouteAllowedReasonCode,
+                boundParameters: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["source"] = saveImageUrl
+                });
         }
 
         if (isDataAgentAnalysis == false)
@@ -144,7 +194,8 @@ public sealed class ToolCapabilityRouter
         ToolRouteState state,
         string reason,
         string? routeDenyReason = null,
-        string? reasonCode = null)
+        string? reasonCode = null,
+        IReadOnlyDictionary<string, string>? boundParameters = null)
     {
         HashSet<string> allowedNameSet = new(
             allowedToolNames.Where(name => string.IsNullOrWhiteSpace(name) == false),
@@ -185,7 +236,8 @@ public sealed class ToolCapabilityRouter
             deniedTools,
             state,
             reason,
-            reasonCode);
+            reasonCode,
+            boundParameters);
     }
 
     static string? GetManifestDenyReason(ToolCapabilityManifest manifest, ToolRouteState state)
@@ -280,6 +332,29 @@ public sealed class ToolCapabilityRouter
             || ContainsOrdinalIgnoreCase(utterance, "data agent")
             || LooksLikeProjectGapAnalysis(utterance)
             || LooksLikeEnglishProjectReadinessAnalysis(utterance);
+    }
+
+    static bool TryGetExplicitSaveImageUrl(string utterance, out string source)
+    {
+        source = string.Empty;
+        int start = utterance.IndexOf("https://", StringComparison.OrdinalIgnoreCase);
+        if (start < 0 ||
+            (utterance.Contains("保存", StringComparison.Ordinal) == false
+             && utterance.Contains("存为", StringComparison.Ordinal) == false
+             && ContainsOrdinalIgnoreCase(utterance, "save this") == false
+             && ContainsOrdinalIgnoreCase(utterance, "save image") == false))
+            return false;
+
+        int end = utterance.IndexOfAny([' ', '\t', '\r', '\n', '"', '\'', '<', '>'], start);
+        string candidate = (end < 0 ? utterance[start..] : utterance[start..end])
+            .TrimEnd('.', ',', ';', '，', '。', '；');
+        if (Uri.TryCreate(candidate, UriKind.Absolute, out Uri? uri) == false ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            string.IsNullOrWhiteSpace(uri.UserInfo) == false)
+            return false;
+
+        source = uri.AbsoluteUri;
+        return true;
     }
 
     static bool LooksLikeProjectGapAnalysis(string utterance)

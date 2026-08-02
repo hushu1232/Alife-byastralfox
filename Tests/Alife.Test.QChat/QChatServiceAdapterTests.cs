@@ -10853,6 +10853,27 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public void QImage_UnsafeRemoteUrlIsRejectedWithoutThrowingOrSending()
+    {
+        FakeOneBotRuntime runtime = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        });
+
+        Assert.DoesNotThrowAsync(async () =>
+            await service.QImage(OneBotMessageType.Group, 123, "http://127.0.0.1/private.png"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.GroupMessages, Is.Empty);
+            Assert.That(GetPendingPokeText(service), Does.Not.Contain("127.0.0.1"));
+            Assert.That(GetPendingPokeText(service), Does.Not.Contain("[QQ"));
+        });
+    }
+
+    [Test]
     public async Task QVideo_UsesSecurityGatewayForExternalRequests()
     {
         string video = Path.Combine(Path.GetTempPath(), $"qchat-video-{Guid.NewGuid():N}.mp4");
@@ -14926,6 +14947,55 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task ConversationSettleWindowPreservesOwnerPermissionForHighRiskXml()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        SettledHighRiskXmlHandler handler = new();
+        functionCaller.RegisterHandler(new XmlHandler(handler));
+        QChatService service = CreateStartedService(
+            runtime,
+            new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false,
+                EnableConversationSettleWindow = true,
+                PrivateSettleMilliseconds = 40,
+                MaxSettleMilliseconds = 100
+            },
+            functionCaller: functionCaller);
+        TaskCompletionSource completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        service.InboundChatDispatcher = async _ =>
+        {
+            try
+            {
+                await functionCaller.ExecuteFunctionAsync("settledhighrisk", new XmlContext
+                {
+                    CallMode = CallMode.OneShot,
+                    Parameters = new Dictionary<string, string>()
+                });
+                completion.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                completion.TrySetException(ex);
+            }
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            MessageId = 13,
+            UserId = 1001,
+            RawMessage = "confirm execute run high risk tool"
+        });
+
+        await completion.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.That(handler.Calls, Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task ConversationSettleWindowUpdatesXiayuStateOnceForConsecutivePrivateMessages()
     {
         FakeOneBotRuntime runtime = new();
@@ -18631,6 +18701,17 @@ public class QChatServiceAdapterTests
         {
             lock (gate)
                 return runtimeAudits.TakeLast(Math.Max(0, maxRecords)).Reverse().ToArray();
+        }
+    }
+
+    sealed class SettledHighRiskXmlHandler
+    {
+        public int Calls { get; private set; }
+
+        [XmlFunction(FunctionMode.OneShot, name: "settledhighrisk", riskLevel: XmlFunctionRiskLevel.High)]
+        public void Execute()
+        {
+            Calls++;
         }
     }
 

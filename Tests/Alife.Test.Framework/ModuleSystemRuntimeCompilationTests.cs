@@ -121,4 +121,52 @@ public class ModuleSystemRuntimeCompilationTests
             Directory.Delete(sourceRoot, recursive: true);
         }
     }
+
+    [Test]
+    public void CompileModulePrefersSourceOverMatchingPrecompiledAssembly()
+    {
+        string sourceRoot = Path.Combine(Path.GetTempPath(), $"alife-module-collision-{Guid.NewGuid():N}");
+        string assemblySource = Path.Combine(sourceRoot, typeof(ModuleReferenceCollisionFixture).Assembly.GetName().Name!);
+        Directory.CreateDirectory(assemblySource);
+        try
+        {
+            File.WriteAllText(Path.Combine(assemblySource, "ModuleReferenceCollisionFixture.cs"), """
+                namespace Alife.Test.Framework;
+
+                public static class ModuleReferenceCollisionFixture
+                {
+                    public static string Echo(this string value) => value;
+                }
+
+                public static class ModuleReferenceCollisionCaller
+                {
+                    public static string Call() => "source".Echo();
+                }
+                """);
+
+            ModuleSystem moduleSystem = new(new StorageSystem(), new NullLogger<ModuleSystem>());
+            AssemblyLoadContext context = moduleSystem.CompileModule(sourceRoot);
+            try
+            {
+                Type caller = context.Assemblies
+                    .SelectMany(assembly => assembly.GetTypes())
+                    .Single(type => type.FullName == "Alife.Test.Framework.ModuleReferenceCollisionCaller");
+
+                Assert.That(caller.GetMethod("Call")!.Invoke(null, null), Is.EqualTo("source"));
+            }
+            finally
+            {
+                context.Unload();
+            }
+        }
+        finally
+        {
+            Directory.Delete(sourceRoot, recursive: true);
+        }
+    }
+}
+
+public static class ModuleReferenceCollisionFixture
+{
+    public static string Echo(this string value) => value;
 }

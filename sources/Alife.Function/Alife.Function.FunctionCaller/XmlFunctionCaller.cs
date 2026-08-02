@@ -138,8 +138,14 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     public ToolRouteDecision RouteCurrentTurn(string utterance, ToolRouteState state)
     {
-        handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
-        ToolRouteDecision route = toolRouter.Route(utterance, state);
+        ToolCapabilityRouter router;
+        lock (toolRouterGate)
+        {
+            router = toolRouter;
+            handlerTable.ExecutionPolicy.SetGovernedToolNames(router.ToolNames);
+        }
+
+        ToolRouteDecision route = router.Route(utterance, state);
         handlerTable.ExecutionPolicy.CurrentRoute = route;
         lock (recentToolRouteGate)
         {
@@ -170,6 +176,16 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         executor.Flush();
         await Task.Yield();
         await executor.WaitToInactive(cancellationToken);
+    }
+
+    public Task ExecuteFunctionAsync(
+        string name,
+        XmlContext context,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(context);
+        return handlerTable.Handle(name.Trim(), context, cancellationToken);
     }
 
     public string BuildContextualFunctionGuide(params string[] functionNames)
@@ -235,6 +251,18 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         handlerTable.Register(handler);
         this.plainAreas.AddRange(plainAreas);
     }
+
+    public void EnableQqEmojiSaveImageCapability()
+    {
+        lock (toolRouterGate)
+        {
+            if (toolRouter.ToolNames.Contains(QqEmojiSaveImageManifest.Name, StringComparer.OrdinalIgnoreCase))
+                return;
+
+            toolRouter = toolRouter.WithAppendedManifests([QqEmojiSaveImageManifest]);
+            handlerTable.ExecutionPolicy.SetGovernedToolNames(toolRouter.ToolNames);
+        }
+    }
     public void RegisterHandler(XmlHandler handler, params string[] plainAreas)
     {
         RegisterHandler(handler, DocumentMode.Explicit, plainAreas);
@@ -274,7 +302,8 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     }
 
     readonly XmlHandlerTable handlerTable = new();
-    readonly ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
+    ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
+    readonly object toolRouterGate = new();
     readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
     readonly AsyncLocal<int> textOnlyResponseDepth = new();
     readonly object dataAgentRouteGate = new();
@@ -296,6 +325,15 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     XmlStreamExecutor executor = null!;
     readonly List<XmlHandler> explicitHandlers = new();
     readonly List<XmlHandler> implicitHandlers = new();
+
+    static readonly ToolCapabilityManifest QqEmojiSaveImageManifest = new(
+        "saveimage",
+        ToolCapabilityDomain.QChat,
+        "save_local_emoji_image",
+        ToolCapabilityRisk.Medium,
+        [ToolCapabilityPrecondition.TrustedRuntime, ToolCapabilityPrecondition.OwnerIdentity, ToolCapabilityPrecondition.PrivateChat],
+        [ToolCapabilitySurface.OwnerPrivate, ToolCapabilitySurface.TrustedRuntime],
+        ToolStateEffect.None);
 
     public bool CanHandleFunction(string name) => handlerTable.ContainsFunction(name);
 

@@ -145,14 +145,17 @@ public class ModuleSystem
         {
             string[] dllFiles = Directory.GetFiles(source, "*.dll", SearchOption.AllDirectories);
             string[] sourceFiles = Directory.GetFiles(source, "*.cs", SearchOption.AllDirectories);
+            HashSet<string> sourceAssemblyNames = GetSourceAssemblyNames(source);
 
             //加载dll
             foreach (string file in dllFiles)
             {
                 try
                 {
-                    string assemblyName = AssemblyName.GetAssemblyName(file).FullName;
-                    if (defaultAssemblies.Contains(assemblyName) == false)
+                    AssemblyName assemblyName = AssemblyName.GetAssemblyName(file);
+                    if (sourceAssemblyNames.Contains(assemblyName.Name!))
+                        continue;
+                    if (defaultAssemblies.Contains(assemblyName.FullName!) == false)
                         compilingContext.LoadDll(file);
                 }
                 catch
@@ -176,17 +179,39 @@ public class ModuleSystem
                     .ToList();
 
                 //收集元数据引用（去重）
-                var references = new List<MetadataReference>();
+                var referencePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") is string trustedPlatformAssemblies)
+                {
+                    referencePaths.UnionWith(trustedPlatformAssemblies.Split(Path.PathSeparator)
+                        .Where(path => sourceAssemblyNames.Contains(Path.GetFileNameWithoutExtension(path)) == false));
+                }
+
+                foreach (string path in Directory.GetFiles(AppContext.BaseDirectory, "*.dll", SearchOption.TopDirectoryOnly))
+                {
+                    try
+                    {
+                        string? assemblyName = AssemblyName.GetAssemblyName(path).Name;
+                        if (assemblyName != null && sourceAssemblyNames.Contains(assemblyName) == false)
+                            referencePaths.Add(path);
+                    }
+                    catch (BadImageFormatException)
+                    {
+                        // Native library, not a Roslyn metadata reference.
+                    }
+                }
                 foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 {
                     if (asm.IsDynamic || string.IsNullOrEmpty(asm.Location))
                         continue;
-                    references.Add(MetadataReference.CreateFromFile(asm.Location));
+                    if (sourceAssemblyNames.Contains(asm.GetName().Name!))
+                        continue;
+                    referencePaths.Add(asm.Location);
                 }
                 foreach (var path in compilingContext.AssemblyPaths.Values)
                 {
-                    references.Add(MetadataReference.CreateFromFile(path));
+                    referencePaths.Add(path);
                 }
+                var references = referencePaths.Select(path => MetadataReference.CreateFromFile(path)).ToList();
 
                 //编译
                 var compilation = CSharpCompilation.Create(
@@ -255,7 +280,9 @@ public class ModuleSystem
         //预热程序集，因为模块可能依赖Alife自身的程序集，结果Alife本身目前未用到，导致未加载
         PreloadAllAssemblies();
         defaultAssemblies = AssemblyLoadContext.Default.Assemblies.Select(assembly => assembly.FullName).ToHashSet()!;
-        thisAssemblies = AppDomain.CurrentDomain.GetAssemblies().Where(assembly => assembly.GetName().Name?.StartsWith("Alife") ?? false).ToArray();
+        thisAssemblies = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => assembly.GetName().Name?.StartsWith("Alife") ?? false)
+            .ToArray();
 
         try
         {
@@ -264,6 +291,7 @@ public class ModuleSystem
         catch (Exception e)
         {
             logger.LogError(e, "加载模块失败");
+            ReloadContext(new ModuleLoadContext(moduleRoot));
         }
     }
 
@@ -283,7 +311,7 @@ public class ModuleSystem
                 if (IsModuleTypeAllowed(type, securitySettings.CompatibilityMode) == false)
                     continue;
 
-                moduleTypes.Add(GetModuleID(type), type);
+                moduleTypes.TryAdd(GetModuleID(type), type);
             }
         }
 
@@ -348,6 +376,16 @@ public class ModuleSystem
                 }
             }
         }
+    }
+
+    static HashSet<string> GetSourceAssemblyNames(string source)
+    {
+        if (Directory.Exists(source) == false)
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        return Directory.GetDirectories(source, "*", SearchOption.TopDirectoryOnly)
+            .Select(directory => Path.GetFileName(directory)!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     static bool IsModuleDependencyProviderInterface(Type type)
