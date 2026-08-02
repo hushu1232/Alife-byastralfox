@@ -62,3 +62,51 @@ try {
 finally {
     $listener.Stop()
 }
+
+$restartScriptPath = Join-Path $PSScriptRoot 'Restart-AlifeLocalAccount.ps1'
+$restartSource = Get-Content -LiteralPath $restartScriptPath -Raw
+if ($restartSource -notmatch 'CommandLine\.IndexOf\(\$clientDll') { throw 'Single-account restart must match the exact account client command line.' }
+if ($restartSource -match 'NapCat') { throw 'Single-account restart must not manage NapCat.' }
+
+$restartTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("alife-account-restart-" + [Guid]::NewGuid().ToString('N'))
+try {
+    [IO.Directory]::CreateDirectory($restartTestRoot) | Out-Null
+    $runtimeA = Join-Path $restartTestRoot 'runtime-a'
+    $runtimeB = Join-Path $restartTestRoot 'runtime-b'
+    $planPath = Join-Path $restartTestRoot 'accounts.json'
+    $deployFile = Join-Path $restartTestRoot 'Alife.Function.QChat.dll'
+    Set-Content -LiteralPath $deployFile -Value 'fixture' -Encoding UTF8
+    @{
+        accounts = @(
+            @{
+                id = 'account-a'
+                oneBotUrl = 'ws://127.0.0.1:3001'
+                qZoneLoopbackOperatorUrl = 'http://127.0.0.1:5101/qzone/'
+                runtimeRoot = $runtimeA
+                storageRoot = Join-Path $restartTestRoot 'storage-a'
+                tempRoot = Join-Path $restartTestRoot 'temp-a'
+                oneBotTokenEnvironmentVariable = 'ALIFE_TEST_ACCOUNT_A_TOKEN'
+            },
+            @{
+                id = 'account-b'
+                oneBotUrl = 'ws://127.0.0.1:3002'
+                qZoneLoopbackOperatorUrl = 'http://127.0.0.1:5102/qzone/'
+                runtimeRoot = $runtimeB
+                storageRoot = Join-Path $restartTestRoot 'storage-b'
+                tempRoot = Join-Path $restartTestRoot 'temp-b'
+                oneBotTokenEnvironmentVariable = 'ALIFE_TEST_ACCOUNT_B_TOKEN'
+            }
+        )
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $planPath -Encoding UTF8
+
+    $restartPlan = & $restartScriptPath -AccountId account-b -PlanPath $planPath -DeployPath $deployFile -DryRun
+    Assert-Equal $restartPlan.AccountId 'account-b'
+    Assert-Equal $restartPlan.ClientDll (Join-Path $runtimeB 'ClientBuild\Alife.Client.dll')
+    Assert-Equal $restartPlan.OneBotUrl 'ws://127.0.0.1:3002'
+    Assert-Equal $restartPlan.PlannedDeployCount 1
+    Assert-Equal $restartPlan.DryRun $true
+    Assert-Equal (Test-Path -LiteralPath (Join-Path $runtimeB 'ClientBuild')) $false
+}
+finally {
+    Remove-Item -LiteralPath $restartTestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
