@@ -56,6 +56,30 @@ public class PetProcessLive2DProtocolTests
         Assert.That(paramsListEvent.Params["ParamEyeLOpen"].Value, Is.EqualTo(0.5f));
     }
 
+    [Test]
+    public async Task ExternalClientOutputSkipsBlankLinesAndLogsThenReadsPrefixedEvents()
+    {
+        using StringWriter writer = new();
+        using StringReader reader = new("\nordinary AIRI log\n@alife:{\"$type\":\"ready\"}\n");
+        List<string> diagnostics = [];
+        using PetProcess process = new(
+            writer,
+            reader,
+            PetProcess.ExternalOutputPrefix,
+            diagnostics.Add);
+        TaskCompletionSource<IpcEvent> received = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        process.OutputReceived += received.SetResult;
+
+        process.ListenOutput();
+        IpcEvent ipcEvent = await received.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ipcEvent, Is.TypeOf<ReadyEvent>());
+            Assert.That(diagnostics, Is.EqualTo(new[] { "ordinary AIRI log" }));
+        });
+    }
+
     static void AssertCommandJson(IpcCommand command, string expectedJson)
     {
         using StringWriter writer = new();

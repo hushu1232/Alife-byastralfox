@@ -13,15 +13,22 @@ namespace Alife.Function.DeskPet;
 /// </summary>
 public class PetProcess : IDisposable
 {
+    public const string ExternalOutputPrefix = "@alife:";
     public static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public event Action<IpcCommand>? InputReceived;
     public event Action<IpcEvent>? OutputReceived;
 
-    public PetProcess(TextWriter writer, TextReader reader)
+    public PetProcess(
+        TextWriter writer,
+        TextReader reader,
+        string? outputPrefix = null,
+        Action<string>? diagnosticOutput = null)
     {
         this.writer = writer;
         this.reader = reader;
+        this.outputPrefix = outputPrefix;
+        this.diagnosticOutput = diagnosticOutput;
     }
 
     public void SendInput(IpcCommand cmd)
@@ -69,7 +76,18 @@ public class PetProcess : IDisposable
                 try
                 {
                     string? line = await reader.ReadLineAsync(token);
-                    if (string.IsNullOrEmpty(line)) break;
+                    if (line == null) break;
+                    if (line.Length == 0) continue;
+
+                    if (outputPrefix != null)
+                    {
+                        if (line.StartsWith(outputPrefix, StringComparison.Ordinal) == false)
+                        {
+                            diagnosticOutput?.Invoke(line);
+                            continue;
+                        }
+                        line = line[outputPrefix.Length..];
+                    }
 
                     T? msg = JsonSerializer.Deserialize<T>(line, JsonOptions);
                     if (msg == null) break;
@@ -78,12 +96,14 @@ public class PetProcess : IDisposable
                         syncContext.Post(_ => callback?.Invoke(msg), null);
                     else
                         _ = Task.Run(() => callback?.Invoke(msg), token);
-                    
-                    await File.AppendAllTextAsync("pet.log", line + Environment.NewLine, token);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    break;
                 }
                 catch (Exception e)
                 {
-                    await File.AppendAllTextAsync("pet.log", e + Environment.NewLine, token);
+                    diagnosticOutput?.Invoke(e.ToString());
                 }
             }
         }, token);
@@ -91,6 +111,8 @@ public class PetProcess : IDisposable
 
     readonly TextWriter writer;
     readonly TextReader reader;
+    readonly string? outputPrefix;
+    readonly Action<string>? diagnosticOutput;
     CancellationTokenSource? listeningCancellation;
 }
 

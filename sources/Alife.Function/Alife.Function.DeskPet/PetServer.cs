@@ -22,29 +22,42 @@ public class PetServer : IDeskPetRuntime
     public IEnumerable<string> SupportedExpressions => metadata.Expressions;
     public IDictionary<string, (string Group, int Index)> SupportedMotions => metadata.Motions;
 
-    public PetServer(string modelName)
+    public PetServer(string modelName, string? clientExecutablePath = null)
     {
         //加载模型信息
         string modelJsonPath = Path.Combine(AlifePath.OutputsFolderPath, $"Alife.DeskPet.Client/wwwroot/model/{modelName}/{modelName}.model3.json");
         metadata = PetModelMetadata.Load(modelJsonPath);
 
         //创建进程
-        string petExePath = Path.Combine(AlifePath.OutputsFolderPath, "Alife.DeskPet.Client/Alife.DeskPet.Client.exe");
+        bool useExternalClient = string.IsNullOrWhiteSpace(clientExecutablePath) == false;
+        string petExePath = useExternalClient
+            ? Path.GetFullPath(clientExecutablePath!)
+            : Path.Combine(AlifePath.OutputsFolderPath, "Alife.DeskPet.Client/Alife.DeskPet.Client.exe");
         if (File.Exists(petExePath) == false)
             throw new FileNotFoundException($"找不到桌宠程序: {petExePath}");
+        if (useExternalClient && string.Equals(Path.GetExtension(petExePath), ".exe", StringComparison.OrdinalIgnoreCase) == false)
+            throw new InvalidOperationException($"外部桌宠程序必须是 .exe 文件: {petExePath}");
+        ProcessStartInfo startInfo = new() {
+            FileName = petExePath,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardInputEncoding = new UTF8Encoding(false),
+            StandardOutputEncoding = new UTF8Encoding(false),
+            CreateNoWindow = true,
+            WorkingDirectory = Path.GetDirectoryName(petExePath)
+        };
+        startInfo.ArgumentList.Add(modelJsonPath);
+        if (useExternalClient)
+        {
+            string userDataPath = Path.Combine(AlifePath.StorageFolderPath, "AiriTamagotchi");
+            Directory.CreateDirectory(userDataPath);
+            startInfo.Environment["ALIFE_BRIDGE"] = "1";
+            startInfo.Environment["APP_USER_DATA_PATH"] = userDataPath;
+        }
         nativeProcess = new Process {
-            StartInfo = new ProcessStartInfo {
-                FileName = petExePath,
-                Arguments = modelJsonPath,
-                UseShellExecute = false,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                StandardInputEncoding = new UTF8Encoding(false),
-                StandardOutputEncoding = new UTF8Encoding(false),
-                CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(petExePath)
-            }
+            StartInfo = startInfo
         };
         //进程异常信息
         nativeProcess.ErrorDataReceived += (_, e) => {
@@ -56,20 +69,30 @@ public class PetServer : IDeskPetRuntime
         nativeProcess.BeginErrorReadLine();
 
         //创建桌宠进行封装器
-        petProcess = new PetProcess(nativeProcess.StandardInput, nativeProcess.StandardOutput);
+        petProcess = new PetProcess(
+            nativeProcess.StandardInput,
+            nativeProcess.StandardOutput,
+            useExternalClient ? PetProcess.ExternalOutputPrefix : null,
+            line => AlifeTerminal.LogInfo($"[PetClient] {line}"));
         petProcess.OutputReceived += OnEventReceived;
         petProcess.ListenOutput();// 宿主只听输出(Event)
     }
     public async ValueTask DisposeAsync()
     {
         ResetInteractions();
-        if (nativeProcess.HasExited == false)
+        try
         {
-            nativeProcess.Kill();
+            if (nativeProcess.HasExited == false)
+            {
+                nativeProcess.Kill(entireProcessTree: true);
+                await nativeProcess.WaitForExitAsync();
+            }
+        }
+        finally
+        {
+            petProcess.Dispose();
             nativeProcess.Dispose();
         }
-        petProcess.Dispose();
-        await Task.CompletedTask;
     }
     public async Task WaitReadyAsync()
     {

@@ -167,7 +167,7 @@ public class DeskPetService(
         string? modelName = Configuration?.ModelName;
         if (string.IsNullOrWhiteSpace(modelName))
             modelName = "Mao";
-        client = petRuntime ?? new PetServer(modelName);
+        client = petRuntime ?? new PetServer(modelName, Configuration?.ClientExecutablePath);
         string supportedExpressionsDescription = string.Join(", ", client.SupportedExpressions);
         if (string.IsNullOrEmpty(supportedExpressionsDescription)) supportedExpressionsDescription = $"当前不支持<{nameof(Expression)}>功能";
         string supportedMotionsDescription = string.Join(", ", client.SupportedMotions.Keys);
