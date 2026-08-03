@@ -81,12 +81,23 @@ foreach ($process in $running) {
 if ($deployItems.Count -gt 0) {
     [IO.Directory]::CreateDirectory($clientRoot) | Out-Null
     foreach ($item in $deployItems) {
-        if ($item.PSIsContainer) {
-            Get-ChildItem -LiteralPath $item.FullName -Force |
-                Copy-Item -Destination $clientRoot -Recurse -Force
-        }
-        else {
-            Copy-Item -LiteralPath $item.FullName -Destination $clientRoot -Force
+        for ($attempt = 1; ; $attempt++) {
+            try {
+                if ($item.PSIsContainer) {
+                    Get-ChildItem -LiteralPath $item.FullName -Force |
+                        Copy-Item -Destination $clientRoot -Recurse -Force -ErrorAction Stop
+                }
+                else {
+                    Copy-Item -LiteralPath $item.FullName -Destination $clientRoot -Force -ErrorAction Stop
+                }
+                break
+            }
+            catch {
+                if ($attempt -ge 20 -or $_.Exception -isnot [IO.IOException]) {
+                    throw
+                }
+                Start-Sleep -Milliseconds 250
+            }
         }
     }
 }

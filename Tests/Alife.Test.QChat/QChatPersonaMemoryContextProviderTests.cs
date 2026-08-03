@@ -43,6 +43,46 @@ public sealed class QChatPersonaMemoryContextProviderTests
     }
 
     [Test]
+    [NonParallelizable]
+    public void TrySeed_DefaultProviderReadsSharedPersonaStorageRoot()
+    {
+        const string SharedMarker = "shared-xiayu-persona-marker-4827";
+        string sharedStorageRoot = Path.Combine(storageRoot, "shared");
+        WriteProfileAtRoot(sharedStorageRoot, SharedMarker);
+        string? previous = Environment.GetEnvironmentVariable(
+            QChatPersonaMemoryContextProvider.SharedPersonaStorageEnvironmentVariable);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(
+                QChatPersonaMemoryContextProvider.SharedPersonaStorageEnvironmentVariable,
+                sharedStorageRoot);
+            QChatPersonaMemoryContextProvider provider = new();
+            QChatAgentIdentity xiayu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("xiayu")!;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(provider.TrySeed([], xiayu), Is.True);
+                Assert.That(provider.IsOutgoingPersonaDisclosure(SharedMarker), Is.True);
+            });
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(
+                QChatPersonaMemoryContextProvider.SharedPersonaStorageEnvironmentVariable,
+                previous);
+        }
+    }
+
+    [Test]
+    public void Constructor_RejectsRelativeStorageRoot()
+    {
+        Assert.That(
+            () => new QChatPersonaMemoryContextProvider("relative-persona-root"),
+            Throws.ArgumentException);
+    }
+
+    [Test]
     public void TrySeed_DoesNotReadXiayuProfileForMixu()
     {
         WriteProfile("\u590f\u7fbd\u7684\u5b8c\u6574\u89d2\u8272\u80cc\u666f");
@@ -75,7 +115,7 @@ public sealed class QChatPersonaMemoryContextProviderTests
     }
 
     [Test]
-    public void TrySeed_FailsClosedForMissingOversizedOrEscapingProfile()
+    public void TrySeed_FailsClosedForMissingOrOversizedProfile()
     {
         QChatPersonaMemoryContextProvider provider = new(storageRoot);
         QChatAgentIdentity xiayu = QChatAgentIdentityRegistry.CreateDefault().ResolveByAgentId("xiayu")!;
@@ -183,7 +223,20 @@ public sealed class QChatPersonaMemoryContextProviderTests
 
     void WriteProfile(string content)
     {
-        WriteProfileForCharacter("\u590f\u7fbd", content);
+        WriteProfileAtRoot(storageRoot, content);
+    }
+
+    static void WriteProfileAtRoot(string root, string content)
+    {
+        string path = Path.Combine(
+            root,
+            "Character",
+            "\u590f\u7fbd",
+            "Memory",
+            "Persona",
+            "\u590f\u7fbd-\u89d2\u8272\u80cc\u666f.md");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
     }
 
     void WriteMixuProfile(string content)

@@ -13,6 +13,7 @@ public sealed class QChatPersonaMemoryContextProvider
 {
     public const int MaxProfileCharacters = 6000;
     public const int MaxProfileBytes = 16 * 1024;
+    public const string SharedPersonaStorageEnvironmentVariable = "ALIFE_SHARED_PERSONA_STORAGE_PATH";
 
     const int MinimumDisclosureRunLength = 16;
     const int MinimumFragmentedDisclosureRunLength = 4;
@@ -36,7 +37,22 @@ public sealed class QChatPersonaMemoryContextProvider
 
     public QChatPersonaMemoryContextProvider(string? storageRoot = null)
     {
-        this.storageRoot = storageRoot ?? AlifePath.StorageFolderPath;
+        this.storageRoot = ResolveStorageRoot(storageRoot);
+    }
+
+    static string ResolveStorageRoot(string? storageRoot)
+    {
+        if (string.IsNullOrWhiteSpace(storageRoot) == false)
+        {
+            if (Path.IsPathFullyQualified(storageRoot) == false)
+                throw new ArgumentException("Persona storage root must be an absolute path.", nameof(storageRoot));
+            return Path.GetFullPath(storageRoot);
+        }
+
+        string? sharedStorageRoot = Environment.GetEnvironmentVariable(SharedPersonaStorageEnvironmentVariable);
+        return string.IsNullOrWhiteSpace(sharedStorageRoot) == false && Path.IsPathFullyQualified(sharedStorageRoot)
+            ? Path.GetFullPath(sharedStorageRoot)
+            : AlifePath.StorageFolderPath;
     }
 
     public bool TrySeed(ChatHistory history, QChatAgentIdentity? identity)
