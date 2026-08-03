@@ -38,6 +38,9 @@ public class DeskPetService(
             }
             case CallMode.Content:
             {
+                if (string.IsNullOrWhiteSpace(content))
+                    break;
+                explicitBubbleShownThisTurn = true;
                 await ShowBubbleAsync(content, cancellationToken);
                 break;
             }
@@ -158,6 +161,8 @@ public class DeskPetService(
     EmotionLive2DParameterDriver? emotionParameterDriver;
     CancellationTokenSource? emotionSyncCancellation;
     Task? emotionSyncTask;
+    ChatBot? bubbleChatBot;
+    bool explicitBubbleShownThisTurn;
     long lastBubbleEndTime;
 
     public override async Task AwakeAsync(AwakeContext context)
@@ -198,10 +203,53 @@ public class DeskPetService(
         await client!.WaitReadyAsync();
         client.OnInput += Chat;
         client.OnInteracted += text => Chat("交互：" + text);
+        bubbleChatBot = chatActivity.ChatBot;
+        bubbleChatBot.ChatSent += OnChatSent;
+        bubbleChatBot.ChatFinished += OnChatFinished;
         TryStartEmotionParameterSync(chatActivity);
 
         // 启动状态轮询
         _ = UpdateStatusLoop(chatActivity.ChatBot);
+    }
+
+    void OnChatSent(string _) => explicitBubbleShownThisTurn = false;
+
+    void OnChatFinished(string _input, string response)
+    {
+        _ = ShowFallbackBubbleAsync(response);
+    }
+
+    async Task ShowFallbackBubbleAsync(string response)
+    {
+        try
+        {
+            if (functionService != null)
+                await functionService.FlushAndWaitToIdleAsync();
+            if (explicitBubbleShownThisTurn || string.IsNullOrWhiteSpace(response) || response.Contains('<'))
+                return;
+
+            await ShowBubbleAsync(response);
+        }
+        catch (Exception e)
+        {
+            AlifeTerminal.LogError(e.ToString());
+        }
+    }
+
+    public override async Task DestroyAsync()
+    {
+        UnsubscribeBubbleFallback();
+        await base.DestroyAsync();
+    }
+
+    void UnsubscribeBubbleFallback()
+    {
+        if (bubbleChatBot == null)
+            return;
+
+        bubbleChatBot.ChatSent -= OnChatSent;
+        bubbleChatBot.ChatFinished -= OnChatFinished;
+        bubbleChatBot = null;
     }
 
     void TryStartEmotionParameterSync(ChatActivity chatActivity)
@@ -269,6 +317,7 @@ public class DeskPetService(
 
     public async ValueTask DisposeAsync()
     {
+        UnsubscribeBubbleFallback();
         isDisposed = true;
         emotionSyncCancellation?.Cancel();
         if (emotionSyncTask != null)

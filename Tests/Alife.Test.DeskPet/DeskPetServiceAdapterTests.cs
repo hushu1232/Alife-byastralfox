@@ -1,7 +1,11 @@
+using System.Runtime.CompilerServices;
 using Alife.Framework;
 using Alife.Function.DeskPet;
+using Alife.Function.Interpreter;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Agents;
+using Microsoft.SemanticKernel.ChatCompletion;
 
 namespace Alife.Test.DeskPet;
 
@@ -36,6 +40,87 @@ public class DeskPetServiceAdapterTests
         Assert.That(runtime.Motions, Is.EqualTo(new[] { ("main", 1) }));
         Assert.That(runtime.Bubbles, Is.EqualTo(new[] { "hello" }));
         Assert.That(runtime.Moves, Is.EqualTo(new[] { (10d, 20d, 1) }));
+    }
+
+    [Test]
+    public async Task DeskPetService_ShowsOneFallbackBubbleOnlyWithoutSpeak()
+    {
+        FakeDeskPetRuntime runtime = new();
+        SequencedStreamingCompletionService completion = new();
+        await using ChatBot chatBot = CreateChatBot(completion);
+        await using DeskPetService service = new(null!, runtime);
+        service.Configuration = new DeskPetServiceConfig { EnableEmotionParameterSync = false };
+        completion.BeforeSecondResponse = () => service.Speak(new XmlExecutorContext
+        {
+            CallMode = CallMode.Content,
+            Parameters = new Dictionary<string, string>(),
+            CallChain = ["speak"],
+            Content = "y"
+        }, "y", CancellationToken.None);
+
+        await service.AwakeAsync(new AwakeContext
+        {
+            Character = new Character { Name = "DeskPetTest" },
+            ContextBuilder = new ChatHistoryAgentThread()
+        });
+        await service.StartAsync(Kernel.CreateBuilder().Build(), new ChatActivity(
+            new Character { Name = "DeskPetTest" },
+            Kernel.CreateBuilder().Build(),
+            null!,
+            chatBot,
+            []));
+
+        await chatBot.ChatAsync("plain");
+        await chatBot.ChatAsync("explicit");
+        await chatBot.ChatAsync("tool-only");
+
+        Assert.That(runtime.Bubbles, Is.EqualTo(new[] { "x", "y" }));
+        await service.DestroyAsync();
+    }
+
+    static ChatBot CreateChatBot(IChatCompletionService completion)
+    {
+        IKernelBuilder builder = Kernel.CreateBuilder();
+        builder.Services.AddSingleton(completion);
+        Kernel kernel = builder.Build();
+        return new ChatBot(new ChatCompletionAgent
+        {
+            Name = "test",
+            Instructions = "test",
+            Kernel = kernel
+        }, new ChatHistoryAgentThread());
+    }
+
+    sealed class SequencedStreamingCompletionService : IChatCompletionService
+    {
+        int invocation;
+        public Func<Task>? BeforeSecondResponse { get; set; }
+        public IReadOnlyDictionary<string, object?> Attributes { get; } = new Dictionary<string, object?>();
+
+        public Task<IReadOnlyList<ChatMessageContent>> GetChatMessageContentsAsync(
+            ChatHistory chatHistory,
+            PromptExecutionSettings? executionSettings = null,
+            Kernel? kernel = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ChatMessageContent>>([]);
+
+        public async IAsyncEnumerable<StreamingChatMessageContent> GetStreamingChatMessageContentsAsync(
+            ChatHistory chatHistory,
+            PromptExecutionSettings? executionSettings = null,
+            Kernel? kernel = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            int current = Interlocked.Increment(ref invocation);
+            if (current == 2 && BeforeSecondResponse != null)
+                await BeforeSecondResponse();
+
+            yield return new StreamingChatMessageContent(AuthorRole.Assistant, current switch
+            {
+                1 => "x",
+                2 => "unused",
+                _ => "<expression option=\"smile\" />"
+            });
+        }
     }
 
     sealed class FakeDeskPetRuntime : IDeskPetRuntime
