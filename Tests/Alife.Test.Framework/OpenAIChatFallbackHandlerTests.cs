@@ -9,6 +9,23 @@ namespace Alife.Test.Framework;
 public class OpenAIChatFallbackHandlerTests
 {
     [Test]
+    public async Task CompatibleHandler_NormalizesMillisecondCreatedTimestamp()
+    {
+        const long createdMilliseconds = 1785770000123;
+        string sse = $"data: {{\"created\":{createdMilliseconds},\"choices\":[{{\"delta\":{{\"content\":\"ok\"}}}}]}}\n\ndata: [DONE]\n\n";
+        RecordingHandler inner = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+        });
+        using HttpClient client = new(new OpenAICompatibleHandler(inner));
+
+        string response = await client.GetStringAsync("https://primary.example/v1/chat/completions");
+        string json = response.Split('\n').Single(line => line.StartsWith("data: {"))[6..];
+
+        Assert.That(JObject.Parse(json).Value<long>("created"), Is.EqualTo(createdMilliseconds / 1000));
+    }
+
+    [Test]
     public async Task SendAsync_RetriesWithFallbackEndpointModelAndKey_WhenPrimaryReturnsRetryableFailure()
     {
         RecordingHandler inner = new(

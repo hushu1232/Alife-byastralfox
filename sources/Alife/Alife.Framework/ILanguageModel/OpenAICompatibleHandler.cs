@@ -16,6 +16,8 @@ namespace Alife.Framework;
 /// </summary>
 public class OpenAICompatibleHandler(HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
 {
+    static readonly long MinUnixSeconds = DateTimeOffset.MinValue.ToUnixTimeSeconds();
+    static readonly long MaxUnixSeconds = DateTimeOffset.MaxValue.ToUnixTimeSeconds();
     static readonly string[] ReasoningKeys = [
         "reasoning_content",
         "thought",
@@ -76,6 +78,16 @@ public class OpenAICompatibleHandler(HttpMessageHandler innerHandler) : Delegati
             try
             {
                 JObject obj = JObject.Parse(jsonPart);
+                JToken? created = obj["created"];
+                if (created?.Type == JTokenType.Integer &&
+                    long.TryParse(created.ToString(), out long createdValue) &&
+                    (createdValue < MinUnixSeconds || createdValue > MaxUnixSeconds))
+                {
+                    long seconds = createdValue / 1000;
+                    if (seconds >= MinUnixSeconds && seconds <= MaxUnixSeconds)
+                        obj["created"] = seconds;
+                }
+
                 JToken? delta = obj["choices"]?[0]?["delta"];
                 if (delta is JObject deltaObj)
                 {
