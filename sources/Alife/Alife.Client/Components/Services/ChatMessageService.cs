@@ -17,7 +17,7 @@ public class ChatMessage
 }
 
 /// <summary>
-/// UI层的聊天消息状态管理。在角色激活后立即挂接事件，确保后台对话也能被记录。
+/// UI层的本地聊天状态管理。QQ等后台会话不会进入本地消息列表或本地短期上下文。
 /// 采用名称索引以确保在活动重启（Character对象被Clone）时记录依然能够持久。
 /// </summary>
 public class ChatMessageService : IDisposable
@@ -75,7 +75,7 @@ public class ChatMessageService : IDisposable
     public void SendMessage(string name, string message)
     {
         if (chatbotMap.TryGetValue(name, out ChatBot? bot))
-            bot.Chat(MessageTag + message);
+            bot.ChatInConversation(ChatBot.LocalConversationId, MessageTag + message);
     }
 
     public string GetDraft(string name) => draftMap.GetValueOrDefault(name) ?? "";
@@ -114,19 +114,35 @@ public class ChatMessageService : IDisposable
         UnsubscribeChatBot(name);
         List<ChatMessage> messages = GetMessages(name);
         chatbotMap[name] = activity.ChatBot;
+        activity.ChatBot.CreateConversation(ChatBot.LocalConversationId);
 
         Action<string> chatSent = message => {
+            if (activity.ChatBot.CurrentConversationId != ChatBot.LocalConversationId)
+                return;
+
+            string visibleMessage = activity.ChatBot.CurrentInputMessage ?? message;
+            bool isInternalContinuation = visibleMessage.StartsWith(
+                ChatBot.PokeMessageTag,
+                StringComparison.Ordinal);
+            if (visibleMessage.StartsWith(MessageTag, StringComparison.Ordinal))
+                visibleMessage = visibleMessage[MessageTag.Length..].TrimStart();
+
             lock (messages)
             {
-                messages.Add(new ChatMessage { Content = message, IsUser = true });
-                messages.Add(new ChatMessage { IsUser = false, IsInputting = true });
+                if (isInternalContinuation == false)
+                    messages.Add(new ChatMessage { Content = visibleMessage, IsUser = true });
+                if (messages.Any(m => m is { IsUser: false, IsInputting: true }) == false)
+                    messages.Add(new ChatMessage { IsUser = false, IsInputting = true });
                 TrimMessages(name);
             }
 
             OnMessageChanged?.Invoke(name);
-            OnUserMessageSent?.Invoke(name);
+            if (isInternalContinuation == false)
+                OnUserMessageSent?.Invoke(name);
         };
         Action<string> chatReceived = obj => {
+            if (activity.ChatBot.CurrentConversationId != ChatBot.LocalConversationId)
+                return;
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
@@ -135,6 +151,8 @@ public class ChatMessageService : IDisposable
             }
         };
         Action<string> reasoningReceived = obj => {
+            if (activity.ChatBot.CurrentConversationId != ChatBot.LocalConversationId)
+                return;
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {
@@ -143,6 +161,8 @@ public class ChatMessageService : IDisposable
             }
         };
         Action chatOver = () => {
+            if (activity.ChatBot.CurrentConversationId != ChatBot.LocalConversationId)
+                return;
             ChatMessage? aiMessage = messages.LastOrDefault(m => m is { IsUser: false, IsInputting: true });
             if (aiMessage != null)
             {

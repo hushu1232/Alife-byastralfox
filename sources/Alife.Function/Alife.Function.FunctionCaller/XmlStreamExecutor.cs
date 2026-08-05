@@ -26,14 +26,14 @@ public class XmlStreamExecutor : IAsyncDisposable
         commandChannel.Reader.TryPeek(out _) == false &&
         lastTask is null or { IsCompleted: true } || processingTokenSource.IsCancellationRequested;
 
-    public void Feed(string text)
+    public void Feed(string text, string? executionContext = null)
     {
         foreach (char ch in text)
-            commandChannel.Writer.TryWrite(new StreamCommand(CommandType.Feed, ch));
+            commandChannel.Writer.TryWrite(new StreamCommand(CommandType.Feed, ch, executionContext));
     }
-    public void Flush()
+    public void Flush(string? executionContext = null)
     {
-        commandChannel.Writer.TryWrite(new StreamCommand(CommandType.Flush));
+        commandChannel.Writer.TryWrite(new StreamCommand(CommandType.Flush, ExecutionContext: executionContext));
     }
     public async Task CancelAsync()
     {
@@ -56,12 +56,13 @@ public class XmlStreamExecutor : IAsyncDisposable
         Flush,
     }
 
-    record struct StreamCommand(CommandType Type, char Data = '\0');
+    record struct StreamCommand(CommandType Type, char Data = '\0', string? ExecutionContext = null);
 
     readonly XmlStreamParser parser;
     readonly XmlHandlerTable handler;
     readonly string[] sentenceBreakers;
     readonly int minBreakingLength;
+    readonly Func<string?, IDisposable>? executionScopeFactory;
     readonly CancellationTokenSource processingTokenSource;
 
     readonly Channel<StreamCommand> commandChannel = Channel.CreateUnbounded<StreamCommand>(new UnboundedChannelOptions {
@@ -75,13 +76,18 @@ public class XmlStreamExecutor : IAsyncDisposable
     Task? lastTask;
     CancellationTokenSource handleTokenSource = new();
 
-    public XmlStreamExecutor(XmlStreamParser parser, XmlHandlerTable handler, string[]? sentenceBreakers = null,
-        int minBreakingLength = 0)
+    public XmlStreamExecutor(
+        XmlStreamParser parser,
+        XmlHandlerTable handler,
+        string[]? sentenceBreakers = null,
+        int minBreakingLength = 0,
+        Func<string?, IDisposable>? executionScopeFactory = null)
     {
         this.parser = parser;
         this.handler = handler;
         this.sentenceBreakers = sentenceBreakers ?? [",", ".", "!", "?", "，", "。", "！", "？"];
         this.minBreakingLength = minBreakingLength;
+        this.executionScopeFactory = executionScopeFactory;
 
         this.parser.TagOpened = OnTagOpened;
         this.parser.TagShotted = OnTagShotted;
@@ -105,6 +111,7 @@ public class XmlStreamExecutor : IAsyncDisposable
             {
                 while (commandChannel.Reader.TryRead(out StreamCommand cmd))
                 {
+                    using IDisposable? executionScope = executionScopeFactory?.Invoke(cmd.ExecutionContext);
                     switch (cmd.Type)
                     {
                         case CommandType.Feed:

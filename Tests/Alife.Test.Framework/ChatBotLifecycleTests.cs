@@ -201,6 +201,21 @@ public class ChatBotLifecycleTests
     }
 
     [Test]
+    public async Task FailedPokeFilterKeepsThePendingFeedbackForRetry()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+        chatBot.Poke("tool evidence");
+        Func<string, string> failingFilter = _ => throw new InvalidOperationException("filter failed");
+        chatBot.PokeSend += failingFilter;
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await chatBot.FlushPendingPokesAsync());
+
+        Assert.That(chatBot.GetRuntimeState().PendingPokeCount, Is.EqualTo(1));
+        chatBot.PokeSend -= failingFilter;
+    }
+
+    [Test]
     public void StreamChunkClassifierDoesNotLeakThinkPrefixWhenItArrivesAcrossChunks()
     {
         ChatStreamChunkClassifier classifier = new(ChatBot.ThinkContentPrefix);
@@ -267,6 +282,55 @@ public class ChatBotLifecycleTests
         {
             Assert.That(responseText, Is.EqualTo("reasoned"));
             Assert.That(completion.ReasoningEfforts, Is.EqualTo(["high"]));
+        });
+    }
+
+    [Test]
+    public async Task DifferentConversationWaitsWithoutCancellingTheActiveReply()
+    {
+        ControlledStreamingCompletionService completion = new();
+        await using ChatBot chatBot = CreateChatBot(completion);
+
+        Task<string> primary = chatBot.ChatAsync("qq turn");
+        await completion.FirstInvocationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task<string> local = chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "local turn");
+        completion.ReleaseFirstInvocation.TrySetResult();
+
+        await Task.WhenAll(primary, local).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(primary.Result, Is.EqualTo("old"));
+            Assert.That(local.Result, Is.EqualTo("new"));
+            Assert.That(chatBot.ChatHistory.Any(message => message.Content == "old"), Is.True);
+            Assert.That(chatBot.GetConversationHistory(ChatBot.LocalConversationId)
+                .Any(message => message.Content == "new"), Is.True);
+        });
+    }
+
+    [Test]
+    public async Task NamedConversationKeepsItsOwnMultiTurnHistory()
+    {
+        ReasoningEffortRecordingCompletionService completion = new();
+        await using ChatBot chatBot = CreateChatBot(completion);
+
+        await chatBot.ChatAsync("qq turn");
+        await chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "local first");
+        await chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "local second");
+
+        string[] primaryUserMessages = chatBot.ChatHistory
+            .Where(message => message.Role == AuthorRole.User)
+            .Select(message => message.Content ?? string.Empty)
+            .ToArray();
+        string[] localUserMessages = chatBot.GetConversationHistory(ChatBot.LocalConversationId)
+            .Where(message => message.Role == AuthorRole.User)
+            .Select(message => message.Content ?? string.Empty)
+            .ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(primaryUserMessages, Is.EqualTo(["qq turn"]));
+            Assert.That(localUserMessages, Is.EqualTo(["local first", "local second"]));
         });
     }
 

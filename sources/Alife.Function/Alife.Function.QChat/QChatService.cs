@@ -3224,7 +3224,7 @@ public partial class QChatService(
         oneBotEventProcessingCancellation = new CancellationTokenSource();
         oneBotEventProcessingTask = ProcessOneBotEventQueueAsync(oneBotEventProcessingCancellation.Token);
         oneBotClient.EventReceived += OnEventReceived;
-        ChatBot.ChatOver += ClearPermissionRequest;
+        ChatBot.ChatOver += OnChatOver;
         WriteQChatDiagnostic("start", "QChat service starting.", new {
             Configuration!.Url,
             tokenSet = string.IsNullOrWhiteSpace(Configuration.Token) == false,
@@ -3275,6 +3275,8 @@ public partial class QChatService(
         }
         if (oneBotClient != null)
             oneBotClient.EventReceived -= OnEventReceived;
+        if (ChatBot != null)
+            ChatBot.ChatOver -= OnChatOver;
         if (oneBotEventProcessingCancellation != null)
         {
             await oneBotEventProcessingCancellation.CancelAsync();
@@ -11818,6 +11820,12 @@ public partial class QChatService(
     {
         lock (permissionGate)
             ClearPermissionRequestCore();
+    }
+
+    void OnChatOver()
+    {
+        if (ChatBot.CurrentConversationId == ChatBot.DefaultConversationId)
+            ClearPermissionRequest();
     }
 
     void RestorePermissionRequest(AgentPermissionRequest? request, DateTime expiresAt)

@@ -27,7 +27,7 @@ public class ChatMessageServiceLifecycleTests
         ChatActivitySystem chatActivitySystem = new(null!, null!, null!, storage);
         ChatMessageService service = new(chatActivitySystem, storage);
         SetMaxMessageCount(service, 3);
-        ChatBot chatBot = new(null!, null!);
+        ChatBot chatBot = new(null!, new Microsoft.SemanticKernel.Agents.ChatHistoryAgentThread());
         ChatActivity chatActivity = new(
             new Character { Name = "LifecycleTestCharacter" },
             null!,
@@ -39,10 +39,13 @@ public class ChatMessageServiceLifecycleTests
         {
             RaiseEvent(chatActivitySystem, "ActivatingCreated", chatActivity);
 
-            RaiseEvent(chatBot, "ChatSent", "first");
-            RaiseEvent(chatBot, "ChatOver");
-            RaiseEvent(chatBot, "ChatSent", "second");
-            RaiseEvent(chatBot, "ChatOver");
+            using (chatBot.UseConversation(ChatBot.LocalConversationId))
+            {
+                RaiseEvent(chatBot, "ChatSent", "first");
+                RaiseEvent(chatBot, "ChatOver");
+                RaiseEvent(chatBot, "ChatSent", "second");
+                RaiseEvent(chatBot, "ChatOver");
+            }
 
             List<ChatMessage> messages = service.GetMessages("LifecycleTestCharacter");
 
@@ -52,6 +55,61 @@ public class ChatMessageServiceLifecycleTests
             Assert.That(messages[1].Content, Is.EqualTo("second"));
             Assert.That(messages[1].IsUser, Is.True);
             Assert.That(messages[2].IsInputting, Is.False);
+        }
+        finally
+        {
+            service.Dispose();
+            await chatBot.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task QChatEventsAndHistoryDoNotEnterTheLocalDashboardConversation()
+    {
+        StorageSystem storage = new();
+        ChatActivitySystem chatActivitySystem = new(null!, null!, null!, storage);
+        ChatMessageService service = new(chatActivitySystem, storage);
+        Microsoft.SemanticKernel.Agents.ChatHistoryAgentThread primaryThread = new();
+        primaryThread.ChatHistory.AddSystemMessage("shared persona");
+        ChatBot chatBot = new(null!, primaryThread);
+        ChatActivity chatActivity = new(
+            new Character { Name = "IsolatedCharacter" },
+            null!,
+            null!,
+            chatBot,
+            []);
+
+        try
+        {
+            RaiseEvent(chatActivitySystem, "ActivatingCreated", chatActivity);
+            chatBot.ChatHistory.AddUserMessage("qq private message");
+
+            using (chatBot.UseConversation(ChatBot.DefaultConversationId))
+            {
+                RaiseEvent(chatBot, "ChatSent", "qq private message");
+                RaiseEvent(chatBot, "ChatReceived", "qq reply");
+                RaiseEvent(chatBot, "ChatOver");
+            }
+
+            Assert.That(service.GetMessages("IsolatedCharacter"), Is.Empty);
+
+            var localHistory = chatBot.GetConversationHistory(ChatBot.LocalConversationId);
+            localHistory.AddUserMessage("local message");
+            using (chatBot.UseConversation(ChatBot.LocalConversationId))
+            {
+                RaiseEvent(chatBot, "ChatSent", "local message");
+                RaiseEvent(chatBot, "ChatReceived", "local reply");
+                RaiseEvent(chatBot, "ChatOver");
+            }
+
+            List<ChatMessage> messages = service.GetMessages("IsolatedCharacter");
+            Assert.Multiple(() =>
+            {
+                Assert.That(messages.Select(message => message.Content), Is.EqualTo(["local message", "local reply"]));
+                Assert.That(localHistory.Any(message => message.Content == "shared persona"), Is.True);
+                Assert.That(localHistory.Any(message => message.Content == "qq private message"), Is.False);
+                Assert.That(chatBot.ChatHistory.Any(message => message.Content == "local message"), Is.False);
+            });
         }
         finally
         {

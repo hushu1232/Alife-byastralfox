@@ -173,7 +173,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
 
     public async Task FlushAndWaitToIdleAsync(CancellationToken cancellationToken = default)
     {
-        executor.Flush();
+        executor.Flush(ChatBot.CurrentConversationId);
         await Task.Yield();
         await executor.WaitToInactive(cancellationToken);
     }
@@ -391,7 +391,9 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
             parser,
             handlerTable,
             ["，", "。", "！", "？", "......", "~", "…"],
-            minBreakingLength: 9
+            minBreakingLength: 9,
+            executionScopeFactory: conversationId =>
+                ChatBot.UseConversation(conversationId ?? ChatBot.DefaultConversationId)
         );
         executor.ToolCompleted += OnToolCompleted;
         handlerTable.ExecutionPolicy.ResetTurnBudget();
@@ -433,7 +435,11 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     public override async Task DestroyAsync()
     {
         if (ChatBot != null)
+        {
             ChatBot.ChatSend -= OnChatSend;
+            ChatBot.ChatReceived -= OnChatReceived;
+            ChatBot.ChatSent -= OnChatSent;
+        }
 
         executor.ToolCompleted -= OnToolCompleted;
         await executor.WaitToInactive();
@@ -464,12 +470,13 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         if (IsTextOnlyResponseScopeActive)
             return;
 
+        string conversationId = ChatBot.CurrentConversationId;
         try
         {
             await ChatBot.RequestChatAsync();
             try
             {
-                executor.Flush();
+                executor.Flush(conversationId);
                 await executor.WaitToInactive(ChatBot.ChatBreakTokenSource.Token);
             }
             catch (OperationCanceledException)
@@ -494,7 +501,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         if (IsTextOnlyResponseScopeActive)
             return;
 
-        executor.Feed(obj);
+        executor.Feed(obj, ChatBot.CurrentConversationId);
     }
 
     void OnError(string tag, Exception exception)

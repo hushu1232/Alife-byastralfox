@@ -70,9 +70,9 @@ public class DeskPetServiceAdapterTests
             chatBot,
             []));
 
-        await chatBot.ChatAsync("plain");
-        await chatBot.ChatAsync("explicit");
-        await chatBot.ChatAsync("tool-only");
+        await chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "plain");
+        await chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "explicit");
+        await chatBot.ChatInConversationAsync(ChatBot.LocalConversationId, "tool-only");
 
         Assert.That(runtime.Bubbles, Is.EqualTo(new[] { "x", "y" }));
         await service.DestroyAsync();

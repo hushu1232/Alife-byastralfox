@@ -201,22 +201,43 @@ public class DeskPetService(
         await base.StartAsync(kernel, chatActivity);
 
         await client!.WaitReadyAsync();
-        client.OnInput += Chat;
-        client.OnInteracted += text => Chat("交互：" + text);
         bubbleChatBot = chatActivity.ChatBot;
+        bubbleChatBot.CreateConversation(ChatBot.LocalConversationId);
+        bubbleChatBot.ChatSend += OnLocalChatSend;
         bubbleChatBot.ChatSent += OnChatSent;
         bubbleChatBot.ChatFinished += OnChatFinished;
+        client.OnInput += OnInput;
+        client.OnInteracted += OnInteracted;
         TryStartEmotionParameterSync(chatActivity);
 
         // 启动状态轮询
         _ = UpdateStatusLoop(chatActivity.ChatBot);
     }
 
-    void OnChatSent(string _) => explicitBubbleShownThisTurn = false;
+    string OnLocalChatSend(string text)
+    {
+        return ChatBot.CurrentConversationId == ChatBot.LocalConversationId &&
+               text.StartsWith(ChatBot.PokeMessageTag, StringComparison.Ordinal) == false
+            ? ChatTextFilter(text)
+            : text;
+    }
+
+    void OnInput(string text) =>
+        ChatBot.ChatInConversation(ChatBot.LocalConversationId, text);
+
+    void OnInteracted(string text) =>
+        ChatBot.ChatInConversation(ChatBot.LocalConversationId, "交互：" + text);
+
+    void OnChatSent(string _)
+    {
+        if (ChatBot.CurrentConversationId == ChatBot.LocalConversationId)
+            explicitBubbleShownThisTurn = false;
+    }
 
     void OnChatFinished(string _input, string response)
     {
-        _ = ShowFallbackBubbleAsync(response);
+        if (ChatBot.CurrentConversationId == ChatBot.LocalConversationId)
+            _ = ShowFallbackBubbleAsync(response);
     }
 
     async Task ShowFallbackBubbleAsync(string response)
@@ -244,9 +265,15 @@ public class DeskPetService(
 
     void UnsubscribeBubbleFallback()
     {
+        if (client != null)
+        {
+            client.OnInput -= OnInput;
+            client.OnInteracted -= OnInteracted;
+        }
         if (bubbleChatBot == null)
             return;
 
+        bubbleChatBot.ChatSend -= OnLocalChatSend;
         bubbleChatBot.ChatSent -= OnChatSent;
         bubbleChatBot.ChatFinished -= OnChatFinished;
         bubbleChatBot = null;

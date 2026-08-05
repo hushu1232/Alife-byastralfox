@@ -495,7 +495,8 @@ public partial class MemoryService(
     {
         try
         {
-            if (content.Role != AuthorRole.Assistant)
+            if (content.Role != AuthorRole.Assistant ||
+                ChatBot.CurrentConversationId != ChatBot.DefaultConversationId)
                 return;//只在ai说话后整理，这样对话更完整
 
             await ChatBot.RequestChatAsync();

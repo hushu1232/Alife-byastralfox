@@ -1,4 +1,6 @@
 using Alife.Function.Interpreter;
+using Alife.Framework;
+using Microsoft.SemanticKernel.Agents;
 
 [TestFixture]
 public class XmlStreamExecutorTests
@@ -26,6 +28,17 @@ public class XmlStreamExecutorTests
                 return;
 
             Logs.Add($"script:{timeout} {context.FullContent}");
+        }
+    }
+
+    class ConversationHandler(ChatBot chatBot)
+    {
+        public string? ObservedConversationId { get; private set; }
+
+        [XmlFunction(FunctionMode.OneShot)]
+        public void Capture()
+        {
+            ObservedConversationId = chatBot.CurrentConversationId;
         }
     }
 
@@ -116,5 +129,28 @@ public class XmlStreamExecutorTests
         // And the outer tag will eventually get Content:nested, Closing:
 
         Assert.That(handler.Logs, Has.Count.AtLeast(4));
+    }
+
+    [Test]
+    public async Task ToolExecutionKeepsTheOriginatingConversationScope()
+    {
+        await using ChatBot chatBot = new(null!, new ChatHistoryAgentThread());
+        ConversationHandler handler = new(chatBot);
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(handler));
+        XmlStreamParser parser = new();
+        await using XmlStreamExecutor executor = new(
+            parser,
+            table,
+            [],
+            100,
+            conversationId => chatBot.UseConversation(conversationId ?? ChatBot.DefaultConversationId));
+
+        executor.Feed("<capture />", ChatBot.LocalConversationId);
+        executor.Flush(ChatBot.LocalConversationId);
+        while (executor.IsInactive == false)
+            await Task.Delay(20);
+
+        Assert.That(handler.ObservedConversationId, Is.EqualTo(ChatBot.LocalConversationId));
     }
 }
