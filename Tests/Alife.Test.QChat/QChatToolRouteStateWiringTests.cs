@@ -22,6 +22,8 @@ public sealed class QChatToolRouteStateWiringTests
             Assert.That(source, Does.Contain("string reasoningEffort = QChatReasoningEffortPolicy.Decide("));
             Assert.That(source, Does.Contain("string modelInput = ChatTextFilter(message.Formatted)"));
             Assert.That(source, Does.Contain("functionService.BuildContextualFunctionGuide(\"qchat_image_understand\")"));
+            Assert.That(source, Does.Contain("functionService.UseToolRouteInput("));
+            Assert.That(source, Does.Contain("QChatImageSegmentParser.AppendFirstImageUrlForLocalToolRouting(modelInput, message.TrustedImageSourceUrls)"));
             Assert.That(source, Does.Contain("message.SenderRole == QChatSenderRole.Owner"));
             Assert.That(source, Does.Contain("message.MessageType == OneBotMessageType.Private"));
             Assert.That(source, Does.Contain("modelInput,"));

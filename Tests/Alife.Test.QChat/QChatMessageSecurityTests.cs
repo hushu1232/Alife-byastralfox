@@ -677,6 +677,50 @@ public class QChatMessageSecurityTests
     }
 
     [Test]
+    public void OwnerCurrentReplyImageSendDoesNotNeedASecondConfirmation()
+    {
+        QChatConfig config = new() { OwnerId = 10001 };
+        AgentPermissionRequest ownerRequest = new(
+            10001,
+            AgentRequestSource.PrivateChat,
+            IsMentioned: false,
+            AgentRiskLevel.Low,
+            HasExplicitConfirmation: false,
+            Action: "qq.message");
+        AgentPermissionRequest memberRequest = ownerRequest with { ActorUserId = 20002 };
+        AgentPermissionRequest resolvedRequest = QChatMessageSecurity.ResolveToolPermissionRequest(
+            activeReplyRequest: ownerRequest,
+            ambientRequest: memberRequest,
+            action: "xml.qimage");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(resolvedRequest, Is.SameAs(ownerRequest));
+            Assert.That(
+                QChatMessageSecurity.CanOwnerSendImageInCurrentReplyWithoutConfirmation(
+                    config,
+                    ownerRequest,
+                    QChatSenderRole.Owner,
+                    currentSenderId: 10001),
+                Is.True);
+            Assert.That(
+                QChatMessageSecurity.CanOwnerSendImageInCurrentReplyWithoutConfirmation(
+                    config,
+                    memberRequest,
+                    QChatSenderRole.GroupMember,
+                    currentSenderId: 20002),
+                Is.False);
+            Assert.That(
+                QChatMessageSecurity.CanOwnerSendImageInCurrentReplyWithoutConfirmation(
+                    config,
+                    ownerRequest,
+                    QChatSenderRole.Owner,
+                    currentSenderId: 30003),
+                Is.False);
+        });
+    }
+
+    [Test]
     public void HasExplicitHighRiskConfirmation_AcceptsOwnerFileUploadApprovalPhrase()
     {
         Assert.That(QChatMessageSecurity.HasExplicitHighRiskConfirmation("允许上传文件"), Is.True);

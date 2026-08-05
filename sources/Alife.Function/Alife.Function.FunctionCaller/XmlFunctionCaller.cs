@@ -163,11 +163,19 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         if (string.IsNullOrWhiteSpace(documents))
             return string.Empty;
 
+        string boundParameters = route.BoundParameters.Count == 0
+            ? string.Empty
+            : $"""
+               Runtime-bound parameters: {string.Join(", ", route.BoundParameters.Keys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase))}
+               Do not invent, repeat, or ask for those values; call the tool with the remaining parameters only.
+               Do not claim completion until the tool outcome reports handled.
+               """;
         return $"""
                Tool Broker route: {route.Intent}
                Reason: {route.Reason}
                Allowed XML tools for this turn:
                {documents}
+               {boundParameters}
                """;
     }
 
@@ -226,6 +234,14 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
         ToolRouteState? previous = scopedToolRouteState.Value;
         scopedToolRouteState.Value = state;
         return new ToolRouteStateScope(scopedToolRouteState, previous);
+    }
+
+    public IDisposable UseToolRouteInput(string input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        string? previous = scopedToolRouteInput.Value;
+        scopedToolRouteInput.Value = input;
+        return new ToolRouteInputScope(scopedToolRouteInput, previous);
     }
 
     public void UpdateDataAgentAnalysisRouteSessionFromContext(string context)
@@ -305,6 +321,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     ToolCapabilityRouter toolRouter = ToolCapabilityRouter.CreateDefault();
     readonly object toolRouterGate = new();
     readonly AsyncLocal<ToolRouteState?> scopedToolRouteState = new();
+    readonly AsyncLocal<string?> scopedToolRouteInput = new();
     readonly AsyncLocal<int> textOnlyResponseDepth = new();
     readonly object dataAgentRouteGate = new();
     readonly object recentToolRouteGate = new();
@@ -451,7 +468,7 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     string OnChatSend(string message)
     {
         ToolRouteState state = scopedToolRouteState.Value ?? ToolRouteState.Empty;
-        ToolRouteDecision route = RouteCurrentTurn(message, state);
+        ToolRouteDecision route = RouteCurrentTurn(scopedToolRouteInput.Value ?? message, state);
         string routedGuide = BuildRoutedFunctionGuide(route);
         if (string.IsNullOrWhiteSpace(routedGuide))
             return message;
@@ -535,6 +552,20 @@ public class XmlFunctionCaller(ILogger<XmlFunctionCaller> logger) : InteractiveM
     }
 
     sealed class ToolRouteStateScope(AsyncLocal<ToolRouteState?> target, ToolRouteState? previous) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            target.Value = previous;
+            disposed = true;
+        }
+    }
+
+    sealed class ToolRouteInputScope(AsyncLocal<string?> target, string? previous) : IDisposable
     {
         bool disposed;
 

@@ -1,4 +1,6 @@
+using Alife.Function.FunctionCaller;
 using Alife.Function.QChat;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace Alife.Test.QChat;
@@ -32,6 +34,32 @@ public sealed class QChatImageSegmentParserTests
             Assert.That(images, Has.Count.EqualTo(1));
             Assert.That(images[0].Url, Is.EqualTo("https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=abc&rkey=def"));
             Assert.That(images[0].SourceKind, Is.EqualTo(QChatImageSourceKind.PublicUrl));
+        });
+    }
+
+    [Test]
+    public void BuildsLocalToolRouteInputFromCurrentImageWithoutChangingModelInput()
+    {
+        const string modelInput = "把这张图片保存为 happy_cat.jpg";
+        IReadOnlyList<string> trustedUrls = QChatImageSegmentParser.ExtractTrustedHttpsUrls(
+            "[CQ:image,file=abc.jpg,url=https://multimedia.nt.qq.com.cn/download?appid=1406&amp;fileid=abc]");
+        string routeInput = QChatImageSegmentParser.AppendFirstImageUrlForLocalToolRouting(modelInput, trustedUrls);
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        caller.EnableQqEmojiSaveImageCapability();
+        ToolRouteDecision route = caller.RouteCurrentTurn(
+            routeInput,
+            new ToolRouteState(string.Empty, string.Empty, true, true, true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(trustedUrls, Is.EqualTo(new[]
+            {
+                "https://multimedia.nt.qq.com.cn/download?appid=1406&fileid=abc"
+            }));
+            Assert.That(routeInput, Is.EqualTo(modelInput + Environment.NewLine + trustedUrls[0]));
+            Assert.That(route.Allows("saveimage"), Is.True);
+            Assert.That(route.BoundParameters["source"], Is.EqualTo(trustedUrls[0]));
+            Assert.That(modelInput, Does.Not.Contain("https://"));
         });
     }
 

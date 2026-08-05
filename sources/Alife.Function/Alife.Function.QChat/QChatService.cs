@@ -239,6 +239,7 @@ public sealed record QChatInboundMessage(
     public string CandidateText { get; init; } = string.Empty;
     public int? SuggestedSettleMilliseconds { get; init; }
     internal QChatReplyGenerationLease? ReplyGenerationLease { get; init; }
+    internal IReadOnlyList<string> TrustedImageSourceUrls { get; init; } = [];
 }
 
 public sealed record QChatDeferredImageRecognition(
@@ -2574,14 +2575,51 @@ public partial class QChatService(
             throw new ArgumentNullException(nameof(image));
         if (targetId == 0)
             throw new ArgumentNullException(nameof(targetId));
+
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        if (replySession != null &&
+            (replySession.MessageType != type || replySession.TargetId != targetId))
+        {
+            WriteQChatDiagnostic("qchat-image-target-remapped", "QQ image target was remapped to the current reply session.", new
+            {
+                requestedType = type,
+                requestedTargetId = targetId,
+                currentType = replySession.MessageType,
+                currentTargetId = replySession.TargetId
+            });
+            type = replySession.MessageType;
+            targetId = replySession.TargetId;
+        }
+
         if (targetId == Configuration!.BotId)
             throw new Exception("不允许将消息发生给自己");
+        if (TryEnsureQChatReplyTargetAllowed(type, targetId, "xml-qimage") == false ||
+            IsCurrentReplyGenerationSendAllowed() == false ||
+            ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qimage"))
+            return;
 
-        // 尝试从表情库匹配 (优先)
-        string emoteBase = Path.Combine(AlifePath.StorageFolderPath, "Emotes");
-        string emotePath = Path.Combine(emoteBase, image).Replace('\\', '/');
+        // 尝试从表情库匹配 (优先)；绝对本地路径仍由下方显式分支支持。
+        string emoteBase = Path.GetFullPath(Path.Combine(AlifePath.StorageFolderPath, "Emotes"));
+        string? emotePath = null;
+        if (Path.IsPathRooted(image) == false && Uri.TryCreate(image, UriKind.Absolute, out _) == false)
+        {
+            emotePath = Path.GetFullPath(Path.Combine(emoteBase, image));
+            string relative = Path.GetRelativePath(emoteBase, emotePath);
+            if (Path.IsPathRooted(relative) ||
+                relative.Equals("..", StringComparison.Ordinal) ||
+                relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                relative.StartsWith($"..{Path.AltDirectorySeparatorChar}", StringComparison.Ordinal))
+            {
+                WriteQChatDiagnostic("qchat-image-send-failed", "QQ image relative path escaped the emote library.", new {
+                    type,
+                    targetId,
+                    reason = "image_path_not_allowed"
+                });
+                return;
+            }
+        }
 
-        if (Directory.Exists(emotePath))
+        if (emotePath != null && Directory.Exists(emotePath))
         {
             // 文件夹：随机选一张
             string[] files = Directory.GetFiles(emotePath, "*.*", SearchOption.TopDirectoryOnly)
@@ -2592,16 +2630,14 @@ public partial class QChatService(
                 .ToArray();
 
             if (files.Length > 0)
-            {
                 image = files[Random.Shared.Next(files.Length)];
-            }
         }
-        else if (File.Exists(emotePath))
+        else if (emotePath != null && File.Exists(emotePath))
         {
             // 单个文件：直接使用
             image = emotePath;
         }
-        else
+        else if (emotePath != null)
         {
             // 尝试追加后缀名查找
             string[] extensions = [".png", ".jpg", ".jpeg", ".gif"];
@@ -2654,11 +2690,16 @@ public partial class QChatService(
 
         if (result.Succeeded)
         {
+            string selectedImage = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image);
             WriteQChatDiagnostic("qchat-image-send-succeeded", "QQ image send completed.", new {
                 type,
                 targetId,
-                image = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image)
+                image = selectedImage
             });
+            TryRecordQChatRuntimeAudit(
+                "tool.qimage.send",
+                "succeeded",
+                $"image={NormalizeToolRouteTraceToken(selectedImage)}; type={type}; target_id={targetId}");
             return;
         }
 
@@ -4789,6 +4830,9 @@ public partial class QChatService(
     QChatTopicContextService TopicContextService =>
         resolvedTopicContextService ??= new QChatTopicContextService(DataAgentStore);
 
+    public void RecordPluginRuntimeAudit(string eventKind, string outcome, string summary) =>
+        TryRecordQChatRuntimeAudit(eventKind, outcome, summary);
+
     void TryRecordQChatRuntimeAudit(string eventKind, string outcome, string summary)
     {
         try
@@ -5645,6 +5689,12 @@ public partial class QChatService(
                     CandidateText = messageEvent is OneBotMessageEvent inboundMessage
                         ? OneBotSegment.GetPlainText(inboundMessage.RawMessage)
                         : formatted,
+                    TrustedImageSourceUrls = QChatImageSegmentParser.ExtractTrustedHttpsUrls(
+                        deferredImageRecognitions is { Count: > 0 }
+                            ? string.Join(Environment.NewLine, deferredImageRecognitions.Select(item => item.MessageEvent.RawMessage))
+                            : messageEvent is OneBotMessageEvent imageSourceMessage
+                                ? imageSourceMessage.RawMessage
+                                : string.Empty),
                     SuggestedSettleMilliseconds = suggestedSettleMilliseconds
                 });
             }
@@ -10513,6 +10563,8 @@ public partial class QChatService(
             if (string.IsNullOrWhiteSpace(imageToolGuide) == false)
                 modelInput = string.Join(Environment.NewLine, modelInput, imageToolGuide);
         }
+        using IDisposable toolRouteInput = functionService.UseToolRouteInput(
+            QChatImageSegmentParser.AppendFirstImageUrlForLocalToolRouting(modelInput, message.TrustedImageSourceUrls));
         long toolCompletionVersion = functionService.ToolCompletionVersion;
         string response = await ChatBot.ChatAsync(
             modelInput,
@@ -11757,14 +11809,14 @@ public partial class QChatService(
 
     XmlFunctionExecutionDecision AuthorizeHighRiskXmlFunction(XmlFunction function)
     {
-        AgentPermissionRequest request = GetCurrentPermissionRequest() ?? new AgentPermissionRequest(
-            ActorUserId: null,
-            Source: AgentRequestSource.PrivateChat,
-            IsMentioned: false,
-            RiskLevel: AgentRiskLevel.High,
-            HasExplicitConfirmation: false,
-            Action: $"xml.{function.Name}");
+        QChatReplySession? replySession = GetCurrentReplySessionForGuard();
+        AgentPermissionRequest request = QChatMessageSecurity.ResolveToolPermissionRequest(
+            replySession?.PermissionRequest,
+            GetCurrentPermissionRequest(),
+            $"xml.{function.Name}");
 
+        if (IsOwnerCurrentReplyImageSend(function, request, replySession))
+            return new XmlFunctionExecutionDecision(true, "Owner current-session image send.");
         if (IsOwnerAllowlistUpdate(function, request))
             return new XmlFunctionExecutionDecision(true, "Owner QQ allowlist control.");
 
@@ -11772,6 +11824,20 @@ public partial class QChatService(
             Configuration!,
             agentControlCenter?.Configuration);
         return actionAuthorization.AuthorizeXmlFunction(function, request, permissionConfig);
+    }
+
+    bool IsOwnerCurrentReplyImageSend(
+        XmlFunction function,
+        AgentPermissionRequest request,
+        QChatReplySession? session)
+    {
+        return string.Equals(function.Name, "qimage", StringComparison.OrdinalIgnoreCase) &&
+               session != null &&
+               QChatMessageSecurity.CanOwnerSendImageInCurrentReplyWithoutConfirmation(
+                   Configuration!,
+                   request,
+                   session.SenderRole,
+                   session.SenderId);
     }
 
     bool IsOwnerAllowlistUpdate(XmlFunction function, AgentPermissionRequest request)

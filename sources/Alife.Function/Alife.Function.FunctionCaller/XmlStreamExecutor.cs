@@ -73,6 +73,7 @@ public class XmlStreamExecutor : IAsyncDisposable
 
     readonly List<StringBuilder> aboveContentBuffer = new();
     readonly StringBuilder contentBuffer = new();
+    readonly HashSet<string> executedOneShotCalls = new(StringComparer.Ordinal);
     Task? lastTask;
     CancellationTokenSource handleTokenSource = new();
 
@@ -121,6 +122,7 @@ public class XmlStreamExecutor : IAsyncDisposable
                         case CommandType.Flush:
                             // Console.Write("[Flush]");
                             await (lastTask = parser.Flush(true));
+                            executedOneShotCalls.Clear();
                             ClearContentBuffer();
                             handleTokenSource = new CancellationTokenSource();
                             break;
@@ -236,6 +238,11 @@ public class XmlStreamExecutor : IAsyncDisposable
 
     async Task HandleXml(string name, XmlContext tagContext)
     {
+        // ponytail: identical one-shot calls are retries within one model turn; add call IDs only if intentional duplicates are needed.
+        if (tagContext.CallMode == CallMode.OneShot
+            && executedOneShotCalls.Add(BuildOneShotCallKey(name, tagContext.Parameters)) == false)
+            return;
+
         try
         {
             await handler.Handle(name, tagContext, handleTokenSource.Token);
@@ -246,5 +253,21 @@ public class XmlStreamExecutor : IAsyncDisposable
         {
             Error?.Invoke(name, e.InnerException ?? e);
         }
+    }
+
+    static string BuildOneShotCallKey(string name, IReadOnlyDictionary<string, string> parameters)
+    {
+        StringBuilder key = new(name.Trim().ToUpperInvariant());
+        foreach ((string parameterName, string value) in parameters.OrderBy(
+                     pair => pair.Key,
+                     StringComparer.OrdinalIgnoreCase))
+        {
+            key.Append('\0')
+                .Append(parameterName.Trim().ToUpperInvariant())
+                .Append('\0')
+                .Append(value);
+        }
+
+        return key.ToString();
     }
 }

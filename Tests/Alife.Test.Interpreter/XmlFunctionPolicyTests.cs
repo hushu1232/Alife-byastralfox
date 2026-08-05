@@ -78,6 +78,31 @@ public class XmlFunctionPolicyTests
     }
 
     [Test]
+    public void RoutedGuideNamesRuntimeBoundParametersWithoutLeakingValues()
+    {
+        XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);
+        caller.RegisterHandlerWithoutDocument(new XmlHandler(new HiddenTool()));
+        ToolRouteDecision route = new(
+            "route-test",
+            ToolCapabilityDomain.QChat,
+            "emoji_save_image",
+            ["hidden_ping"],
+            [],
+            new ToolRouteState(string.Empty, string.Empty, true, true, true),
+            "explicit_test",
+            BoundParameters: new Dictionary<string, string> { ["source"] = "https://secret.invalid/image.jpg" });
+
+        string guide = caller.BuildRoutedFunctionGuide(route);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(guide, Does.Contain("Runtime-bound parameters: source"));
+            Assert.That(guide, Does.Contain("Do not claim completion until the tool outcome reports handled."));
+            Assert.That(guide, Does.Not.Contain("secret.invalid"));
+        });
+    }
+
+    [Test]
     public void FunctionCallerStoresRecentDataAgentEvidenceDiagnosticsAsStringOnlyBridge()
     {
         XmlFunctionCaller caller = new(NullLogger<XmlFunctionCaller>.Instance);

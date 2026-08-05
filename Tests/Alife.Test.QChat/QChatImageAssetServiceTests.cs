@@ -107,6 +107,15 @@ public sealed class QChatImageAssetServiceTests
         });
     }
 
+    [Test]
+    public void SafeDownloaderRejectsPrivateAddressBeforeConnecting()
+    {
+        InvalidOperationException? exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await QChatSafeImageDownloader.DownloadAsync("https://127.0.0.1/image.jpg", 1024));
+
+        Assert.That(exception!.Message, Is.EqualTo("image_url_not_allowed"));
+    }
+
     static QChatConfig EnabledConfig() => new()
     {
         EnableImageRecognition = true,

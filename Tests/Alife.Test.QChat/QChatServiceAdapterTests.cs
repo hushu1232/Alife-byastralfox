@@ -10309,6 +10309,11 @@ public class QChatServiceAdapterTests
         });
 
         QChatInboundMessage inbound = await service.WaitForInboundAsync();
+        IReadOnlyList<string> trustedImageSourceUrls = (IReadOnlyList<string>)typeof(QChatInboundMessage)
+            .GetProperty(
+                "TrustedImageSourceUrls",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(inbound)!;
 
         Assert.Multiple(() =>
         {
@@ -10317,6 +10322,7 @@ public class QChatServiceAdapterTests
             Assert.That(inbound.Formatted, Does.Contain("image_1_status=analyzed"));
             Assert.That(inbound.Formatted, Does.Contain("image_1_summary=image contains a cat"));
             Assert.That(inbound.Formatted, Does.Not.Contain("https://example.invalid/cat.jpg"));
+            Assert.That(trustedImageSourceUrls, Is.EqualTo(new[] { "https://example.invalid/cat.jpg" }));
             Assert.That(imageClient.Calls, Is.EqualTo(1));
         });
     }
@@ -10853,6 +10859,32 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QImage_SuccessRecordsFinalSelectionInDataAgent()
+    {
+        string image = Path.Combine(Path.GetTempPath(), $"qchat-emoji-{Guid.NewGuid():N}.png");
+        await File.WriteAllTextAsync(image, "fake png");
+        FakeOneBotRuntime runtime = new();
+        CapturingDataAgentStore store = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false
+        }, dataAgentStore: store);
+
+        await service.QImage(OneBotMessageType.Private, 1001, image);
+
+        QChatRuntimeAuditRecord audit = store.RuntimeAudits.Single(record => record.EventKind == "tool.qimage.send");
+        Assert.Multiple(() =>
+        {
+            Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(1));
+            Assert.That(audit.Outcome, Is.EqualTo("succeeded"));
+            Assert.That(audit.Summary, Does.Contain(Path.GetFileName(image)));
+            Assert.That(audit.Summary, Does.Not.Contain(Path.GetDirectoryName(image)!));
+        });
+    }
+
+    [Test]
     public void QImage_UnsafeRemoteUrlIsRejectedWithoutThrowingOrSending()
     {
         FakeOneBotRuntime runtime = new();
@@ -10871,6 +10903,35 @@ public class QChatServiceAdapterTests
             Assert.That(GetPendingPokeText(service), Does.Not.Contain("127.0.0.1"));
             Assert.That(GetPendingPokeText(service), Does.Not.Contain("[QQ"));
         });
+    }
+
+    [Test]
+    public async Task QImage_RelativeEmotePathCannotEscapeLibrary()
+    {
+        string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
+        string storageRoot = Path.Combine(Path.GetTempPath(), $"qchat-image-root-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(storageRoot, "Emotes"));
+        await File.WriteAllTextAsync(Path.Combine(storageRoot, "secret.png"), "not an emote");
+        try
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(storageRoot, persist: false);
+            FakeOneBotRuntime runtime = new();
+            QChatService service = CreateStartedService(runtime, new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            });
+
+            Assert.DoesNotThrowAsync(async () =>
+                await service.QImage(OneBotMessageType.Group, 123, "../secret.png"));
+
+            Assert.That(runtime.GroupMessages, Is.Empty);
+        }
+        finally
+        {
+            Alife.Platform.AlifePath.SetStorageFolderPath(previousStorage, persist: false);
+        }
     }
 
     [Test]

@@ -110,6 +110,30 @@ public class XmlStreamExecutorTests
     }
 
     [Test]
+    public async Task DuplicateOneShotCallsRunOncePerModelTurn()
+    {
+        TestHandler handler = new();
+        XmlHandlerTable table = new();
+        table.Register(new XmlHandler(handler));
+        XmlStreamParser parser = new();
+        await using XmlStreamExecutor executor = new(parser, table, [], 100);
+
+        executor.Feed("<oneshot /><oneshot />");
+        executor.Flush();
+        while (executor.IsInactive == false)
+            await Task.Delay(20);
+
+        Assert.That(handler.Logs.Count(log => log == "oneshot:OneShot"), Is.EqualTo(1));
+
+        executor.Feed("<oneshot />");
+        executor.Flush();
+        while (executor.IsInactive == false)
+            await Task.Delay(20);
+
+        Assert.That(handler.Logs.Count(log => log == "oneshot:OneShot"), Is.EqualTo(2));
+    }
+
+    [Test]
     public async Task TestNestedTags()
     {
         TestHandler handler = new TestHandler();

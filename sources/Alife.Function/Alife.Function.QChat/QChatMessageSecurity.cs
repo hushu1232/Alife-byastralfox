@@ -316,6 +316,35 @@ public static class QChatMessageSecurity
             Action: "qq.message");
     }
 
+    public static bool CanOwnerSendImageInCurrentReplyWithoutConfirmation(
+        QChatConfig config,
+        AgentPermissionRequest request,
+        QChatSenderRole currentSenderRole,
+        long currentSenderId)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(request);
+        return config.OwnerId != 0 &&
+               currentSenderRole == QChatSenderRole.Owner &&
+               currentSenderId == config.OwnerId &&
+               request.ActorUserId == config.OwnerId &&
+               request.Source is AgentRequestSource.PrivateChat or AgentRequestSource.GroupChat;
+    }
+
+    public static AgentPermissionRequest ResolveToolPermissionRequest(
+        AgentPermissionRequest? activeReplyRequest,
+        AgentPermissionRequest? ambientRequest,
+        string action)
+    {
+        return activeReplyRequest ?? ambientRequest ?? new AgentPermissionRequest(
+            ActorUserId: null,
+            Source: AgentRequestSource.PrivateChat,
+            IsMentioned: false,
+            RiskLevel: AgentRiskLevel.High,
+            HasExplicitConfirmation: false,
+            Action: action);
+    }
+
     public static bool HasExplicitHighRiskConfirmation(string rawMessage)
     {
         if (string.IsNullOrWhiteSpace(rawMessage))

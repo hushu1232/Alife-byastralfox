@@ -300,7 +300,7 @@ public sealed class QChatImageAssetService
         }
     }
 
-    static bool TryDetectMedia(byte[] bytes, out string mediaType, out string extension)
+    public static bool TryDetectMedia(byte[] bytes, out string mediaType, out string extension)
     {
         mediaType = string.Empty;
         extension = string.Empty;

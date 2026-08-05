@@ -12,8 +12,9 @@ library, optional online search, and QChat image delivery through the existing
 
 ## Deployment Status
 
-The reviewed QQEmoji v1.5.1 source is installed only under the ignored runtime
-path `Storage/Plugins/Alife.Plugin.QQEmoji`. The plugin recognizes the current
+The reviewed QQEmoji v1.5.1 source is installed under the ignored runtime paths
+`Storage/Plugins/Alife.Plugin.QQEmoji` and
+`Storage/PluginsDebug/Alife.Plugin.QQEmoji`. The plugin recognizes the current
 `[QChatService]` marker. Online BQB search, Tencent search, automatic online
 image caching, and Tencent automatic persistence are all disabled by default.
 No third-party image, ChineseBQB index, or local emoji asset is deployed.
@@ -54,7 +55,7 @@ locally adapted QQEmoji source with:
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\Alife\tools\install-qqemoji-runtime.ps1 `
   -SourceRoot <adapted-qqemoji-source-root> `
-  -OutputDir D:\Alife\Outputs
+  -StorageRoot D:\Alife\Storage\account-b
 ```
 
 The installer stages and replaces only the runtime plugin files. It rejects an
@@ -159,8 +160,8 @@ cross-plugin enforcement is required.
 The runtime plugin uses a single image-download path with these constraints:
 
 - QChat messages parse a session target only when Tencent search is enabled;
-- image downloads use one static client with redirects disabled and a global
-  maximum of three concurrent transfers;
+- image downloads use one shared host client with automatic redirects and proxies
+  disabled; BQB background prefetch remains capped at three concurrent transfers;
 - downloads require HTTPS, a publicly resolved address, an `image/*` content
   type, a matching PNG/JPEG/GIF/WebP/BMP signature, and a streamed 10 MB hard
   limit;
@@ -168,39 +169,30 @@ The runtime plugin uses a single image-download path with these constraints:
 - user-facing download errors do not reveal filesystem or remote exception
   details.
 
-This blocks the common redirect, private-address, extension-spoofing, and
-unbounded-buffer failures. DNS rebinding and the downstream `qimage` URL fetch
-remain platform-level concerns; do not enable Tencent direct send until the
-QChat sender's URL and target authorization are reviewed.
+This blocks the common redirect, private-address, DNS-rebinding, extension-
+spoofing, and unbounded-buffer failures by connecting only to an address that
+was resolved and classified as public. The downstream OneBot fetch used by a
+remote `qimage` remains a separate platform boundary; Tencent direct send stays
+disabled until that fetch is equivalently constrained.
 
-## DataAgent Intervention Plan
+## DataAgent Audit Boundary
 
-Do not make the external plugin overwrite `XmlFunctionExecutionPolicy` or its
-governed-tool list. That list is shared by existing FunctionCaller/DataAgent
-tools, and the current DataAgent registry is assembled by
-`DataAgentModuleService`, not discovered from runtime plugins.
+The plugin does not replace `XmlFunctionExecutionPolicy`, its governed-tool
+list, or DataAgent's capability registry. Local emoji discovery uses the
+existing QChat runtime-audit bridge and therefore writes to the account's
+DataAgent SQLite store without giving DataAgent execution, scheduling, or send
+authority.
 
-Use this staged plan only when online capabilities are needed:
+The stored records are deliberately small:
 
-1. Keep local-only `ListEmojis` and local `qimage` outside DataAgent. They add
-   no new external authority.
-2. Add a generic, append-only plugin capability registration bridge in
-   FunctionCaller. It must aggregate manifests instead of replacing the
-   existing governed-tool names.
-3. Let QQEmoji register these manifests through that bridge:
+- `tool.qqemoji.list`: total count, page offset, and returned candidate names;
+- `tool.qqemoji.search`: the query and at most 20 candidate names;
+- `tool.qimage.send`: the final local filename or remote host, target type, and
+  target ID after a successful send.
 
-   | Tool | Risk | Policy |
-   | --- | --- | --- |
-   | `SearchBqbOnline` | Medium | Trusted route and per-turn budget. |
-   | `SaveImage` | Medium | Trusted route; only the hardened downloader. |
-   | `DownloadToCache` | Medium | Trusted route, budget, and cache-only path. |
-   | `SendTencentEmoji` | High | Explicit QChat target and external-message authorization. |
-
-4. Extend the shared state effect only when enforcement is implemented:
-   `DownloadsExternalContent` and `WritesLocalFile` are required to describe
-   download/persistence truthfully.
-5. Require allowed and denied calls to appear in the existing XML function
-   audit before turning on Tencent search or automatic persistence.
+No image bytes, complete local path, complete remote URL, Cookie, token, or raw
+exception is stored. Governed `saveimage` authorization remains in the existing
+FunctionCaller route and policy; online BQB/Tencent capabilities remain off.
 
 ## Upgrade Roadmap
 
@@ -220,8 +212,10 @@ Do not enable Tencent direct send until this upgrade is complete.
 Status: the `qimage` endpoint now reuses `QChatVisionMediaPolicy` for remote
 images. It rejects non-HTTPS URLs, URL credentials, non-standard ports, and
 obviously unsafe literal/localhost addresses before OneBot is called.
-Successful image sends write an audit diagnostic with a local filename or
-remote host only, never the complete image URL.
+Successful image sends write both a diagnostic and a DataAgent runtime-audit
+record with a local filename or remote host only, never the complete path or
+image URL. Relative emote names cannot escape `Storage/Emotes`; explicitly
+authorized absolute local paths remain supported.
 
 ### Upgrade 2: Add an append-only capability bridge
 
@@ -276,10 +270,12 @@ EnableTencentAutoSave: false
 TencentSessionFromAi: true
 ```
 
-The local QQEmoji plugin provides `<searchemojis keyword="happy praise" />`.
-It tokenizes English filenames, requires every query token to match, sorts
-ordinally, and returns at most 20 local image names. It does not infer image
-meaning, use synonyms, search subdirectories, or access the network.
+The local QQEmoji plugin provides `<searchemojis keyword="开心 夸奖" />`
+and paged `<listemojis offset="0" limit="20" />`. It maps a small controlled
+set of common Chinese intent words to the English filename vocabulary, requires
+every resulting token to match, sorts ordinally, and returns at most 20 names.
+It does not inject the library inventory into the stable prompt, infer arbitrary
+image meaning, search subdirectories, or access the network.
 
 ### Upgrade 4: Enable online sources one at a time
 
@@ -305,19 +301,22 @@ step.
 - [ ] Permission is confirmed for the QQEmoji code, generated UI, release
       package, and any third-party index or image data to be installed or
       redistributed.
-- [ ] Plugin is obtained from a reviewed release and installed as an external
+- [x] Plugin is obtained from a reviewed release and installed as an external
       runtime plugin, not copied into tracked source.
 - [x] The QChat marker compatibility adjustment is applied to the plugin.
 - [x] Module reload discovers the attributed QQEmoji module without compile
       errors.
 - [x] A controlled private-chat test lists a locally named emoji and sends it
       through `qimage`.
-- [ ] The probability/cooldown/burst behavior is verified without duplicate
-      sends.
+- [x] Stable prompts contain no emoji inventory; paged list/search candidates
+      and the final selection use DataAgent runtime audit without image bytes.
+- [x] Identical one-shot tool calls are executed once per model turn and are
+      allowed again on the next turn.
+- [ ] The probability/cooldown/burst behavior is verified in a live QQ session.
 - [ ] Invalid URL, unsupported media, oversize media, and unsafe filenames are
       rejected.
 - [ ] Group and private targets obey the existing QChat authorization policy.
-- [ ] Online sources and automatic persistence remain disabled until their
+- [x] Online sources and automatic persistence remain disabled until their
       licenses, network behavior, and retention policy are approved.
 - [ ] If governance is enabled, allowed and denied calls appear in the XML
       function audit.

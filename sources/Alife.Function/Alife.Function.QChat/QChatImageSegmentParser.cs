@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -28,6 +29,32 @@ public static class QChatImageSegmentParser
         }
 
         return images;
+    }
+
+    public static IReadOnlyList<string> ExtractTrustedHttpsUrls(string? rawMessage)
+    {
+        List<string> urls = [];
+        foreach (QChatImageCandidate image in Extract(rawMessage))
+        {
+            if (Uri.TryCreate(image.Url, UriKind.Absolute, out Uri? uri) &&
+                uri.Scheme == Uri.UriSchemeHttps &&
+                string.IsNullOrWhiteSpace(uri.UserInfo))
+            {
+                urls.Add(uri.AbsoluteUri);
+            }
+        }
+
+        return urls;
+    }
+
+    public static string AppendFirstImageUrlForLocalToolRouting(
+        string modelInput,
+        IReadOnlyList<string>? trustedImageUrls)
+    {
+        ArgumentNullException.ThrowIfNull(modelInput);
+        return trustedImageUrls is { Count: > 0 }
+            ? string.Concat(modelInput, Environment.NewLine, trustedImageUrls[0])
+            : modelInput;
     }
 
     static string? GetCqValue(string body, string key)
