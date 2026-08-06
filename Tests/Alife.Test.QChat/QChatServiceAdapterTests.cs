@@ -10924,6 +10924,70 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QImage_LocalToolReplySuppressesSecondImageButOrdinaryCallsRemainUnchanged()
+    {
+        await WithIsolatedQChatDiagnosticsAsync(async storageRoot =>
+        {
+            string firstImage = Path.Combine(Path.GetTempPath(), $"qchat-local-first-{Guid.NewGuid():N}.png");
+            string secondImage = Path.Combine(Path.GetTempPath(), $"qchat-local-second-{Guid.NewGuid():N}.png");
+            string ordinaryImage = Path.Combine(Path.GetTempPath(), $"qchat-ordinary-{Guid.NewGuid():N}.png");
+            await File.WriteAllTextAsync(firstImage, "first");
+            await File.WriteAllTextAsync(secondImage, "second");
+            await File.WriteAllTextAsync(ordinaryImage, "ordinary");
+            try
+            {
+                FakeOneBotRuntime runtime = new();
+                CapturingDataAgentStore store = new();
+                QChatService service = CreateStartedService(runtime, new QChatConfig
+                {
+                    BotId = 999,
+                    OwnerId = 1001,
+                    EnableBalancedTextStreaming = false
+                }, dataAgentStore: store);
+                using IDisposable detector = service.RegisterLocalToolRequestDetector(
+                    text => text.Contains("local emoji", StringComparison.OrdinalIgnoreCase));
+
+                await service.QImage(OneBotMessageType.Private, 1001, ordinaryImage);
+                await service.QImage(OneBotMessageType.Private, 1001, ordinaryImage);
+
+                TaskCompletionSource dispatched = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                service.InboundChatDispatcher = async inbound =>
+                {
+                    await service.QImage(OneBotMessageType.Private, inbound.TargetId, firstImage);
+                    await service.QImage(OneBotMessageType.Private, inbound.TargetId, secondImage);
+                    dispatched.TrySetResult();
+                };
+
+                runtime.Raise(new OneBotMessageEvent
+                {
+                    SelfId = 999,
+                    MessageId = 901,
+                    UserId = 1001,
+                    RawMessage = "local emoji please"
+                });
+
+                await dispatched.Task.WaitAsync(TimeSpan.FromSeconds(2));
+                await WaitForQChatDiagnosticEventAsync(storageRoot, "model-dispatch-completed");
+
+                Assert.Multiple(() =>
+                {
+                    Assert.That(runtime.PrivateMessages, Has.Count.EqualTo(3));
+                    Assert.That(runtime.PrivateMessages[0].Message, Does.Contain(Path.GetFileName(ordinaryImage)));
+                    Assert.That(runtime.PrivateMessages[1].Message, Does.Contain(Path.GetFileName(ordinaryImage)));
+                    Assert.That(runtime.PrivateMessages[2].Message, Does.Contain(Path.GetFileName(firstImage)));
+                    Assert.That(store.RuntimeAudits.Count(record => record.EventKind == "tool.qimage.send" && record.Outcome == "suppressed"), Is.EqualTo(1));
+                });
+            }
+            finally
+            {
+                File.Delete(firstImage);
+                File.Delete(secondImage);
+                File.Delete(ordinaryImage);
+            }
+        });
+    }
+
+    [Test]
     public void QImage_UnsafeRemoteUrlIsRejectedWithoutThrowingOrSending()
     {
         FakeOneBotRuntime runtime = new();

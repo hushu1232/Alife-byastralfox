@@ -10,6 +10,11 @@ public sealed record QChatReplyGenerationLease(
     CancellationTokenSource Cancellation)
 {
     public CancellationToken CancellationToken => Cancellation.Token;
+
+    // 0 = no local-tool image claimed, 1 = send in flight, 2 = one image sent.
+    // The lease survives tool-continuation rounds, unlike XmlStreamExecutor's
+    // per-flush one-shot set.
+    internal int LocalToolImageSendState;
 }
 
 public sealed class QChatReplyGenerationTracker

@@ -2667,6 +2667,28 @@ public partial class QChatService(
             throw new Exception("图片不存在");
         }
 
+        bool localToolImageClaimed = false;
+        if (replySession != null && IsLocalToolRequest(replySession.SourceText))
+        {
+            if (Interlocked.CompareExchange(
+                    ref replySession.GenerationLease.LocalToolImageSendState,
+                    1,
+                    0) != 0)
+            {
+                WriteQChatDiagnostic(
+                    "qchat-image-send-suppressed",
+                    "Suppressed an additional local-tool image in the current QQ reply generation.",
+                    new { type, targetId, reason = "local_tool_one_image_per_reply" });
+                TryRecordQChatRuntimeAudit(
+                    "tool.qimage.send",
+                    "suppressed",
+                    $"type={type}; target_id={targetId}; reason=local_tool_one_image_per_reply");
+                return;
+            }
+
+            localToolImageClaimed = true;
+        }
+
         image = image.Replace('\\', '/');
         string message = $"[CQ:image,file={image}]";
         QChatDeterministicTaskResult result = await QChatDeterministicTaskRunner.ExecuteAsync(
@@ -2690,6 +2712,8 @@ public partial class QChatService(
 
         if (result.Succeeded)
         {
+            if (localToolImageClaimed)
+                Interlocked.Exchange(ref replySession!.GenerationLease.LocalToolImageSendState, 2);
             string selectedImage = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image);
             WriteQChatDiagnostic("qchat-image-send-succeeded", "QQ image send completed.", new {
                 type,
@@ -2702,6 +2726,9 @@ public partial class QChatService(
                 $"image={NormalizeToolRouteTraceToken(selectedImage)}; type={type}; target_id={targetId}");
             return;
         }
+
+        if (localToolImageClaimed)
+            Interlocked.CompareExchange(ref replySession!.GenerationLease.LocalToolImageSendState, 0, 1);
 
         WriteQChatDiagnostic("qchat-image-send-failed", result.Error ?? "QQ image send failed.", new {
             type,
