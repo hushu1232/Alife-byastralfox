@@ -2836,6 +2836,20 @@ public partial class QChatService(
     public EmbodiedCapabilityKind Kind => EmbodiedCapabilityKind.Communication;
     public string SelfDescription => "Your QQ social communication channel for private chats, group chats, images, files, forwarded messages, and message context.";
     public Func<QChatInboundMessage, Task>? InboundChatDispatcher { get; set; }
+
+    /// <summary>
+    /// Lets a local tool plugin identify an explicit request for its own capability
+    /// before the optional semantic web-research router runs. QChat only consumes
+    /// the boolean hint; tool selection remains with the model and XML tool layer.
+    /// </summary>
+    public IDisposable RegisterLocalToolRequestDetector(Func<string, bool> detector)
+    {
+        ArgumentNullException.ThrowIfNull(detector);
+        lock (localToolRequestDetectorGate)
+            localToolRequestDetectors.Add(detector);
+        return new LocalToolRequestDetectorRegistration(this, detector);
+    }
+
     public bool IsQuietModeEnabled { get; private set; }
     public DateTimeOffset? QuietModeChangedAt { get; private set; }
     public string? QuietModeReason { get; private set; }
@@ -2885,6 +2899,8 @@ public partial class QChatService(
     readonly Dictionary<long, GroupState> groupStates = new();
     readonly QChatRecentEventMemory recentEventMemory = new();
     readonly QChatReplyGenerationTracker replyGenerationTracker = new();
+    readonly object localToolRequestDetectorGate = new();
+    readonly List<Func<string, bool>> localToolRequestDetectors = [];
     QChatScopedCapabilityTurnExecutor? scopedCapabilityTurnExecutor;
     readonly XiaYuSelfStateStore selfStateStore = xiaYuSelfStateStore ?? new XiaYuSelfStateStore();
     readonly QChatRiskEventDetector riskEventDetector = new();
@@ -3309,6 +3325,8 @@ public partial class QChatService(
     public async ValueTask DisposeAsync()
     {
         await conversationFollowUpScheduler.DisposeAsync();
+        lock (localToolRequestDetectorGate)
+            localToolRequestDetectors.Clear();
         if (voiceWarmupCoordinator != null)
         {
             await voiceWarmupCoordinator.StopAsync();
@@ -3795,12 +3813,22 @@ public partial class QChatService(
                 int? suggestedSettleMilliseconds = null;
                 bool isExplicitBotMention = messageEvent.MessageType != OneBotMessageType.Group || isAtBot;
                 bool hasPendingImageContext = HasPendingDeferredImageForSession(messageEvent);
-                if (hasPendingImageContext == false &&
+                bool isLocalToolRequest = IsLocalToolRequest(content);
+                if (isLocalToolRequest)
+                {
+                    WriteQChatDiagnostic(
+                        "qchat-semantic-web-research-skipped",
+                        "Skipped semantic web research for an explicit local-tool request.",
+                        new { reason = "local_tool_request" });
+                }
+                if (isLocalToolRequest == false &&
+                    hasPendingImageContext == false &&
                     QChatSemanticWebResearchEligibility.IsEligible(
                         config.SemanticWebResearch,
                         messageEvent,
                         senderRole,
-                        isExplicitBotMention))
+                        isExplicitBotMention,
+                        isLocalToolRequest))
                 {
                     QChatSemanticWebResearchService? semanticResearchService =
                         ResolveSemanticWebResearchService(config);
@@ -3830,7 +3858,8 @@ public partial class QChatService(
                                     isExplicitBotMention,
                                     content,
                                     researchRecentContext,
-                                    config.SemanticWebResearch),
+                                    config.SemanticWebResearch,
+                                    isLocalToolRequest),
                                 messageEvent,
                                 senderRole,
                                 oneBotEventProcessingCancellation?.Token ?? CancellationToken.None);
@@ -10416,6 +10445,31 @@ public partial class QChatService(
         }
     }
 
+    bool IsLocalToolRequest(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        Func<string, bool>[] detectors;
+        lock (localToolRequestDetectorGate)
+            detectors = localToolRequestDetectors.ToArray();
+
+        foreach (Func<string, bool> detector in detectors)
+        {
+            try
+            {
+                if (detector(content))
+                    return true;
+            }
+            catch
+            {
+                // A plugin hint is advisory; a broken detector must not block QQ.
+            }
+        }
+
+        return false;
+    }
+
     void PausePendingDispatchForIncomingMessage(OneBotMessageEvent messageEvent)
     {
         if (Configuration?.EnableConversationSettleWindow != true || messageEvent.MessageId <= 0)
@@ -11957,6 +12011,23 @@ public partial class QChatService(
         public void Dispose()
         {
             current.Value = previous;
+        }
+    }
+
+    sealed class LocalToolRequestDetectorRegistration(
+        QChatService service,
+        Func<string, bool> detector) : IDisposable
+    {
+        bool disposed;
+
+        public void Dispose()
+        {
+            if (disposed)
+                return;
+
+            lock (service.localToolRequestDetectorGate)
+                service.localToolRequestDetectors.Remove(detector);
+            disposed = true;
         }
     }
 }

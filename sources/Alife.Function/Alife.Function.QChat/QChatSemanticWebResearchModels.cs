@@ -44,7 +44,8 @@ public sealed record QChatSemanticWebResearchRequest(
     bool IsMentionedOrWoken,
     string Question,
     string RecentContext,
-    QChatSemanticWebResearchConfig Config);
+    QChatSemanticWebResearchConfig Config,
+    bool IsLocalToolRequest = false);
 
 public sealed record QChatSemanticWebResearchDecision(
     bool ShouldResearch,
@@ -62,12 +63,13 @@ public static class QChatSemanticWebResearchEligibility
         QChatSemanticWebResearchConfig config,
         OneBotMessageEvent messageEvent,
         QChatSenderRole senderRole,
-        bool isMentionedOrWoken)
+        bool isMentionedOrWoken,
+        bool isLocalToolRequest = false)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(messageEvent);
 
-        if (config.Enabled == false)
+        if (config.Enabled == false || isLocalToolRequest)
             return false;
 
         return messageEvent.MessageType switch

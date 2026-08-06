@@ -49,7 +49,8 @@ public sealed class QChatSemanticWebResearchService(
                 request.Config,
                 request.MessageEvent,
                 request.SenderRole,
-                request.IsMentionedOrWoken) == false)
+                request.IsMentionedOrWoken,
+                request.IsLocalToolRequest) == false)
         {
             return QChatSemanticWebResearchEvidence.Empty;
         }

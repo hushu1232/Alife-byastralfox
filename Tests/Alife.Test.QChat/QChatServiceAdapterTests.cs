@@ -1621,6 +1621,45 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task SemanticWebResearch_RegisteredLocalToolDetectorSkipsRouter()
+    {
+        FakeOneBotRuntime runtime = new();
+        RecordingSemanticWebResearchService semanticResearch = new();
+        QChatService service = CreateStartedService(runtime, new QChatConfig
+        {
+            BotId = 999,
+            OwnerId = 1001,
+            EnableBalancedTextStreaming = false,
+            SemanticWebResearch = new QChatSemanticWebResearchConfig { Enabled = true }
+        },
+        semanticWebResearchRouter: new ThrowingSemanticWebResearchRouter(),
+        semanticWebResearchService: semanticResearch);
+        using IDisposable detector = service.RegisterLocalToolRequestDetector(
+            text => text.Contains("本地工具", StringComparison.Ordinal));
+        QChatInboundMessage? dispatched = null;
+        service.InboundChatDispatcher = message =>
+        {
+            dispatched = message;
+            return Task.CompletedTask;
+        };
+
+        runtime.Raise(new OneBotMessageEvent
+        {
+            SelfId = 999,
+            UserId = 1001,
+            RawMessage = "调用本地工具找一个开心的表情发给我"
+        });
+
+        await WaitUntilAsync(() => dispatched != null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(semanticResearch.Calls, Is.Zero);
+            Assert.That(dispatched!.Formatted, Does.Not.Contain("UNTRUSTED EXTERNAL CONTEXT"));
+        });
+    }
+
+    [Test]
     public void AppendRequiredSourceUrls_AddsOnlyMissingUrlsAfterAnswer()
     {
         MethodInfo method = typeof(QChatService).GetMethod(
@@ -17474,6 +17513,14 @@ public class QChatServiceAdapterTests
                 QChatSemanticWebResearchReasonCategory.Temporal,
                 "fresh release information"));
         }
+    }
+
+    sealed class ThrowingSemanticWebResearchRouter : IQChatSemanticWebResearchRouter
+    {
+        public Task<QChatSemanticWebResearchDecision> RouteAsync(
+            QChatSemanticWebResearchRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new AssertionException("A registered local-tool request must not reach the research router.");
     }
 
     sealed class DecliningSemanticWebResearchRouter : IQChatSemanticWebResearchRouter

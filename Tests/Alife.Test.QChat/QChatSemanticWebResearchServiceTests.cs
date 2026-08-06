@@ -118,6 +118,22 @@ public sealed class QChatSemanticWebResearchServiceTests
     }
 
     [Test]
+    public void IsEligible_DeniesExplicitLocalToolRequestBeforeChannelRouting()
+    {
+        QChatSemanticWebResearchConfig config = new() { Enabled = true };
+        OneBotMessageEvent message = new() { UserId = 7 };
+
+        bool actual = QChatSemanticWebResearchEligibility.IsEligible(
+            config,
+            message,
+            QChatSenderRole.Owner,
+            isMentionedOrWoken: false,
+            isLocalToolRequest: true);
+
+        Assert.That(actual, Is.False);
+    }
+
+    [Test]
     public async Task ExecuteAsync_MentionedGroupUsesSearchOnlyEvidence()
     {
         RecordingResearchService research = new();
@@ -161,6 +177,26 @@ public sealed class QChatSemanticWebResearchServiceTests
         Assert.Multiple(() =>
         {
             Assert.That(evidence.Researched, Is.False);
+            Assert.That(research.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task ExecuteAsync_LocalToolRequestSkipsRouterAndResearch()
+    {
+        RecordingResearchService research = new();
+        QChatSemanticWebResearchService service = new(new ThrowingRouter(), research);
+        QChatSemanticWebResearchRequest request = CreateOwnerPrivateRequest() with
+        {
+            Question = "从本地表情包里找一个开心的发给我",
+            IsLocalToolRequest = true
+        };
+
+        QChatSemanticWebResearchEvidence evidence = await service.ExecuteAsync(request);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(evidence, Is.EqualTo(QChatSemanticWebResearchEvidence.Empty));
             Assert.That(research.CallCount, Is.Zero);
         });
     }
@@ -246,6 +282,14 @@ public sealed class QChatSemanticWebResearchServiceTests
         public Task<QChatSemanticWebResearchDecision> RouteAsync(
             QChatSemanticWebResearchRequest request,
             CancellationToken cancellationToken = default) => Task.FromResult(decision);
+    }
+
+    sealed class ThrowingRouter : IQChatSemanticWebResearchRouter
+    {
+        public Task<QChatSemanticWebResearchDecision> RouteAsync(
+            QChatSemanticWebResearchRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new AssertionException("Local tool requests must not invoke the semantic research router.");
     }
 
     sealed class RecordingResearchService(bool success = true) : IAgentWebResearchService
