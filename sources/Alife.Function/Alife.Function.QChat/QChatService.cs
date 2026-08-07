@@ -3161,6 +3161,7 @@ public partial class QChatService(
     CancellationTokenSource? oneBotEventProcessingCancellation;
     Task? oneBotEventProcessingTask;
     XmlHandler xmlHandler = null!;
+    bool xmlExecutionAuditSubscribed;
     QChatRelationCacheService RelationCache => relationCache ??= injectedRelationCache ?? new QChatRelationCacheService(GetOneBotClient());
     QChatManagedFileService ManagedFiles => managedFiles ??= injectedManagedFileService ?? new QChatManagedFileService(
         Path.Combine(AlifePath.StorageFolderPath, "AgentWorkspace", "QChatFiles"));
@@ -3182,6 +3183,11 @@ public partial class QChatService(
         RelationCache.ToolResultSink = SendCurrentReplySessionToolResultAsync;
         RegisterRelationCacheToolsIfMissing();
         functionService.ExecutionPolicy.AuthorizeHighRiskFunction = AuthorizeHighRiskXmlFunction;
+        if (xmlExecutionAuditSubscribed == false)
+        {
+            functionService.ExecutionPolicy.ExecutionAudited += OnXmlFunctionExecutionAudited;
+            xmlExecutionAuditSubscribed = true;
+        }
 
         Prompt("面向 QQ 用户的内容必须通过当前会话发送能力交付；不要在 QQ 文本中解释内部工具、路由或权限。");
         RegisterStablePersonaPromptIfNeeded();
@@ -3387,6 +3393,11 @@ public partial class QChatService(
             oneBotClient.EventReceived -= OnEventReceived;
         if (ChatBot != null)
             ChatBot.ChatOver -= OnChatOver;
+        if (xmlExecutionAuditSubscribed)
+        {
+            functionService.ExecutionPolicy.ExecutionAudited -= OnXmlFunctionExecutionAudited;
+            xmlExecutionAuditSubscribed = false;
+        }
         if (oneBotEventProcessingCancellation != null)
         {
             await oneBotEventProcessingCancellation.CancelAsync();
@@ -4912,6 +4923,27 @@ public partial class QChatService(
 
     public void RecordPluginRuntimeAudit(string eventKind, string outcome, string summary) =>
         TryRecordQChatRuntimeAudit(eventKind, outcome, summary);
+
+    void OnXmlFunctionExecutionAudited(object? sender, XmlFunctionExecutionAuditRecord record)
+    {
+        try
+        {
+            DataAgentStore.RecordToolBrokerAudit(new DataAgentToolBrokerAuditRecord(
+                record.RouteSessionId ?? string.Empty,
+                NormalizeToolRouteTraceToken(record.ToolName),
+                record.Allowed,
+                NormalizeToolRouteTraceToken(record.ReasonCode),
+                NormalizeToolRouteTraceToken(record.Reason),
+                record.CreatedAt));
+        }
+        catch (Exception exception)
+        {
+            WriteQChatDiagnostic(
+                "qchat-xml-audit-unavailable",
+                "XML function audit could not be persisted; normal chat continues.",
+                new { tool = record.ToolName, exception = exception.GetType().Name });
+        }
+    }
 
     void TryRecordQChatRuntimeAudit(string eventKind, string outcome, string summary)
     {

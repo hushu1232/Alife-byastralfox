@@ -10779,6 +10779,59 @@ public class QChatServiceAdapterTests
     }
 
     [Test]
+    public async Task QChatXmlRouteDenialIsPersistedAsToolBrokerAudit()
+    {
+        FakeOneBotRuntime runtime = new();
+        XmlFunctionCaller functionCaller = new(new NullLogger<XmlFunctionCaller>());
+        functionCaller.RegisterHandler(new XmlHandler(new SaveImageXmlHandler()));
+        functionCaller.EnableQqEmojiSaveImageCapability();
+        CapturingDataAgentStore store = new();
+        QChatService service = new(
+            functionCaller,
+            new NullLogger<QChatService>(),
+            oneBotRuntime: runtime,
+            dataAgentStore: store)
+        {
+            Configuration = new QChatConfig
+            {
+                BotId = 999,
+                OwnerId = 1001,
+                EnableBalancedTextStreaming = false
+            }
+        };
+
+        try
+        {
+            StartService(service, "夏羽");
+            functionCaller.RouteCurrentTurn(
+                "普通聊天，不执行图片保存",
+                new ToolRouteState("route-session", "", IsOwner: true, IsPrivateChat: true, IsTrustedRuntime: true));
+
+            InvalidOperationException exception = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await functionCaller.ExecuteFunctionAsync("saveimage", new XmlContext
+                {
+                    CallMode = CallMode.OneShot,
+                    Parameters = new Dictionary<string, string>()
+                }))!;
+
+            DataAgentToolBrokerAuditRecord audit = store.ToolBrokerAudits.Single();
+            Assert.Multiple(() =>
+            {
+                Assert.That(exception.Message, Is.EqualTo("tool_not_allowed_in_current_route"));
+                Assert.That(audit.SessionId, Is.EqualTo("route-session"));
+                Assert.That(audit.ToolName, Is.EqualTo("saveimage"));
+                Assert.That(audit.Allowed, Is.False);
+                Assert.That(audit.ReasonCode, Is.EqualTo("tool_not_allowed_in_current_route"));
+                Assert.That(audit.Reason, Is.EqualTo("tool_not_allowed_in_current_route"));
+            });
+        }
+        finally
+        {
+            await service.DisposeAsync();
+        }
+    }
+
+    [Test]
     public async Task QChatToolResultSendFailureDoesNotPokeChatBot()
     {
         string previousStorage = Alife.Platform.AlifePath.StorageFolderPath;
@@ -18834,6 +18887,7 @@ public class QChatServiceAdapterTests
         readonly object gate = new();
         readonly List<QChatConversationTurn> turns = [];
         readonly List<QChatRuntimeAuditRecord> runtimeAudits = [];
+        readonly List<DataAgentToolBrokerAuditRecord> toolBrokerAudits = [];
 
         public string ProviderName => "test";
         public IReadOnlyList<QChatConversationTurn> Turns
@@ -18852,6 +18906,14 @@ public class QChatServiceAdapterTests
                     return runtimeAudits.ToArray();
             }
         }
+        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ToolBrokerAudits
+        {
+            get
+            {
+                lock (gate)
+                    return toolBrokerAudits.ToArray();
+            }
+        }
 
         public void Initialize() { }
         public void ImportFixtures() { }
@@ -18859,8 +18921,16 @@ public class QChatServiceAdapterTests
         public void RecordAccepted(DataAgentAcceptedAuditInput input) { }
         public void RecordRejected(DataAgentRejectedAuditInput input) { }
         public IReadOnlyList<DataAgentAuditRecord> ReadQueryAudit() => [];
-        public void RecordToolBrokerAudit(DataAgentToolBrokerAuditRecord record) { }
-        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ReadToolBrokerAudit() => [];
+        public void RecordToolBrokerAudit(DataAgentToolBrokerAuditRecord record)
+        {
+            lock (gate)
+                toolBrokerAudits.Add(record);
+        }
+        public IReadOnlyList<DataAgentToolBrokerAuditRecord> ReadToolBrokerAudit()
+        {
+            lock (gate)
+                return toolBrokerAudits.ToArray();
+        }
 
         public void RecordQChatConversationTurn(QChatConversationTurn turn)
         {
@@ -18890,6 +18960,14 @@ public class QChatServiceAdapterTests
         public void Execute()
         {
             Calls++;
+        }
+    }
+
+    sealed class SaveImageXmlHandler
+    {
+        [XmlFunction(FunctionMode.OneShot, name: "saveimage")]
+        public void Execute()
+        {
         }
     }
 
