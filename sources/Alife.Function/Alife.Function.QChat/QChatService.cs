@@ -2576,6 +2576,12 @@ public partial class QChatService(
         if (targetId == 0)
             throw new ArgumentNullException(nameof(targetId));
 
+        void RecordImageAudit(string outcome, string reason) =>
+            TryRecordQChatRuntimeAudit(
+                "tool.qimage.send",
+                outcome,
+                $"type={type}; target_id={targetId}; reason={reason}");
+
         QChatReplySession? replySession = GetCurrentReplySessionForGuard();
         if (replySession != null &&
             (replySession.MessageType != type || replySession.TargetId != targetId))
@@ -2592,11 +2598,25 @@ public partial class QChatService(
         }
 
         if (targetId == Configuration!.BotId)
+        {
+            RecordImageAudit("denied", "self_target");
             throw new Exception("不允许将消息发生给自己");
-        if (TryEnsureQChatReplyTargetAllowed(type, targetId, "xml-qimage") == false ||
-            IsCurrentReplyGenerationSendAllowed() == false ||
-            ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qimage"))
+        }
+        if (TryEnsureQChatReplyTargetAllowed(type, targetId, "xml-qimage") == false)
+        {
+            RecordImageAudit("denied", "target_not_allowed");
             return;
+        }
+        if (IsCurrentReplyGenerationSendAllowed() == false)
+        {
+            RecordImageAudit("denied", "stale_reply_generation");
+            return;
+        }
+        if (ShouldSuppressOutgoingForQuietMode(type, targetId, "xml-qimage"))
+        {
+            RecordImageAudit("denied", "quiet_mode");
+            return;
+        }
 
         // 尝试从表情库匹配 (优先)；绝对本地路径仍由下方显式分支支持。
         string emoteBase = Path.GetFullPath(Path.Combine(AlifePath.StorageFolderPath, "Emotes"));
@@ -2615,6 +2635,7 @@ public partial class QChatService(
                     targetId,
                     reason = "image_path_not_allowed"
                 });
+                RecordImageAudit("denied", "image_path_not_allowed");
                 return;
             }
         }
@@ -2659,11 +2680,13 @@ public partial class QChatService(
                     targetId,
                     reason = decision.Reason
                 });
+                RecordImageAudit("denied", decision.Reason);
                 return;
             }
         }
         else if (File.Exists(image) == false)
         {
+            RecordImageAudit("failed", "image_not_found");
             throw new Exception("图片不存在");
         }
 
@@ -2735,6 +2758,7 @@ public partial class QChatService(
             targetId,
             image = isRemoteImage ? remoteImageUri!.Host : Path.GetFileName(image)
         }, result.Exception);
+        RecordImageAudit("failed", "onebot_send_failed");
     }
 
     [XmlFunction(FunctionMode.OneShot)]

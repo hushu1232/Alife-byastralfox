@@ -10991,12 +10991,13 @@ public class QChatServiceAdapterTests
     public void QImage_UnsafeRemoteUrlIsRejectedWithoutThrowingOrSending()
     {
         FakeOneBotRuntime runtime = new();
+        CapturingDataAgentStore store = new();
         QChatService service = CreateStartedService(runtime, new QChatConfig
         {
             BotId = 999,
             OwnerId = 1001,
             EnableBalancedTextStreaming = false
-        });
+        }, dataAgentStore: store);
 
         Assert.DoesNotThrowAsync(async () =>
             await service.QImage(OneBotMessageType.Group, 123, "http://127.0.0.1/private.png"));
@@ -11005,6 +11006,11 @@ public class QChatServiceAdapterTests
             Assert.That(runtime.GroupMessages, Is.Empty);
             Assert.That(GetPendingPokeText(service), Does.Not.Contain("127.0.0.1"));
             Assert.That(GetPendingPokeText(service), Does.Not.Contain("[QQ"));
+            Assert.That(store.RuntimeAudits, Has.Count.EqualTo(1));
+            Assert.That(store.RuntimeAudits[0].EventKind, Is.EqualTo("tool.qimage.send"));
+            Assert.That(store.RuntimeAudits[0].Outcome, Is.EqualTo("denied"));
+            Assert.That(store.RuntimeAudits[0].Summary, Does.Contain("reason=image_url_not_allowed"));
+            Assert.That(store.RuntimeAudits[0].Summary, Does.Not.Contain("127.0.0.1"));
         });
     }
 
