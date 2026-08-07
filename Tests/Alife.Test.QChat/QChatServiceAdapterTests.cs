@@ -11020,7 +11020,7 @@ public class QChatServiceAdapterTests
                 });
 
                 await dispatched.Task.WaitAsync(TimeSpan.FromSeconds(2));
-                await WaitForQChatDiagnosticEventAsync(storageRoot, "model-dispatch-completed");
+                string diagnostics = await WaitForQChatDiagnosticEventAsync(storageRoot, "qchat-tool-result-published");
 
                 Assert.Multiple(() =>
                 {
@@ -11029,6 +11029,8 @@ public class QChatServiceAdapterTests
                     Assert.That(runtime.PrivateMessages[1].Message, Does.Contain(Path.GetFileName(ordinaryImage)));
                     Assert.That(runtime.PrivateMessages[2].Message, Does.Contain(Path.GetFileName(firstImage)));
                     Assert.That(store.RuntimeAudits.Count(record => record.EventKind == "tool.qimage.send" && record.Outcome == "suppressed"), Is.EqualTo(1));
+                    Assert.That(diagnostics, Does.Contain("qchat-image-send-suppressed"));
+                    Assert.That(diagnostics, Does.Contain("model_only"));
                 });
             }
             finally

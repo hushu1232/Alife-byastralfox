@@ -2706,6 +2706,9 @@ public partial class QChatService(
                     "tool.qimage.send",
                     "suppressed",
                     $"type={type}; target_id={targetId}; reason=local_tool_one_image_per_reply");
+                PublishQChatModelOnlyToolResult(
+                    "qimage=not_sent reason=local_tool_one_image_per_reply; only one image was delivered in this QQ reply. Do not claim the suppressed image was sent.",
+                    "qchat-image-send-suppressed");
                 return;
             }
 
