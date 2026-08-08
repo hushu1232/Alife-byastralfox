@@ -313,13 +313,22 @@ step.
 - [x] Identical one-shot tool calls are executed once per model turn and are
       allowed again on the next turn.
 - [ ] The probability/cooldown/burst behavior is verified in a live QQ session.
+      The 2026-08-08 live run exercised the low-probability path without an
+      image send; no positive automatic hit occurred, so cooldown and burst
+      remain unconfirmed in production.
 - [ ] Invalid URL, unsupported media, oversize media, and unsafe filenames are
-      rejected.
-- [ ] Group and private targets obey the existing QChat authorization policy.
+      rejected. QChat adapter coverage passed for unsafe remote URLs and
+      relative-path escape; a complete live/plugin-level run for all four
+      rejection classes is still pending.
+- [x] Group and private targets obey the existing QChat authorization policy.
+      Private delivery and a live owner-mention group delivery both resolved to
+      the current reply session; an unmentioned group request was suppressed
+      by the low-disturbance gate.
 - [x] Online sources and automatic persistence remain disabled until their
       licenses, network behavior, and retention policy are approved.
-- [ ] If governance is enabled, allowed and denied calls appear in the XML
-      function audit.
+- [x] If governance is enabled, allowed and denied calls appear in the XML
+      function audit. The QChat adapter governance-denial test passed and the
+      denied `saveimage` route was persisted to the DataAgent tool-broker audit.
 
 ## Asset Naming Review Sheet
 
