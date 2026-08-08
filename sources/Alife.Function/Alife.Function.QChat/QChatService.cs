@@ -4927,6 +4927,9 @@ public partial class QChatService(
     public void RecordPluginRuntimeAudit(string eventKind, string outcome, string summary) =>
         TryRecordQChatRuntimeAudit(eventKind, outcome, summary);
 
+    public void PublishPluginModelOnlyToolResult(string message, string source) =>
+        PublishQChatModelOnlyToolResult(message, source);
+
     void OnXmlFunctionExecutionAudited(object? sender, XmlFunctionExecutionAuditRecord record)
     {
         try
@@ -10492,6 +10495,16 @@ public partial class QChatService(
                         message.TargetId
                     });
                 }
+            }
+            else if (Volatile.Read(ref outboundMessageVersion) == outboundBefore)
+            {
+                WriteQChatDiagnostic("model-dispatch-no-visible-reply", "Model returned no QQ-visible plain response after the current tool turn.", new
+                {
+                    message.MessageType,
+                    message.TargetId,
+                    responseLength = modelResponse?.Length ?? 0,
+                    responseContainsMarkup = (modelResponse ?? string.Empty).IndexOf('<') >= 0 || (modelResponse ?? string.Empty).IndexOf('>') >= 0
+                });
             }
             WriteQChatDiagnostic("model-dispatch-completed", "Model dispatch completed.", new {
                 message.MessageType,

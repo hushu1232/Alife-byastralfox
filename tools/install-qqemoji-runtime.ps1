@@ -35,6 +35,7 @@ if (-not (Select-String -LiteralPath $qqEmojiSource -Pattern "EnableQqEmojiSaveI
     -not (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern "QChatSafeImageDownloader.DownloadAsync" -Quiet) -or
     -not (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern "TryGetSafeImageName" -Quiet) -or
     -not (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern '"tool.qqemoji.save"' -Quiet) -or
+    -not (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern "PublishPluginModelOnlyToolResult" -Quiet) -or
     -not (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern "RecordPluginRuntimeAudit" -Quiet) -or
     (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern "BuildEmojiListString" -Quiet) -or
     (Select-String -LiteralPath $qqEmojiSource -SimpleMatch -Pattern ".HandlerTable." -Quiet)) {
